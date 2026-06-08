@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/useAuth';
+import { useTheme } from '../contexts/useTheme';
 import { coursesAPI } from '../services/api';
 import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, X } from 'lucide-react';
 import '../App.css'; // Reuse some layout styles
@@ -38,8 +38,6 @@ export default function SearchPage() {
     description: ''
   });
 
-  const [condError, setCondError] = useState('');
-
   const handleDeptSearch = async (e) => {
     e.preventDefault();
     setIsSearching(true);
@@ -67,7 +65,6 @@ export default function SearchPage() {
 
   const handleCondSearch = async (e) => {
     e.preventDefault();
-    setCondError('');
     setIsSearching(true);
     try {
       const filters = {

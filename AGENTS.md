@@ -276,3 +276,27 @@ git commit -m "chore: initialize project repository"
 git push -u origin main
 ```
 
+## 專案修改確認與報告規範
+
+每次 Codex 要修改本專案前，必須先向使用者宣告：
+
+1. 預計修改或新增哪些檔案。
+2. 每個檔案預計修改或新增哪些內容。
+3. 是否會執行測試、commit 或 push。
+
+必須等使用者明確確認後，才可以開始修改檔案。
+
+每次修改完成後，必須新增一份變更報告，放在：
+
+```text
+docs/CHANGE_REPORTS/
+```
+
+報告內容至少包含：
+
+1. 修改日期。
+2. 修改檔案清單。
+3. 主要改動內容。
+4. 影響範圍。
+5. 測試與驗證結果。
+6. 是否 commit 與 push。

@@ -119,11 +119,33 @@ export async function handleChat(userId, message) {
                 const constraints = {
                   maxCredits: args.maxCredits || prefs.targetCreditsMax || 22,
                   minCredits: args.minCredits || prefs.targetCreditsMin || 15,
-                  blockedPeriods: prefs.blockedPeriods || [],
-                  noMorningClasses: args.noMorningClasses !== undefined ? args.noMorningClasses : prefs.noMorningClasses,
-                  noEveningClasses: args.noEveningClasses !== undefined ? args.noEveningClasses : prefs.noEveningClasses,
-                  mustTakeCourseIds: prefs.mustTakeCourses || [],
-                  preferCompact: args.preferCompact !== undefined ? args.preferCompact : prefs.preferCompact,
+                  blockedPeriods: args.blockedPeriods || prefs.blockedPeriods || [],
+                  noMorningClasses: args.noMorningClasses ?? prefs.noMorningClasses ?? false,
+                  noEveningClasses: args.noEveningClasses ?? prefs.noEveningClasses ?? false,
+                  mustTakeCourseIds: args.mustTakeCourseIds || prefs.mustTakeCourses || [],
+                  preferCompact: args.preferCompact ?? prefs.preferCompact ?? false,
+                  maxCoursesPerDay: args.maxCoursesPerDay || 4,
+                  noMidterm: args.noMidterm ?? prefs.noMidterm ?? false,
+                  noGroupReport: args.noGroupReport ?? prefs.noGroupReport ?? false,
+                  discussion: args.discussion ?? prefs.preferDiscussion ?? false,
+                  learnMore: args.learnMore ?? prefs.learnMore ?? false,
+                  weightDaily: args.weightDaily ?? prefs.weightDaily ?? false,
+                  hideConflict: args.hideConflict ?? prefs.hideConflict ?? false,
+                  practicalExam: args.practicalExam ?? prefs.practicalExam ?? false,
+                  finalReport: args.finalReport ?? prefs.finalReport ?? false,
+                  englishTaught: args.englishTaught ?? prefs.englishTaught ?? false,
+                  lunchBreakFree: args.lunchBreakFree ?? prefs.lunchBreakFree ?? false,
+                  completedCourseIds: args.completedCourseIds || prefs.completedCourseIds || [],
+                  selectedCourseIds: args.selectedCourseIds || [],
+                  watchingCourseIds: args.watchingCourseIds || [],
+                  courseStates: args.courseStates || {},
+                  retakeCourseIds: args.retakeCourseIds
+                    || args.failedRequiredCourseIds
+                    || prefs.retakeCourseIds
+                    || prefs.failedRequiredCourseIds
+                    || [],
+                  preferredTrack: args.preferredTrack || prefs.preferredTrack || null,
+                  digitalCreditsNeeded: args.digitalCreditsNeeded ?? prefs.digitalCreditsNeeded ?? false,
                 };
                 let candidates = getAll('courses');
                 result = generateSchedule(candidates, constraints);

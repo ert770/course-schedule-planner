@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/useAuth';
+import { useTheme } from '../contexts/useTheme';
 import { scheduleAPI, chatAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import { X, Send, Search, Download, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles } from 'lucide-react';
@@ -48,17 +48,13 @@ export default function DashboardPage() {
   const chatScrollRef = useRef(null);
 
   useEffect(() => {
-    generateInitialSchedule();
-  }, []);
-
-  useEffect(() => {
     // Scroll chat to bottom
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
   }, [chatHistory]);
 
-  const generateInitialSchedule = async (currentPrefs = prefs) => {
+  const generateInitialSchedule = useCallback(async (currentPrefs = prefs) => {
     setIsScheduling(true);
     try {
       const blockedPeriods = [];
@@ -107,13 +103,15 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  };
+  }, [prefs, user?.studentId]);
+
+  useEffect(() => {
+    generateInitialSchedule(prefs);
+  }, [generateInitialSchedule, prefs]);
 
   const handlePrefToggle = (key) => {
     const newPrefs = { ...prefs, [key]: !prefs[key] };
     setPrefs(newPrefs);
-    // Automatically regenerate schedule to reflect the newly toggled preference immediately
-    generateInitialSchedule(newPrefs);
   };
 
   const handleRegenerate = () => {

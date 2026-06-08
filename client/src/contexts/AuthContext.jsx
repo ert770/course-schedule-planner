@@ -1,23 +1,17 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-
-const AuthContext = createContext(null);
+import { useState } from 'react';
+import { AuthContext } from './AuthContextValue';
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Check localStorage for persisted session
+  const [user, setUser] = useState(() => {
     const stored = localStorage.getItem('fcu_user');
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        localStorage.removeItem('fcu_user');
-      }
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored);
+    } catch {
+      localStorage.removeItem('fcu_user');
+      return null;
     }
-    setLoading(false);
-  }, []);
+  });
 
   const login = (userData) => {
     setUser(userData);
@@ -42,17 +36,6 @@ export function AuthProvider({ children }) {
   const isOnboarded = () => localStorage.getItem('fcu_onboarded') === 'true';
   const isSetupDone = () => localStorage.getItem('fcu_setup_done') === 'true';
 
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', background: '#f0f2f5', color: '#6b7280', fontSize: '1rem'
-      }}>
-        載入中...
-      </div>
-    );
-  }
-
   return (
     <AuthContext.Provider value={{
       user, login, logout,
@@ -64,11 +47,3 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
-}
-
-export default AuthContext;

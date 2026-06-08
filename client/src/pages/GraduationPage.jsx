@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/useAuth';
+import { useTheme } from '../contexts/useTheme';
 import { graduationAPI } from '../services/api';
 import { X, Plus, Search, AlertTriangle, Lightbulb, Calendar, LayoutDashboard, Settings, Moon, Sun } from 'lucide-react';
 
@@ -13,11 +13,7 @@ export default function GraduationPage() {
   const [loading, setLoading] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  useEffect(() => {
-    loadGraduationData();
-  }, []);
-
-  const loadGraduationData = async () => {
+  const loadGraduationData = useCallback(async () => {
     try {
       const result = await graduationAPI.get(user?.studentId || 'D1249196');
       setData(result);
@@ -51,7 +47,11 @@ export default function GraduationPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.studentId]);
+
+  useEffect(() => {
+    loadGraduationData();
+  }, [loadGraduationData]);
 
   if (loading) {
     return (

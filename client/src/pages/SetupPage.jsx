@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { coursesAPI, scheduleAPI, profileAPI } from '../services/api';
+import { useAuth } from '../contexts/useAuth';
+import { coursesAPI, profileAPI } from '../services/api';
 import { Sparkles, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 
 const PREFERENCE_TAGS = {
@@ -32,14 +32,10 @@ export default function SetupPage() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  useEffect(() => {
-    loadElectiveCourses();
-  }, [department, grade]);
-
-  const loadElectiveCourses = async () => {
+  const loadElectiveCourses = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await coursesAPI.search({ department });
+      const data = await coursesAPI.search({ department, grade });
       const courses = (data.courses || []).filter(c => c.category === '選修');
       setElectives(courses);
     } catch {
@@ -53,7 +49,11 @@ export default function SetupPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [department, grade]);
+
+  useEffect(() => {
+    loadElectiveCourses();
+  }, [loadElectiveCourses]);
 
   const toggleCourse = (id) => {
     setCheckedCourses(prev => {

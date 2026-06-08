@@ -1,6 +1,6 @@
 const DAYS = ['', '一', '二', '三', '四', '五'];
 
-export default function CourseCard({ course, onSelect, selected, showActions = true }) {
+export default function CourseCard({ course, onSelect, selected }) {
   const categoryBadge = {
     '必修': 'badge-required',
     '選修': 'badge-elective',

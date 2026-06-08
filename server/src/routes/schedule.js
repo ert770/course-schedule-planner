@@ -68,6 +68,17 @@ router.post('/generate', (req, res) => {
       finalReport: constraints.finalReport ?? prefs.finalReport ?? false,
       englishTaught: constraints.englishTaught ?? prefs.englishTaught ?? false,
       lunchBreakFree: constraints.lunchBreakFree ?? prefs.lunchBreakFree ?? false,
+      completedCourseIds: constraints.completedCourseIds || prefs.completedCourseIds || [],
+      selectedCourseIds: constraints.selectedCourseIds || [],
+      watchingCourseIds: constraints.watchingCourseIds || [],
+      courseStates: constraints.courseStates || {},
+      retakeCourseIds: constraints.retakeCourseIds
+        || constraints.failedRequiredCourseIds
+        || prefs.retakeCourseIds
+        || prefs.failedRequiredCourseIds
+        || [],
+      preferredTrack: constraints.preferredTrack || prefs.preferredTrack || null,
+      digitalCreditsNeeded: constraints.digitalCreditsNeeded ?? prefs.digitalCreditsNeeded ?? false,
     };
 
     const result = generateSchedule(candidates, mergedConstraints);
