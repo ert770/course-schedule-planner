@@ -1,0 +1,239 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { coursesAPI, scheduleAPI, profileAPI } from '../services/api';
+import { Sparkles, CheckCircle2, Circle, Loader2 } from 'lucide-react';
+
+const PREFERENCE_TAGS = {
+  '上課時間': [
+    '#盡量集中排課', '#不排早八', '#星期一排空', '#午休務必空出'
+  ],
+  '評量方式偏好': [
+    '#無期中考', '#上機實作考試', '#期末報告為主', '#平時成績佔比高'
+  ],
+  '課程型態與互動': [
+    '#無分組報告', '#高度課堂討論', '#全英授課', '#學到許多知識'
+  ],
+};
+
+export default function SetupPage() {
+  const navigate = useNavigate();
+  const { user, markSetupDone } = useAuth();
+  
+  // Basic info
+  const [department, setDepartment] = useState(user?.department || '資訊工程學系');
+  const [grade, setGrade] = useState('1');
+
+  // Electives
+  const [electives, setElectives] = useState([]);
+  const [checkedCourses, setCheckedCourses] = useState(new Set());
+  
+  const [selectedTags, setSelectedTags] = useState(new Set());
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    loadElectiveCourses();
+  }, [department, grade]);
+
+  const loadElectiveCourses = async () => {
+    setLoading(true);
+    try {
+      const data = await coursesAPI.search({ department });
+      const courses = (data.courses || []).filter(c => c.category === '選修');
+      setElectives(courses);
+    } catch {
+      // If API fails, use some defaults
+      setElectives([
+        { id: 'e1', name: '密碼學' },
+        { id: 'e2', name: '人工智慧導論' },
+        { id: 'e3', name: '軟體工程' },
+        { id: 'e4', name: '資訊實務專題' },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleCourse = (id) => {
+    setCheckedCourses(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleTag = (tag) => {
+    setSelectedTags(prev => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
+
+  const handleSubmit = async () => {
+    setGenerating(true);
+    try {
+      // Save preferences to backend
+      const prefData = {
+        department,
+        grade,
+        noMorningClasses: selectedTags.has('#不排早八'),
+        preferCompact: selectedTags.has('#盡量集中排課'),
+        mondayFree: selectedTags.has('#星期一排空'),
+        lunchBreakFree: selectedTags.has('#午休務必空出'),
+        noMidterm: selectedTags.has('#無期中考'),
+        practicalExam: selectedTags.has('#上機實作考試'),
+        finalReport: selectedTags.has('#期末報告為主'),
+        weightDaily: selectedTags.has('#平時成績佔比高'),
+        noGroupReport: selectedTags.has('#無分組報告'),
+        preferDiscussion: selectedTags.has('#高度課堂討論'),
+        englishTaught: selectedTags.has('#全英授課'),
+        learnMore: selectedTags.has('#學到許多知識'),
+        completedCourseIds: [...checkedCourses],
+        selectedTags: [...selectedTags],
+      };
+      await profileAPI.update(prefData, user?.studentId || 'default');
+
+      markSetupDone();
+
+      // Ensure Dashboard generates a new schedule based on these exact prefs when mounted
+      localStorage.setItem('fcu_initial_prefs', JSON.stringify(prefData));
+
+      // Small delay for animation feel
+      await new Promise(r => setTimeout(r, 1500));
+
+      navigate('/');
+    } catch (err) {
+      console.error('Setup failed:', err);
+      markSetupDone();
+      navigate('/');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div className="setup-page" id="setup-page">
+      <div className="setup-card animate-fadeInUp">
+        {generating ? (
+          <div className="setup-generating">
+            <div className="setup-generating-spinner">
+              <Loader2 size={48} className="spin-animation" />
+            </div>
+            <h2>🤖 Agent 正在呼叫排課演算法...</h2>
+            <p>正在根據您的偏好生成最佳化課表</p>
+          </div>
+        ) : (
+          <div className="setup-content">
+            {/* Left - Steps */}
+            <div className="setup-steps">
+              <h2 className="setup-heading">使用者設定流程</h2>
+              <div className="setup-step completed">
+                <CheckCircle2 size={18} />
+                <span>登入成功</span>
+              </div>
+              <div className="setup-step active">
+                <div className="setup-step-dot active" />
+                <span>個人化與偏好設定</span>
+              </div>
+              <div className="setup-step">
+                <Circle size={18} />
+                <span>生成初始課表</span>
+              </div>
+            </div>
+
+            {/* Middle - Course checklist & Basic Info */}
+            <div className="setup-courses">
+              <h3 className="setup-section-title">1. 基本資料</h3>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                <select value={department} onChange={e => setDepartment(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  <option value="資訊工程學系">資訊工程學系</option>
+                  <option value="電機工程學系">電機工程學系</option>
+                  <option value="企業管理學系">企業管理學系</option>
+                </select>
+                <select value={grade} onChange={e => setGrade(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  <option value="1">大一</option>
+                  <option value="2">大二</option>
+                  <option value="3">大三</option>
+                  <option value="4">大四</option>
+                </select>
+              </div>
+
+              <h3 className="setup-section-title">2. 已經修過的選修課程</h3>
+              {loading ? (
+                <div style={{ padding: '20px', color: '#6b7280' }}>載入中...</div>
+              ) : (
+                <div className="setup-course-list">
+                  {electives.length > 0 ? electives.map(course => (
+                    <label key={course.id} className="setup-course-item" id={`setup-course-${course.id}`}>
+                      <input
+                        type="checkbox"
+                        checked={checkedCourses.has(course.id)}
+                        onChange={() => toggleCourse(course.id)}
+                      />
+                      <span>{course.name}</span>
+                    </label>
+                  )) : (
+                    <div style={{color: '#888', fontSize: '0.9rem'}}>尚無符合的選修課程</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Right - Preference tags */}
+            <div className="setup-preferences">
+              <h3 className="setup-section-title">3. 排課偏好設定</h3>
+              {Object.entries(PREFERENCE_TAGS).map(([category, tags]) => (
+                <div key={category} className="setup-pref-group">
+                  <h4 className="setup-pref-category">{category}</h4>
+                  <div className="setup-pref-tags">
+                    {tags.map(tag => (
+                      <button
+                        key={tag}
+                        className={`setup-tag ${selectedTags.has(tag) ? 'selected' : ''}`}
+                        onClick={() => toggleTag(tag)}
+                        id={`tag-${tag.replace('#', '')}`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Bottom CTA */}
+        {!generating && (
+          <div className="setup-footer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            <button
+              className="setup-submit-btn"
+              onClick={handleSubmit}
+              id="setup-submit-btn"
+            >
+              <Sparkles size={18} />
+              完成設定，生成推薦課表 ✨
+            </button>
+            
+            <button 
+              onClick={() => {
+                localStorage.clear();
+                window.location.href = '/login';
+              }}
+              style={{
+                background: 'transparent', border: 'none', 
+                color: '#888', cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline'
+              }}
+            >
+              返回登入畫面 (重新測試)
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

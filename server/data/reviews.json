@@ -1,0 +1,2490 @@
+[
+  {
+    "id": 1,
+    "courseId": 1,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.9,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.140Z"
+  },
+  {
+    "id": 2,
+    "courseId": 1,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.9,
+    "recommendScore": 1.3,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.142Z"
+  },
+  {
+    "id": 3,
+    "courseId": 2,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 2.9,
+    "recommendScore": 3,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.143Z"
+  },
+  {
+    "id": 4,
+    "courseId": 2,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.7,
+    "recommendScore": 4.1,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.143Z"
+  },
+  {
+    "id": 5,
+    "courseId": 3,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.6,
+    "recommendScore": 2.1,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.144Z"
+  },
+  {
+    "id": 6,
+    "courseId": 3,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.5,
+    "recommendScore": 4.3,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.144Z"
+  },
+  {
+    "id": 7,
+    "courseId": 3,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 2.8,
+    "recommendScore": 3.1,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.145Z"
+  },
+  {
+    "id": 8,
+    "courseId": 3,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.5,
+    "recommendScore": 4.6,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.145Z"
+  },
+  {
+    "id": 9,
+    "courseId": 4,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 2.7,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.146Z"
+  },
+  {
+    "id": 10,
+    "courseId": 4,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.6,
+    "recommendScore": 4.4,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.146Z"
+  },
+  {
+    "id": 11,
+    "courseId": 5,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 4.5,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.147Z"
+  },
+  {
+    "id": 12,
+    "courseId": 5,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.4,
+    "recommendScore": 4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.147Z"
+  },
+  {
+    "id": 13,
+    "courseId": 5,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.8,
+    "recommendScore": 4.4,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.148Z"
+  },
+  {
+    "id": 14,
+    "courseId": 5,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.1,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.148Z"
+  },
+  {
+    "id": 15,
+    "courseId": 6,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.4,
+    "recommendScore": 4.7,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.149Z"
+  },
+  {
+    "id": 16,
+    "courseId": 6,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 4.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.150Z"
+  },
+  {
+    "id": 17,
+    "courseId": 6,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.150Z"
+  },
+  {
+    "id": 18,
+    "courseId": 7,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.8,
+    "recommendScore": 1.6,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.151Z"
+  },
+  {
+    "id": 19,
+    "courseId": 7,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.7,
+    "recommendScore": 1.8,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.151Z"
+  },
+  {
+    "id": 20,
+    "courseId": 7,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.7,
+    "recommendScore": 1.5,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.152Z"
+  },
+  {
+    "id": 21,
+    "courseId": 8,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.5,
+    "recommendScore": 4,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.153Z"
+  },
+  {
+    "id": 22,
+    "courseId": 8,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 2.8,
+    "recommendScore": 3.4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.153Z"
+  },
+  {
+    "id": 23,
+    "courseId": 8,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 3.1,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.154Z"
+  },
+  {
+    "id": 24,
+    "courseId": 9,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.6,
+    "recommendScore": 4.1,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.154Z"
+  },
+  {
+    "id": 25,
+    "courseId": 9,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.8,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.155Z"
+  },
+  {
+    "id": 26,
+    "courseId": 10,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.4,
+    "recommendScore": 4.6,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.155Z"
+  },
+  {
+    "id": 27,
+    "courseId": 10,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.6,
+    "recommendScore": 4.5,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.156Z"
+  },
+  {
+    "id": 28,
+    "courseId": 10,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 2.9,
+    "recommendScore": 4.8,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.156Z"
+  },
+  {
+    "id": 29,
+    "courseId": 11,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 4.2,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.157Z"
+  },
+  {
+    "id": 30,
+    "courseId": 11,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.6,
+    "recommendScore": 1.7,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.158Z"
+  },
+  {
+    "id": 31,
+    "courseId": 12,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.5,
+    "recommendScore": 4.3,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.158Z"
+  },
+  {
+    "id": 32,
+    "courseId": 12,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.3,
+    "recommendScore": 1.8,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.159Z"
+  },
+  {
+    "id": 33,
+    "courseId": 13,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 2.8,
+    "recommendScore": 4.9,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.160Z"
+  },
+  {
+    "id": 34,
+    "courseId": 13,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 3.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.160Z"
+  },
+  {
+    "id": 35,
+    "courseId": 13,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3.3,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.161Z"
+  },
+  {
+    "id": 36,
+    "courseId": 14,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 2.7,
+    "recommendScore": 4.6,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.162Z"
+  },
+  {
+    "id": 37,
+    "courseId": 14,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 2.8,
+    "recommendScore": 4.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.163Z"
+  },
+  {
+    "id": 38,
+    "courseId": 14,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 3,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.163Z"
+  },
+  {
+    "id": 39,
+    "courseId": 14,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.6,
+    "recommendScore": 4.2,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.164Z"
+  },
+  {
+    "id": 40,
+    "courseId": 15,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.8,
+    "recommendScore": 1.4,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.164Z"
+  },
+  {
+    "id": 41,
+    "courseId": 15,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.2,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.165Z"
+  },
+  {
+    "id": 42,
+    "courseId": 15,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.7,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.166Z"
+  },
+  {
+    "id": 43,
+    "courseId": 15,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 2.8,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.166Z"
+  },
+  {
+    "id": 44,
+    "courseId": 16,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.6,
+    "recommendScore": 4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.167Z"
+  },
+  {
+    "id": 45,
+    "courseId": 16,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.5,
+    "recommendScore": 2.1,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.168Z"
+  },
+  {
+    "id": 46,
+    "courseId": 16,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 2.9,
+    "recommendScore": 2.8,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.169Z"
+  },
+  {
+    "id": 47,
+    "courseId": 16,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.7,
+    "recommendScore": 4,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.169Z"
+  },
+  {
+    "id": 48,
+    "courseId": 17,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 2.9,
+    "recommendScore": 3.5,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.170Z"
+  },
+  {
+    "id": 49,
+    "courseId": 17,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.5,
+    "recommendScore": 4.5,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.171Z"
+  },
+  {
+    "id": 50,
+    "courseId": 17,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 2.9,
+    "recommendScore": 4.8,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.171Z"
+  },
+  {
+    "id": 51,
+    "courseId": 17,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 2.8,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.172Z"
+  },
+  {
+    "id": 52,
+    "courseId": 18,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.6,
+    "recommendScore": 4.4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.173Z"
+  },
+  {
+    "id": 53,
+    "courseId": 18,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.5,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.173Z"
+  },
+  {
+    "id": 54,
+    "courseId": 19,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 2.9,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.174Z"
+  },
+  {
+    "id": 55,
+    "courseId": 19,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 2.9,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.174Z"
+  },
+  {
+    "id": 56,
+    "courseId": 20,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 2,
+    "recommendScore": 4.3,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.175Z"
+  },
+  {
+    "id": 57,
+    "courseId": 20,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.4,
+    "recommendScore": 4.4,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.176Z"
+  },
+  {
+    "id": 58,
+    "courseId": 20,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.9,
+    "recommendScore": 1.7,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.177Z"
+  },
+  {
+    "id": 59,
+    "courseId": 20,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.4,
+    "recommendScore": 4.2,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.177Z"
+  },
+  {
+    "id": 60,
+    "courseId": 21,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.2,
+    "recommendScore": 3.1,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.178Z"
+  },
+  {
+    "id": 61,
+    "courseId": 21,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 2.9,
+    "recommendScore": 4.9,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.179Z"
+  },
+  {
+    "id": 62,
+    "courseId": 21,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.3,
+    "recommendScore": 1.8,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.179Z"
+  },
+  {
+    "id": 63,
+    "courseId": 21,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 4.6,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.180Z"
+  },
+  {
+    "id": 64,
+    "courseId": 22,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.6,
+    "recommendScore": 2.1,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.181Z"
+  },
+  {
+    "id": 65,
+    "courseId": 22,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.4,
+    "recommendScore": 1.8,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.181Z"
+  },
+  {
+    "id": 66,
+    "courseId": 22,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4,
+    "recommendScore": 2.1,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.182Z"
+  },
+  {
+    "id": 67,
+    "courseId": 23,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.4,
+    "recommendScore": 4.2,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.183Z"
+  },
+  {
+    "id": 68,
+    "courseId": 23,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3.2,
+    "recommendScore": 3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.183Z"
+  },
+  {
+    "id": 69,
+    "courseId": 24,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4,
+    "recommendScore": 1.8,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.184Z"
+  },
+  {
+    "id": 70,
+    "courseId": 24,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.4,
+    "recommendScore": 4,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.185Z"
+  },
+  {
+    "id": 71,
+    "courseId": 24,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.4,
+    "recommendScore": 4.6,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.186Z"
+  },
+  {
+    "id": 72,
+    "courseId": 25,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.7,
+    "recommendScore": 1.5,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.186Z"
+  },
+  {
+    "id": 73,
+    "courseId": 25,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.6,
+    "recommendScore": 4.4,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.187Z"
+  },
+  {
+    "id": 74,
+    "courseId": 25,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.188Z"
+  },
+  {
+    "id": 75,
+    "courseId": 25,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 2.7,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.188Z"
+  },
+  {
+    "id": 76,
+    "courseId": 26,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4,
+    "recommendScore": 2,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.189Z"
+  },
+  {
+    "id": 77,
+    "courseId": 26,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.3,
+    "recommendScore": 4,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.190Z"
+  },
+  {
+    "id": 78,
+    "courseId": 26,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.6,
+    "recommendScore": 2,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.191Z"
+  },
+  {
+    "id": 79,
+    "courseId": 27,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 3.9,
+    "recommendScore": 2.1,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.191Z"
+  },
+  {
+    "id": 80,
+    "courseId": 27,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.4,
+    "recommendScore": 1.6,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.192Z"
+  },
+  {
+    "id": 81,
+    "courseId": 28,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4.1,
+    "recommendScore": 2.1,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.193Z"
+  },
+  {
+    "id": 82,
+    "courseId": 28,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 4.8,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.194Z"
+  },
+  {
+    "id": 83,
+    "courseId": 28,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.3,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.195Z"
+  },
+  {
+    "id": 84,
+    "courseId": 29,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.6,
+    "recommendScore": 4.5,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.196Z"
+  },
+  {
+    "id": 85,
+    "courseId": 29,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4,
+    "recommendScore": 2.1,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.196Z"
+  },
+  {
+    "id": 86,
+    "courseId": 29,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.197Z"
+  },
+  {
+    "id": 87,
+    "courseId": 29,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.5,
+    "recommendScore": 4.2,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.198Z"
+  },
+  {
+    "id": 88,
+    "courseId": 30,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 2.8,
+    "recommendScore": 4.8,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.199Z"
+  },
+  {
+    "id": 89,
+    "courseId": 30,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 2.8,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.200Z"
+  },
+  {
+    "id": 90,
+    "courseId": 31,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 2.8,
+    "recommendScore": 4.6,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.201Z"
+  },
+  {
+    "id": 91,
+    "courseId": 31,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.5,
+    "recommendScore": 4.5,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.201Z"
+  },
+  {
+    "id": 92,
+    "courseId": 31,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.5,
+    "recommendScore": 4.5,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.202Z"
+  },
+  {
+    "id": 93,
+    "courseId": 32,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4,
+    "recommendScore": 2.1,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.203Z"
+  },
+  {
+    "id": 94,
+    "courseId": 32,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 2.1,
+    "recommendScore": 4.7,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.204Z"
+  },
+  {
+    "id": 95,
+    "courseId": 32,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.7,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.205Z"
+  },
+  {
+    "id": 96,
+    "courseId": 33,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 2.7,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.205Z"
+  },
+  {
+    "id": 97,
+    "courseId": 33,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3.2,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.206Z"
+  },
+  {
+    "id": 98,
+    "courseId": 33,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.6,
+    "recommendScore": 4.7,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.207Z"
+  },
+  {
+    "id": 99,
+    "courseId": 33,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4.1,
+    "recommendScore": 2.3,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.208Z"
+  },
+  {
+    "id": 100,
+    "courseId": 34,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 3.4,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.209Z"
+  },
+  {
+    "id": 101,
+    "courseId": 34,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3.3,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.209Z"
+  },
+  {
+    "id": 102,
+    "courseId": 34,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.7,
+    "recommendScore": 1.7,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.210Z"
+  },
+  {
+    "id": 103,
+    "courseId": 34,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3.2,
+    "recommendScore": 3.4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.211Z"
+  },
+  {
+    "id": 104,
+    "courseId": 35,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.6,
+    "recommendScore": 4.6,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.212Z"
+  },
+  {
+    "id": 105,
+    "courseId": 35,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 3.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.212Z"
+  },
+  {
+    "id": 106,
+    "courseId": 35,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 3.9,
+    "recommendScore": 2.1,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.213Z"
+  },
+  {
+    "id": 107,
+    "courseId": 35,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 2.9,
+    "recommendScore": 3.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.214Z"
+  },
+  {
+    "id": 108,
+    "courseId": 36,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.6,
+    "recommendScore": 4.5,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.215Z"
+  },
+  {
+    "id": 109,
+    "courseId": 36,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.4,
+    "recommendScore": 4.1,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.216Z"
+  },
+  {
+    "id": 110,
+    "courseId": 36,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.217Z"
+  },
+  {
+    "id": 111,
+    "courseId": 37,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 3.2,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.218Z"
+  },
+  {
+    "id": 112,
+    "courseId": 37,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.9,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.218Z"
+  },
+  {
+    "id": 113,
+    "courseId": 37,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.8,
+    "recommendScore": 1.3,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.219Z"
+  },
+  {
+    "id": 114,
+    "courseId": 38,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.9,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.220Z"
+  },
+  {
+    "id": 115,
+    "courseId": 38,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.8,
+    "recommendScore": 1.4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.221Z"
+  },
+  {
+    "id": 116,
+    "courseId": 39,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 2.7,
+    "recommendScore": 4.6,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.222Z"
+  },
+  {
+    "id": 117,
+    "courseId": 39,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 3.2,
+    "recommendScore": 5,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.223Z"
+  },
+  {
+    "id": 118,
+    "courseId": 40,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.2,
+    "recommendScore": 2.9,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.224Z"
+  },
+  {
+    "id": 119,
+    "courseId": 40,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.5,
+    "recommendScore": 4.6,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.224Z"
+  },
+  {
+    "id": 120,
+    "courseId": 40,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 2.7,
+    "recommendScore": 4.5,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.225Z"
+  },
+  {
+    "id": 121,
+    "courseId": 41,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4,
+    "recommendScore": 2.3,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.226Z"
+  },
+  {
+    "id": 122,
+    "courseId": 41,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3.2,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.227Z"
+  },
+  {
+    "id": 123,
+    "courseId": 41,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.2,
+    "recommendScore": 3.2,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.228Z"
+  },
+  {
+    "id": 124,
+    "courseId": 41,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.8,
+    "recommendScore": 4.1,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.229Z"
+  },
+  {
+    "id": 125,
+    "courseId": 42,
+    "sentiment": "neutral",
+    "summary": "內容還可以，但老師講課有點無聊，需要自己多看書。",
+    "keywords": [
+      "還可以",
+      "有點無聊",
+      "自學"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.229Z"
+  },
+  {
+    "id": 126,
+    "courseId": 42,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 2.8,
+    "recommendScore": 2.9,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.230Z"
+  },
+  {
+    "id": 127,
+    "courseId": 43,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.3,
+    "recommendScore": 4,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.231Z"
+  },
+  {
+    "id": 128,
+    "courseId": 43,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 2.2,
+    "recommendScore": 4.2,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.232Z"
+  },
+  {
+    "id": 129,
+    "courseId": 43,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.4,
+    "recommendScore": 4.6,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.233Z"
+  },
+  {
+    "id": 130,
+    "courseId": 44,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.4,
+    "recommendScore": 4.7,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.234Z"
+  },
+  {
+    "id": 131,
+    "courseId": 44,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3.4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.235Z"
+  },
+  {
+    "id": 132,
+    "courseId": 45,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 4.6,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.236Z"
+  },
+  {
+    "id": 133,
+    "courseId": 45,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.7,
+    "recommendScore": 4.5,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.237Z"
+  },
+  {
+    "id": 134,
+    "courseId": 45,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4,
+    "recommendScore": 1.8,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.238Z"
+  },
+  {
+    "id": 135,
+    "courseId": 46,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.7,
+    "recommendScore": 1.2,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.239Z"
+  },
+  {
+    "id": 136,
+    "courseId": 46,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.6,
+    "recommendScore": 4.5,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.240Z"
+  },
+  {
+    "id": 137,
+    "courseId": 46,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 4.6,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.241Z"
+  },
+  {
+    "id": 138,
+    "courseId": 46,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 4.8,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.242Z"
+  },
+  {
+    "id": 139,
+    "courseId": 47,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 5,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.242Z"
+  },
+  {
+    "id": 140,
+    "courseId": 47,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 2.1,
+    "recommendScore": 4.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.243Z"
+  },
+  {
+    "id": 141,
+    "courseId": 47,
+    "sentiment": "negative",
+    "summary": "老師上課念投影片，考試範圍不明確，作業太多太難。",
+    "keywords": [
+      "念投影片",
+      "考試不明確",
+      "作業太多"
+    ],
+    "difficultyRating": 4.6,
+    "recommendScore": 1.9,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.244Z"
+  },
+  {
+    "id": 142,
+    "courseId": 48,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.9,
+    "recommendScore": 1.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.245Z"
+  },
+  {
+    "id": 143,
+    "courseId": 48,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 4,
+    "recommendScore": 1.8,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.246Z"
+  },
+  {
+    "id": 144,
+    "courseId": 48,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.8,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.247Z"
+  },
+  {
+    "id": 145,
+    "courseId": 48,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.6,
+    "recommendScore": 4.5,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.248Z"
+  },
+  {
+    "id": 146,
+    "courseId": 49,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.2,
+    "recommendScore": 2.8,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.249Z"
+  },
+  {
+    "id": 147,
+    "courseId": 49,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.6,
+    "recommendScore": 4.6,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.250Z"
+  },
+  {
+    "id": 148,
+    "courseId": 49,
+    "sentiment": "negative",
+    "summary": "內容太艱深，跟不上進度，老師不太回覆問題。",
+    "keywords": [
+      "太艱深",
+      "跟不上",
+      "不回覆"
+    ],
+    "difficultyRating": 4.9,
+    "recommendScore": 1.5,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.251Z"
+  },
+  {
+    "id": 149,
+    "courseId": 49,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.9,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.252Z"
+  },
+  {
+    "id": 150,
+    "courseId": 50,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.6,
+    "recommendScore": 4.4,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.253Z"
+  },
+  {
+    "id": 151,
+    "courseId": 50,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.2,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.254Z"
+  },
+  {
+    "id": 152,
+    "courseId": 50,
+    "sentiment": "positive",
+    "summary": "上課氣氛很好，老師會分享業界經驗，對未來就業很有幫助。",
+    "keywords": [
+      "氣氛好",
+      "業界經驗",
+      "就業有幫助"
+    ],
+    "difficultyRating": 2.7,
+    "recommendScore": 4.4,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.255Z"
+  },
+  {
+    "id": 153,
+    "courseId": 51,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.6,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.256Z"
+  },
+  {
+    "id": 154,
+    "courseId": 51,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 3,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.257Z"
+  },
+  {
+    "id": 155,
+    "courseId": 52,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3,
+    "recommendScore": 3.3,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.257Z"
+  },
+  {
+    "id": 156,
+    "courseId": 52,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.8,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.259Z"
+  },
+  {
+    "id": 157,
+    "courseId": 53,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.3,
+    "recommendScore": 4.8,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.259Z"
+  },
+  {
+    "id": 158,
+    "courseId": 53,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 2,
+    "recommendScore": 4.7,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.260Z"
+  },
+  {
+    "id": 159,
+    "courseId": 53,
+    "sentiment": "positive",
+    "summary": "學到很多東西，雖然有點挑戰但很值得，助教也很用心。",
+    "keywords": [
+      "學到很多",
+      "值得",
+      "助教用心"
+    ],
+    "difficultyRating": 3.5,
+    "recommendScore": 4.4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.261Z"
+  },
+  {
+    "id": 160,
+    "courseId": 53,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.5,
+    "source": "PTT",
+    "createdAt": "2026-03-28T07:15:51.262Z"
+  },
+  {
+    "id": 161,
+    "courseId": 54,
+    "sentiment": "positive",
+    "summary": "老師教學認真，講解清楚，作業份量適中，考試不會太難。",
+    "keywords": [
+      "教學認真",
+      "講解清楚",
+      "作業適中"
+    ],
+    "difficultyRating": 2.7,
+    "recommendScore": 4.4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.263Z"
+  },
+  {
+    "id": 162,
+    "courseId": 54,
+    "sentiment": "positive",
+    "summary": "課程內容豐富，老師很有耐心，會給很多實作機會，非常推薦！",
+    "keywords": [
+      "內容豐富",
+      "有耐心",
+      "實作機會"
+    ],
+    "difficultyRating": 3.2,
+    "recommendScore": 4.8,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.264Z"
+  },
+  {
+    "id": 163,
+    "courseId": 54,
+    "sentiment": "neutral",
+    "summary": "一般的課程，不好不壞，中規中矩。",
+    "keywords": [
+      "一般",
+      "中規中矩"
+    ],
+    "difficultyRating": 3.1,
+    "recommendScore": 2.8,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.265Z"
+  },
+  {
+    "id": 164,
+    "courseId": 54,
+    "sentiment": "neutral",
+    "summary": "課程本身不錯，但時間安排不太好，早八很累。",
+    "keywords": [
+      "不錯",
+      "早八",
+      "累"
+    ],
+    "difficultyRating": 2.9,
+    "recommendScore": 3.3,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.266Z"
+  },
+  {
+    "id": 165,
+    "courseId": 55,
+    "sentiment": "positive",
+    "summary": "涼課！老師人很好，只要有來上課基本都會過，期末報告輕鬆。",
+    "keywords": [
+      "涼課",
+      "好過",
+      "輕鬆"
+    ],
+    "difficultyRating": 1.3,
+    "recommendScore": 4,
+    "source": "Dcard",
+    "createdAt": "2026-03-28T07:15:51.267Z"
+  },
+  {
+    "id": 166,
+    "courseId": 55,
+    "sentiment": "positive",
+    "summary": "教材編排得很好，循序漸進，適合零基礎的同學。",
+    "keywords": [
+      "教材好",
+      "循序漸進",
+      "適合初學"
+    ],
+    "difficultyRating": 1.9,
+    "recommendScore": 4.4,
+    "source": "課程回饋問卷",
+    "createdAt": "2026-03-28T07:15:51.268Z"
+  },
+  {
+    "id": 167,
+    "courseId": 55,
+    "sentiment": "negative",
+    "summary": "評分標準不透明，期末考占比太高，壓力很大。",
+    "keywords": [
+      "評分不透明",
+      "壓力大",
+      "期末占比高"
+    ],
+    "difficultyRating": 3.9,
+    "recommendScore": 2,
+    "source": "系上學長姐分享",
+    "createdAt": "2026-03-28T07:15:51.269Z"
+  }
+]
