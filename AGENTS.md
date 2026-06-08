@@ -300,3 +300,52 @@ docs/CHANGE_REPORTS/
 4. 影響範圍。
 5. 測試與驗證結果。
 6. 是否 commit 與 push。
+
+## Git Commit / Push 說明規範
+
+每次 commit 與 push 的說明必須具備可讀性，不能只使用模糊的一行訊息。
+
+### Commit message 格式
+
+commit message 應使用「清楚標題 + 條列式 body」：
+
+```text
+feat: update scheduling engine and workflow rules
+
+- Fix frontend lint issues by splitting context hooks.
+- Rewrite scheduling engine based on SCHEDULING_LOGIC.md.
+- Connect schedule API and AI Agent scheduler parameters.
+- Add UTF-8 editor settings.
+- Add change report for lint, scheduling, encoding, and browser tests.
+```
+
+標題應簡短描述主要目的，body 應列出該次 commit 的主要修改內容。
+
+### Push 後回報格式
+
+push 完成後，Codex 必須用條列式回報該次 push 的修改內容，至少包含：
+
+1. commit SHA。
+2. commit 標題。
+3. push 目標。
+4. 修改檔案分類。
+5. 主要修改內容。
+6. 測試與驗證結果。
+
+回報範例：
+
+```text
+Push 完成：3a69e8e
+
+本次修改：
+- 前端：修正 React lint 與 context hook 結構。
+- 後端：重寫排課引擎，支援多方案與關注/已選課程狀態。
+- AI Agent：補齊 scheduler 參數與 prompt 規範。
+- 文件：新增修改前確認規則與變更報告。
+- 測試：lint、build、node --check、browser 測試通過。
+
+Push 目標：
+- origin main
+```
+
+若本次修改只涉及文件，回報中必須明確寫出「未修改程式邏輯」與「未執行不必要的前後端測試」。
