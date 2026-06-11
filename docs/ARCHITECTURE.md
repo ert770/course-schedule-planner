@@ -1,6 +1,6 @@
-# 系統架構
+# Architecture
 
-## 架構總覽
+## Overview
 
 ```text
 React/Vite Frontend
@@ -12,110 +12,90 @@ Express Backend
         +--> Routes
         +--> Services
         +--> Skills
-        +--> JSON Database
+        +--> MySQL Data Adapter
+        +--> Local JSON fallback data
         |
         +--> Gemini API
 ```
 
-## 前端
+## Frontend
 
-位置：`client/`
+Location: `client/`
 
-職責：
-
-- 顯示登入、設定、儀表板、搜尋、畢業學分頁。
-- 管理使用者 session 與 theme。
-- 呼叫後端 API。
-- 顯示課表與 AI Agent 回覆。
-
-主要檔案：
+Key files:
 
 - `client/src/App.jsx`
 - `client/src/services/api.js`
 - `client/src/pages/*.jsx`
 - `client/src/components/*/*.jsx`
 
-## 後端
+The frontend continues to call the same REST endpoints. Course identifiers returned from the backend are section-level ids from `Course_Sections.section_id`.
 
-位置：`server/`
+## Backend
 
-職責：
+Location: `server/`
 
-- 提供 REST API。
-- 管理 JSON 資料讀寫。
-- 執行排課、課程查詢、評價查詢。
-- 呼叫 Gemini API 處理聊天 Agent。
-
-主要檔案：
+Key files:
 
 - `server/src/app.js`
 - `server/src/routes/*.js`
 - `server/src/services/*.js`
 - `server/src/skills/*.js`
 - `server/src/db/database.js`
+- `server/src/db/mysql.js`
 
-## 資料層
+Routes expose API behavior, services hold cross-route logic, and skills implement course query, review query, and scheduling logic.
 
-目前使用 JSON 檔案式資料庫：
+## Data Layer
 
-- `server/data/courses.json`
-- `server/data/users.json`
-- `server/data/reviews.json`
-- `server/data/user_preferences.json`
-- `server/data/saved_schedules.json`
-- `server/data/chat_history.json`
+Runtime data access is centralized in `server/src/db/database.js`.
 
-優點：
+MySQL-backed collections:
 
-- 適合 MVP。
-- 容易展示。
-- 不需額外資料庫服務。
+- `courses`: joined from `Course_Sections` and `Courses`
+- `reviews`: read from `Courses_Reviews`
+- `user_preferences`: read from `User_Profiles` for numeric user ids
 
-限制：
+Local JSON-backed collections:
 
-- 不適合多人同時寫入。
-- 缺少 transaction。
-- 不適合正式部署。
+- `users`
+- `chat_history`
+- `saved_schedules`
+- demo or non-numeric `user_preferences`
 
-## AI Agent
+The MySQL connection pool is configured in `server/src/db/mysql.js` through environment variables:
 
-Agent 分為：
+- `DB_HOST`
+- `DB_PORT`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_NAME`
+- `DB_SSL_CA_PATH`
 
-- `promptService.js`：建立 system prompt。
-- `agentService.js`：處理對話、呼叫 Gemini、解析 tool call。
-- `skills/*.js`：本地工具。
-
-Agent 不直接操作資料庫事實，必須透過工具查詢。
-
-## 排課引擎
-
-位置：`server/src/skills/scheduler.js`
-
-目前演算法：
-
-- 先依硬性條件過濾。
-- 必選課先排。
-- 依類別與學分排序。
-- 貪婪加入課程。
-- 學分不足時嘗試補課。
-
-未來需擴充：
-
-- 多方案。
-- 關注/加選分離。
-- 核心選修路徑。
-- 重補修優先。
-- 數位課程門檻。
-
-## API 流程範例
+## Scheduling Flow
 
 ```text
 DashboardPage
   -> scheduleAPI.generate()
   -> POST /api/schedule/generate
   -> routes/schedule.js
+  -> skills/courseQuery.js or db/database.js
   -> skills/scheduler.js
   -> JSON response
   -> ScheduleGrid
 ```
 
+The scheduler receives section-level course objects. `watching` courses are only visual/comparison items and do not count as formal conflicts; `selected` courses occupy time slots.
+
+## AI Agent Flow
+
+```text
+POST /api/chat
+  -> services/agentService.js
+  -> services/promptService.js
+  -> Gemini
+  -> skills/courseQuery.js, reviewSearch.js, scheduler.js
+  -> final reply
+```
+
+Agent tool calls are asynchronous because course and review data may come from MySQL.

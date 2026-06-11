@@ -1,4 +1,4 @@
-# API 規格
+# API Spec
 
 Base URL:
 
@@ -6,24 +6,33 @@ Base URL:
 http://localhost:3001/api
 ```
 
-所有 request / response 預設使用 JSON。
+All request and response bodies are JSON.
+
+## Data Source
+
+Course, section, review, and numeric user profile data are read from MySQL database `defaultdb`.
+
+- API `course.id` is `Course_Sections.section_id`.
+- API `course.code` and `course.courseId` are `Courses.course_id`.
+- Review lookups use `Courses_Reviews.Course_id` as a section id.
+- Demo auth users, chat history, and saved schedules remain backed by `server/data/*.json`.
 
 ## Health
 
 ### `GET /api/health`
-
-回傳後端狀態。
 
 Response:
 
 ```json
 {
   "status": "ok",
-  "timestamp": "2026-06-08T00:00:00.000Z"
+  "timestamp": "2026-06-11T00:00:00.000Z"
 }
 ```
 
 ## Auth
+
+The provided MySQL schema does not include password data, so auth still uses the local demo `users` JSON collection.
 
 ### `POST /api/auth/login`
 
@@ -47,7 +56,7 @@ Response:
 
 ### `GET /api/auth/me?studentId={studentId}`
 
-取得使用者資料。
+Returns the local demo user profile without password.
 
 ### `POST /api/auth/update-watchlist`
 
@@ -59,6 +68,8 @@ Request:
   "watchlist": [1, 2, 3]
 }
 ```
+
+`watchlist` values should be section ids.
 
 ## Courses
 
@@ -80,8 +91,25 @@ Response:
 
 ```json
 {
-  "courses": [],
-  "total": 0
+  "courses": [
+    {
+      "id": 1,
+      "sectionId": 1,
+      "courseId": "CS101",
+      "code": "CS101",
+      "name": "資料結構",
+      "instructor": "王小明",
+      "department": "資工系",
+      "credits": 3,
+      "dayOfWeek": 1,
+      "startPeriod": 2,
+      "endPeriod": 4,
+      "location": "B101",
+      "category": "必修",
+      "timeStr": "星期一 2-4"
+    }
+  ],
+  "total": 1
 }
 ```
 
@@ -107,7 +135,7 @@ Response:
 
 ### `GET /api/courses/:id`
 
-取得課程詳情與評價統計。
+`id` is `Course_Sections.section_id`.
 
 ## Schedule
 
@@ -117,7 +145,7 @@ Request:
 
 ```json
 {
-  "userId": "D1249196",
+  "userId": "1",
   "courseIds": [1, 2, 3],
   "filters": {},
   "constraints": {
@@ -132,6 +160,8 @@ Request:
 }
 ```
 
+`courseIds`, `selectedCourseIds`, `watchingCourseIds`, `completedCourseIds`, and `retakeCourseIds` should use section ids.
+
 Response:
 
 ```json
@@ -140,14 +170,7 @@ Response:
   "schedule": [],
   "totalCredits": 18,
   "courseCount": 6,
-  "message": "..."
-}
-```
-
-Future response should also include:
-
-```json
-{
+  "message": "...",
   "plans": [],
   "excludedCourses": [],
   "warnings": []
@@ -180,16 +203,18 @@ Request:
 
 ```json
 {
-  "userId": "D1249196",
+  "userId": "1",
   "name": "我的課表",
   "schedule": [],
   "totalCredits": 18
 }
 ```
 
+Saved schedules remain local JSON data.
+
 ### `GET /api/schedule/saved?userId={userId}`
 
-取得已儲存課表。
+Returns locally saved schedules for the user.
 
 ## Chat
 
@@ -199,8 +224,8 @@ Request:
 
 ```json
 {
-  "userId": "D1249196",
-  "message": "幫我排一個不要早八的課表"
+  "userId": "1",
+  "message": "幫我排課"
 }
 ```
 
@@ -218,35 +243,45 @@ Response:
 
 ### `GET /api/profile?userId={userId}`
 
-取得使用者偏好。
+For numeric `userId`, reads `User_Profiles.user_id` from MySQL when present.
 
 ### `POST /api/profile`
 
-更新使用者偏好。
+For numeric `userId`, updates supported `User_Profiles` fields when the row exists. Demo or non-numeric users are saved to local JSON.
 
 ## Reviews
 
 ### `GET /api/reviews/easy?limit=10`
 
-取得涼課/高推薦課程。
+Returns courses ranked by derived easiness score from `Courses_Reviews`.
 
 ### `GET /api/reviews/:courseId`
 
-取得課程評價與情緒統計。
+`courseId` is `Course_Sections.section_id`.
+
+Response:
+
+```json
+{
+  "reviews": [],
+  "sentiment": {
+    "courseId": 1,
+    "sentiment": "positive",
+    "summary": "..."
+  }
+}
+```
 
 ## Graduation
 
 ### `GET /api/graduation/:studentId`
 
-取得畢業學分狀態、缺口與推薦。
+Uses local demo users when available, otherwise uses numeric MySQL `User_Profiles.user_id` for basic profile data.
 
 ## Error Response
-
-錯誤格式：
 
 ```json
 {
   "error": "錯誤訊息"
 }
 ```
-

@@ -1,82 +1,83 @@
-// Skill 1: 課程資料庫查詢
 import { getAll, getById } from '../db/database.js';
 
-/**
- * 查詢所有課程，支援多種篩選條件
- */
-export function searchCourses(filters = {}) {
-  let courses = getAll('courses');
+function textIncludes(value, keyword) {
+  return String(value || '').toLowerCase().includes(keyword);
+}
+
+export async function searchCourses(filters = {}) {
+  let courses = await getAll('courses');
 
   if (filters.keyword) {
-    const kw = filters.keyword.toLowerCase();
-    courses = courses.filter(c =>
-      c.name.toLowerCase().includes(kw) ||
-      c.code.toLowerCase().includes(kw) ||
-      c.instructor.toLowerCase().includes(kw) ||
-      c.department.toLowerCase().includes(kw) ||
-      (c.description && c.description.toLowerCase().includes(kw))
+    const keyword = String(filters.keyword).toLowerCase();
+    courses = courses.filter(course =>
+      textIncludes(course.name, keyword)
+      || textIncludes(course.code, keyword)
+      || textIncludes(course.courseId, keyword)
+      || textIncludes(course.instructor, keyword)
+      || textIncludes(course.department, keyword)
+      || textIncludes(course.description, keyword)
+      || textIncludes(course.selectionCode, keyword)
     );
   }
 
   if (filters.department) {
-    courses = courses.filter(c => c.department.includes(filters.department));
+    courses = courses.filter(course => String(course.department || '').includes(filters.department));
   }
 
   if (filters.category) {
-    courses = courses.filter(c => c.category === filters.category);
+    courses = courses.filter(course => course.category === filters.category || course.type === filters.category);
   }
 
   if (filters.dayOfWeek) {
-    courses = courses.filter(c => c.dayOfWeek === filters.dayOfWeek);
+    courses = courses.filter(course => course.dayOfWeek === Number(filters.dayOfWeek));
   }
 
   if (filters.credits) {
-    courses = courses.filter(c => c.credits === filters.credits);
+    courses = courses.filter(course => Number(course.credits) === Number(filters.credits));
   }
 
   if (filters.instructor) {
-    courses = courses.filter(c => c.instructor.includes(filters.instructor));
+    courses = courses.filter(course => String(course.instructor || '').includes(filters.instructor));
   }
 
   if (filters.maxStartPeriod) {
-    courses = courses.filter(c => c.startPeriod >= filters.maxStartPeriod);
+    courses = courses.filter(course => Number(course.startPeriod) >= Number(filters.maxStartPeriod));
   }
 
   if (filters.excludeIds && filters.excludeIds.length > 0) {
-    courses = courses.filter(c => !filters.excludeIds.includes(c.id));
+    const excluded = new Set(filters.excludeIds.map(String));
+    courses = courses.filter(course => !excluded.has(String(course.id)));
   }
 
   if (filters.code) {
-    const codeSearch = filters.code.toLowerCase();
-    courses = courses.filter(c => c.code.toLowerCase() === codeSearch);
+    const codeSearch = String(filters.code).toLowerCase();
+    courses = courses.filter(course => String(course.code || '').toLowerCase() === codeSearch);
   }
 
   if (filters.period) {
-    const p = parseInt(filters.period, 10);
-    courses = courses.filter(c => p >= c.startPeriod && p <= c.endPeriod);
+    const period = Number(filters.period);
+    courses = courses.filter(course =>
+      Number(course.startPeriod) <= period && period <= Number(course.endPeriod)
+    );
   }
-  
+
   if (filters.language && filters.language !== 'All' && filters.language !== '全部') {
-    // Assuming language isn't explicitly stored, we do a basic mock check if it was requested.
-    // For now we just return all since we don't have language data.
+    courses = courses.filter(course => course.language === filters.language);
   }
 
   return courses;
 }
 
-/**
- * 取得單一課程詳情（含評價統計）
- */
-export function getCourseDetail(courseId) {
-  const course = getById('courses', courseId);
+export async function getCourseDetail(courseId) {
+  const course = await getById('courses', courseId);
   if (!course) return null;
 
-  const reviews = getAll('reviews').filter(r => r.courseId === courseId);
+  const reviews = (await getAll('reviews')).filter(review => String(review.courseId) === String(course.id));
   const avgDifficulty = reviews.length > 0
-    ? reviews.reduce((sum, r) => sum + r.difficultyRating, 0) / reviews.length
+    ? reviews.reduce((sum, review) => sum + Number(review.difficultyRating || 0), 0) / reviews.length
     : null;
   const avgRecommend = reviews.length > 0
-    ? reviews.reduce((sum, r) => sum + r.recommendScore, 0) / reviews.length
+    ? reviews.reduce((sum, review) => sum + Number(review.recommendScore || 0), 0) / reviews.length
     : null;
 
   return {
@@ -86,27 +87,21 @@ export function getCourseDetail(courseId) {
       reviewCount: reviews.length,
       avgDifficulty: avgDifficulty ? Math.round(avgDifficulty * 10) / 10 : null,
       avgRecommend: avgRecommend ? Math.round(avgRecommend * 10) / 10 : null,
-      positiveCount: reviews.filter(r => r.sentiment === 'positive').length,
-      negativeCount: reviews.filter(r => r.sentiment === 'negative').length,
-      neutralCount: reviews.filter(r => r.sentiment === 'neutral').length,
-    }
+      positiveCount: reviews.filter(review => review.sentiment === 'positive').length,
+      negativeCount: reviews.filter(review => review.sentiment === 'negative').length,
+      neutralCount: reviews.filter(review => review.sentiment === 'neutral').length,
+    },
   };
 }
 
-/**
- * 取得所有科系列表
- */
-export function getDepartments() {
-  const courses = getAll('courses');
-  return [...new Set(courses.map(c => c.department))];
+export async function getDepartments() {
+  const courses = await getAll('courses');
+  return [...new Set(courses.map(course => course.department).filter(Boolean))];
 }
 
-/**
- * 取得所有教師列表
- */
-export function getInstructors() {
-  const courses = getAll('courses');
-  return [...new Set(courses.map(c => c.instructor))];
+export async function getInstructors() {
+  const courses = await getAll('courses');
+  return [...new Set(courses.map(course => course.instructor).filter(Boolean))];
 }
 
 export default { searchCourses, getCourseDetail, getDepartments, getInstructors };

@@ -1,114 +1,100 @@
-# 資料格式規格
+# Data Schema
 
-目前資料儲存在 `server/data/*.json`，由 `server/src/db/database.js` 讀寫。`schema.sql` 是參考設計，實際運作以 JSON 檔案為準。
+目前後端主要課程資料來源為 MySQL database `defaultdb`。`server/data/*.json` 仍保留給 demo 登入、聊天紀錄、已儲存課表，以及沒有對應 MySQL 表的本機資料。
 
-## Course
+## MySQL Tables
 
-來源：`server/data/courses.json`
+SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小寫或特殊字元欄位。
 
-| 欄位 | 型別 | 必填 | 說明 |
-| --- | --- | --- | --- |
-| `id` | number | yes | 課程 ID |
-| `name` | string | yes | 課程名稱 |
-| `code` | string | yes | 課程代碼 |
-| `instructor` | string | yes | 授課教師 |
-| `department` | string | yes | 開課系所 |
-| `credits` | number | yes | 學分數 |
-| `dayOfWeek` | number | yes | 星期，1-5 |
-| `startPeriod` | number | yes | 起始節次 |
-| `endPeriod` | number | yes | 結束節次 |
-| `location` | string | no | 教室 |
-| `capacity` | number | no | 名額 |
-| `category` | string | yes | 必修、核心選修、選修、通識、系外選修等 |
-| `description` | string | no | 課程描述 |
-| `language` | string | no | 授課語言 |
+### `Courses`
 
-Future fields:
-
-- `track`: 嵌入式系統類、技術應用類、網路安全類。
-- `digitalCredits`: 是否計入數位課程門檻。
-- `examType`: 期中、期末、報告、實作。
-- `gradingTags`: 高分、涼課、重報告、重考試等。
-
-## User
-
-來源：`server/data/users.json`
-
-| 欄位 | 型別 | 必填 | 說明 |
-| --- | --- | --- | --- |
-| `id` | number | yes | 使用者 ID |
-| `studentId` | string | yes | 學號 |
-| `password` | string | yes | 密碼，目前為 MVP 測試用 |
-| `name` | string | no | 姓名 |
-| `department` | string | no | 系所 |
-| `completedCredits` | number | no | 已完成學分 |
-| `completedCourseIds` | number[] | no | 已完成課程 |
-| `watchlist` | number[] | no | 關注課程 |
-| `requiredCredits` | object | no | 各類別需求學分 |
-| `earnedCredits` | object | no | 各類別已得學分 |
-
-## User Preferences
-
-來源：`server/data/user_preferences.json`
-
-| 欄位 | 型別 | 說明 |
+| Column | Type | API mapping |
 | --- | --- | --- |
-| `userId` | string | 使用者 ID 或學號 |
-| `displayName` | string | 顯示名稱 |
-| `completedCredits` | number | 已完成學分 |
-| `targetCreditsMin` | number | 當學期最低目標學分 |
-| `targetCreditsMax` | number | 當學期最高目標學分 |
-| `blockedPeriods` | array | 封鎖時段 |
-| `preferredCategories` | array | 偏好類別 |
-| `mustTakeCourses` | array | 必修或指定課 |
-| `avoidInstructors` | array | 避開教師 |
-| `preferCompact` | boolean | 是否偏好集中排課 |
-| `noMorningClasses` | boolean | 是否不上早課 |
-| `noEveningClasses` | boolean | 是否不上晚課 |
-| `preferencesJson` | object | 其他偏好 |
+| `course_id` | varchar(45) | `course.courseId`, `course.code` |
+| `name` | varchar(45) | `course.name` |
+| `credits` | decimal(3,1) | `course.credits` |
+| `type` | varchar(45) | `course.category`, `course.type` |
+| `dept` | varchar(45) | `course.department` |
+| `subid3` | varchar(45) | `course.subid3` |
 
-Future fields:
+### `Course_Sections`
 
-- `preferredTrack`
-- `freeDayPreference`
-- `courseStateMap`
-- `digitalCreditsNeeded`
-- `retakeCourseIds`
+每一筆 section 會被後端視為一門可排課項目。
 
-## Review
-
-來源：`server/data/reviews.json`
-
-| 欄位 | 型別 | 說明 |
+| Column | Type | API mapping |
 | --- | --- | --- |
-| `id` | number | 評價 ID |
-| `courseId` | number | 課程 ID |
-| `sentiment` | string | positive / negative / neutral |
-| `summary` | string | 評價摘要 |
-| `keywords` | string[] | 關鍵字 |
-| `difficultyRating` | number | 難度 |
-| `recommendScore` | number | 推薦分數 |
-| `source` | string | 來源 |
+| `section_id` | int | `course.id`, `course.sectionId` |
+| `course_id` | varchar(45) | join `Courses.course_id` |
+| `teacher` | varchar(45) | `course.instructor`, `course.teacher` |
+| `room` | varchar(45) | `course.location`, `course.room` |
+| `time_str` | text | `course.timeStr` and parsed schedule time |
+| `time_bitmask` | varchar(64) | `course.timeBitmask` and fallback parsed schedule time |
+| `year` | int | `course.year` |
+| `semester` | varchar(45) | `course.semester` |
+| `current_amount` | int | `course.currentAmount` |
+| `rag_context` | text | `course.description`, `course.syllabus` |
+| `rag_tag` | json | `course.ragTag` |
+| `selection_code` | varchar(4) | `course.selectionCode` |
 
-## Saved Schedule
+### `Courses_Reviews`
 
-來源：`server/data/saved_schedules.json`
+注意：`Courses_Reviews.Course_id` 雖然名稱叫 `Course_id`，實際上外鍵連到 `Course_Sections.section_id`。
 
-| 欄位 | 型別 | 說明 |
+| Column | Type | API mapping |
 | --- | --- | --- |
-| `id` | number | ID |
-| `userId` | string | 使用者 ID |
-| `name` | string | 課表名稱 |
-| `scheduleData` | array | 課表課程 |
-| `totalCredits` | number | 總學分 |
-| `createdAt` | string | 建立時間 |
+| `Reviews_id` | int | `review.id` |
+| `Course_id` | int | `review.courseId` as section id |
+| `Reviews_tags(GoodOrBad)` | varchar(45) | `review.keywords[0]`, sentiment source |
+| `Review_content` | varchar(45) | `review.summary` |
 
-## Course State
+查詢特殊欄位時必須使用：
 
-未來排課邏輯需新增課程狀態：
+```sql
+`Reviews_tags(GoodOrBad)`
+```
 
-| 狀態 | 說明 | 是否判斷衝堂 |
+### `User_Profiles`
+
+| Column | Type | API mapping |
 | --- | --- | --- |
-| `watching` | 關注，只顯示於課表預覽 | no |
-| `selected` | 加選，正式佔用時段 | yes |
+| `user_id` | int | `profile.userId` |
+| `department` | varchar(45) | `profile.department` |
+| `grade_level` | int | `profile.gradeLevel` |
+| `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
+| `avoid_time` | json | `profile.blockedPeriods` |
+| `completed_courses` | json | `profile.completedCourseIds` |
+| `max_credits` | int | `profile.targetCreditsMax` |
 
+## Local JSON Collections
+
+The following collections remain file-backed in `server/data/*.json` because the provided MySQL schema does not include equivalent tables:
+
+- `users`
+- `chat_history`
+- `saved_schedules`
+- non-numeric or demo `user_preferences`
+
+## API Course Shape
+
+`GET /api/courses` returns section-level course objects:
+
+```json
+{
+  "id": 1,
+  "sectionId": 1,
+  "courseId": "CS101",
+  "code": "CS101",
+  "name": "資料結構",
+  "instructor": "王小明",
+  "department": "資工系",
+  "credits": 3,
+  "dayOfWeek": 1,
+  "startPeriod": 2,
+  "endPeriod": 4,
+  "location": "B101",
+  "category": "必修",
+  "timeStr": "星期一 2-4"
+}
+```
+
+排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。

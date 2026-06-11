@@ -1,12 +1,12 @@
 import { clearCollection, insert } from './database.js';
 
-function seed() {
+async function seed() {
   // Clear existing data
-  clearCollection('courses');
-  clearCollection('reviews');
-  clearCollection('user_preferences');
-  clearCollection('chat_history');
-  clearCollection('saved_schedules');
+  await clearCollection('courses');
+  await clearCollection('reviews');
+  await clearCollection('user_preferences');
+  await clearCollection('chat_history');
+  await clearCollection('saved_schedules');
 
   // ============================================================
   // 課程種子資料 — 模擬某大學 55 門課程
@@ -81,7 +81,7 @@ function seed() {
   ];
 
   for (const course of courses) {
-    insert('courses', course);
+    await insert('courses', course);
   }
   console.log(`✅ 已插入 ${courses.length} 門課程`);
 
@@ -122,7 +122,7 @@ function seed() {
       else { sentiment = 'neutral'; pool = reviewTemplates.neutral; }
 
       const tpl = pool[Math.floor(Math.random() * pool.length)];
-      insert('reviews', {
+      await insert('reviews', {
         courseId,
         sentiment,
         summary: tpl.summary,
@@ -138,7 +138,7 @@ function seed() {
   console.log(`✅ 已插入 ${reviewCount} 則課程評價`);
 
   // 建立預設使用者偏好
-  insert('user_preferences', {
+  await insert('user_preferences', {
     userId: 'default',
     displayName: '同學',
     completedCredits: 45,
@@ -159,7 +159,7 @@ function seed() {
 }
 
 try {
-  seed();
+  await seed();
 } catch (err) {
   console.error('❌ 種子資料建立失敗:', err.message);
   console.error(err.stack);

@@ -1,92 +1,77 @@
-# 開發決策紀錄
+# Decisions
 
-## ADR-001：MVP 使用 JSON 檔案式資料庫
+## ADR-001: Use MySQL for Course Runtime Data
 
-日期：2026-06-08
+Date: 2026-06-11
 
-背景：
+Context:
+The system originally used `server/data/*.json` as MVP persistence. The project now has access to a MySQL database named `defaultdb` with course, section, review, and user profile tables.
 
-專題 MVP 需要快速展示課程、使用者、評價、偏好與課表資料。
+Decision:
+Runtime course APIs read from MySQL through `server/src/db/database.js` and `server/src/db/mysql.js`.
 
-決策：
+MySQL tables:
 
-目前使用 `server/data/*.json` 作為資料來源。
+- `Courses`
+- `Course_Sections`
+- `Courses_Reviews`
+- `User_Profiles`
 
-理由：
+Consequences:
 
-- 不需要額外資料庫服務。
-- 方便展示與修改測試資料。
-- 適合 MVP 開發速度。
+- `Course_Sections.section_id` is the API-level `course.id`.
+- `Courses_Reviews.Course_id` is treated as a section id, not a course id.
+- SQL queries use backticks for real table and column names, including `` `Reviews_tags(GoodOrBad)` ``.
+- `server/data/*.json` remains in use for data not represented by the provided MySQL schema.
 
-影響：
+## ADR-002: Keep Local JSON for Demo-Only Data
 
-- 不適合多人同時寫入。
-- 未來正式部署需改成 SQLite、MySQL 或 PostgreSQL。
+Date: 2026-06-11
 
-## ADR-002：排課邏輯先用規則式演算法，不完全交給 LLM
+Context:
+The provided MySQL schema does not include auth passwords, chat history, or saved schedules.
 
-日期：2026-06-08
+Decision:
+The following collections remain local JSON data:
 
-背景：
+- `users`
+- `chat_history`
+- `saved_schedules`
+- demo or non-numeric `user_preferences`
 
-排課需要符合衝堂、學分、必修、重補修等硬性限制。
+Consequences:
 
-決策：
+- Login remains a local demo login until an auth-capable table exists.
+- Saved schedules are not shared through MySQL yet.
+- Numeric `/api/profile?userId=` requests can read `User_Profiles`.
 
-排課由 `server/src/skills/scheduler.js` 執行規則式演算法，LLM 只負責理解需求與呼叫工具。
+## ADR-003: Keep Scheduling Rule-Based
 
-理由：
+Date: 2026-06-08
 
-- 硬性限制需要可驗證。
-- LLM 可能編造或忽略限制。
-- 規則式演算法較容易測試。
+Decision:
+Scheduling remains implemented in `server/src/skills/scheduler.js`. The LLM only interprets intent and calls tools.
 
-影響：
+Consequences:
 
-- 排課邏輯需寫成明確規格。
-- Agent prompt 必須禁止直接編造課表。
+- Hard constraints remain deterministic and testable.
+- MySQL data is mapped into the existing scheduler course shape before scheduling.
 
-## ADR-003：AI Provider 目前使用 Gemini
+## ADR-004: Gemini Provider
 
-日期：2026-06-08
+Date: 2026-06-08
 
-背景：
+Decision:
+The AI agent uses `@google/genai` and `GEMINI_API_KEY`.
 
-目前後端依賴 `@google/genai`。
+Consequences:
 
-決策：
+- Real API keys must stay in `.env`.
+- `.env.example` only documents variable names.
 
-MVP 階段使用 `GEMINI_API_KEY` 呼叫 Gemini。
+## ADR-005: No GitHub Connector for This Project
 
-理由：
+Date: 2026-06-08
 
-- 目前程式已完成 Gemini client。
-- 可透過 `.env` 設定。
-
-影響：
-
-- 無 API key 時聊天功能不可用。
-- 若未來改 OpenAI，需同步更新 service、prompt 與 `.env.example`。
-
-## ADR-004：不使用 GitHub connector
-
-日期：2026-06-08
-
-背景：
-
-本專案使用共用 ChatGPT / Codex 帳號開發，不應將個人 GitHub 權限授權到共用 connector。
-
-決策：
-
-所有 GitHub 操作使用本機 Git 與 GitHub CLI 認證，不使用 GitHub connector。
-
-理由：
-
-- 避免個人 repository 權限被共用帳號中的其他使用者存取。
-- 權限邊界較清楚。
-
-影響：
-
-- Codex 只能在本機專案資料夾內執行 Git。
-- push 前必須確認 remote 與 branch。
-
+Decision:
+GitHub operations use local Git and GitHub CLI only. Do not use the GitHub connector for this project.

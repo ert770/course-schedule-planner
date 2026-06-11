@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import chatRoutes from './routes/chat.js';
@@ -9,6 +10,11 @@ import profileRoutes from './routes/profile.js';
 import reviewRoutes from './routes/reviews.js';
 import authRoutes from './routes/auth.js';
 import graduationRoutes from './routes/graduation.js';
+
+dotenv.config({ quiet: true });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env'), quiet: true });
 
 const app = express();
 const PORT = process.env.PORT || 3001;

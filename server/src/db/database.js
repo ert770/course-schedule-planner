@@ -1,12 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { isMysqlConfigured, queryRows } from './mysql.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
-// Ensure data directory exists
+const MYSQL_COLLECTIONS = new Set(['courses', 'reviews', 'user_preferences']);
+
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
@@ -29,45 +31,391 @@ function writeCollection(collection, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// ===== CRUD Operations =====
+function usesMysql(collection) {
+  return isMysqlConfigured() && MYSQL_COLLECTIONS.has(collection);
+}
 
-export function getAll(collection) {
+function parseJson(value, fallback) {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  if (typeof value === 'object') {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeNumber(value, fallback = null) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function normalizeId(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : value;
+}
+
+function sameId(left, right) {
+  return String(left) === String(right);
+}
+
+function parseTimeFromBitmask(timeBitmask) {
+  if (!timeBitmask || typeof timeBitmask !== 'string') {
+    return null;
+  }
+
+  const mask = timeBitmask.replace(/[^01]/g, '');
+  if (!mask.includes('1')) {
+    return null;
+  }
+
+  const periodsPerDay = 14;
+  const activeSlots = [...mask]
+    .map((bit, index) => {
+      if (bit !== '1') return null;
+      return {
+        day: Math.floor(index / periodsPerDay) + 1,
+        period: (index % periodsPerDay) + 1,
+      };
+    })
+    .filter(slot => slot && slot.day >= 1 && slot.day <= 5);
+
+  if (activeSlots.length === 0) {
+    return null;
+  }
+
+  const countsByDay = activeSlots.reduce((counts, slot) => {
+    counts.set(slot.day, (counts.get(slot.day) || 0) + 1);
+    return counts;
+  }, new Map());
+
+  const [dayOfWeek] = [...countsByDay.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+  const periods = activeSlots
+    .filter(slot => slot.day === dayOfWeek)
+    .map(slot => slot.period);
+
+  return {
+    dayOfWeek,
+    startPeriod: Math.min(...periods),
+    endPeriod: Math.max(...periods),
+  };
+}
+
+function parseTimeFromText(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null;
+  }
+
+  const normalized = timeStr.trim();
+  const dayPatterns = [
+    { dayOfWeek: 1, patterns: [/星期一/u, /週一/u, /周一/u, /禮拜一/u, /\bmon(?:day)?\b/i, /\bM\b/] },
+    { dayOfWeek: 2, patterns: [/星期二/u, /週二/u, /周二/u, /禮拜二/u, /\btue(?:sday)?\b/i, /\bT\b/] },
+    { dayOfWeek: 3, patterns: [/星期三/u, /週三/u, /周三/u, /禮拜三/u, /\bwed(?:nesday)?\b/i, /\bW\b/] },
+    { dayOfWeek: 4, patterns: [/星期四/u, /週四/u, /周四/u, /禮拜四/u, /\bthu(?:rsday)?\b/i, /\bR\b/] },
+    { dayOfWeek: 5, patterns: [/星期五/u, /週五/u, /周五/u, /禮拜五/u, /\bfri(?:day)?\b/i, /\bF\b/] },
+  ];
+
+  const dayMatch = dayPatterns.find(day =>
+    day.patterns.some(pattern => pattern.test(normalized))
+  );
+  const rangeMatch = normalized.match(/(?:第\s*)?(\d{1,2})\s*(?:-|~|到|至)\s*(\d{1,2})\s*(?:節)?/u);
+  const singleMatch = normalized.match(/(?:第\s*)?(\d{1,2})\s*(?:節)/u);
+
+  if (!dayMatch || (!rangeMatch && !singleMatch)) {
+    return null;
+  }
+
+  const startPeriod = normalizeNumber(rangeMatch?.[1] || singleMatch?.[1]);
+  const endPeriod = normalizeNumber(rangeMatch?.[2] || singleMatch?.[1]);
+  if (!startPeriod || !endPeriod) {
+    return null;
+  }
+
+  return {
+    dayOfWeek: dayMatch.dayOfWeek,
+    startPeriod,
+    endPeriod,
+  };
+}
+
+function parseSectionTime(row) {
+  return parseTimeFromText(row.time_str) || parseTimeFromBitmask(row.time_bitmask) || {
+    dayOfWeek: null,
+    startPeriod: null,
+    endPeriod: null,
+  };
+}
+
+function mapCourseRow(row) {
+  const time = parseSectionTime(row);
+  const credits = normalizeNumber(row.credits, 0);
+
+  return {
+    id: normalizeId(row.section_id),
+    sectionId: normalizeId(row.section_id),
+    courseId: row.course_id,
+    code: row.course_id,
+    name: row.name,
+    instructor: row.teacher,
+    teacher: row.teacher,
+    department: row.dept,
+    credits,
+    dayOfWeek: time.dayOfWeek,
+    startPeriod: time.startPeriod,
+    endPeriod: time.endPeriod,
+    location: row.room,
+    room: row.room,
+    capacity: null,
+    currentAmount: normalizeNumber(row.current_amount, 0),
+    category: row.type,
+    type: row.type,
+    description: row.rag_context || '',
+    syllabus: row.rag_context || '',
+    subid3: row.subid3,
+    year: normalizeNumber(row.year),
+    semester: row.semester,
+    timeStr: row.time_str,
+    timeBitmask: row.time_bitmask,
+    ragTag: parseJson(row.rag_tag, []),
+    selectionCode: row.selection_code,
+  };
+}
+
+function sentimentFromReviewTag(tag) {
+  const value = String(tag || '').trim().toLowerCase();
+  if (!value) return 'neutral';
+  if (['good', 'positive', 'pos', '好', '優點', '推薦'].some(keyword => value.includes(keyword))) {
+    return 'positive';
+  }
+  if (['bad', 'negative', 'neg', '壞', '缺點', '不推'].some(keyword => value.includes(keyword))) {
+    return 'negative';
+  }
+  return 'neutral';
+}
+
+function mapReviewRow(row) {
+  const tag = row.review_tag;
+  const sentiment = sentimentFromReviewTag(tag);
+
+  return {
+    id: normalizeId(row.Reviews_id),
+    courseId: normalizeId(row.Course_id),
+    sentiment,
+    summary: row.Review_content,
+    keywords: tag ? [tag] : [],
+    difficultyRating: sentiment === 'negative' ? 4 : sentiment === 'positive' ? 2 : 3,
+    recommendScore: sentiment === 'negative' ? 2 : sentiment === 'positive' ? 4 : 3,
+    source: 'mysql',
+    createdAt: null,
+  };
+}
+
+function normalizeBlockedPeriods(avoidTime) {
+  const parsed = parseJson(avoidTime, []);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed;
+}
+
+function mapUserProfileRow(row) {
+  const preferenceTags = parseJson(row.preference_tags, []);
+  const completedCourses = parseJson(row.completed_courses, []);
+
+  return {
+    id: normalizeId(row.user_id),
+    userId: String(row.user_id),
+    displayName: `User ${row.user_id}`,
+    department: row.department,
+    gradeLevel: normalizeNumber(row.grade_level),
+    completedCredits: 0,
+    completedCourseIds: Array.isArray(completedCourses) ? completedCourses : [],
+    targetCreditsMin: 15,
+    targetCreditsMax: normalizeNumber(row.max_credits, 22) || 22,
+    blockedPeriods: normalizeBlockedPeriods(row.avoid_time),
+    preferredCategories: Array.isArray(preferenceTags) ? preferenceTags : [],
+    preferenceTags: Array.isArray(preferenceTags) ? preferenceTags : [],
+    mustTakeCourses: [],
+    avoidInstructors: [],
+    preferCompact: false,
+    noMorningClasses: false,
+    noEveningClasses: false,
+    preferencesJson: {},
+  };
+}
+
+async function getMysqlCourses() {
+  const rows = await queryRows(`
+    SELECT
+      cs.\`section_id\`,
+      c.\`course_id\`,
+      c.\`name\`,
+      c.\`credits\`,
+      c.\`type\`,
+      c.\`dept\`,
+      c.\`subid3\`,
+      cs.\`teacher\`,
+      cs.\`room\`,
+      cs.\`time_str\`,
+      cs.\`time_bitmask\`,
+      cs.\`year\`,
+      cs.\`semester\`,
+      cs.\`current_amount\`,
+      cs.\`rag_context\`,
+      cs.\`rag_tag\`,
+      cs.\`selection_code\`
+    FROM \`Course_Sections\` cs
+    INNER JOIN \`Courses\` c ON c.\`course_id\` = cs.\`course_id\`
+    ORDER BY cs.\`year\` DESC, cs.\`semester\`, c.\`course_id\`, cs.\`section_id\`
+  `);
+  return rows.map(mapCourseRow);
+}
+
+async function getMysqlReviews() {
+  const rows = await queryRows(`
+    SELECT
+      \`Reviews_id\`,
+      \`Course_id\`,
+      \`Reviews_tags(GoodOrBad)\` AS \`review_tag\`,
+      \`Review_content\`
+    FROM \`Courses_Reviews\`
+    ORDER BY \`Reviews_id\`
+  `);
+  return rows.map(mapReviewRow);
+}
+
+async function getMysqlUserPreferences() {
+  const rows = await queryRows(`
+    SELECT
+      \`user_id\`,
+      \`department\`,
+      \`grade_level\`,
+      \`preference_tags\`,
+      \`avoid_time\`,
+      \`completed_courses\`,
+      \`max_credits\`
+    FROM \`User_Profiles\`
+    ORDER BY \`user_id\`
+  `);
+  const mysqlProfiles = rows.map(mapUserProfileRow);
+  const localProfiles = readCollection('user_preferences');
+  const mysqlUserIds = new Set(mysqlProfiles.map(profile => String(profile.userId)));
+  return [
+    ...mysqlProfiles,
+    ...localProfiles.filter(profile => !mysqlUserIds.has(String(profile.userId))),
+  ];
+}
+
+async function updateMysqlUserPreference(userId, item) {
+  if (!/^\d+$/.test(String(userId))) {
+    return null;
+  }
+
+  const updates = [];
+  const params = [];
+
+  if (item.department !== undefined) {
+    updates.push('`department` = ?');
+    params.push(item.department);
+  }
+  if (item.gradeLevel !== undefined || item.grade_level !== undefined) {
+    updates.push('`grade_level` = ?');
+    params.push(item.gradeLevel ?? item.grade_level);
+  }
+  if (item.preferenceTags !== undefined || item.preferredCategories !== undefined) {
+    updates.push('`preference_tags` = ?');
+    params.push(JSON.stringify(item.preferenceTags ?? item.preferredCategories ?? []));
+  }
+  if (item.blockedPeriods !== undefined || item.avoidTime !== undefined) {
+    updates.push('`avoid_time` = ?');
+    params.push(JSON.stringify(item.blockedPeriods ?? item.avoidTime ?? []));
+  }
+  if (item.completedCourseIds !== undefined || item.completedCourses !== undefined) {
+    updates.push('`completed_courses` = ?');
+    params.push(JSON.stringify(item.completedCourseIds ?? item.completedCourses ?? []));
+  }
+  if (item.targetCreditsMax !== undefined || item.maxCredits !== undefined) {
+    updates.push('`max_credits` = ?');
+    params.push(item.targetCreditsMax ?? item.maxCredits);
+  }
+
+  if (updates.length === 0) {
+    return null;
+  }
+
+  params.push(userId);
+  const result = await queryRows(
+    `UPDATE \`User_Profiles\` SET ${updates.join(', ')} WHERE \`user_id\` = ?`,
+    params
+  );
+
+  if (result.affectedRows === 0) {
+    return null;
+  }
+
+  const allProfiles = await getMysqlUserPreferences();
+  return allProfiles.find(profile => sameId(profile.userId, userId)) || null;
+}
+
+async function readCollectionBySource(collection) {
+  if (!usesMysql(collection)) {
+    return readCollection(collection);
+  }
+
+  if (collection === 'courses') return getMysqlCourses();
+  if (collection === 'reviews') return getMysqlReviews();
+  if (collection === 'user_preferences') return getMysqlUserPreferences();
+
   return readCollection(collection);
 }
 
-export function getById(collection, id) {
-  const data = readCollection(collection);
-  return data.find(item => item.id === id) || null;
+export async function getAll(collection) {
+  return readCollectionBySource(collection);
 }
 
-export function query(collection, filterFn) {
-  const data = readCollection(collection);
+export async function getById(collection, id) {
+  const data = await readCollectionBySource(collection);
+  return data.find(item => sameId(item.id, id)) || null;
+}
+
+export async function query(collection, filterFn) {
+  const data = await readCollectionBySource(collection);
   return data.filter(filterFn);
 }
 
-export function insert(collection, item) {
+export async function insert(collection, item) {
   const data = readCollection(collection);
-  const maxId = data.reduce((max, d) => Math.max(max, d.id || 0), 0);
+  const maxId = data.reduce((max, d) => Math.max(max, normalizeNumber(d.id, 0) || 0), 0);
   const newItem = { id: maxId + 1, ...item };
   data.push(newItem);
   writeCollection(collection, data);
   return newItem;
 }
 
-export function update(collection, id, updates) {
+export async function update(collection, id, updates) {
   const data = readCollection(collection);
-  const index = data.findIndex(item => item.id === id);
+  const index = data.findIndex(item => sameId(item.id, id));
   if (index === -1) return null;
   data[index] = { ...data[index], ...updates };
   writeCollection(collection, data);
   return data[index];
 }
 
-export function upsertByField(collection, field, value, item) {
+export async function upsertByField(collection, field, value, item) {
+  if (usesMysql(collection) && collection === 'user_preferences' && field === 'userId') {
+    const updated = await updateMysqlUserPreference(value, item);
+    if (updated) return updated;
+  }
+
   const data = readCollection(collection);
-  const index = data.findIndex(d => d[field] === value);
+  const index = data.findIndex(d => sameId(d[field], value));
   if (index === -1) {
-    const maxId = data.reduce((max, d) => Math.max(max, d.id || 0), 0);
+    const maxId = data.reduce((max, d) => Math.max(max, normalizeNumber(d.id, 0) || 0), 0);
     const newItem = { id: maxId + 1, ...item };
     data.push(newItem);
     writeCollection(collection, data);
@@ -78,14 +426,14 @@ export function upsertByField(collection, field, value, item) {
   return data[index];
 }
 
-export function remove(collection, id) {
+export async function remove(collection, id) {
   const data = readCollection(collection);
-  const filtered = data.filter(item => item.id !== id);
+  const filtered = data.filter(item => !sameId(item.id, id));
   writeCollection(collection, filtered);
   return filtered.length < data.length;
 }
 
-export function clearCollection(collection) {
+export async function clearCollection(collection) {
   writeCollection(collection, []);
 }
 

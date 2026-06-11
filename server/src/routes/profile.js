@@ -3,22 +3,20 @@ import { getUserPreferences, updateUserPreferences } from '../services/memorySer
 
 const router = Router();
 
-// GET /api/profile — 取得使用者偏好
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const userId = req.query.userId || 'default';
-    const prefs = getUserPreferences(userId);
+    const prefs = await getUserPreferences(userId);
     res.json(prefs);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/profile — 更新使用者偏好
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { userId = 'default', ...updates } = req.body;
-    const updated = updateUserPreferences(userId, updates);
+    const updated = await updateUserPreferences(userId, updates);
     res.json({ success: true, preferences: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -20,26 +20,26 @@ export async function handleChat(userId, message) {
   logger.info(`收到使用者輸入："${message}"`, { label: 'AgentCore' });
   
   // 1. 記錄使用者訊息
-  addChatMessage(userId, 'user', message);
+  await addChatMessage(userId, 'user', message);
 
   // 2. 初始化 API
   const client = getAIClient();
   if (!client) {
     const errorMsg = '系統發生錯誤：伺服器未設定 GEMINI_API_KEY。';
     logger.error('遺失 GEMINI_API_KEY', { label: 'AgentCore' });
-    addChatMessage(userId, 'assistant', errorMsg);
+    await addChatMessage(userId, 'assistant', errorMsg);
     return { reply: errorMsg, intent: 'error', data: null };
   }
 
   // 3. 取得偏好與歷史紀錄
-  const prefs = getUserPreferences(userId);
+  const prefs = await getUserPreferences(userId);
   logger.debug(`已載入使用者限制條件：${JSON.stringify(prefs)}`, { label: 'Memory' });
   
   const systemInstruction = buildSystemPrompt(prefs);
   logger.info(`組合 Prompt 中。System prompt 長度：${systemInstruction.length} 字元。`, { label: 'Context' });
 
   // 整理 Gemini 需要的歷史紀錄格式
-  const rawHistory = getChatHistory(userId, 20);
+  const rawHistory = await getChatHistory(userId, 20);
   const contents = rawHistory.map(m => ({
     role: m.role === 'assistant' ? 'model' : m.role,
     parts: [{ text: m.content || '' }]
@@ -99,15 +99,15 @@ export async function handleChat(userId, message) {
           try {
             switch (fnName) {
               case 'query_course_db':
-                result = searchCourses(args);
+                result = await searchCourses(args);
                 if (result.length > 10) result = result.slice(0, 10);
                 responseData = result;
                 break;
                 
               case 'search_dcard_reviews': {
-                const courses = searchCourses({ keyword: args.keyword });
+                const courses = await searchCourses({ keyword: args.keyword });
                 if (courses.length > 0) {
-                  result = { ...getSentimentSummary(courses[0].id), courseName: courses[0].name };
+                  result = { ...(await getSentimentSummary(courses[0].id)), courseName: courses[0].name };
                 } else {
                   result = { error: '找不到該課程的評價' };
                 }
@@ -147,19 +147,19 @@ export async function handleChat(userId, message) {
                   preferredTrack: args.preferredTrack || prefs.preferredTrack || null,
                   digitalCreditsNeeded: args.digitalCreditsNeeded ?? prefs.digitalCreditsNeeded ?? false,
                 };
-                let candidates = getAll('courses');
+                let candidates = await getAll('courses');
                 result = generateSchedule(candidates, constraints);
                 responseData = result;
                 break;
               }
 
               case 'get_easy_courses':
-                result = getEasyCourses(args.limit || 10);
+                result = await getEasyCourses(args.limit || 10);
                 responseData = result;
                 break;
 
               case 'update_preferences':
-                updateUserPreferences(userId, args);
+                await updateUserPreferences(userId, args);
                 result = { success: true, updatedFields: args };
                 Object.assign(prefs, args);
                 break;
@@ -192,7 +192,7 @@ export async function handleChat(userId, message) {
       finalReply = "任務過於複雜，已達最大思考步數。請嘗試簡化您的需求。";
     }
 
-    addChatMessage(userId, 'assistant', finalReply);
+    await addChatMessage(userId, 'assistant', finalReply);
 
     return {
       reply: finalReply,
@@ -203,7 +203,7 @@ export async function handleChat(userId, message) {
   } catch (error) {
     logger.error(`Agent 聊天發生錯誤：${error.message}`, { label: 'AgentCore' });
     const errReply = '很抱歉，處理您的請求時發生錯誤。請確認後端金鑰是否設定正確，或稍後再試。';
-    addChatMessage(userId, 'assistant', errReply);
+    await addChatMessage(userId, 'assistant', errReply);
     return {
       reply: errReply,
       intent: 'error',
