@@ -10,6 +10,7 @@ const WEEK_DAYS = 7;
 const INTEREST_KEYWORD_SCORE = 40;
 const MAX_EASY_COURSE_SCORE = 100;
 const PREFERENCE_SCORE_EPSILON = 0.001;
+const UNSCHEDULED_NAMES_IN_WARNING = 3;
 
 const CATEGORY_PRIORITY = {
   '必修': 0,
@@ -166,6 +167,13 @@ function timeConflict(courseA, courseB) {
 
 function getUsedDays(course) {
   return new Set(getTimeBlocks(course).map(block => block.dayOfWeek));
+}
+
+// 節次 `00`（例如 `(一)00`）代表尚未排定時間。這類課程解析後沒有任何時段，
+// 因此不佔時段、不衝堂、也不受時間類限制。若讓它們參與貪婪填充，
+// 會因為毫無限制而被無限塞入——實測 3560 筆資料時，主推方案 86 門課中有 65 門屬此類。
+function hasScheduledTime(course) {
+  return getTimeBlocks(course).length > 0;
 }
 
 function conflictsWithSchedule(course, schedule) {
@@ -352,6 +360,14 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
     }
   }
 
+  // 尚未排定時間的課程仍會被排入（班級活動、論文等屬必要課程），但不放進
+  // 課表格的 schedule，避免與有時段的課程混在一起造成畫面與學分對不上。
+  if (!hasScheduledTime(course)) {
+    plan.unscheduledCourses.push({ ...course, scheduleState: 'selected', reason });
+    plan.totalCredits += course.credits || 0;
+    return true;
+  }
+
   plan.schedule.push({ ...course, scheduleState: 'selected', reason });
   plan.totalCredits += course.credits || 0;
   return true;
@@ -363,6 +379,7 @@ function createEmptyPlan(variant, constraints) {
     title: variant.title,
     description: variant.description,
     schedule: [],
+    unscheduledCourses: [],
     watchedCourses: [],
     excludedCourses: [],
     failures: [],
@@ -419,8 +436,17 @@ function buildPlan(candidateCourses, constraints, variant) {
     });
   }
 
-  const optional = eligible.filter(course => !plan.schedule.some(c => c.id === course.id));
-  const remaining = optional.filter(course => !requiredCourses.some(c => c.id === course.id));
+  const placedIds = new Set([
+    ...plan.schedule.map(c => Number(c.id)),
+    ...plan.unscheduledCourses.map(c => Number(c.id)),
+  ]);
+  const optional = eligible.filter(course => !placedIds.has(Number(course.id)));
+
+  // 貪婪填充只考慮有排定時間的課程。無時間課程不佔時段、不衝堂也不受任何限制，
+  // 讓它們參與填充會被無限塞入；它們只有在被明確指定為必要課程時才會排入。
+  const remaining = optional.filter(course => (
+    !requiredCourses.some(c => c.id === course.id) && hasScheduledTime(course)
+  ));
 
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
     remaining.sort((a, b) => (
@@ -432,7 +458,11 @@ function buildPlan(candidateCourses, constraints, variant) {
     addCourseToPlan(plan, course, constraints, variant.title);
 
     if (plan.totalCredits >= plan.minCredits && variant.id !== 'max_credits') {
-      const canAddMore = remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits);
+      // 只計入還能推進學分的課程。0 學分課程恆滿足學分上限條件，
+      // 會讓這個中止判斷永遠為真，迴圈跑到候選清單耗盡。
+      const canAddMore = remaining.some(next => (
+        (next.credits || 0) > 0 && plan.totalCredits + next.credits <= plan.maxCredits
+      ));
       if (!canAddMore) break;
     }
   }
@@ -456,13 +486,29 @@ function buildPlan(candidateCourses, constraints, variant) {
 
   // 關注課程不佔時段，因此「只有關注課程」是合法結果而非失敗。
   // 若把它判成失敗，使用者的關注課程會連同回應一起被丟掉。
-  plan.watchOnly = plan.schedule.length === 0 && plan.watchedCourses.length > 0;
+  plan.watchOnly = plan.schedule.length === 0
+    && plan.unscheduledCourses.length === 0
+    && plan.watchedCourses.length > 0;
   plan.success = plan.failures.length === 0
-    && (plan.schedule.length > 0 || plan.watchedCourses.length > 0);
-  plan.courseCount = plan.schedule.length;
+    && (plan.schedule.length > 0
+      || plan.unscheduledCourses.length > 0
+      || plan.watchedCourses.length > 0);
+  // 無時間課程也計入學分，門數必須一併計入，否則畫面上的門數與學分會對不起來。
+  plan.courseCount = plan.schedule.length + plan.unscheduledCourses.length;
 
   if (plan.watchOnly) {
     plan.warnings.push('目前沒有排入任何正式加選課程，課表上只有關注課程。');
+  }
+
+  if (plan.unscheduledCourses.length > 0) {
+    const uniqueNames = [...new Set(plan.unscheduledCourses.map(course => course.name))];
+    const shown = uniqueNames.slice(0, UNSCHEDULED_NAMES_IN_WARNING).join('、');
+    const rest = uniqueNames.length > UNSCHEDULED_NAMES_IN_WARNING
+      ? `等 ${uniqueNames.length} 種課程`
+      : '';
+    plan.warnings.push(
+      `有 ${plan.unscheduledCourses.length} 門課尚未排定上課時間，不會顯示在課表格上：${shown}${rest}`
+    );
   }
 
   return plan;
@@ -488,6 +534,7 @@ export function generateSchedule(candidateCourses, constraints = {}) {
       courseCount: 0,
       excludedCourses: [],
       watchedCourses: [],
+      unscheduledCourses: [],
       warnings: ['沒有可用的候選課程'],
       message: '找不到符合條件的候選課程，請調整搜尋條件或偏好設定。',
     };
@@ -530,6 +577,7 @@ export function generateSchedule(candidateCourses, constraints = {}) {
       excludedCourses: primary?.excludedCourses || [],
       // 失敗時仍要帶回關注課程，否則使用者標記的關注會從畫面上消失。
       watchedCourses: primary?.watchedCourses || [],
+      unscheduledCourses: primary?.unscheduledCourses || [],
       warnings,
       message: warnings[0] || '無法產生符合限制的課表。',
     };
@@ -544,9 +592,14 @@ export function generateSchedule(candidateCourses, constraints = {}) {
     ? `偏好符合度 ${Math.round(primary.preferenceScore * 100)}%`
     : '未表達偏好，改依總學分挑選';
 
+  // 學分含尚未排定時間的課程，因此門數必須一併說明，否則「N 門課共 M 學分」
+  // 會出現門數只算課表格、學分卻含表格外課程的矛盾。
+  const unscheduledNote = primary.unscheduledCourses.length > 0
+    ? `（另有 ${primary.unscheduledCourses.length} 門時間未定）`
+    : '';
   const message = primary.watchOnly
     ? `目前沒有可排入的正式加選課程，僅顯示 ${primary.watchedCourses.length} 門關注課程供你比較時段。`
-    : `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課，共 ${primary.totalCredits} 學分。`;
+    : `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課${unscheduledNote}，共 ${primary.totalCredits} 學分。`;
 
   return {
     success: true,
@@ -554,9 +607,10 @@ export function generateSchedule(candidateCourses, constraints = {}) {
     schedule: primary.schedule,
     plans,
     totalCredits: primary.totalCredits,
-    courseCount: primary.schedule.length,
+    courseCount: primary.courseCount,
     excludedCourses: primary.excludedCourses,
     watchedCourses: primary.watchedCourses,
+    unscheduledCourses: primary.unscheduledCourses,
     warnings: allWarnings,
     preferenceProfile,
     hasExpressedPreference,

@@ -28,16 +28,18 @@ const MAX_EXCLUDED_SHOWN = 5;
 // 否則「學分不足」「偏好未滿足」這類訊息同樣會消失。
 function buildScheduleNotice(data) {
   const excluded = data.excludedCourses || [];
+  // 尚未排定時間的課程有學分卻不會出現在課表格上，必須讓使用者看得到。
+  const unscheduled = data.unscheduledCourses || [];
   const message = data.message || '無法產生符合限制的課表。';
   // 排課失敗時後端會把 warnings[0] 當作 message，直接全部渲染會重複一次。
   const warnings = (data.warnings || []).filter(warning => warning !== message);
 
   if (!data.success) {
-    return { level: 'error', message, warnings, excluded };
+    return { level: 'error', message, warnings, excluded, unscheduled };
   }
 
-  if (data.watchOnly || warnings.length > 0) {
-    return { level: 'warning', message, warnings, excluded };
+  if (data.watchOnly || warnings.length > 0 || unscheduled.length > 0) {
+    return { level: 'warning', message, warnings, excluded, unscheduled };
   }
 
   return null;
@@ -332,6 +334,25 @@ export default function DashboardPage() {
                     <li key={i}>{warning}</li>
                   ))}
                 </ul>
+              )}
+
+              {scheduleNotice.unscheduled.length > 0 && (
+                <details className="schedule-notice-excluded">
+                  <summary>
+                    有 {scheduleNotice.unscheduled.length} 門課時間未定，查看清單
+                  </summary>
+                  <ul className="schedule-notice-list">
+                    {scheduleNotice.unscheduled.slice(0, MAX_EXCLUDED_SHOWN).map((course, i) => (
+                      <li key={i}>
+                        <strong>{course.name}</strong>（{course.credits} 學分）
+                        {course.department ? `｜${course.department}` : ''}
+                      </li>
+                    ))}
+                    {scheduleNotice.unscheduled.length > MAX_EXCLUDED_SHOWN && (
+                      <li>其餘 {scheduleNotice.unscheduled.length - MAX_EXCLUDED_SHOWN} 門未列出。</li>
+                    )}
+                  </ul>
+                </details>
               )}
 
               {scheduleNotice.excluded.length > 0 && (

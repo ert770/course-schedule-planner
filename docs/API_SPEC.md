@@ -190,6 +190,7 @@ Response:
   "excludedCourses": [],
   "warnings": [],
   "watchedCourses": [],
+  "unscheduledCourses": [],
   "watchOnly": false,
   "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
   "hasExpressedPreference": true
@@ -197,6 +198,8 @@ Response:
 ```
 
 `watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
+
+`unscheduledCourses` 為已排入但**尚未排定上課時間**的課程（`time_str` 節次為 `00`）。它們計入 `totalCredits` 與 `courseCount`，但不在 `schedule` 內，因此不會出現在課表格上。
 
 `watchOnly` 為 `true` 時表示沒有任何正式加選課程排入，課表上只有關注課程。此情境的 `success` 仍為 `true`，因為關注課程本身是合法且可顯示的結果。
 
