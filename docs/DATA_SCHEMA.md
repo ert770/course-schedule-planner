@@ -36,22 +36,28 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `rag_tag` | json | `course.ragTag` |
 | `selection_code` | varchar(4) | `course.selectionCode` |
 
-### `Courses_Reviews`
+### `Course_Reviews`
 
-注意：`Courses_Reviews.Course_id` 雖然名稱叫 `Course_id`，實際上外鍵連到 `Course_Sections.section_id`。
+課程評價存放於 `Course_Reviews`，並透過 `selection_code` 對應到 `Course_Sections.selection_code`。
+API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，不是課程主檔的 `Courses.course_id`。
 
 | Column | Type | API mapping |
 | --- | --- | --- |
 | `Reviews_id` | int | `review.id` |
-| `Course_id` | int | `review.courseId` as section id |
-| `Reviews_tags(GoodOrBad)` | varchar(45) | `review.keywords[0]`, sentiment source |
-| `Review_content` | varchar(45) | `review.summary` |
+| `selection_code` | varchar(4) | `review.selectionCode`, join `Course_Sections.selection_code` |
+| `Reviews_tags` | text | `review.keywords[]` |
+| `Review_content` | text | `review.summary` |
+| `sweetness` | int | `review.sweetness` |
+| `coolness` | int | `review.coolness` |
+| `workload` | int | `review.workload`, `review.difficultyRating` |
+| `value` | int | `review.value` |
+| `overall` | int | `review.overall`, `review.recommendScore` |
+| `review_count` | int | `review.reviewCount` |
+| `source` | varchar | `review.source` |
+| `url` | text | `review.url` |
+| `scraped_at` | datetime | `review.createdAt` |
 
-查詢特殊欄位時必須使用：
-
-```sql
-`Reviews_tags(GoodOrBad)`
-```
+情緒判定由 `overall` 推導：4 分以上為 positive，2 分以下為 negative，其餘為 neutral。
 
 ### `User_Profiles`
 

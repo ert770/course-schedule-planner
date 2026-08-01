@@ -224,32 +224,52 @@ function mapCourseRow(row) {
   };
 }
 
-function sentimentFromReviewTag(tag) {
-  const value = String(tag || '').trim().toLowerCase();
-  if (!value) return 'neutral';
-  if (['good', 'positive', 'pos', '好', '優點', '推薦'].some(keyword => value.includes(keyword))) {
-    return 'positive';
-  }
-  if (['bad', 'negative', 'neg', '壞', '缺點', '不推'].some(keyword => value.includes(keyword))) {
-    return 'negative';
-  }
+// Course_Reviews 的評分欄位皆為 1~5 的整數且無空值，因此情緒可由整體評分直接判定，
+// 不需再從標籤文字猜測。
+function sentimentFromOverall(overall) {
+  const score = Number(overall);
+  if (!Number.isFinite(score)) return 'neutral';
+  if (score >= 4) return 'positive';
+  if (score <= 2) return 'negative';
   return 'neutral';
 }
 
+// Reviews_tags 為逗號分隔的文字標籤，例如「人很少,沒作業,兩個報告」。
+function parseReviewTags(tags) {
+  return String(tags || '')
+    .split(/[,、，]/)
+    .map(tag => tag.trim())
+    .filter(Boolean);
+}
+
 function mapReviewRow(row) {
-  const tag = row.review_tag;
-  const sentiment = sentimentFromReviewTag(tag);
+  const overall = normalizeNumber(row.overall);
+  const workload = normalizeNumber(row.workload);
 
   return {
     id: normalizeId(row.Reviews_id),
-    courseId: normalizeId(row.Course_id),
-    sentiment,
+    // 評價以 selection_code 關聯 section，courseId 對應 course.id（即 section_id）。
+    courseId: normalizeId(row.section_id),
+    selectionCode: row.selection_code,
+    sentiment: sentimentFromOverall(overall),
     summary: row.Review_content,
-    keywords: tag ? [tag] : [],
-    difficultyRating: sentiment === 'negative' ? 4 : sentiment === 'positive' ? 2 : 3,
-    recommendScore: sentiment === 'negative' ? 2 : sentiment === 'positive' ? 4 : 3,
-    source: 'mysql',
-    createdAt: null,
+    keywords: parseReviewTags(row.Reviews_tags),
+
+    // 原始評分，供排課引擎與畢業建議直接使用
+    sweetness: normalizeNumber(row.sweetness),
+    coolness: normalizeNumber(row.coolness),
+    workload,
+    value: normalizeNumber(row.value),
+    overall,
+    reviewCount: normalizeNumber(row.review_count),
+
+    // 相容既有消費端：難度取作業量，推薦度取整體評分
+    difficultyRating: workload,
+    recommendScore: overall,
+
+    source: row.source || 'mysql',
+    url: row.url || null,
+    createdAt: row.scraped_at || null,
   };
 }
 
@@ -308,25 +328,39 @@ async function getMysqlCourses() {
       cs.\`rag_tag\`,
       cs.\`selection_code\`
     FROM \`Course_Sections\` cs
-    -- Courses.course_id 是 utf8mb4_0900_ai_ci，Course_Sections.course_id 是
-    -- utf8mb4_unicode_ci。兩者字元集相同但校對規則不同，直接用 = 比較會拋出
-    -- ER_CANT_AGGREGATE_2COLLATIONS，因此明確指定共同的校對規則。
+    -- Courses.course_id 與 Course_Sections.course_id 的 collation 不同，直接用 =
+    -- 比較會拋出 ER_CANT_AGGREGATE_2COLLATIONS。這裡是代碼精確匹配，因此用
+    -- BINARY 比較避開 collation 差異。
     INNER JOIN \`Courses\` c
-      ON c.\`course_id\` COLLATE utf8mb4_unicode_ci = cs.\`course_id\` COLLATE utf8mb4_unicode_ci
+      ON BINARY c.\`course_id\` = BINARY cs.\`course_id\`
     ORDER BY cs.\`year\` DESC, cs.\`semester\`, c.\`course_id\`, cs.\`section_id\`
   `);
   return rows.map(mapCourseRow);
 }
 
 async function getMysqlReviews() {
+  // 評價資料表為 `Course_Reviews`（單數），以 selection_code 關聯 Course_Sections。
+  // 舊程式碼查的 `Courses_Reviews` 並不存在，且欄位結構完全不同。
   const rows = await queryRows(`
     SELECT
-      \`Reviews_id\`,
-      \`Course_id\`,
-      \`Reviews_tags(GoodOrBad)\` AS \`review_tag\`,
-      \`Review_content\`
-    FROM \`Courses_Reviews\`
-    ORDER BY \`Reviews_id\`
+      r.\`Reviews_id\`,
+      r.\`selection_code\`,
+      cs.\`section_id\`,
+      r.\`Reviews_tags\`,
+      r.\`Review_content\`,
+      r.\`sweetness\`,
+      r.\`coolness\`,
+      r.\`workload\`,
+      r.\`value\`,
+      r.\`overall\`,
+      r.\`review_count\`,
+      r.\`source\`,
+      r.\`url\`,
+      r.\`scraped_at\`
+    FROM \`Course_Reviews\` r
+    LEFT JOIN \`Course_Sections\` cs
+      ON BINARY cs.\`selection_code\` = BINARY r.\`selection_code\`
+    ORDER BY r.\`Reviews_id\`
   `);
   return rows.map(mapReviewRow);
 }

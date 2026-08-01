@@ -23,7 +23,7 @@
 
 ### D1 評價資料表名稱錯誤，評價功能完全失效
 
-**嚴重度：最高**
+**嚴重度**：🔴 嚴重　**狀態**：✅ 已完成
 
 `server/src/db/database.js:328` 查詢 `Courses_Reviews`，但資料庫中的表名是 **`Course_Reviews`**（單數 Course）。
 
@@ -60,9 +60,53 @@ Table 'defaultdb.Courses_Reviews' doesn't exist
 
 **五個評分欄位皆為 1–5 且零空值**，`selection_code` 與 `Course_Sections` **181/181 完全對得上**。
 
+**驗收**
+
+- `getAll('reviews')` 必須查詢真實存在的 `Course_Reviews`。
+- 評價資料必須透過 `selection_code` 對應到 `Course_Sections.section_id`，讓既有 API 仍可用 section id 查評價。
+- `GET /api/reviews/easy` 不再依賴關鍵字猜測涼課，而是使用 `coolness`、`sweetness`、`workload`、`overall` 結構化分數。
+- `GET /api/reviews/:courseId` 與 AI Agent 評價工具不能再因表名或欄位名錯誤而直接失敗。
+
+### 修復（2026-08-01）
+
+**修改檔案**
+
+- `server/src/db/database.js`
+- `server/src/skills/reviewSearch.js`
+- `docs/API_SPEC.md`
+- `docs/DATA_SCHEMA.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DECISIONS.md`
+- `docs/CHANGE_REPORTS/2026-08-01-fix-course-reviews-d1.md`
+- `docs/CHANGE_REPORTS/2026-08-01-database-audit.md`
+
+**實際修法**
+
+- `database.js` 將評價查詢來源由不存在的 `Courses_Reviews` 改為 `Course_Reviews`。
+- 評價 join 改為 `Course_Reviews.selection_code = Course_Sections.selection_code`，並把 join 後的 `section_id` 映射為 `review.courseId`，維持既有 API 使用 section id 查詢的契約。
+- `course_id` 與 `selection_code` join 改用 `BINARY` 精確比較，修正實機驗證時發現的 `Illegal mix of collations` 錯誤。
+- `mapReviewRow()` 改映射真實欄位：`Reviews_tags`、`Review_content`、`sweetness`、`coolness`、`workload`、`value`、`overall`、`review_count`、`source`、`url`、`scraped_at`。
+- 情緒判定改由 `overall` 推導：4 分以上為 positive，2 分以下為 negative，其餘為 neutral。
+- `reviewSearch.js` 的涼課排序改用結構化評分：`coolness`、`sweetness`、`6 - workload`、`overall` 的平均值，而不是舊的 `difficultyRating`／`recommendScore` 推估式。
+- 保留 `difficultyRating = workload` 與 `recommendScore = overall` 的相容欄位，避免既有課程詳情統計與前端消費端破壞。
+- 評價摘要補回可讀中文與新增平均欄位：`avgCoolness`、`avgSweetness`、`avgWorkload`、`avgOverall`。
+- API、資料結構、架構與 ADR 文件同步改為 `Course_Reviews` 與 `selection_code` 關聯說明。
+
+**測試與驗證結果**
+
+- `node --check server/src/db/database.js`：通過。
+- `node --check server/src/skills/reviewSearch.js`：通過。
+- `node --check server/src/app.js`：通過。
+- `reviewSearch.js` 模組 import 測試：通過，確認 `getEasyCourses`、`getReviewsByCourse`、`getSentimentSummary`、`searchReviews` 均可載入。
+- active docs 掃描：`docs/API_SPEC.md`、`docs/DATA_SCHEMA.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md` 已無舊表 `Courses_Reviews` 或舊欄位 `Reviews_tags(GoodOrBad)` 的錯誤描述。
+- 實機驗證第一次發現代碼欄位 join 仍受 collation 差異影響，已改用 `BINARY` 精確比較後重測。
+- `GET /api/health`：通過。
+- `GET /api/reviews/easy?limit=3`：通過，回傳含 `avgCoolness`、`avgSweetness`、`avgWorkload`、`avgOverall` 的課程清單。
+- `GET /api/reviews/:courseId`：通過，使用 easy courses 第一筆 section id 查到評價與 sentiment summary。
+
 **對路線圖的影響**
 
-`#4`（把評分方式結構化）與 `#5`（把 reviews 分數接進 `scoreCourse`）的前提需要修正。這兩項原本假設「需要新增難度甜度欄位」，實際上**資料庫已經有了**，只是因為表名錯誤而完全取不到。`easy_score` 方案的關鍵字比對（涼課關鍵字命中率 0.7%）也應直接改用 `coolness` 與 `sweetness`。
+`#4`（把評分方式結構化）已不需要新增難度甜度欄位，因為 `Course_Reviews` 已提供 `sweetness`、`coolness`、`workload`、`value`、`overall`。`#5`（把 reviews 分數接進 `scoreCourse`）仍需另外處理排課引擎加權，但資料取得前提已解除。`easy_score` 的關鍵字比對缺陷也已在評價查詢層改為使用 `coolness` 與 `sweetness` 等結構化欄位。
 
 ### D2 `avoid_time` 格式與排課引擎不符，封鎖時段靜默失效
 
@@ -144,12 +188,14 @@ Table 'defaultdb.Courses_Reviews' doesn't exist
 
 | 順序 | 項目 | 理由 |
 | ---: | --- | --- |
-| 1 | D1 評價表名稱 | 三個 API 與兩個 Agent 工具完全失效，且修好後 `#4`／`#5` 大部分已有資料可用 |
-| 2 | D2 `avoid_time` 格式 | 硬約束靜默失效，使用者設定無效果且無警告 |
-| 3 | D3 `department` 引號 | 阻擋 `#13` 的系所比對 |
-| 4 | D7、D6 | 顯示層與資料一致性 |
-| 5 | D4、D5 | 需要外部資料來源，非程式可解 |
+| ✅ | D1 評價表名稱 | 已修復：三個 API 與兩個 Agent 工具的資料取得前提已恢復，`#4`／`#5` 可接續使用結構化分數 |
+| 1 | D2 `avoid_time` 格式 | 硬約束靜默失效，使用者設定無效果且無警告 |
+| 2 | D3 `department` 引號 | 阻擋 `#13` 的系所比對 |
+| 3 | D7、D6 | 顯示層與資料一致性 |
+| 4 | D4、D5 | 需要外部資料來源，非程式可解 |
 
 ## 是否 commit 與 push
 
-- 本文件為稽核紀錄，未修改任何程式碼。
+- 本次更新僅修改本稽核追蹤文件。
+- 未 commit。
+- 未 push。

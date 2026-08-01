@@ -14,7 +14,7 @@ Course, section, review, and numeric user profile data are read from MySQL datab
 
 - API `course.id` is `Course_Sections.section_id`.
 - API `course.code` and `course.courseId` are `Courses.course_id`.
-- Review lookups use `Courses_Reviews.Course_id` as a section id.
+- Review lookups use `Course_Reviews.selection_code` joined to `Course_Sections.selection_code`; API responses expose the joined `section_id` as `review.courseId`.
 - Demo auth users, chat history, and saved schedules remain backed by `server/data/*.json`.
 
 ## Health
@@ -287,7 +287,7 @@ For numeric `userId`, updates supported `User_Profiles` fields when the row exis
 
 ### `GET /api/reviews/easy?limit=10`
 
-Returns courses ranked by derived easiness score from `Courses_Reviews`.
+Returns courses ranked by derived easiness score from `Course_Reviews`.
 
 ### `GET /api/reviews/:courseId`
 
