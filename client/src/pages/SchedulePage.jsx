@@ -7,6 +7,7 @@ import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
 import { coursesAPI, scheduleAPI } from '../services/api';
+import { formatCourseTime } from '../utils/courseTime';
 
 export default function SchedulePage() {
   const navigate = useNavigate();
@@ -252,9 +253,7 @@ export default function SchedulePage() {
               <span>👤 {detailCourse.instructor}</span>
               <span>📚 {detailCourse.credits} 學分</span>
               <span>📍 {detailCourse.location}</span>
-              <span>
-                ⏰ 週{['', '一', '二', '三', '四', '五'][detailCourse.dayOfWeek]} 第{detailCourse.startPeriod}-{detailCourse.endPeriod}節
-              </span>
+              <span>⏰ {formatCourseTime(detailCourse)}</span>
             </div>
             {detailCourse.description && (
               <div className="detail-desc">

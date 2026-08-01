@@ -1,4 +1,4 @@
-const DAYS = ['', '一', '二', '三', '四', '五'];
+import { formatCourseTime } from '../../utils/courseTime';
 
 export default function CourseCard({ course, onSelect, selected }) {
   const categoryBadge = {
@@ -27,7 +27,7 @@ export default function CourseCard({ course, onSelect, selected }) {
         <span className="course-card-meta-item">👤 {course.instructor}</span>
         <span className="course-card-meta-item">📚 {course.credits} 學分</span>
         <span className="course-card-meta-item">
-          ⏰ 週{DAYS[course.dayOfWeek]} {course.startPeriod}-{course.endPeriod}節
+          ⏰ {formatCourseTime(course)}
         </span>
         <span className="course-card-meta-item">📍 {course.location}</span>
       </div>

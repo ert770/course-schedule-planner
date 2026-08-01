@@ -4,12 +4,13 @@
 
 ## 2026-08-01
 
-1. [資料庫完整稽核](./2026-08-01-database-audit.md)
-2. [排課演算法與資料庫對齊](./2026-08-01-align-scheduler-with-database.md)
-3. [接上 MySQL 並修復課程時間解析](./2026-08-01-mysql-connection-and-time-parsing.md)
-4. [新增 commit-push 提交流程 skill](./2026-08-01-commit-push-skill.md)
-5. [前後端對接稽核與修復追蹤（持續更新）](./2026-08-01-frontend-backend-alignment-audit.md)
-6. [個人化推薦演算法改造路線圖（持續更新）](./2026-08-01-personalization-roadmap.md)
+1. [統一評價統計與星期顯示](./2026-08-01-review-stats-and-weekday-consistency.md)
+2. [資料庫完整稽核](./2026-08-01-database-audit.md)
+3. [排課演算法與資料庫對齊](./2026-08-01-align-scheduler-with-database.md)
+4. [接上 MySQL 並修復課程時間解析](./2026-08-01-mysql-connection-and-time-parsing.md)
+5. [新增 commit-push 提交流程 skill](./2026-08-01-commit-push-skill.md)
+6. [前後端對接稽核與修復追蹤（持續更新）](./2026-08-01-frontend-backend-alignment-audit.md)
+7. [個人化推薦演算法改造路線圖（持續更新）](./2026-08-01-personalization-roadmap.md)
 
 ## 2026-06-11
 

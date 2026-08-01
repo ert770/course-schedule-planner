@@ -1,61 +1,12 @@
 import { getAll } from '../db/database.js';
-
-function getReviewWeight(review) {
-  const weight = Number(review?.reviewCount);
-  return Number.isFinite(weight) && weight > 0 ? weight : 1;
-}
-
-function getTotalReviewCount(reviews) {
-  return reviews.reduce((sum, review) => sum + getReviewWeight(review), 0);
-}
-
-function weightedAverageScore(reviews, field) {
-  const weighted = reviews
-    .map(review => {
-      const value = Number(review[field]);
-      if (!Number.isFinite(value)) {
-        return null;
-      }
-      return { value, weight: getReviewWeight(review) };
-    })
-    .filter(Boolean);
-
-  const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0);
-  if (totalWeight === 0) {
-    return null;
-  }
-
-  return weighted.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
-}
-
-function roundScore(value, digits = 1) {
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-  const scale = 10 ** digits;
-  return Math.round(value * scale) / scale;
-}
-
-function calculateEasinessFromAverages({ avgCoolness, avgSweetness, avgWorkload, avgOverall }) {
-  const components = [
-    avgCoolness,
-    avgSweetness,
-    avgWorkload === null ? null : 6 - avgWorkload,
-    avgOverall,
-  ].filter(value => Number.isFinite(value));
-
-  if (components.length === 0) {
-    return null;
-  }
-
-  return components.reduce((sum, value) => sum + value, 0) / components.length;
-}
-
-function countBySentiment(reviews, sentiment) {
-  return reviews
-    .filter(review => review.sentiment === sentiment)
-    .reduce((sum, review) => sum + getReviewWeight(review), 0);
-}
+import {
+  getReviewWeight,
+  getTotalReviewCount,
+  weightedAverageScore,
+  roundScore,
+  countBySentiment,
+  calculateEasinessFromAverages,
+} from './reviewStats.js';
 
 export async function getReviewsByCourse(courseId) {
   const reviews = await getAll('reviews');

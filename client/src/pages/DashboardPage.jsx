@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
 import { scheduleAPI, chatAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
+import { formatCourseTime } from '../utils/courseTime';
 import { X, Send, Search, Download, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, AlertTriangle } from 'lucide-react';
 
 const PREFS = [
@@ -187,7 +188,7 @@ export default function DashboardPage() {
 
   const handleExport = () => {
     const text = schedule.map(c =>
-      `${c.name} | ${c.instructor} | 週${'一二三四五'[c.dayOfWeek-1]} 第${c.startPeriod}-${c.endPeriod}節`
+      `${c.name} | ${c.instructor} | ${formatCourseTime(c)}`
     ).join('\n');
     const blob = new Blob([`114學年度 上學期 預排課表\n\n${text}`], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -390,7 +391,7 @@ export default function DashboardPage() {
                             <div className="chat-course-details">
                               <strong>{c.name}</strong> ({c.code}) — {c.instructor}
                               <div className="chat-course-meta">
-                                週{'一二三四五'[c.dayOfWeek-1]} 第{c.startPeriod}-{c.endPeriod}節 | {c.credits}學分
+                                {formatCourseTime(c)} | {c.credits}學分
                               </div>
                             </div>
                           </div>

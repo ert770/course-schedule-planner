@@ -5,6 +5,7 @@ import { useTheme } from '../contexts/useTheme';
 import { coursesAPI } from '../services/api';
 import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, X } from 'lucide-react';
 import '../App.css'; // Reuse some layout styles
+import { formatCourseTime } from '../utils/courseTime';
 
 export default function SearchPage() {
   const navigate = useNavigate();
@@ -302,7 +303,7 @@ export default function SearchPage() {
                   </div>
                   <div className="course-card-body">
                     <p>👨‍🏫 {course.instructor} | 🏢 {course.department}</p>
-                    <p>⏰ 週{'一二三四五'[course.dayOfWeek-1]} 第{course.startPeriod}-{course.endPeriod}節</p>
+                    <p>⏰ {formatCourseTime(course)}</p>
                     <p>📍 {course.location}</p>
                   </div>
                   <div className="course-card-footer">

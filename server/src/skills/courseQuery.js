@@ -1,4 +1,5 @@
 import { getAll, getById } from '../db/database.js';
+import { summarizeReviews } from './reviewStats.js';
 
 function textIncludes(value, keyword) {
   return String(value || '').toLowerCase().includes(keyword);
@@ -73,24 +74,13 @@ export async function getCourseDetail(courseId) {
   if (!course) return null;
 
   const reviews = (await getAll('reviews')).filter(review => String(review.courseId) === String(course.id));
-  const avgDifficulty = reviews.length > 0
-    ? reviews.reduce((sum, review) => sum + Number(review.difficultyRating || 0), 0) / reviews.length
-    : null;
-  const avgRecommend = reviews.length > 0
-    ? reviews.reduce((sum, review) => sum + Number(review.recommendScore || 0), 0) / reviews.length
-    : null;
 
+  // 一列評價可能代表多則評論，統計必須以 reviewCount 加權，
+  // 否則 /api/courses/:id 與 /api/reviews/:courseId 對同一門課會回報不同數字。
   return {
     ...course,
     reviews,
-    stats: {
-      reviewCount: reviews.length,
-      avgDifficulty: avgDifficulty ? Math.round(avgDifficulty * 10) / 10 : null,
-      avgRecommend: avgRecommend ? Math.round(avgRecommend * 10) / 10 : null,
-      positiveCount: reviews.filter(review => review.sentiment === 'positive').length,
-      negativeCount: reviews.filter(review => review.sentiment === 'negative').length,
-      neutralCount: reviews.filter(review => review.sentiment === 'neutral').length,
-    },
+    stats: summarizeReviews(reviews),
   };
 }
 
