@@ -90,6 +90,7 @@ Table 'defaultdb.Courses_Reviews' doesn't exist
 - `reviewSearch.js` 的涼課排序改用結構化評分：`coolness`、`sweetness`、`6 - workload`、`overall` 的平均值，而不是舊的 `difficultyRating`／`recommendScore` 推估式。
 - 保留 `difficultyRating = workload` 與 `recommendScore = overall` 的相容欄位，避免既有課程詳情統計與前端消費端破壞。
 - 評價摘要補回可讀中文與新增平均欄位：`avgCoolness`、`avgSweetness`、`avgWorkload`、`avgOverall`。
+- adversarial review 發現 `review_count` 是彙總評論數，不能以資料列數當成評論數；`count`、正負評數、`positiveRatio`、涼課清單 `reviewCount` 與所有平均分數已改用 `reviewCount || 1` 加權計算。
 - API、資料結構、架構與 ADR 文件同步改為 `Course_Reviews` 與 `selection_code` 關聯說明。
 
 **測試與驗證結果**
@@ -103,6 +104,8 @@ Table 'defaultdb.Courses_Reviews' doesn't exist
 - `GET /api/health`：通過。
 - `GET /api/reviews/easy?limit=3`：通過，回傳含 `avgCoolness`、`avgSweetness`、`avgWorkload`、`avgOverall` 的課程清單。
 - `GET /api/reviews/:courseId`：通過，使用 easy courses 第一筆 section id 查到評價與 sentiment summary。
+- `review_count` 加權驗證：通過，`reviewCount` / `count` 使用資料庫彙總評論數加總，平均欄位使用 `review_count` 加權。
+- Chrome 驗證：嘗試開啟 `localhost:3001` 與 `127.0.0.1:3001` 的本機 API 頁面，Chrome browser extension 均回報 `net::ERR_BLOCKED_BY_CLIENT`；瀏覽器層無法讀取頁面，功能驗證以同一 URL 的 HTTP API 回應為準。
 
 **對路線圖的影響**
 

@@ -1,15 +1,31 @@
 import { getAll } from '../db/database.js';
 
-function averageScore(reviews, field) {
-  const values = reviews
-    .map(review => Number(review[field]))
-    .filter(value => Number.isFinite(value));
+function getReviewWeight(review) {
+  const weight = Number(review?.reviewCount);
+  return Number.isFinite(weight) && weight > 0 ? weight : 1;
+}
 
-  if (values.length === 0) {
+function getTotalReviewCount(reviews) {
+  return reviews.reduce((sum, review) => sum + getReviewWeight(review), 0);
+}
+
+function weightedAverageScore(reviews, field) {
+  const weighted = reviews
+    .map(review => {
+      const value = Number(review[field]);
+      if (!Number.isFinite(value)) {
+        return null;
+      }
+      return { value, weight: getReviewWeight(review) };
+    })
+    .filter(Boolean);
+
+  const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight === 0) {
     return null;
   }
 
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+  return weighted.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
 }
 
 function roundScore(value, digits = 1) {
@@ -20,12 +36,7 @@ function roundScore(value, digits = 1) {
   return Math.round(value * scale) / scale;
 }
 
-function calculateEasiness(reviews) {
-  const avgCoolness = averageScore(reviews, 'coolness');
-  const avgSweetness = averageScore(reviews, 'sweetness');
-  const avgWorkload = averageScore(reviews, 'workload');
-  const avgOverall = averageScore(reviews, 'overall');
-
+function calculateEasinessFromAverages({ avgCoolness, avgSweetness, avgWorkload, avgOverall }) {
   const components = [
     avgCoolness,
     avgSweetness,
@@ -38,6 +49,12 @@ function calculateEasiness(reviews) {
   }
 
   return components.reduce((sum, value) => sum + value, 0) / components.length;
+}
+
+function countBySentiment(reviews, sentiment) {
+  return reviews
+    .filter(review => review.sentiment === sentiment)
+    .reduce((sum, review) => sum + getReviewWeight(review), 0);
 }
 
 export async function getReviewsByCourse(courseId) {
@@ -63,17 +80,24 @@ export async function getEasyCourses(limit = 10) {
 
   const courseStats = courses.map(course => {
     const courseReviews = reviews.filter(review => String(review.courseId) === String(course.id));
-    if (courseReviews.length === 0) {
+    const reviewCount = getTotalReviewCount(courseReviews);
+    if (reviewCount === 0) {
       return { ...course, easiness: 0, reviewCount: 0 };
     }
 
-    const avgDifficulty = averageScore(courseReviews, 'difficultyRating');
-    const avgRecommend = averageScore(courseReviews, 'recommendScore');
-    const avgCoolness = averageScore(courseReviews, 'coolness');
-    const avgSweetness = averageScore(courseReviews, 'sweetness');
-    const avgWorkload = averageScore(courseReviews, 'workload');
-    const avgOverall = averageScore(courseReviews, 'overall');
-    const easiness = calculateEasiness(courseReviews);
+    const avgDifficulty = weightedAverageScore(courseReviews, 'difficultyRating');
+    const avgRecommend = weightedAverageScore(courseReviews, 'recommendScore');
+    const avgCoolness = weightedAverageScore(courseReviews, 'coolness');
+    const avgSweetness = weightedAverageScore(courseReviews, 'sweetness');
+    const avgWorkload = weightedAverageScore(courseReviews, 'workload');
+    const avgOverall = weightedAverageScore(courseReviews, 'overall');
+    const easiness = calculateEasinessFromAverages({
+      avgCoolness,
+      avgSweetness,
+      avgWorkload,
+      avgOverall,
+    });
+    const positive = countBySentiment(courseReviews, 'positive');
 
     return {
       ...course,
@@ -84,12 +108,8 @@ export async function getEasyCourses(limit = 10) {
       avgSweetness: roundScore(avgSweetness),
       avgWorkload: roundScore(avgWorkload),
       avgOverall: roundScore(avgOverall),
-      reviewCount: courseReviews.length,
-      positiveRatio: Math.round(
-        courseReviews.filter(review => review.sentiment === 'positive').length
-        / courseReviews.length
-        * 100
-      ),
+      reviewCount,
+      positiveRatio: Math.round((positive / reviewCount) * 100),
     };
   });
 
@@ -101,18 +121,20 @@ export async function getEasyCourses(limit = 10) {
 
 export async function getSentimentSummary(courseId) {
   const reviews = (await getAll('reviews')).filter(review => String(review.courseId) === String(courseId));
-  if (reviews.length === 0) {
+  const total = getTotalReviewCount(reviews);
+  if (total === 0) {
     return { courseId, summary: '目前沒有課程評價', sentiment: 'neutral', count: 0 };
   }
 
-  const positive = reviews.filter(review => review.sentiment === 'positive').length;
-  const negative = reviews.filter(review => review.sentiment === 'negative').length;
-  const total = reviews.length;
-  const allKeywords = reviews.flatMap(review => review.keywords || []);
+  const positive = countBySentiment(reviews, 'positive');
+  const negative = countBySentiment(reviews, 'negative');
   const keywordCounts = {};
 
-  allKeywords.forEach(keyword => {
-    keywordCounts[keyword] = (keywordCounts[keyword] || 0) + 1;
+  reviews.forEach(review => {
+    const weight = getReviewWeight(review);
+    (review.keywords || []).forEach(keyword => {
+      keywordCounts[keyword] = (keywordCounts[keyword] || 0) + weight;
+    });
   });
 
   const topKeywords = Object.entries(keywordCounts)
@@ -127,12 +149,12 @@ export async function getSentimentSummary(courseId) {
     ? '正面'
     : overallSentiment === 'negative' ? '負面' : '中性';
 
-  const avgDifficulty = averageScore(reviews, 'difficultyRating');
-  const avgRecommend = averageScore(reviews, 'recommendScore');
-  const avgCoolness = averageScore(reviews, 'coolness');
-  const avgSweetness = averageScore(reviews, 'sweetness');
-  const avgWorkload = averageScore(reviews, 'workload');
-  const avgOverall = averageScore(reviews, 'overall');
+  const avgDifficulty = weightedAverageScore(reviews, 'difficultyRating');
+  const avgRecommend = weightedAverageScore(reviews, 'recommendScore');
+  const avgCoolness = weightedAverageScore(reviews, 'coolness');
+  const avgSweetness = weightedAverageScore(reviews, 'sweetness');
+  const avgWorkload = weightedAverageScore(reviews, 'workload');
+  const avgOverall = weightedAverageScore(reviews, 'overall');
 
   return {
     courseId,
