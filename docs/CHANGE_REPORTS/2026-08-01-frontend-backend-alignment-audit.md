@@ -55,6 +55,7 @@
 | F12 | GraduationPage 三種按鈕沒有 onClick | 🟡 中 | ⬜ 未開始 |
 | F13 | 畢業學分分類會渲染出英文 key，且與規格不符 | 🟡 中 | ⬜ 未開始 |
 | F14 | `SchedulePage` 未掛載到任何路由 | 🟡 中 | ⬜ 未開始 |
+| F15 | `ScheduleGrid` 缺少 React key，持續污染 console | 🟡 中 | ⬜ 未開始 |
 
 ---
 
@@ -161,8 +162,23 @@ if (data.success) {
 
 第一個情境正是本報告背景章節記錄的失效模式（勾選「高度課堂討論」導致候選集歸零），修復前使用者完全看不到任何說明。
 
+**瀏覽器實機驗收**
+
+以 `preview_start` 啟動 server（3001）與 client（5173），用 demo 帳號 `D1249697` 走完登入 → 導引 → 偏好設定 → 儀表板全流程。
+
+| 操作 | 結果 |
+| --- | --- |
+| 勾選「#高度課堂討論」後生成課表 | 紅色 `error` 橫幅，展開後顯示「程式設計(一)：不符合討論課偏好」等 5 門，並標示其餘 50 門 |
+| 取消該偏好後重新排課 | 琥珀色 `warning` 橫幅，顯示成功訊息、「未設定興趣關鍵字…個人化程度有限」警告，以及 45 門衝堂排除理由；課表正常渲染 |
+| 聊天送出「有什麼涼課」 | 泡泡顯示「系統發生錯誤：伺服器未設定 GEMINI_API_KEY。」，**不再是 `undefined`**（F1 驗收） |
+
+**實機發現並修正的問題**：初版橫幅把同一句話顯示兩次。原因是後端排課失敗時將 `warnings[0]` 指派給 `message`，前端兩處都渲染。已在 `buildScheduleNotice` 過濾與 `message` 相同的警告。
+
+**此問題 lint、build 與後端層級驗證全部通過，只有實際開瀏覽器才看得出來**——這也是後續將瀏覽器驗收列入 `commit-push` skill 必要步驟的原因。
+
 - `npm run lint`：通過。
 - `npm run build`：通過。
+- console 錯誤：僅有 `ScheduleGrid` 的 React key 警告，屬既有缺陷，已立案為 F15。
 
 ---
 
@@ -332,6 +348,26 @@ demo 使用者（`users.json`）有中文 key 的 `requiredCredits` 所以看起
 **範圍**：確認此頁面是否仍需要。若需要則掛上路由並更新 `docs/UX_FLOW.md`；若不需要則刪除，避免 F2 這類問題藏在死程式碼中。
 
 ---
+
+## F15 `ScheduleGrid` 缺少 React key
+
+**嚴重度**：🟡 中　**狀態**：⬜ 未開始
+
+於 F1-F3 的瀏覽器驗收時，從 console 發現。**既有缺陷，非 F1-F3 引入。**
+
+`client/src/components/Schedule/ScheduleGrid.jsx:64` 在 `PERIODS.map()` 內回傳裸的 `<>` fragment：
+
+```jsx
+{PERIODS.map(period => (
+  <>
+    <div key={`time-${period.num}`} className="time-label">
+```
+
+內層元素有 key，但 fragment 本身沒有，因此 React 持續發出 `Each child in a list should have a unique "key" prop` 錯誤。
+
+**影響**：每次渲染課表都會污染 console。由於瀏覽器驗收現已是 `commit-push` skill 的必要步驟，既有噪音會讓後續真正的新錯誤更難被發現。
+
+**修法**：改用 `<Fragment key={period.num}>` 並 import `Fragment`。屬一行修正。
 
 ## 建議修復順序
 

@@ -26,24 +26,17 @@ const MAX_EXCLUDED_SHOWN = 5;
 // 把排課回應整理成畫面上要顯示的提示。成功但有警告時也要顯示，
 // 否則「學分不足」「偏好未滿足」這類訊息同樣會消失。
 function buildScheduleNotice(data) {
-  const warnings = data.warnings || [];
   const excluded = data.excludedCourses || [];
+  const message = data.message || '無法產生符合限制的課表。';
+  // 排課失敗時後端會把 warnings[0] 當作 message，直接全部渲染會重複一次。
+  const warnings = (data.warnings || []).filter(warning => warning !== message);
 
   if (!data.success) {
-    return {
-      level: 'error',
-      message: data.message || '無法產生符合限制的課表。',
-      warnings,
-      excluded,
-    };
+    return { level: 'error', message, warnings, excluded };
   }
 
-  if (data.watchOnly) {
-    return { level: 'warning', message: data.message, warnings, excluded };
-  }
-
-  if (warnings.length > 0) {
-    return { level: 'warning', message: data.message, warnings, excluded };
+  if (data.watchOnly || warnings.length > 0) {
+    return { level: 'warning', message, warnings, excluded };
   }
 
   return null;

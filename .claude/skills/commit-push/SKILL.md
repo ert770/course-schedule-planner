@@ -31,7 +31,8 @@ git branch --show-current
 | --- | --- |
 | `server/src/**` | 對所有 `server/src/**/*.js` 跑 `node --check` |
 | `server/src/skills/scheduler.js` | **`docs/TEST_PLAN.md` 的 S1-S10 排課測試案例** |
-| `client/src/**` | `cd client && npm run build` 與 `npm run lint` |
+| `client/src/**` | `npm run build`、`npm run lint`，**以及實際跑起來在瀏覽器驗收** |
+| 任何影響使用者可見行為的修改 | **實際跑起來在瀏覽器驗收** |
 | 只有 `docs/**` 或 `*.md` | 跳過前後端測試，回報中寫明「未修改程式邏輯」與「未執行不必要的前後端測試」 |
 
 `client/node_modules` 不存在而需要 build 時，先跑 `npm run install:all`。
@@ -39,6 +40,24 @@ git branch --show-current
 **任何驗證失敗就停止**，回報失敗內容，不要 commit。
 
 S1-S10 這條特別容易被忽略：`AGENTS.md` 與 `docs/TEST_PLAN.md:81` 都要求「修改排課邏輯至少執行 S1-S10」，但過去曾發生改了 `scheduler.js` 卻沒跑的情況。動到排課邏輯就一定要跑。
+
+### 瀏覽器驗收（不可略過）
+
+**build 與 lint 通過不等於功能正確。** 只要修改會影響使用者看得到的東西，就必須把 app 跑起來實際操作。
+
+流程：
+
+1. `preview_start` 啟動 `server`（port 3001）與 `client`（port 5173）兩個設定，定義於 `.claude/launch.json`。
+2. 用 demo 帳號登入：學號 `D1249697`、密碼 `123`（來源 `server/data/users.json`）。
+3. **操作到會觸發本次修改的畫面**，不能只確認首頁有載入。
+4. **截圖並實際看過**。空白畫面等於啟動失敗。
+5. 用 `read_console_messages` 確認沒有新的 console 錯誤。
+
+**同時驗證正常路徑與失敗路徑。** 只看成功情境會漏掉整類問題——例如排課提示曾發生「後端把 `warnings[0]` 當作 `message`，前端兩處都渲染導致訊息重複」，build、lint 與單元層級驗證全部通過，只有實際跑起來才看得出來。
+
+沒有 `.env` 時後端會自動退回 `server/data/*.json`，可正常啟動；但 AI 聊天會回傳「伺服器未設定 GEMINI_API_KEY」，這是預期行為，不是故障。
+
+驗收結果要寫進回報的「測試」欄位，包含**跑了哪些畫面與情境**，不能只寫「build 通過」。
 
 ## 步驟 3：確認文件同步
 
