@@ -12,7 +12,7 @@
 
 ## 最後更新
 
-2026-08-01（完成 F1、F2、F3）
+2026-08-01（完成 F1、F2、F3、F14；新增 F15）
 
 ## 稽核範圍與方法
 
@@ -54,7 +54,7 @@
 | F11 | `authAPI.updateWatchlist` 定義但零呼叫 | 🟡 中 | ⬜ 未開始 |
 | F12 | GraduationPage 三種按鈕沒有 onClick | 🟡 中 | ⬜ 未開始 |
 | F13 | 畢業學分分類會渲染出英文 key，且與規格不符 | 🟡 中 | ⬜ 未開始 |
-| F14 | `SchedulePage` 未掛載到任何路由 | 🟡 中 | ⬜ 未開始 |
+| F14 | `SchedulePage` 未掛載到任何路由 | 🟡 中 | ✅ 已完成 |
 | F15 | `ScheduleGrid` 缺少 React key，持續污染 console | 🟡 中 | ⬜ 未開始 |
 
 ---
@@ -106,6 +106,8 @@ if (res.intent === 'generate_schedule' && res.data?.success) {
 ### 修復（2026-08-01）
 
 `ChatPanel.jsx` 改比對 `'run_csp_scheduler'`。已確認 `agentService.js:87` 的 `detectedIntent = fnName`，即 intent 值等於 tool 名稱，`'generate_schedule'` 從未被送出過。
+
+實機驗證需先解決 F14（ChatPanel 當時無路由可達），對照測試結果記於 F14 章節。
 
 ---
 
@@ -347,6 +349,50 @@ demo 使用者（`users.json`）有中文 key 的 `requiredCredits` 所以看起
 
 **範圍**：確認此頁面是否仍需要。若需要則掛上路由並更新 `docs/UX_FLOW.md`；若不需要則刪除，避免 F2 這類問題藏在死程式碼中。
 
+### 修復（2026-08-01）
+
+**決策**：保留 SchedulePage，沿用既有版面外殼。
+
+**掛路由前發現的問題**：SchedulePage 不只是缺少路由，它與 ChatPanel 引用了 **15 個完全不存在的 CSS class**（`.schedule-page`、`.schedule-controls`、`.schedule-container`、`.stat-item`、`.stat-icon`、`.stat-value`、`.course-card-code`、`.course-card-meta`、`.quick-actions`、`.quick-chip`、`.chat-input`、`.chat-send-btn`、`.typing-indicator`、`.typing-dot`、`.chat-header-icon`、`.chat-header-info`）。直接掛路由只會得到一個沒有版面、且沒有導覽列（進去出不來）的破頁面。
+
+**修改檔案**
+
+- `client/src/pages/SchedulePage.jsx`（改寫）
+- `client/src/App.jsx`
+- `client/src/pages/DashboardPage.jsx`、`SearchPage.jsx`、`GraduationPage.jsx`（導覽連結）
+- `client/src/App.css`
+- `docs/UX_FLOW.md`
+
+**主要改動內容**
+
+- SchedulePage 改用既有的 `.layout-container` / `.top-nav` / `.dashboard-content` / `.schedule-area` 外殼，不再依賴從未存在的 `.schedule-page` 系列樣式。
+- 加上與其他頁面一致的頂部導覽列與使用者選單，使用者不再會被困在頁面內。
+- `alert()` 改為與 DashboardPage 一致的 `.schedule-notice` 提示橫幅。
+- 新增 `/schedule` 路由，並在 Dashboard、Search、Graduation 三頁的導覽列加入「排課」連結。
+- 補上 ChatPanel、CourseCard 與課程瀏覽器缺少的樣式。
+- `docs/UX_FLOW.md` 路由表補上 `/schedule`。
+
+**測試與驗證結果（實機）**
+
+| 操作 | 結果 |
+| --- | --- |
+| 由儀表板點「排課」 | 導向 `/schedule`，導覽列「排課」標為目前頁面 |
+| 版面量測 | 課表區 1000px、聊天區 380px 並排，總高 900px 撐滿視窗，無重疊 |
+| 瀏覽課程 → 搜尋 | 課程瀏覽器正常渲染，搜尋到 55 門，卡片樣式生效 |
+| 選課 → 自動排課 | 產生 1 門 3 學分，提示橫幅顯示方案訊息 |
+| 系所下拉 | 由 API 載入 6 個選項 |
+
+**F2 的實機驗證**：`ChatPanel` 現在有路由可達，得以驗證。因尚無 `GEMINI_API_KEY`，改以攔截 `/api/chat` 回應做對照測試（測試前端分支，非端到端）：
+
+| 送出的 intent | 聊天有回覆 | 課表是否更新 |
+| --- | --- | --- |
+| `generate_schedule`（修復前的錯誤值） | 是 | **否，0 門課** |
+| `run_csp_scheduler`（修復後） | 是 | **是，2 門課 / 5 學分** |
+
+第一列重現了原本的缺陷：AI 有回話但課表完全不動。
+
+**待補**：取得 `GEMINI_API_KEY` 後應重跑一次真正的端到端驗證。
+
 ---
 
 ## F15 `ScheduleGrid` 缺少 React key
@@ -383,5 +429,5 @@ demo 使用者（`users.json`）有中文 key 的 `requiredCredits` 所以看起
 
 ## 是否 commit 與 push
 
-- F1、F2、F3 已 commit 並 push 至 `origin claude/personalized-schedule-algorithm-6324a3`。
-- F4~F14 尚未開始。
+- F1、F2、F3、F14 已 commit 並 push 至 `origin claude/personalized-schedule-algorithm-6324a3`。
+- F4~F13、F15 尚未開始。

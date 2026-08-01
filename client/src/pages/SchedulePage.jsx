@@ -1,11 +1,18 @@
-import { useState, useEffect } from 'react';
-import { Sparkles, BookOpen, Download } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/useAuth';
+import { useTheme } from '../contexts/useTheme';
+import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, Sun } from 'lucide-react';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
 import { coursesAPI, scheduleAPI } from '../services/api';
 
 export default function SchedulePage() {
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+
   const [schedule, setSchedule] = useState([]);
   const [courses, setCourses] = useState([]);
   const [selectedCourses, setSelectedCourses] = useState([]);
@@ -14,19 +21,21 @@ export default function SchedulePage() {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
-  useEffect(() => {
-    loadDepartments();
-  }, []);
-
-  const loadDepartments = async () => {
+  const loadDepartments = useCallback(async () => {
     try {
       const data = await coursesAPI.getDepartments();
       setDepartments(data.departments || []);
     } catch (err) {
       console.error('Failed to load departments:', err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadDepartments();
+  }, [loadDepartments]);
 
   const searchCourses = async () => {
     setLoading(true);
@@ -36,6 +45,7 @@ export default function SchedulePage() {
       setShowCourses(true);
     } catch (err) {
       console.error('Search failed:', err);
+      setNotice({ level: 'error', text: `課程搜尋失敗：${err.message}` });
     } finally {
       setLoading(false);
     }
@@ -52,23 +62,25 @@ export default function SchedulePage() {
   const generateSchedule = async () => {
     setLoading(true);
     try {
-      const courseIds = selectedCourses.length > 0
-        ? selectedCourses.map(c => c.id)
-        : [];
-
       const data = await scheduleAPI.generate({
-        courseIds,
+        userId: user?.studentId || 'default',
+        courseIds: selectedCourses.map(c => c.id),
         constraints: {},
       });
 
       if (data.success) {
         setSchedule(data.schedule);
         setShowCourses(false);
+        setNotice(
+          (data.warnings || []).length > 0
+            ? { level: 'warning', text: data.message }
+            : null
+        );
       } else {
-        alert(data.message);
+        setNotice({ level: 'error', text: data.message || '無法產生符合限制的課表。' });
       }
     } catch (err) {
-      alert('排課失敗：' + err.message);
+      setNotice({ level: 'error', text: `排課失敗：${err.message}` });
     } finally {
       setLoading(false);
     }
@@ -77,133 +89,157 @@ export default function SchedulePage() {
   const handleScheduleFromChat = (newSchedule) => {
     setSchedule(newSchedule);
     setShowCourses(false);
+    setNotice(null);
   };
 
-  const totalCredits = schedule.reduce((s, c) => s + c.credits, 0);
+  const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
 
   return (
-    <div className="schedule-page" id="schedule-page">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', overflow: 'hidden' }}>
-        {/* Controls */}
-        <div className="schedule-controls">
-          <div className="schedule-stats">
-            <div className="stat-item">
-              <span className="stat-icon">📚</span>
-              <span className="stat-value">{schedule.length}</span> 門課
-            </div>
-            <div className="stat-item">
-              <span className="stat-icon">🎓</span>
-              <span className="stat-value">{totalCredits}</span> 學分
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              className="btn-secondary"
-              onClick={() => setShowCourses(!showCourses)}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              id="toggle-courses-btn"
-            >
-              <BookOpen size={16} />
-              {showCourses ? '隱藏課程' : '瀏覽課程'}
-            </button>
-            <button
-              className="btn-primary"
-              onClick={generateSchedule}
-              disabled={loading}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              id="generate-btn"
-            >
-              <Sparkles size={16} />
-              {loading ? '排課中...' : '自動排課'}
-            </button>
-          </div>
+    <div className="layout-container" id="schedule-page">
+      {/* Top Navbar */}
+      <header className="top-nav">
+        <div className="nav-brand">
+          <Calendar size={20} className="nav-icon" />
+          <span>課表規劃助手</span>
         </div>
+        <div className="nav-links">
+          <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
+          <button className="nav-btn active"><Calendar size={16}/> 排課</button>
+          <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
+        </div>
+        <div className="nav-actions">
+          <div className="nav-user" onClick={() => setShowUserMenu(!showUserMenu)}>
+            <div className="avatar">{(user?.name || '同')[0]}</div>
+            <span>{user?.name || '同學'}</span>
 
-        {/* Course browser */}
-        {showCourses && (
-          <div className="animate-fadeInUp" style={{
-            background: 'var(--bg-card)',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--border-color)',
-            padding: '16px',
-            maxHeight: '300px',
-            overflow: 'auto',
-          }}>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-              <input
-                className="input-field"
-                placeholder="搜尋課程名稱..."
-                value={filters.keyword}
-                onChange={(e) => setFilters(f => ({ ...f, keyword: e.target.value }))}
-                style={{ flex: 1, minWidth: '150px' }}
-                id="course-search-input"
-              />
-              <select
-                className="input-field"
-                value={filters.department}
-                onChange={(e) => setFilters(f => ({ ...f, department: e.target.value }))}
-                style={{ width: '160px' }}
-                id="department-select"
-              >
-                <option value="">所有系所</option>
-                {departments.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-              <select
-                className="input-field"
-                value={filters.category}
-                onChange={(e) => setFilters(f => ({ ...f, category: e.target.value }))}
-                style={{ width: '100px' }}
-                id="category-select"
-              >
-                <option value="">所有類別</option>
-                <option value="必修">必修</option>
-                <option value="選修">選修</option>
-                <option value="通識">通識</option>
-              </select>
-              <button className="btn-primary" onClick={searchCourses} id="search-btn">搜尋</button>
-            </div>
-
-            {selectedCourses.length > 0 && (
-              <div style={{
-                fontSize: '0.8rem', color: 'var(--accent-emerald)',
-                marginBottom: '8px', padding: '6px 12px',
-                background: 'rgba(16, 185, 129, 0.1)', borderRadius: 'var(--radius-sm)'
-              }}>
-                已選 {selectedCourses.length} 門課（點擊「自動排課」使用已選課程排課）
+            {showUserMenu && (
+              <div className="user-dropdown-menu">
+                <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
+                </button>
+                <button className="user-dropdown-item" onClick={toggleTheme}>
+                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>}
+                  切換主題 ({theme === 'dark' ? '淺色' : '深色'})
+                </button>
+                <div style={{height: '1px', background: 'var(--border-color)', margin: '4px 0'}}></div>
+                <button className="user-dropdown-item" onClick={logout}>登出 (Logout)</button>
               </div>
             )}
+          </div>
+        </div>
+      </header>
 
-            <div style={{ display: 'grid', gap: '8px' }}>
-              {courses.map(course => (
-                <CourseCard
-                  key={course.id}
-                  course={course}
-                  onSelect={toggleCourseSelection}
-                  selected={selectedCourses.some(c => c.id === course.id)}
-                />
-              ))}
-              {courses.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                  點擊搜尋瀏覽課程，或在右側對話框輸入需求
-                </div>
-              )}
+      <div className="dashboard-content">
+        {/* Center: schedule + course browser */}
+        <div className="schedule-area">
+          <div className="schedule-header-bar">
+            <div className="schedule-stats">
+              <span className="stat-badge course-badge">📚 {schedule.length} 門課</span>
+              <span className="stat-badge credit-badge">🎓 {totalCredits} 學分</span>
+            </div>
+            <div className="schedule-actions">
+              <button
+                className="action-btn secondary"
+                onClick={() => setShowCourses(!showCourses)}
+                id="toggle-courses-btn"
+              >
+                <BookOpen size={16} />
+                {showCourses ? '隱藏課程' : '瀏覽課程'}
+              </button>
+              <button
+                className="action-btn primary"
+                onClick={generateSchedule}
+                disabled={loading}
+                id="generate-btn"
+              >
+                <Sparkles size={16} />
+                {loading ? '排課中...' : '自動排課'}
+              </button>
             </div>
           </div>
-        )}
 
-        {/* Schedule Grid */}
-        <div className="schedule-container" style={{ flex: 1, overflow: 'auto' }}>
-          <ScheduleGrid
-            courses={schedule}
-            onCourseClick={setDetailCourse}
-          />
+          {notice && (
+            <div className={`schedule-notice ${notice.level}`} id="schedule-page-notice">
+              <div className="schedule-notice-head">
+                <span>{notice.text}</span>
+                <button
+                  className="schedule-notice-close"
+                  onClick={() => setNotice(null)}
+                  aria-label="關閉提示"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showCourses && (
+            <div className="course-browser" id="course-browser">
+              <div className="course-browser-filters">
+                <input
+                  className="input-field"
+                  placeholder="搜尋課程名稱..."
+                  value={filters.keyword}
+                  onChange={(e) => setFilters(f => ({ ...f, keyword: e.target.value }))}
+                  id="course-search-input"
+                />
+                <select
+                  className="input-field"
+                  value={filters.department}
+                  onChange={(e) => setFilters(f => ({ ...f, department: e.target.value }))}
+                  id="department-select"
+                >
+                  <option value="">所有系所</option>
+                  {departments.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+                <select
+                  className="input-field"
+                  value={filters.category}
+                  onChange={(e) => setFilters(f => ({ ...f, category: e.target.value }))}
+                  id="category-select"
+                >
+                  <option value="">所有類別</option>
+                  <option value="必修">必修</option>
+                  <option value="選修">選修</option>
+                  <option value="通識">通識</option>
+                </select>
+                <button className="action-btn primary" onClick={searchCourses} id="search-btn">搜尋</button>
+              </div>
+
+              {selectedCourses.length > 0 && (
+                <div className="course-browser-selected">
+                  已選 {selectedCourses.length} 門課（點擊「自動排課」使用已選課程排課）
+                </div>
+              )}
+
+              <div className="course-browser-list">
+                {courses.map(course => (
+                  <CourseCard
+                    key={course.id}
+                    course={course}
+                    onSelect={toggleCourseSelection}
+                    selected={selectedCourses.some(c => c.id === course.id)}
+                  />
+                ))}
+                {courses.length === 0 && (
+                  <div className="course-browser-empty">
+                    點擊搜尋瀏覽課程，或在右側對話框輸入需求
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="schedule-wrapper">
+            <ScheduleGrid courses={schedule} onCourseClick={setDetailCourse} />
+          </div>
         </div>
-      </div>
 
-      {/* Chat Panel */}
-      <ChatPanel onScheduleGenerated={handleScheduleFromChat} />
+        {/* Right: AI chat */}
+        <ChatPanel onScheduleGenerated={handleScheduleFromChat} />
+      </div>
 
       {/* Course Detail Modal */}
       {detailCourse && (
@@ -211,25 +247,21 @@ export default function SchedulePage() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setDetailCourse(null)}>✕</button>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>{detailCourse.name}</h2>
-            <span className="course-card-code" style={{ fontSize: '0.85rem' }}>{detailCourse.code}</span>
-
-            <div style={{ display: 'grid', gap: '12px', marginTop: '20px' }}>
-              <div className="course-card-meta" style={{ fontSize: '0.9rem' }}>
-                <span className="course-card-meta-item">👤 {detailCourse.instructor}</span>
-                <span className="course-card-meta-item">📚 {detailCourse.credits} 學分</span>
-                <span className="course-card-meta-item">📍 {detailCourse.location}</span>
-                <span className="course-card-meta-item">
-                  ⏰ 週{['','一','二','三','四','五'][detailCourse.dayOfWeek]} 第{detailCourse.startPeriod}-{detailCourse.endPeriod}節
-                </span>
-              </div>
-
-              {detailCourse.description && (
-                <div style={{ padding: '12px', background: 'var(--bg-glass-light)', borderRadius: 'var(--radius-sm)' }}>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>課程說明</div>
-                  <p style={{ fontSize: '0.9rem', lineHeight: 1.6 }}>{detailCourse.description}</p>
-                </div>
-              )}
+            <span className="detail-code">{detailCourse.code}</span>
+            <div className="detail-meta">
+              <span>👤 {detailCourse.instructor}</span>
+              <span>📚 {detailCourse.credits} 學分</span>
+              <span>📍 {detailCourse.location}</span>
+              <span>
+                ⏰ 週{['', '一', '二', '三', '四', '五'][detailCourse.dayOfWeek]} 第{detailCourse.startPeriod}-{detailCourse.endPeriod}節
+              </span>
             </div>
+            {detailCourse.description && (
+              <div className="detail-desc">
+                <div className="detail-desc-label">課程說明</div>
+                <p>{detailCourse.description}</p>
+              </div>
+            )}
           </div>
         </div>
       )}
