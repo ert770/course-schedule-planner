@@ -1,9 +1,9 @@
 ---
-name: ship
+name: commit-push
 description: 依 AGENTS.md 規範執行驗證、commit 與 push，並產出標準回報。當使用者說「commit」「push」「commit&push」「提交」「推上去」，或要求把目前工作成果提交到 git 時使用。
 ---
 
-# Ship：提交與推送
+# Commit & Push：提交與推送
 
 依 `AGENTS.md` 的「Git / GitHub 操作規範」與「Git Commit / Push 說明規範」執行。
 

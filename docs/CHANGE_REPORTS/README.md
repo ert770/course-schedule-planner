@@ -4,7 +4,7 @@
 
 ## 2026-08-01
 
-1. [新增 ship 提交流程 skill](./2026-08-01-ship-skill.md)
+1. [新增 commit-push 提交流程 skill](./2026-08-01-commit-push-skill.md)
 2. [前後端對接稽核與修復追蹤（持續更新）](./2026-08-01-frontend-backend-alignment-audit.md)
 3. [個人化推薦演算法改造路線圖（持續更新）](./2026-08-01-personalization-roadmap.md)
 
