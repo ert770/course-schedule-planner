@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { generateSchedule, validateSchedule } from '../skills/scheduler.js';
 import { searchCourses } from '../skills/courseQuery.js';
 import { getUserPreferences, saveSchedule, getSavedSchedules } from '../services/memoryService.js';
+import { buildScheduleConstraints } from '../services/constraintService.js';
 import { getAll } from '../db/database.js';
 
 const router = Router();
@@ -35,46 +36,7 @@ router.post('/generate', async (req, res) => {
       });
     }
 
-    const blockedPeriods = [...(constraints.blockedPeriods || prefs.blockedPeriods || [])];
-    if (constraints.mondayFree || prefs.mondayFree) {
-      for (let period = 1; period <= 14; period++) {
-        if (!blockedPeriods.some(item => item.day === 1 && item.period === period)) {
-          blockedPeriods.push({ day: 1, period });
-        }
-      }
-    }
-
-    const mergedConstraints = {
-      maxCredits: constraints.maxCredits || prefs.targetCreditsMax || 22,
-      minCredits: constraints.minCredits || prefs.targetCreditsMin || 15,
-      blockedPeriods,
-      noMorningClasses: constraints.noMorningClasses ?? prefs.noMorningClasses ?? false,
-      noEveningClasses: constraints.noEveningClasses ?? prefs.noEveningClasses ?? false,
-      mustTakeCourseIds: constraints.mustTakeCourseIds || prefs.mustTakeCourses || [],
-      preferCompact: constraints.preferCompact ?? prefs.preferCompact ?? false,
-      maxCoursesPerDay: constraints.maxCoursesPerDay || 4,
-      noMidterm: constraints.noMidterm ?? prefs.noMidterm ?? false,
-      noGroupReport: constraints.noGroupReport ?? prefs.noGroupReport ?? false,
-      discussion: constraints.discussion ?? prefs.preferDiscussion ?? false,
-      learnMore: constraints.learnMore ?? prefs.learnMore ?? false,
-      weightDaily: constraints.weightDaily ?? prefs.weightDaily ?? false,
-      hideConflict: constraints.hideConflict ?? prefs.hideConflict ?? false,
-      practicalExam: constraints.practicalExam ?? prefs.practicalExam ?? false,
-      finalReport: constraints.finalReport ?? prefs.finalReport ?? false,
-      englishTaught: constraints.englishTaught ?? prefs.englishTaught ?? false,
-      lunchBreakFree: constraints.lunchBreakFree ?? prefs.lunchBreakFree ?? false,
-      completedCourseIds: constraints.completedCourseIds || prefs.completedCourseIds || [],
-      selectedCourseIds: constraints.selectedCourseIds || [],
-      watchingCourseIds: constraints.watchingCourseIds || [],
-      courseStates: constraints.courseStates || {},
-      retakeCourseIds: constraints.retakeCourseIds
-        || constraints.failedRequiredCourseIds
-        || prefs.retakeCourseIds
-        || prefs.failedRequiredCourseIds
-        || [],
-      preferredTrack: constraints.preferredTrack || prefs.preferredTrack || null,
-      digitalCreditsNeeded: constraints.digitalCreditsNeeded ?? prefs.digitalCreditsNeeded ?? false,
-    };
+    const mergedConstraints = buildScheduleConstraints(constraints, prefs);
 
     const result = generateSchedule(candidates, mergedConstraints);
     res.json(result);

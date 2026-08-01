@@ -37,6 +37,19 @@ node --check src/app.js
 | S8 | 設定週一空堂 | 週一不排正式加選課 |
 | S9 | 學分低於最低門檻 | 回傳警告或補課建議 |
 | S10 | 無法滿足所有硬性限制 | 回傳失敗原因 |
+| S11 | request 送空陣列偏好，但使用者有已儲存偏好 | 退回已儲存偏好，不得清空 |
+| S12 | request 送非空陣列偏好 | 覆蓋已儲存偏好 |
+| S13 | 表達興趣偏好且候選充足 | 興趣方案即使學分較少仍為 `plans[0]` |
+| S14 | 未表達任何軟性偏好 | `hasExpressedPreference` 為 false 並回傳警告 |
+| S15 | Agent 送 `mondayFree` | 展開為週一 1-14 節封鎖並與既有封鎖時段合併 |
+
+## AI Agent 契約測試
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| P1 | `buildSystemPrompt` 輸出 | 含 `run_csp_scheduler` 的所有可用參數 |
+| P2 | 使用者有已儲存興趣關鍵字 | prompt 的偏好摘要列出這些關鍵字 |
+| P3 | `agentService` 新增排課參數 | `promptService.js` 與本文件同步更新 |
 
 ## API 測試
 

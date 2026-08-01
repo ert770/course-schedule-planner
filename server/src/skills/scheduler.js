@@ -5,6 +5,10 @@
 const DEFAULT_MIN_CREDITS = 15;
 const DEFAULT_MAX_CREDITS = 22;
 const DEFAULT_MAX_COURSES_PER_DAY = 4;
+const WEEK_DAYS = 5;
+const INTEREST_KEYWORD_SCORE = 40;
+const MAX_EASY_COURSE_SCORE = 100;
+const PREFERENCE_SCORE_EPSILON = 0.001;
 
 const CATEGORY_PRIORITY = {
   '必修': 0,
@@ -144,12 +148,16 @@ function getEasyCourseScore(course) {
   return score;
 }
 
-function getInterestScore(course, constraints) {
-  const keywords = [
+function collectInterestKeywords(constraints) {
+  return [
     ...toArray(constraints.preferredKeywords),
     ...toArray(constraints.interests),
     constraints.preferredTrack,
   ].filter(Boolean);
+}
+
+function getInterestScore(course, constraints) {
+  const keywords = collectInterestKeywords(constraints);
 
   if (keywords.length === 0) return 0;
 
@@ -164,8 +172,71 @@ function getInterestScore(course, constraints) {
   ].filter(Boolean).join(' ');
 
   return keywords.reduce((score, keyword) => (
-    searchable.includes(keyword) ? score + 40 : score
+    searchable.includes(keyword) ? score + INTEREST_KEYWORD_SCORE : score
   ), 0);
+}
+
+// 方案偏好符合度：所有方案都用「同一組使用者權重」評分，方案不得用自己的
+// variant 偏誤自評，否則彼此無從比較。
+function buildPreferenceProfile(constraints) {
+  return {
+    interest: collectInterestKeywords(constraints).length > 0 ? 1 : 0,
+    compact: constraints.preferCompact ? 1 : 0,
+    easy: (constraints.preferEasyCourses ?? constraints.preferEasy) ? 1 : 0,
+  };
+}
+
+function clamp01(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function getInterestCoverage(plan, constraints) {
+  const keywords = collectInterestKeywords(constraints);
+  if (keywords.length === 0 || plan.schedule.length === 0) return 0;
+
+  const maxPerCourse = keywords.length * INTEREST_KEYWORD_SCORE;
+  const average = plan.schedule
+    .reduce((sum, course) => sum + getInterestScore(course, constraints), 0) / plan.schedule.length;
+
+  return clamp01(average / maxPerCourse);
+}
+
+function getCompactness(plan) {
+  const courseCount = plan.schedule.length;
+  if (courseCount === 0) return 0;
+
+  const usedDays = new Set(plan.schedule.map(course => course.dayOfWeek)).size;
+  const maxDays = Math.min(WEEK_DAYS, courseCount);
+  if (maxDays <= 1) return 1;
+
+  return clamp01((maxDays - usedDays) / (maxDays - 1));
+}
+
+function getEasiness(plan) {
+  if (plan.schedule.length === 0) return 0;
+
+  const average = plan.schedule
+    .reduce((sum, course) => sum + getEasyCourseScore(course), 0) / plan.schedule.length;
+
+  return clamp01(average / MAX_EASY_COURSE_SCORE);
+}
+
+function evaluatePreference(plan, constraints, profile) {
+  const breakdown = {
+    interest: getInterestCoverage(plan, constraints),
+    compact: getCompactness(plan),
+    easy: getEasiness(plan),
+  };
+
+  const weightSum = profile.interest + profile.compact + profile.easy;
+  const score = weightSum === 0
+    ? 0
+    : (breakdown.interest * profile.interest
+      + breakdown.compact * profile.compact
+      + breakdown.easy * profile.easy) / weightSum;
+
+  return { score, breakdown };
 }
 
 function scoreCourse(course, schedule, constraints, variant, requiredIds, retakeIds) {
@@ -369,14 +440,27 @@ export function generateSchedule(candidateCourses, constraints = {}) {
     };
   }
 
+  const preferenceProfile = buildPreferenceProfile(constraints);
+  const hasExpressedPreference = Object.values(preferenceProfile).some(weight => weight > 0);
+
   const plans = uniquePlans(
     PLAN_VARIANTS
-      .map(variant => buildPlan(candidateCourses, constraints, variant))
+      .map(variant => {
+        const plan = buildPlan(candidateCourses, constraints, variant);
+        const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
+        plan.preferenceScore = score;
+        plan.preferenceBreakdown = breakdown;
+        return plan;
+      })
       .sort((a, b) => {
         if (a.success !== b.success) return a.success ? -1 : 1;
         const aMeetsMin = a.totalCredits >= a.minCredits ? 1 : 0;
         const bMeetsMin = b.totalCredits >= b.minCredits ? 1 : 0;
         if (aMeetsMin !== bMeetsMin) return bMeetsMin - aMeetsMin;
+        // 偏好符合度優先於總學分，避免整條個人化管線在最後一步被學分數蓋掉。
+        if (Math.abs(a.preferenceScore - b.preferenceScore) > PREFERENCE_SCORE_EPSILON) {
+          return b.preferenceScore - a.preferenceScore;
+        }
         return b.totalCredits - a.totalCredits;
       })
   );
@@ -397,6 +481,14 @@ export function generateSchedule(candidateCourses, constraints = {}) {
   }
 
   const allWarnings = [...new Set(plans.flatMap(plan => plan.warnings))];
+  if (!hasExpressedPreference) {
+    allWarnings.push('未設定興趣關鍵字、集中排課或涼課偏好，主推方案改以總學分決定，個人化程度有限。');
+  }
+
+  const selectionReason = hasExpressedPreference
+    ? `偏好符合度 ${Math.round(primary.preferenceScore * 100)}%`
+    : '未表達偏好，改依總學分挑選';
+
   return {
     success: true,
     schedule: primary.schedule,
@@ -406,7 +498,9 @@ export function generateSchedule(candidateCourses, constraints = {}) {
     excludedCourses: primary.excludedCourses,
     watchedCourses: primary.watchedCourses,
     warnings: allWarnings,
-    message: `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」：${primary.schedule.length} 門課，共 ${primary.totalCredits} 學分。`,
+    preferenceProfile,
+    hasExpressedPreference,
+    message: `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課，共 ${primary.totalCredits} 學分。`,
   };
 }
 

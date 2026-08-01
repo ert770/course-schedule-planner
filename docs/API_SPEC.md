@@ -154,13 +154,28 @@ Request:
     "blockedPeriods": [],
     "noMorningClasses": false,
     "noEveningClasses": false,
-    "mustTakeCourseIds": [],
-    "preferCompact": false
+    "mustTakeCourseIds": [7],
+    "preferCompact": false,
+    "preferredKeywords": ["網路", "資安"],
+    "interests": [],
+    "preferredTrack": null,
+    "preferEasyCourses": false
   }
 }
 ```
 
 `courseIds`, `selectedCourseIds`, `watchingCourseIds`, `completedCourseIds`, and `retakeCourseIds` should use section ids.
+
+`preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供任何一項時，主推方案改以總學分決定。
+
+### 限制條件合併語意
+
+request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
+
+- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`completedCourseIds`、`retakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
+- **`selectedCourseIds`、`watchingCourseIds`、`courseStates`**：屬於本次操作的當下狀態，不從已儲存偏好回填。
+- **`mondayFree`**：會展開成週一第 1~14 節的 `blockedPeriods`，並與既有封鎖時段合併。
 
 Response:
 
@@ -173,9 +188,22 @@ Response:
   "message": "...",
   "plans": [],
   "excludedCourses": [],
-  "warnings": []
+  "warnings": [],
+  "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
+  "hasExpressedPreference": true
 }
 ```
+
+每個 `plans[]` 元素另含：
+
+```json
+{
+  "preferenceScore": 0.214,
+  "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0 }
+}
+```
+
+`plans` 依 `success` → 是否達最低學分 → `preferenceScore` → `totalCredits` 排序，`plans[0]` 即為主推方案，其內容會複製到頂層 `schedule`。
 
 ### `POST /api/schedule/validate`
 
