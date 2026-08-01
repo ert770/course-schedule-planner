@@ -106,9 +106,45 @@ function parseTimeFromBitmask(timeBitmask) {
   };
 }
 
+const CHINESE_DAY_TO_NUMBER = {
+  一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7,
+};
+
+// 學校課程系統的實際格式為 `(二)06-08`，同一門課可能有多個時段，
+// 以空白分隔，例如 `(四)01-04 (四)06-09 (五)01-04`。
+// 節次 `00` 代表尚未排定，視為無效。
+function parseTimeBlocks(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') {
+    return [];
+  }
+
+  const blocks = [];
+  const pattern = /[(（]\s*([一二三四五六日天])\s*[)）]\s*(\d{1,2})(?:\s*[-~]\s*(\d{1,2}))?/gu;
+
+  for (const match of timeStr.matchAll(pattern)) {
+    const dayOfWeek = CHINESE_DAY_TO_NUMBER[match[1]];
+    const startPeriod = Number(match[2]);
+    const endPeriod = match[3] === undefined ? startPeriod : Number(match[3]);
+
+    if (!dayOfWeek || !startPeriod || !endPeriod) continue;
+    if (startPeriod > endPeriod) continue;
+
+    blocks.push({ dayOfWeek, startPeriod, endPeriod });
+  }
+
+  return blocks;
+}
+
 function parseTimeFromText(timeStr) {
   if (!timeStr || typeof timeStr !== 'string') {
     return null;
+  }
+
+  const blocks = parseTimeBlocks(timeStr);
+  if (blocks.length > 0) {
+    // 目前的課程資料模型只容納單一時段，先取第一段並保留完整清單，
+    // 供後續支援多時段衝堂判定時使用。
+    return { ...blocks[0], timeBlocks: blocks };
   }
 
   const normalized = timeStr.trim();
@@ -148,6 +184,7 @@ function parseSectionTime(row) {
     dayOfWeek: null,
     startPeriod: null,
     endPeriod: null,
+    timeBlocks: [],
   };
 }
 
@@ -166,6 +203,7 @@ function mapCourseRow(row) {
     department: row.dept,
     credits,
     dayOfWeek: time.dayOfWeek,
+    timeBlocks: time.timeBlocks || [],
     startPeriod: time.startPeriod,
     endPeriod: time.endPeriod,
     location: row.room,
@@ -270,7 +308,11 @@ async function getMysqlCourses() {
       cs.\`rag_tag\`,
       cs.\`selection_code\`
     FROM \`Course_Sections\` cs
-    INNER JOIN \`Courses\` c ON c.\`course_id\` = cs.\`course_id\`
+    -- Courses.course_id 是 utf8mb4_0900_ai_ci，Course_Sections.course_id 是
+    -- utf8mb4_unicode_ci。兩者字元集相同但校對規則不同，直接用 = 比較會拋出
+    -- ER_CANT_AGGREGATE_2COLLATIONS，因此明確指定共同的校對規則。
+    INNER JOIN \`Courses\` c
+      ON c.\`course_id\` COLLATE utf8mb4_unicode_ci = cs.\`course_id\` COLLATE utf8mb4_unicode_ci
     ORDER BY cs.\`year\` DESC, cs.\`semester\`, c.\`course_id\`, cs.\`section_id\`
   `);
   return rows.map(mapCourseRow);
