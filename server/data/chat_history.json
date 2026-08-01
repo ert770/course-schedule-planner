@@ -698,5 +698,19 @@
     "role": "assistant",
     "content": "很抱歉，處理您的請求時發生錯誤。請確認後端金鑰是否設定正確，或稍後再試。",
     "createdAt": "2026-05-11T11:16:05.915Z"
+  },
+  {
+    "id": 101,
+    "userId": "default",
+    "role": "user",
+    "content": "幫我排課表",
+    "createdAt": "2026-08-01T09:31:14.200Z"
+  },
+  {
+    "id": 102,
+    "userId": "default",
+    "role": "assistant",
+    "content": "很抱歉，處理您的請求時發生錯誤。請確認後端金鑰是否設定正確，或稍後再試。",
+    "createdAt": "2026-08-01T09:31:14.417Z"
   }
 ]
