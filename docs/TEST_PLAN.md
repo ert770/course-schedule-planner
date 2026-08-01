@@ -42,6 +42,8 @@ node --check src/app.js
 | S13 | 表達興趣偏好且候選充足 | 興趣方案即使學分較少仍為 `plans[0]` |
 | S14 | 未表達任何軟性偏好 | `hasExpressedPreference` 為 false 並回傳警告 |
 | S15 | Agent 送 `mondayFree` | 展開為週一 1-14 節封鎖並與既有封鎖時段合併 |
+| S16 | 候選課程全為關注狀態 | `success` 為 true、`watchOnly` 為 true、回傳關注課程與對應訊息 |
+| S17 | 指定必修排不進去且有關注課程 | `success` 為 false，但 `watchedCourses` 仍完整回傳 |
 
 ## AI Agent 契約測試
 

@@ -411,8 +411,17 @@ function buildPlan(candidateCourses, constraints, variant) {
     plan.warnings.push('目前課程資料缺少 digitalCredits 欄位，尚無法完整檢查數位課程畢業門檻');
   }
 
-  plan.success = plan.schedule.length > 0 && plan.failures.length === 0;
+  // 關注課程不佔時段，因此「只有關注課程」是合法結果而非失敗。
+  // 若把它判成失敗，使用者的關注課程會連同回應一起被丟掉。
+  plan.watchOnly = plan.schedule.length === 0 && plan.watchedCourses.length > 0;
+  plan.success = plan.failures.length === 0
+    && (plan.schedule.length > 0 || plan.watchedCourses.length > 0);
   plan.courseCount = plan.schedule.length;
+
+  if (plan.watchOnly) {
+    plan.warnings.push('目前沒有排入任何正式加選課程，課表上只有關注課程。');
+  }
+
   return plan;
 }
 
@@ -435,6 +444,7 @@ export function generateSchedule(candidateCourses, constraints = {}) {
       totalCredits: 0,
       courseCount: 0,
       excludedCourses: [],
+      watchedCourses: [],
       warnings: ['沒有可用的候選課程'],
       message: '找不到符合條件的候選課程，請調整搜尋條件或偏好設定。',
     };
@@ -475,6 +485,8 @@ export function generateSchedule(candidateCourses, constraints = {}) {
       totalCredits: 0,
       courseCount: 0,
       excludedCourses: primary?.excludedCourses || [],
+      // 失敗時仍要帶回關注課程，否則使用者標記的關注會從畫面上消失。
+      watchedCourses: primary?.watchedCourses || [],
       warnings,
       message: warnings[0] || '無法產生符合限制的課表。',
     };
@@ -489,8 +501,13 @@ export function generateSchedule(candidateCourses, constraints = {}) {
     ? `偏好符合度 ${Math.round(primary.preferenceScore * 100)}%`
     : '未表達偏好，改依總學分挑選';
 
+  const message = primary.watchOnly
+    ? `目前沒有可排入的正式加選課程，僅顯示 ${primary.watchedCourses.length} 門關注課程供你比較時段。`
+    : `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課，共 ${primary.totalCredits} 學分。`;
+
   return {
     success: true,
+    watchOnly: primary.watchOnly,
     schedule: primary.schedule,
     plans,
     totalCredits: primary.totalCredits,
@@ -500,7 +517,7 @@ export function generateSchedule(candidateCourses, constraints = {}) {
     warnings: allWarnings,
     preferenceProfile,
     hasExpressedPreference,
-    message: `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課，共 ${primary.totalCredits} 學分。`,
+    message,
   };
 }
 

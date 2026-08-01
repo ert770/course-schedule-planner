@@ -10,7 +10,7 @@
 
 ## 最後更新
 
-2026-08-01（完成 #1 並套用對抗式審查修正；新增 #10、#11）
+2026-08-01（完成 #1、#11 並套用對抗式審查修正；新增 #10）
 
 ## 背景
 
@@ -46,7 +46,7 @@
 | 8 | 先修關係與多學期路徑規劃 | ⬜ 未開始 | 無 |
 | 9 | 探索機制：小比例隨機與多樣性重排 | ⬜ 未開始 | #2 |
 | 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | ⬜ 未開始 | #4 |
-| 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ⬜ 未開始 | 無 |
+| 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ✅ 已完成 | 無 |
 
 ---
 
@@ -275,7 +275,7 @@
 
 ## #11 修復排課失敗時關注課程從回應中消失
 
-**狀態**：⬜ 未開始
+**狀態**：✅ 已完成（2026-08-01）
 
 於補做 `docs/TEST_PLAN.md` S1-S10 時發現。**既有缺陷，非 #1 或對抗式審查修正引入。**
 
@@ -296,3 +296,47 @@ generateSchedule([課程5, 課程6], { watchingCourseIds: [5, 6], minCredits: 0 
 2. 失敗回傳物件缺少 `watchedCourses`。任何失敗情境都會遺失關注課程。
 
 **違反規格**：`docs/SCHEDULING_LOGIC.md:28-34` 規定關注課程會顯示在課表上供學生觀察時間分佈。
+
+### 修改檔案清單
+
+- `server/src/skills/scheduler.js`
+- `docs/SCHEDULING_LOGIC.md`
+- `docs/API_SPEC.md`
+- `docs/TEST_PLAN.md`
+
+### 主要改動內容
+
+- `plan.success` 改為 `failures.length === 0 && (schedule.length > 0 || watchedCourses.length > 0)`。關注課程本來就不佔時段，「只有關注課程」是合法結果而非失敗。
+- 新增 `plan.watchOnly` 旗標，並在該情境下加上警告訊息。
+- 失敗回傳路徑補上 `watchedCourses`，與成功路徑一致。無候選課程的早期回傳也補上，維持回應形狀一致。
+- `watchOnly` 情境給予專屬訊息，不再誤報「無法產生符合限制的課表」。
+- 頂層回應新增 `watchOnly` 欄位。
+- `docs/SCHEDULING_LOGIC.md` 補上兩條關注課程規則，把此行為固定為規格而非實作細節。
+
+### 影響範圍
+
+- `POST /api/schedule/generate`
+- `POST /api/chat` 的 `run_csp_scheduler` tool call
+- 回應為向後相容的欄位新增。**行為變更**：候選課程全為關注狀態時，`success` 由 `false` 改為 `true`。
+
+### 測試與驗證結果
+
+| 情境 | 結果 |
+| --- | --- |
+| 只有關注課程 | `success=true`、`watchOnly=true`、回傳 2 門關注課、訊息正確 |
+| 指定必修排不進去 + 有關注課 | `success=false`（正確），`watchedCourses` 仍完整回傳 1 門 |
+| 正常課表 + 關注課 | 無回歸，`watchOnly=false`，訊息維持原格式 |
+
+- **S1-S10：13 項全數通過**（修正前為 12 通過 1 失敗）。
+- 限制合併與 prompt 契約測試：17 項全數通過。
+- #1 驗收情境 B 重跑通過，無回歸。
+- `node --check` 對 `server/src/**/*.js` 全數通過。
+- `npm run build`、`npm run lint`：通過。
+
+### 已知限制
+
+前端目前**完全沒有關注課程相關程式碼**（`client/src/` 查無 `watchedCourses` / `watching` / `關注`）。`docs/UX_FLOW.md:42` 已將此標註為「未來應支援」，屬既有未實作項目，不在本任務範圍。後端修正確保資料至少不再遺失，前端接上後即可直接使用。
+
+### 是否 commit 與 push
+
+- 已於後續 commit 提交。

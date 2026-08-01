@@ -189,10 +189,16 @@ Response:
   "plans": [],
   "excludedCourses": [],
   "warnings": [],
+  "watchedCourses": [],
+  "watchOnly": false,
   "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
   "hasExpressedPreference": true
 }
 ```
+
+`watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
+
+`watchOnly` 為 `true` 時表示沒有任何正式加選課程排入，課表上只有關注課程。此情境的 `success` 仍為 `true`，因為關注課程本身是合法且可顯示的結果。
 
 每個 `plans[]` 元素另含：
 
