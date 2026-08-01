@@ -82,7 +82,7 @@ function parseTimeFromBitmask(timeBitmask) {
         period: (index % periodsPerDay) + 1,
       };
     })
-    .filter(slot => slot && slot.day >= 1 && slot.day <= 5);
+    .filter(slot => slot && slot.day >= 1 && slot.day <= 7);
 
   if (activeSlots.length === 0) {
     return null;

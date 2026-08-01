@@ -55,7 +55,7 @@
 | F12 | GraduationPage 三種按鈕沒有 onClick | 🟡 中 | ⬜ 未開始 |
 | F13 | 畢業學分分類會渲染出英文 key，且與規格不符 | 🟡 中 | ⬜ 未開始 |
 | F14 | `SchedulePage` 未掛載到任何路由 | 🟡 中 | ✅ 已完成 |
-| F15 | `ScheduleGrid` 缺少 React key，持續污染 console | 🟡 中 | ⬜ 未開始 |
+| F15 | `ScheduleGrid` 缺少 React key，持續污染 console | 🟡 中 | ✅ 已完成 |
 
 ---
 
@@ -414,6 +414,10 @@ demo 使用者（`users.json`）有中文 key 的 `requiredCredits` 所以看起
 **影響**：每次渲染課表都會污染 console。由於瀏覽器驗收現已是 `commit-push` skill 的必要步驟，既有噪音會讓後續真正的新錯誤更難被發現。
 
 **修法**：改用 `<Fragment key={period.num}>` 並 import `Fragment`。屬一行修正。
+
+### 修復（2026-08-01）
+
+已於 `2026-08-01-align-scheduler-with-database.md` 的多時段課表渲染改動中一併修正。全新分頁載入後 console 無任何錯誤。
 
 ## 建議修復順序
 

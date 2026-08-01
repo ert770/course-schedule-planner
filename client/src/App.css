@@ -565,7 +565,8 @@
 
 /* ===== Schedule Grid (Light) ===== */
 .schedule-grid {
-  display: grid; grid-template-columns: 56px repeat(5, 1fr);
+  /* 七欄：資料庫含週六與週日課程 */
+  display: grid; grid-template-columns: 56px repeat(7, 1fr);
   gap: 1px; background: var(--border-color);
   border-radius: var(--radius-lg); overflow: hidden; min-height: 100%;
 }

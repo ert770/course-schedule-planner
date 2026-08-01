@@ -5,7 +5,8 @@
 const DEFAULT_MIN_CREDITS = 15;
 const DEFAULT_MAX_CREDITS = 22;
 const DEFAULT_MAX_COURSES_PER_DAY = 4;
-const WEEK_DAYS = 5;
+// 資料庫實際含週六與週日課程（週六 81 筆、週日 9 筆），因此以七天為準。
+const WEEK_DAYS = 7;
 const INTEREST_KEYWORD_SCORE = 40;
 const MAX_EASY_COURSE_SCORE = 100;
 const PREFERENCE_SCORE_EPSILON = 0.001;
@@ -83,18 +84,23 @@ function textIncludesAny(text, keywords) {
 function hardConstraintReason(course, constraints) {
   if (isWatching(course, constraints)) return null;
 
-  if (constraints.noMorningClasses && course.startPeriod <= 1) {
+  // 時間類限制必須檢查課程的每一個時段，否則多時段課程只會被檢查第一段。
+  const blocks = getTimeBlocks(course);
+
+  if (constraints.noMorningClasses && blocks.some(block => block.startPeriod <= 1)) {
     return '不符合不上早八限制';
   }
 
-  if (constraints.noEveningClasses && course.startPeriod >= 12) {
+  if (constraints.noEveningClasses && blocks.some(block => block.startPeriod >= 12)) {
     return '不符合不上晚課限制';
   }
 
   for (const bp of toArray(constraints.blockedPeriods)) {
-    if (course.dayOfWeek !== bp.day) continue;
-    for (let period = course.startPeriod; period <= course.endPeriod; period += 1) {
-      if (period === bp.period) return '位於封鎖時段';
+    for (const block of blocks) {
+      if (block.dayOfWeek !== bp.day) continue;
+      if (bp.period >= block.startPeriod && bp.period <= block.endPeriod) {
+        return '位於封鎖時段';
+      }
     }
   }
 
@@ -120,7 +126,8 @@ function hardConstraintReason(course, constraints) {
   if (constraints.englishTaught && !(desc.includes('英文') || course.language === 'English')) {
     return '不符合英文授課偏好';
   }
-  if (constraints.lunchBreakFree && course.startPeriod <= 5 && course.endPeriod >= 5) {
+  if (constraints.lunchBreakFree
+    && blocks.some(block => block.startPeriod <= 5 && block.endPeriod >= 5)) {
     return '不符合午休保留偏好';
   }
   if (constraints.learnMore && !textIncludesAny(desc, ['實作', '專題', '深入', '進階', '應用'])) {
@@ -130,9 +137,35 @@ function hardConstraintReason(course, constraints) {
   return null;
 }
 
+// 一門課可能有多個時段，例如 `(四)01-04 (四)06-09 (五)01-04`。
+// 資料庫中約 9% 的課程屬於此類，只比對第一段會漏判衝堂。
+function getTimeBlocks(course) {
+  if (Array.isArray(course.timeBlocks) && course.timeBlocks.length > 0) {
+    return course.timeBlocks;
+  }
+  if (course.dayOfWeek == null || course.startPeriod == null) {
+    return [];
+  }
+  return [{
+    dayOfWeek: course.dayOfWeek,
+    startPeriod: course.startPeriod,
+    endPeriod: course.endPeriod ?? course.startPeriod,
+  }];
+}
+
+function blocksOverlap(a, b) {
+  if (a.dayOfWeek !== b.dayOfWeek) return false;
+  return !(a.endPeriod < b.startPeriod || b.endPeriod < a.startPeriod);
+}
+
 function timeConflict(courseA, courseB) {
-  if (courseA.dayOfWeek !== courseB.dayOfWeek) return false;
-  return !(courseA.endPeriod < courseB.startPeriod || courseB.endPeriod < courseA.startPeriod);
+  const blocksA = getTimeBlocks(courseA);
+  const blocksB = getTimeBlocks(courseB);
+  return blocksA.some(a => blocksB.some(b => blocksOverlap(a, b)));
+}
+
+function getUsedDays(course) {
+  return new Set(getTimeBlocks(course).map(block => block.dayOfWeek));
 }
 
 function conflictsWithSchedule(course, schedule) {
@@ -161,6 +194,8 @@ function getInterestScore(course, constraints) {
 
   if (keywords.length === 0) return 0;
 
+  // ragTag 是資料庫 `Course_Sections.rag_tag` 的主題標籤陣列，100% 有值，
+  // 是比課名與課程描述更精準的興趣訊號，必須納入比對。
   const searchable = [
     course.name,
     course.code,
@@ -169,6 +204,7 @@ function getInterestScore(course, constraints) {
     course.category,
     course.description,
     course.track,
+    ...toArray(course.ragTag),
   ].filter(Boolean).join(' ');
 
   return keywords.reduce((score, keyword) => (
@@ -206,7 +242,9 @@ function getCompactness(plan) {
   const courseCount = plan.schedule.length;
   if (courseCount === 0) return 0;
 
-  const usedDays = new Set(plan.schedule.map(course => course.dayOfWeek)).size;
+  const usedDays = new Set(plan.schedule.flatMap(course => [...getUsedDays(course)])).size;
+  if (usedDays === 0) return 0;
+
   const maxDays = Math.min(WEEK_DAYS, courseCount);
   if (maxDays <= 1) return 1;
 
@@ -250,8 +288,10 @@ function scoreCourse(course, schedule, constraints, variant, requiredIds, retake
   score += (course.credits || 0) * 12;
 
   if (variant.id === 'compact' || constraints.preferCompact) {
-    const usedDays = new Set(schedule.map(c => c.dayOfWeek));
-    score += usedDays.has(course.dayOfWeek) ? 120 : -20;
+    const usedDays = new Set(schedule.flatMap(c => [...getUsedDays(c)]));
+    const courseDays = [...getUsedDays(course)];
+    const overlapping = courseDays.filter(day => usedDays.has(day)).length;
+    score += overlapping > 0 ? 120 * overlapping : -20 * Math.max(1, courseDays.length);
   }
 
   if (variant.id === 'easy_score') {
@@ -303,10 +343,13 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
     return false;
   }
 
-  const dayCount = plan.schedule.filter(c => c.dayOfWeek === course.dayOfWeek).length;
-  if (dayCount >= plan.maxCoursesPerDay) {
-    plan.excludedCourses.push({ course, reason: `超過每日 ${plan.maxCoursesPerDay} 門課限制` });
-    return false;
+  // 單日課程數需計入課程佔用的每一天，多時段課程可能橫跨多天。
+  for (const day of getUsedDays(course)) {
+    const dayCount = plan.schedule.filter(c => getUsedDays(c).has(day)).length;
+    if (dayCount >= plan.maxCoursesPerDay) {
+      plan.excludedCourses.push({ course, reason: `超過每日 ${plan.maxCoursesPerDay} 門課限制` });
+      return false;
+    }
   }
 
   plan.schedule.push({ ...course, scheduleState: 'selected', reason });

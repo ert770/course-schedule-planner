@@ -117,18 +117,36 @@
 - 偏好英文授課。
 - 偏好學到較多內容。
 
-## 衝堂判定
+## 課程時段
 
-兩門加選課程若符合以下條件，即為衝堂：
-
-- `dayOfWeek` 相同。
-- 其中一門課的時段與另一門課的時段重疊。
-
-判定公式：
+一門課可能有多個時段，且可跨不同天。資料庫中約 9% 的課程屬於此類，例如：
 
 ```text
-not (courseA.endPeriod < courseB.startPeriod or courseB.endPeriod < courseA.startPeriod)
+(四)01-04 (四)06-09 (五)01-04
 ```
+
+每門課的完整時段以 `timeBlocks` 陣列表示，每個元素含 `dayOfWeek`、`startPeriod`、`endPeriod`。頂層的 `dayOfWeek` / `startPeriod` / `endPeriod` 為第一段，僅供相容用途，**不得**作為衝堂或限制判定的唯一依據。
+
+上課日為 `1`（週一）至 `7`（週日）。實際課程資料含週六與週日課程，課表顯示與排課邏輯皆須涵蓋七天。
+
+## 衝堂判定
+
+兩門加選課程只要**任一組時段**重疊，即為衝堂：
+
+- 兩個時段的 `dayOfWeek` 相同。
+- 兩個時段的節次範圍重疊。
+
+判定公式（對兩門課的 `timeBlocks` 取笛卡兒積，任一組成立即為衝堂）：
+
+```text
+exists a in A.timeBlocks, b in B.timeBlocks such that
+  a.dayOfWeek == b.dayOfWeek
+  and not (a.endPeriod < b.startPeriod or b.endPeriod < a.startPeriod)
+```
+
+只比對第一段會漏判。實例：`建築設計(二) (四)01-04 (四)06-09 (五)01-04` 與 `循環經濟 (四)06-07`，第一段不重疊但第二段完全重疊。
+
+時間類硬性限制（不上早八、不上晚課、封鎖時段、午休保留）與單日課程數上限，同樣必須檢查課程的每一個時段。
 
 ## 多方案課表
 

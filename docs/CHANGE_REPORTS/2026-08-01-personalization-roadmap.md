@@ -18,7 +18,11 @@
 
 判定依據：兩位修課歷史、互動行為完全不同的學生，只要表單填寫相同，`buildPlan()` 會回傳完全相同的課表。個人化程度等於使用者自己勾了幾個 checkbox。
 
-實測 `server/data/courses.json`（55 門課，description 平均 21 字）後另發現偏好層在真實資料上大量失效：
+> **2026-08-01 修正**：下表是以 `server/data/courses.json` 的 55 筆**示範資料**（description 平均 21 字）實測。接上 MySQL 後已用 3560 筆真實課程（description 平均 161 字、100% 有內容）重測，結論有實質變化——`discussion` 不再全滅、`practicalExam` 與 `finalReport` 已可運作，但 `weightDaily`、`noMidterm`、`learnMore` 與涼課關鍵字仍然失效。完整對照見 [排課演算法與資料庫對齊](./2026-08-01-align-scheduler-with-database.md) 的「關鍵字命中率重測」章節。下表保留作為示範資料下的紀錄。
+>
+> `#3`（硬過濾改軟懲罰）與 `#4`（結構化評分欄位）仍然成立且必要。
+
+實測 `server/data/courses.json`（55 門課，description 平均 21 字）後發現偏好層在示範資料上大量失效：
 
 | 偏好開關 | 命中課程數 / 55 | 開啟後實際後果 |
 | --- | ---: | --- |

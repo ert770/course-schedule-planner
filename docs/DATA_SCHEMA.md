@@ -27,8 +27,8 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `course_id` | varchar(45) | join `Courses.course_id` |
 | `teacher` | varchar(45) | `course.instructor`, `course.teacher` |
 | `room` | varchar(45) | `course.location`, `course.room` |
-| `time_str` | text | `course.timeStr` and parsed schedule time |
-| `time_bitmask` | varchar(64) | `course.timeBitmask` and fallback parsed schedule time |
+| `time_str` | text | `course.timeStr`、`course.timeBlocks`，以及 `dayOfWeek` / `startPeriod` / `endPeriod` |
+| `time_bitmask` | varchar(64) | `course.timeBitmask`，僅在 `time_str` 無法解析時作為後備 |
 | `year` | int | `course.year` |
 | `semester` | varchar(45) | `course.semester` |
 | `current_amount` | int | `course.currentAmount` |
@@ -93,8 +93,23 @@ The following collections remain file-backed in `server/data/*.json` because the
   "endPeriod": 4,
   "location": "B101",
   "category": "必修",
-  "timeStr": "星期一 2-4"
+  "timeStr": "(一)02-04",
+  "timeBlocks": [
+    { "dayOfWeek": 1, "startPeriod": 2, "endPeriod": 4 }
+  ],
+  "ragTag": ["資料結構", "演算法"]
 }
 ```
+
+### 課程時段欄位
+
+`time_str` 的實際格式為 `(二)06-08`，同一門課可能含多個以空白分隔的時段，例如 `(四)01-04 (四)06-09 (五)01-04`。節次 `00` 代表尚未排定。
+
+- `timeBlocks`：完整時段清單，每個元素含 `dayOfWeek`（1=週一 … 7=週日）、`startPeriod`、`endPeriod`。**衝堂與時間類限制判定必須使用此欄位。**
+- `dayOfWeek` / `startPeriod` / `endPeriod`：`timeBlocks[0]` 的內容，僅供相容用途。無法解析時為 `null`。
+
+### `ragTag`
+
+`Course_Sections.rag_tag` 的 JSON 主題標籤陣列，資料庫中 100% 有值，例如 `["機器學習","圖像處理","物件偵測"]`。排課引擎的興趣比對會使用此欄位。
 
 排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。
