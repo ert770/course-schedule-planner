@@ -30,8 +30,8 @@ export default function ChatPanel({ onScheduleGenerated }) {
       const res = await chatAPI.send(msg);
       setMessages(prev => [...prev, { role: 'assistant', content: res.reply }]);
 
-      // If schedule was generated, notify parent
-      if (res.intent === 'generate_schedule' && res.data?.success) {
+      // intent 為後端 agentService 的 tool 名稱，須與 run_csp_scheduler 完全一致
+      if (res.intent === 'run_csp_scheduler' && res.data?.success) {
         onScheduleGenerated?.(res.data.schedule);
       }
     } catch (err) {

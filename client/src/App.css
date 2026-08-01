@@ -268,6 +268,58 @@
   padding: 1px; /* To show grid borders properly */
 }
 
+/* 排課結果提示：失敗原因、警告與被排除課程 */
+.schedule-notice {
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 0.85rem;
+}
+.schedule-notice.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--accent-red);
+}
+.schedule-notice.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #d97706;
+}
+[data-theme="dark"] .schedule-notice.warning { color: #fbbf24; }
+
+.schedule-notice-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.schedule-notice-head > span { flex: 1; }
+.schedule-notice-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  padding: 0;
+  line-height: 1;
+}
+.schedule-notice-close:hover { opacity: 1; }
+
+.schedule-notice-list {
+  margin: 8px 0 0;
+  padding-left: 24px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.schedule-notice-excluded { margin-top: 8px; }
+.schedule-notice-excluded summary {
+  cursor: pointer;
+  font-weight: 600;
+  outline: none;
+}
+
 /* Chat Panel (Right) */
 .chat-panel {
   width: 380px;

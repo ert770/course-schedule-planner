@@ -12,7 +12,7 @@
 
 ## 最後更新
 
-2026-08-01（建立，尚未開始修復）
+2026-08-01（完成 F1、F2、F3）
 
 ## 稽核範圍與方法
 
@@ -41,9 +41,9 @@
 
 | # | 項目 | 嚴重度 | 狀態 |
 | ---: | --- | --- | --- |
-| F1 | Chat 回應欄位名不匹配，AI 回覆顯示空白 | 🔴 嚴重 | ⬜ 未開始 |
-| F2 | Chat intent 值不匹配，ChatPanel 從不更新課表 | 🔴 嚴重 | ⬜ 未開始 |
-| F3 | 排課失敗時 UI 完全靜默 | 🔴 嚴重 | ⬜ 未開始 |
+| F1 | Chat 回應欄位名不匹配，AI 回覆顯示空白 | 🔴 嚴重 | ✅ 已完成 |
+| F2 | Chat intent 值不匹配，ChatPanel 從不更新課表 | 🔴 嚴重 | ✅ 已完成 |
+| F3 | 排課失敗時 UI 完全靜默 | 🔴 嚴重 | ✅ 已完成 |
 | F4 | 個人化偏好在 UI 上無法觸發 | 🟠 高 | ⬜ 未開始 |
 | F5 | 多方案課表沒有任何 UI | 🟠 高 | ⬜ 未開始 |
 | F6 | 關注／加選前端零實作 | 🟠 高 | ⬜ 未開始 |
@@ -76,6 +76,10 @@ setChatHistory(prev => [...prev, { role: 'bot', text: res.response }]);
 
 **驗收**：DashboardPage 聊天面板能正確顯示所有非排課類的 AI 回覆。
 
+### 修復（2026-08-01）
+
+`DashboardPage.jsx` 改讀 `res.reply`，並加註說明後端回傳的欄位名，避免再次寫錯。
+
 ---
 
 ## F2 Chat intent 值不匹配
@@ -97,6 +101,10 @@ if (res.intent === 'generate_schedule' && res.data?.success) {
 **驗收**：ChatPanel 在 AI 產生課表後能正確通知父元件更新課表。
 
 **相關**：`SchedulePage.jsx` 是 ChatPanel 目前唯一的使用者，但它未掛載到路由（見 F14），所以此問題目前不會被使用者遇到。仍應修正，否則 SchedulePage 一旦啟用就是壞的。
+
+### 修復（2026-08-01）
+
+`ChatPanel.jsx` 改比對 `'run_csp_scheduler'`。已確認 `agentService.js:87` 的 `detectedIntent = fnName`，即 intent 值等於 tool 名稱，`'generate_schedule'` 從未被送出過。
 
 ---
 
@@ -126,6 +134,35 @@ if (data.success) {
 - 處理 `watchOnly === true` 的情境
 
 **驗收**：任何排課失敗或帶警告的結果，使用者都能在畫面上看到原因。
+
+### 修復（2026-08-01）
+
+**修改檔案**：`client/src/pages/DashboardPage.jsx`、`client/src/App.css`
+
+- 新增 `buildScheduleNotice(data)`，把排課回應整理成畫面提示：
+  - `success === false` → `error` 級提示
+  - `watchOnly === true` → `warning` 級提示
+  - 成功但有 `warnings` → `warning` 級提示（例如學分不足、未表達偏好）
+  - 成功且無警告 → 不顯示，避免製造雜訊
+- 課表區塊上方新增可關閉的提示橫幅，顯示 `message` 與 `warnings` 清單。
+- 被排除課程收在 `<details>` 內，預設收合，展開後顯示課名與排除理由，最多列 5 門並標示其餘數量。
+- `catch` 區塊也設定提示，網路或伺服器錯誤不再只寫進 console。
+- 失敗時**不清空既有課表**，避免使用者原本的結果被無預警抹掉。
+
+**測試與驗證結果**
+
+以真實後端回應驗證 `buildScheduleNotice` 的三種分支：
+
+| 情境 | 輸入 | 結果 |
+| --- | --- | --- |
+| 硬性限制導致失敗 | `discussion: true`（55 門課全被排除） | `error` 級，顯示原因與 55 門排除課程 |
+| 成功但學分不足 | 候選僅 2 門課、`minCredits: 15` | `warning` 級，顯示 2 條警告 |
+| 正常成功無警告 | `preferredKeywords: ['網路']` | 不顯示提示 |
+
+第一個情境正是本報告背景章節記錄的失效模式（勾選「高度課堂討論」導致候選集歸零），修復前使用者完全看不到任何說明。
+
+- `npm run lint`：通過。
+- `npm run build`：通過。
 
 ---
 
@@ -310,4 +347,5 @@ demo 使用者（`users.json`）有中文 key 的 `requiredCredits` 所以看起
 
 ## 是否 commit 與 push
 
-- 本報告建立時尚未進行任何修復。
+- F1、F2、F3 已 commit 並 push 至 `origin claude/personalized-schedule-algorithm-6324a3`。
+- F4~F14 尚未開始。

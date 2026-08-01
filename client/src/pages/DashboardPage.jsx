@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
 import { scheduleAPI, chatAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
-import { X, Send, Search, Download, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles } from 'lucide-react';
+import { X, Send, Search, Download, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, AlertTriangle } from 'lucide-react';
 
 const PREFS = [
   { key: 'preferCompact', label: '盡量集中排課' },
@@ -21,12 +21,41 @@ const PREFS = [
   { key: 'learnMore', label: '學到許多知識' },
 ];
 
+const MAX_EXCLUDED_SHOWN = 5;
+
+// 把排課回應整理成畫面上要顯示的提示。成功但有警告時也要顯示，
+// 否則「學分不足」「偏好未滿足」這類訊息同樣會消失。
+function buildScheduleNotice(data) {
+  const warnings = data.warnings || [];
+  const excluded = data.excludedCourses || [];
+
+  if (!data.success) {
+    return {
+      level: 'error',
+      message: data.message || '無法產生符合限制的課表。',
+      warnings,
+      excluded,
+    };
+  }
+
+  if (data.watchOnly) {
+    return { level: 'warning', message: data.message, warnings, excluded };
+  }
+
+  if (warnings.length > 0) {
+    return { level: 'warning', message: data.message, warnings, excluded };
+  }
+
+  return null;
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   
   const [schedule, setSchedule] = useState([]);
+  const [scheduleNotice, setScheduleNotice] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
   const [prefs, setPrefs] = useState(() => {
     try {
@@ -87,19 +116,34 @@ export default function DashboardPage() {
         constraints,
       });
 
+      // 後端會回傳 message / warnings / excludedCourses 說明排課結果，
+      // 全部丟棄會讓失敗變成無聲失敗，使用者只看到空白課表。
+      setScheduleNotice(buildScheduleNotice(data));
+
       if (data.success) {
         setSchedule(data.schedule);
         if (Object.keys(currentPrefs).length > 0) {
-          setChatHistory(prev => [...prev, { 
-            role: 'bot', 
+          setChatHistory(prev => [...prev, {
+            role: 'bot',
             text: `已套用偏好設定並重新排課，成功生成課表！共 ${data.schedule.length} 門課，${data.totalCredits} 學分。`,
             schedule: data.schedule,
             totalCredits: data.totalCredits
           }]);
         }
+      } else {
+        setChatHistory(prev => [...prev, {
+          role: 'bot',
+          text: data.message || '排課失敗，但後端沒有回傳原因。',
+        }]);
       }
     } catch (err) {
       console.error('Schedule generation failed:', err);
+      setScheduleNotice({
+        level: 'error',
+        message: err.message || '無法連接到伺服器，請確認後端已啟動。',
+        warnings: [],
+        excluded: [],
+      });
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
@@ -137,7 +181,8 @@ export default function DashboardPage() {
           totalCredits: res.data.totalCredits
         }]);
       } else {
-        setChatHistory(prev => [...prev, { role: 'bot', text: res.response }]);
+        // 後端 agentService 回傳的欄位是 reply，不是 response
+        setChatHistory(prev => [...prev, { role: 'bot', text: res.reply }]);
       }
     } catch (err) {
       console.error('Chat error:', err);
@@ -272,6 +317,48 @@ export default function DashboardPage() {
             </div>
           </div>
           
+          {scheduleNotice && (
+            <div className={`schedule-notice ${scheduleNotice.level}`} id="schedule-notice">
+              <div className="schedule-notice-head">
+                <AlertTriangle size={16} />
+                <span>{scheduleNotice.message}</span>
+                <button
+                  className="schedule-notice-close"
+                  onClick={() => setScheduleNotice(null)}
+                  aria-label="關閉提示"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {scheduleNotice.warnings.length > 0 && (
+                <ul className="schedule-notice-list">
+                  {scheduleNotice.warnings.map((warning, i) => (
+                    <li key={i}>{warning}</li>
+                  ))}
+                </ul>
+              )}
+
+              {scheduleNotice.excluded.length > 0 && (
+                <details className="schedule-notice-excluded">
+                  <summary>
+                    有 {scheduleNotice.excluded.length} 門課未被排入，查看原因
+                  </summary>
+                  <ul className="schedule-notice-list">
+                    {scheduleNotice.excluded.slice(0, MAX_EXCLUDED_SHOWN).map((item, i) => (
+                      <li key={i}>
+                        <strong>{item.course?.name || '未知課程'}</strong>：{item.reason}
+                      </li>
+                    ))}
+                    {scheduleNotice.excluded.length > MAX_EXCLUDED_SHOWN && (
+                      <li>其餘 {scheduleNotice.excluded.length - MAX_EXCLUDED_SHOWN} 門未列出。</li>
+                    )}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+
           <div className="schedule-wrapper">
             {isScheduling && (
               <div className="scheduling-overlay">
