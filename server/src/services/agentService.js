@@ -4,6 +4,7 @@ import { getChatHistory, addChatMessage, getUserPreferences, updateUserPreferenc
 import { searchCourses, getCourseDetail } from '../skills/courseQuery.js';
 import { getEasyCourses, getSentimentSummary, searchReviews } from '../skills/reviewSearch.js';
 import { generateSchedule } from '../skills/scheduler.js';
+import { buildScheduleConstraints } from './constraintService.js';
 import { getAll } from '../db/database.js';
 import { logger } from '../utils/logger.js';
 
@@ -116,37 +117,7 @@ export async function handleChat(userId, message) {
               }
 
               case 'run_csp_scheduler': {
-                const constraints = {
-                  maxCredits: args.maxCredits || prefs.targetCreditsMax || 22,
-                  minCredits: args.minCredits || prefs.targetCreditsMin || 15,
-                  blockedPeriods: args.blockedPeriods || prefs.blockedPeriods || [],
-                  noMorningClasses: args.noMorningClasses ?? prefs.noMorningClasses ?? false,
-                  noEveningClasses: args.noEveningClasses ?? prefs.noEveningClasses ?? false,
-                  mustTakeCourseIds: args.mustTakeCourseIds || prefs.mustTakeCourses || [],
-                  preferCompact: args.preferCompact ?? prefs.preferCompact ?? false,
-                  maxCoursesPerDay: args.maxCoursesPerDay || 4,
-                  noMidterm: args.noMidterm ?? prefs.noMidterm ?? false,
-                  noGroupReport: args.noGroupReport ?? prefs.noGroupReport ?? false,
-                  discussion: args.discussion ?? prefs.preferDiscussion ?? false,
-                  learnMore: args.learnMore ?? prefs.learnMore ?? false,
-                  weightDaily: args.weightDaily ?? prefs.weightDaily ?? false,
-                  hideConflict: args.hideConflict ?? prefs.hideConflict ?? false,
-                  practicalExam: args.practicalExam ?? prefs.practicalExam ?? false,
-                  finalReport: args.finalReport ?? prefs.finalReport ?? false,
-                  englishTaught: args.englishTaught ?? prefs.englishTaught ?? false,
-                  lunchBreakFree: args.lunchBreakFree ?? prefs.lunchBreakFree ?? false,
-                  completedCourseIds: args.completedCourseIds || prefs.completedCourseIds || [],
-                  selectedCourseIds: args.selectedCourseIds || [],
-                  watchingCourseIds: args.watchingCourseIds || [],
-                  courseStates: args.courseStates || {},
-                  retakeCourseIds: args.retakeCourseIds
-                    || args.failedRequiredCourseIds
-                    || prefs.retakeCourseIds
-                    || prefs.failedRequiredCourseIds
-                    || [],
-                  preferredTrack: args.preferredTrack || prefs.preferredTrack || null,
-                  digitalCreditsNeeded: args.digitalCreditsNeeded ?? prefs.digitalCreditsNeeded ?? false,
-                };
+                const constraints = buildScheduleConstraints(args, prefs);
                 let candidates = await getAll('courses');
                 result = generateSchedule(candidates, constraints);
                 responseData = result;

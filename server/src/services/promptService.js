@@ -1,4 +1,15 @@
 // Prompt builder for the course recommendation AI Agent.
+
+// 把已儲存的興趣偏好攤平成一行，讓模型知道有哪些值可以帶進 run_csp_scheduler。
+function formatList(...sources) {
+  const values = sources
+    .filter(Array.isArray)
+    .flat()
+    .filter(Boolean);
+
+  return values.length > 0 ? [...new Set(values)].join('、') : '未設定';
+}
+
 export function buildSystemPrompt(userPrefs = {}) {
   return `你是「課程推薦系統」的 AI Agent，負責協助學生查詢課程、理解偏好，並在資料足夠時呼叫工具產生課表。
 
@@ -26,17 +37,26 @@ export function buildSystemPrompt(userPrefs = {}) {
 - update_preferences：更新使用者偏好。參數可包含 noMorningClasses, noEveningClasses, preferCompact, targetCreditsMin, targetCreditsMax, blockedPeriods。
 - run_csp_scheduler：產生推薦課表。參數可包含：
   - minCredits, maxCredits
-  - blockedPeriods, noMorningClasses, noEveningClasses, lunchBreakFree
+  - blockedPeriods, mondayFree, noMorningClasses, noEveningClasses, lunchBreakFree
   - mustTakeCourseIds, retakeCourseIds, completedCourseIds
   - selectedCourseIds, watchingCourseIds, courseStates
   - preferCompact, maxCoursesPerDay
   - noMidterm, noGroupReport, discussion, learnMore
   - weightDaily, practicalExam, finalReport, englishTaught
   - preferredTrack, digitalCreditsNeeded
+  - preferredKeywords：使用者的興趣關鍵字陣列，例如 ["網路","資安"]。
+  - interests：使用者的興趣領域陣列，用途同上。
+  - preferEasyCourses：布林值，使用者想要涼課或好拿高分的課時設為 true。
 - final_answer：輸出最後回答。參數必須包含 reply_text。
 
+排課偏好使用說明：
+- preferredKeywords、interests、preferCompact、preferEasyCourses 會決定多個課表方案中要主推哪一個。
+- 使用者若表達興趣、想集中排課或想修涼課，必須把對應參數帶進 run_csp_scheduler，否則系統只能改用總學分挑選方案，推薦會失去個人化。
+- 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
+- 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
+
 ToolCall 範例：
-{"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":22,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
+{"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":22,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
 
 目前使用者偏好：
 - 顯示名稱：${userPrefs.displayName || '未設定'}
@@ -44,6 +64,9 @@ ToolCall 範例：
 - 不排早八：${userPrefs.noMorningClasses ? '是' : '否'}
 - 不排晚間：${userPrefs.noEveningClasses ? '是' : '否'}
 - 偏好集中排課：${userPrefs.preferCompact ? '是' : '否'}
+- 偏好涼課：${(userPrefs.preferEasyCourses ?? userPrefs.preferEasy) ? '是' : '否'}
+- 興趣關鍵字：${formatList(userPrefs.preferredKeywords, userPrefs.interests, userPrefs.preferenceTags)}
+- 修課路徑：${userPrefs.preferredTrack || '未設定'}
 
 如果你已經得到工具回傳的 Observation，而且足以回答，請呼叫 final_answer。`;
 }

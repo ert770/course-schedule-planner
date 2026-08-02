@@ -5,6 +5,12 @@
 const DEFAULT_MIN_CREDITS = 15;
 const DEFAULT_MAX_CREDITS = 22;
 const DEFAULT_MAX_COURSES_PER_DAY = 4;
+// 資料庫實際含週六與週日課程（週六 81 筆、週日 9 筆），因此以七天為準。
+const WEEK_DAYS = 7;
+const INTEREST_KEYWORD_SCORE = 40;
+const MAX_EASY_COURSE_SCORE = 100;
+const PREFERENCE_SCORE_EPSILON = 0.001;
+const UNSCHEDULED_NAMES_IN_WARNING = 3;
 
 const CATEGORY_PRIORITY = {
   '必修': 0,
@@ -79,18 +85,23 @@ function textIncludesAny(text, keywords) {
 function hardConstraintReason(course, constraints) {
   if (isWatching(course, constraints)) return null;
 
-  if (constraints.noMorningClasses && course.startPeriod <= 1) {
+  // 時間類限制必須檢查課程的每一個時段，否則多時段課程只會被檢查第一段。
+  const blocks = getTimeBlocks(course);
+
+  if (constraints.noMorningClasses && blocks.some(block => block.startPeriod <= 1)) {
     return '不符合不上早八限制';
   }
 
-  if (constraints.noEveningClasses && course.startPeriod >= 12) {
+  if (constraints.noEveningClasses && blocks.some(block => block.startPeriod >= 12)) {
     return '不符合不上晚課限制';
   }
 
   for (const bp of toArray(constraints.blockedPeriods)) {
-    if (course.dayOfWeek !== bp.day) continue;
-    for (let period = course.startPeriod; period <= course.endPeriod; period += 1) {
-      if (period === bp.period) return '位於封鎖時段';
+    for (const block of blocks) {
+      if (block.dayOfWeek !== bp.day) continue;
+      if (bp.period >= block.startPeriod && bp.period <= block.endPeriod) {
+        return '位於封鎖時段';
+      }
     }
   }
 
@@ -116,7 +127,8 @@ function hardConstraintReason(course, constraints) {
   if (constraints.englishTaught && !(desc.includes('英文') || course.language === 'English')) {
     return '不符合英文授課偏好';
   }
-  if (constraints.lunchBreakFree && course.startPeriod <= 5 && course.endPeriod >= 5) {
+  if (constraints.lunchBreakFree
+    && blocks.some(block => block.startPeriod <= 5 && block.endPeriod >= 5)) {
     return '不符合午休保留偏好';
   }
   if (constraints.learnMore && !textIncludesAny(desc, ['實作', '專題', '深入', '進階', '應用'])) {
@@ -126,9 +138,42 @@ function hardConstraintReason(course, constraints) {
   return null;
 }
 
+// 一門課可能有多個時段，例如 `(四)01-04 (四)06-09 (五)01-04`。
+// 資料庫中約 9% 的課程屬於此類，只比對第一段會漏判衝堂。
+function getTimeBlocks(course) {
+  if (Array.isArray(course.timeBlocks) && course.timeBlocks.length > 0) {
+    return course.timeBlocks;
+  }
+  if (course.dayOfWeek == null || course.startPeriod == null) {
+    return [];
+  }
+  return [{
+    dayOfWeek: course.dayOfWeek,
+    startPeriod: course.startPeriod,
+    endPeriod: course.endPeriod ?? course.startPeriod,
+  }];
+}
+
+function blocksOverlap(a, b) {
+  if (a.dayOfWeek !== b.dayOfWeek) return false;
+  return !(a.endPeriod < b.startPeriod || b.endPeriod < a.startPeriod);
+}
+
 function timeConflict(courseA, courseB) {
-  if (courseA.dayOfWeek !== courseB.dayOfWeek) return false;
-  return !(courseA.endPeriod < courseB.startPeriod || courseB.endPeriod < courseA.startPeriod);
+  const blocksA = getTimeBlocks(courseA);
+  const blocksB = getTimeBlocks(courseB);
+  return blocksA.some(a => blocksB.some(b => blocksOverlap(a, b)));
+}
+
+function getUsedDays(course) {
+  return new Set(getTimeBlocks(course).map(block => block.dayOfWeek));
+}
+
+// 節次 `00`（例如 `(一)00`）代表尚未排定時間。這類課程解析後沒有任何時段，
+// 因此不佔時段、不衝堂、也不受時間類限制。若讓它們參與貪婪填充，
+// 會因為毫無限制而被無限塞入——實測 3560 筆資料時，主推方案 86 門課中有 65 門屬此類。
+function hasScheduledTime(course) {
+  return getTimeBlocks(course).length > 0;
 }
 
 function conflictsWithSchedule(course, schedule) {
@@ -144,15 +189,21 @@ function getEasyCourseScore(course) {
   return score;
 }
 
-function getInterestScore(course, constraints) {
-  const keywords = [
+function collectInterestKeywords(constraints) {
+  return [
     ...toArray(constraints.preferredKeywords),
     ...toArray(constraints.interests),
     constraints.preferredTrack,
   ].filter(Boolean);
+}
+
+function getInterestScore(course, constraints) {
+  const keywords = collectInterestKeywords(constraints);
 
   if (keywords.length === 0) return 0;
 
+  // ragTag 是資料庫 `Course_Sections.rag_tag` 的主題標籤陣列，100% 有值，
+  // 是比課名與課程描述更精準的興趣訊號，必須納入比對。
   const searchable = [
     course.name,
     course.code,
@@ -161,11 +212,77 @@ function getInterestScore(course, constraints) {
     course.category,
     course.description,
     course.track,
+    ...toArray(course.ragTag),
   ].filter(Boolean).join(' ');
 
   return keywords.reduce((score, keyword) => (
-    searchable.includes(keyword) ? score + 40 : score
+    searchable.includes(keyword) ? score + INTEREST_KEYWORD_SCORE : score
   ), 0);
+}
+
+// 方案偏好符合度：所有方案都用「同一組使用者權重」評分，方案不得用自己的
+// variant 偏誤自評，否則彼此無從比較。
+function buildPreferenceProfile(constraints) {
+  return {
+    interest: collectInterestKeywords(constraints).length > 0 ? 1 : 0,
+    compact: constraints.preferCompact ? 1 : 0,
+    easy: (constraints.preferEasyCourses ?? constraints.preferEasy) ? 1 : 0,
+  };
+}
+
+function clamp01(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function getInterestCoverage(plan, constraints) {
+  const keywords = collectInterestKeywords(constraints);
+  if (keywords.length === 0 || plan.schedule.length === 0) return 0;
+
+  const maxPerCourse = keywords.length * INTEREST_KEYWORD_SCORE;
+  const average = plan.schedule
+    .reduce((sum, course) => sum + getInterestScore(course, constraints), 0) / plan.schedule.length;
+
+  return clamp01(average / maxPerCourse);
+}
+
+function getCompactness(plan) {
+  const courseCount = plan.schedule.length;
+  if (courseCount === 0) return 0;
+
+  const usedDays = new Set(plan.schedule.flatMap(course => [...getUsedDays(course)])).size;
+  if (usedDays === 0) return 0;
+
+  const maxDays = Math.min(WEEK_DAYS, courseCount);
+  if (maxDays <= 1) return 1;
+
+  return clamp01((maxDays - usedDays) / (maxDays - 1));
+}
+
+function getEasiness(plan) {
+  if (plan.schedule.length === 0) return 0;
+
+  const average = plan.schedule
+    .reduce((sum, course) => sum + getEasyCourseScore(course), 0) / plan.schedule.length;
+
+  return clamp01(average / MAX_EASY_COURSE_SCORE);
+}
+
+function evaluatePreference(plan, constraints, profile) {
+  const breakdown = {
+    interest: getInterestCoverage(plan, constraints),
+    compact: getCompactness(plan),
+    easy: getEasiness(plan),
+  };
+
+  const weightSum = profile.interest + profile.compact + profile.easy;
+  const score = weightSum === 0
+    ? 0
+    : (breakdown.interest * profile.interest
+      + breakdown.compact * profile.compact
+      + breakdown.easy * profile.easy) / weightSum;
+
+  return { score, breakdown };
 }
 
 function scoreCourse(course, schedule, constraints, variant, requiredIds, retakeIds) {
@@ -179,8 +296,10 @@ function scoreCourse(course, schedule, constraints, variant, requiredIds, retake
   score += (course.credits || 0) * 12;
 
   if (variant.id === 'compact' || constraints.preferCompact) {
-    const usedDays = new Set(schedule.map(c => c.dayOfWeek));
-    score += usedDays.has(course.dayOfWeek) ? 120 : -20;
+    const usedDays = new Set(schedule.flatMap(c => [...getUsedDays(c)]));
+    const courseDays = [...getUsedDays(course)];
+    const overlapping = courseDays.filter(day => usedDays.has(day)).length;
+    score += overlapping > 0 ? 120 * overlapping : -20 * Math.max(1, courseDays.length);
   }
 
   if (variant.id === 'easy_score') {
@@ -232,10 +351,21 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
     return false;
   }
 
-  const dayCount = plan.schedule.filter(c => c.dayOfWeek === course.dayOfWeek).length;
-  if (dayCount >= plan.maxCoursesPerDay) {
-    plan.excludedCourses.push({ course, reason: `超過每日 ${plan.maxCoursesPerDay} 門課限制` });
-    return false;
+  // 單日課程數需計入課程佔用的每一天，多時段課程可能橫跨多天。
+  for (const day of getUsedDays(course)) {
+    const dayCount = plan.schedule.filter(c => getUsedDays(c).has(day)).length;
+    if (dayCount >= plan.maxCoursesPerDay) {
+      plan.excludedCourses.push({ course, reason: `超過每日 ${plan.maxCoursesPerDay} 門課限制` });
+      return false;
+    }
+  }
+
+  // 尚未排定時間的課程仍會被排入（班級活動、論文等屬必要課程），但不放進
+  // 課表格的 schedule，避免與有時段的課程混在一起造成畫面與學分對不上。
+  if (!hasScheduledTime(course)) {
+    plan.unscheduledCourses.push({ ...course, scheduleState: 'selected', reason });
+    plan.totalCredits += course.credits || 0;
+    return true;
   }
 
   plan.schedule.push({ ...course, scheduleState: 'selected', reason });
@@ -249,6 +379,7 @@ function createEmptyPlan(variant, constraints) {
     title: variant.title,
     description: variant.description,
     schedule: [],
+    unscheduledCourses: [],
     watchedCourses: [],
     excludedCourses: [],
     failures: [],
@@ -305,8 +436,17 @@ function buildPlan(candidateCourses, constraints, variant) {
     });
   }
 
-  const optional = eligible.filter(course => !plan.schedule.some(c => c.id === course.id));
-  const remaining = optional.filter(course => !requiredCourses.some(c => c.id === course.id));
+  const placedIds = new Set([
+    ...plan.schedule.map(c => Number(c.id)),
+    ...plan.unscheduledCourses.map(c => Number(c.id)),
+  ]);
+  const optional = eligible.filter(course => !placedIds.has(Number(course.id)));
+
+  // 貪婪填充只考慮有排定時間的課程。無時間課程不佔時段、不衝堂也不受任何限制，
+  // 讓它們參與填充會被無限塞入；它們只有在被明確指定為必要課程時才會排入。
+  const remaining = optional.filter(course => (
+    !requiredCourses.some(c => c.id === course.id) && hasScheduledTime(course)
+  ));
 
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
     remaining.sort((a, b) => (
@@ -318,7 +458,11 @@ function buildPlan(candidateCourses, constraints, variant) {
     addCourseToPlan(plan, course, constraints, variant.title);
 
     if (plan.totalCredits >= plan.minCredits && variant.id !== 'max_credits') {
-      const canAddMore = remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits);
+      // 只計入還能推進學分的課程。0 學分課程恆滿足學分上限條件，
+      // 會讓這個中止判斷永遠為真，迴圈跑到候選清單耗盡。
+      const canAddMore = remaining.some(next => (
+        (next.credits || 0) > 0 && plan.totalCredits + next.credits <= plan.maxCredits
+      ));
       if (!canAddMore) break;
     }
   }
@@ -340,8 +484,33 @@ function buildPlan(candidateCourses, constraints, variant) {
     plan.warnings.push('目前課程資料缺少 digitalCredits 欄位，尚無法完整檢查數位課程畢業門檻');
   }
 
-  plan.success = plan.schedule.length > 0 && plan.failures.length === 0;
-  plan.courseCount = plan.schedule.length;
+  // 關注課程不佔時段，因此「只有關注課程」是合法結果而非失敗。
+  // 若把它判成失敗，使用者的關注課程會連同回應一起被丟掉。
+  plan.watchOnly = plan.schedule.length === 0
+    && plan.unscheduledCourses.length === 0
+    && plan.watchedCourses.length > 0;
+  plan.success = plan.failures.length === 0
+    && (plan.schedule.length > 0
+      || plan.unscheduledCourses.length > 0
+      || plan.watchedCourses.length > 0);
+  // 無時間課程也計入學分，門數必須一併計入，否則畫面上的門數與學分會對不起來。
+  plan.courseCount = plan.schedule.length + plan.unscheduledCourses.length;
+
+  if (plan.watchOnly) {
+    plan.warnings.push('目前沒有排入任何正式加選課程，課表上只有關注課程。');
+  }
+
+  if (plan.unscheduledCourses.length > 0) {
+    const uniqueNames = [...new Set(plan.unscheduledCourses.map(course => course.name))];
+    const shown = uniqueNames.slice(0, UNSCHEDULED_NAMES_IN_WARNING).join('、');
+    const rest = uniqueNames.length > UNSCHEDULED_NAMES_IN_WARNING
+      ? `等 ${uniqueNames.length} 種課程`
+      : '';
+    plan.warnings.push(
+      `有 ${plan.unscheduledCourses.length} 門課尚未排定上課時間，不會顯示在課表格上：${shown}${rest}`
+    );
+  }
+
   return plan;
 }
 
@@ -364,19 +533,34 @@ export function generateSchedule(candidateCourses, constraints = {}) {
       totalCredits: 0,
       courseCount: 0,
       excludedCourses: [],
+      watchedCourses: [],
+      unscheduledCourses: [],
       warnings: ['沒有可用的候選課程'],
       message: '找不到符合條件的候選課程，請調整搜尋條件或偏好設定。',
     };
   }
 
+  const preferenceProfile = buildPreferenceProfile(constraints);
+  const hasExpressedPreference = Object.values(preferenceProfile).some(weight => weight > 0);
+
   const plans = uniquePlans(
     PLAN_VARIANTS
-      .map(variant => buildPlan(candidateCourses, constraints, variant))
+      .map(variant => {
+        const plan = buildPlan(candidateCourses, constraints, variant);
+        const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
+        plan.preferenceScore = score;
+        plan.preferenceBreakdown = breakdown;
+        return plan;
+      })
       .sort((a, b) => {
         if (a.success !== b.success) return a.success ? -1 : 1;
         const aMeetsMin = a.totalCredits >= a.minCredits ? 1 : 0;
         const bMeetsMin = b.totalCredits >= b.minCredits ? 1 : 0;
         if (aMeetsMin !== bMeetsMin) return bMeetsMin - aMeetsMin;
+        // 偏好符合度優先於總學分，避免整條個人化管線在最後一步被學分數蓋掉。
+        if (Math.abs(a.preferenceScore - b.preferenceScore) > PREFERENCE_SCORE_EPSILON) {
+          return b.preferenceScore - a.preferenceScore;
+        }
         return b.totalCredits - a.totalCredits;
       })
   );
@@ -391,22 +575,46 @@ export function generateSchedule(candidateCourses, constraints = {}) {
       totalCredits: 0,
       courseCount: 0,
       excludedCourses: primary?.excludedCourses || [],
+      // 失敗時仍要帶回關注課程，否則使用者標記的關注會從畫面上消失。
+      watchedCourses: primary?.watchedCourses || [],
+      unscheduledCourses: primary?.unscheduledCourses || [],
       warnings,
       message: warnings[0] || '無法產生符合限制的課表。',
     };
   }
 
   const allWarnings = [...new Set(plans.flatMap(plan => plan.warnings))];
+  if (!hasExpressedPreference) {
+    allWarnings.push('未設定興趣關鍵字、集中排課或涼課偏好，主推方案改以總學分決定，個人化程度有限。');
+  }
+
+  const selectionReason = hasExpressedPreference
+    ? `偏好符合度 ${Math.round(primary.preferenceScore * 100)}%`
+    : '未表達偏好，改依總學分挑選';
+
+  // 學分含尚未排定時間的課程，因此門數必須一併說明，否則「N 門課共 M 學分」
+  // 會出現門數只算課表格、學分卻含表格外課程的矛盾。
+  const unscheduledNote = primary.unscheduledCourses.length > 0
+    ? `（另有 ${primary.unscheduledCourses.length} 門時間未定）`
+    : '';
+  const message = primary.watchOnly
+    ? `目前沒有可排入的正式加選課程，僅顯示 ${primary.watchedCourses.length} 門關注課程供你比較時段。`
+    : `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課${unscheduledNote}，共 ${primary.totalCredits} 學分。`;
+
   return {
     success: true,
+    watchOnly: primary.watchOnly,
     schedule: primary.schedule,
     plans,
     totalCredits: primary.totalCredits,
-    courseCount: primary.schedule.length,
+    courseCount: primary.courseCount,
     excludedCourses: primary.excludedCourses,
     watchedCourses: primary.watchedCourses,
+    unscheduledCourses: primary.unscheduledCourses,
     warnings: allWarnings,
-    message: `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」：${primary.schedule.length} 門課，共 ${primary.totalCredits} 學分。`,
+    preferenceProfile,
+    hasExpressedPreference,
+    message,
   };
 }
 

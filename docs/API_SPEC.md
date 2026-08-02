@@ -14,7 +14,7 @@ Course, section, review, and numeric user profile data are read from MySQL datab
 
 - API `course.id` is `Course_Sections.section_id`.
 - API `course.code` and `course.courseId` are `Courses.course_id`.
-- Review lookups use `Courses_Reviews.Course_id` as a section id.
+- Review lookups use `Course_Reviews.selection_code` joined to `Course_Sections.selection_code`; API responses expose the joined `section_id` as `review.courseId`.
 - Demo auth users, chat history, and saved schedules remain backed by `server/data/*.json`.
 
 ## Health
@@ -154,13 +154,28 @@ Request:
     "blockedPeriods": [],
     "noMorningClasses": false,
     "noEveningClasses": false,
-    "mustTakeCourseIds": [],
-    "preferCompact": false
+    "mustTakeCourseIds": [7],
+    "preferCompact": false,
+    "preferredKeywords": ["網路", "資安"],
+    "interests": [],
+    "preferredTrack": null,
+    "preferEasyCourses": false
   }
 }
 ```
 
 `courseIds`, `selectedCourseIds`, `watchingCourseIds`, `completedCourseIds`, and `retakeCourseIds` should use section ids.
+
+`preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供任何一項時，主推方案改以總學分決定。
+
+### 限制條件合併語意
+
+request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
+
+- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`completedCourseIds`、`retakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
+- **`selectedCourseIds`、`watchingCourseIds`、`courseStates`**：屬於本次操作的當下狀態，不從已儲存偏好回填。
+- **`mondayFree`**：會展開成週一第 1~14 節的 `blockedPeriods`，並與既有封鎖時段合併。
 
 Response:
 
@@ -173,9 +188,31 @@ Response:
   "message": "...",
   "plans": [],
   "excludedCourses": [],
-  "warnings": []
+  "warnings": [],
+  "watchedCourses": [],
+  "unscheduledCourses": [],
+  "watchOnly": false,
+  "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
+  "hasExpressedPreference": true
 }
 ```
+
+`watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
+
+`unscheduledCourses` 為已排入但**尚未排定上課時間**的課程（`time_str` 節次為 `00`）。它們計入 `totalCredits` 與 `courseCount`，但不在 `schedule` 內，因此不會出現在課表格上。
+
+`watchOnly` 為 `true` 時表示沒有任何正式加選課程排入，課表上只有關注課程。此情境的 `success` 仍為 `true`，因為關注課程本身是合法且可顯示的結果。
+
+每個 `plans[]` 元素另含：
+
+```json
+{
+  "preferenceScore": 0.214,
+  "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0 }
+}
+```
+
+`plans` 依 `success` → 是否達最低學分 → `preferenceScore` → `totalCredits` 排序，`plans[0]` 即為主推方案，其內容會複製到頂層 `schedule`。
 
 ### `POST /api/schedule/validate`
 
@@ -253,7 +290,7 @@ For numeric `userId`, updates supported `User_Profiles` fields when the row exis
 
 ### `GET /api/reviews/easy?limit=10`
 
-Returns courses ranked by derived easiness score from `Courses_Reviews`.
+Returns courses ranked by derived easiness score from `Course_Reviews`.
 
 ### `GET /api/reviews/:courseId`
 

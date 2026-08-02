@@ -1,4 +1,12 @@
 import { getAll } from '../db/database.js';
+import {
+  getReviewWeight,
+  getTotalReviewCount,
+  weightedAverageScore,
+  roundScore,
+  countBySentiment,
+  calculateEasinessFromAverages,
+} from './reviewStats.js';
 
 export async function getReviewsByCourse(courseId) {
   const reviews = await getAll('reviews');
@@ -23,31 +31,36 @@ export async function getEasyCourses(limit = 10) {
 
   const courseStats = courses.map(course => {
     const courseReviews = reviews.filter(review => String(review.courseId) === String(course.id));
-    if (courseReviews.length === 0) {
+    const reviewCount = getTotalReviewCount(courseReviews);
+    if (reviewCount === 0) {
       return { ...course, easiness: 0, reviewCount: 0 };
     }
 
-    const avgDifficulty = courseReviews.reduce(
-      (sum, review) => sum + Number(review.difficultyRating || 0),
-      0
-    ) / courseReviews.length;
-    const avgRecommend = courseReviews.reduce(
-      (sum, review) => sum + Number(review.recommendScore || 0),
-      0
-    ) / courseReviews.length;
-    const easiness = (5 - avgDifficulty) * 0.4 + avgRecommend * 0.6;
+    const avgDifficulty = weightedAverageScore(courseReviews, 'difficultyRating');
+    const avgRecommend = weightedAverageScore(courseReviews, 'recommendScore');
+    const avgCoolness = weightedAverageScore(courseReviews, 'coolness');
+    const avgSweetness = weightedAverageScore(courseReviews, 'sweetness');
+    const avgWorkload = weightedAverageScore(courseReviews, 'workload');
+    const avgOverall = weightedAverageScore(courseReviews, 'overall');
+    const easiness = calculateEasinessFromAverages({
+      avgCoolness,
+      avgSweetness,
+      avgWorkload,
+      avgOverall,
+    });
+    const positive = countBySentiment(courseReviews, 'positive');
 
     return {
       ...course,
-      easiness: Math.round(easiness * 100) / 100,
-      avgDifficulty: Math.round(avgDifficulty * 10) / 10,
-      avgRecommend: Math.round(avgRecommend * 10) / 10,
-      reviewCount: courseReviews.length,
-      positiveRatio: Math.round(
-        courseReviews.filter(review => review.sentiment === 'positive').length
-        / courseReviews.length
-        * 100
-      ),
+      easiness: roundScore(easiness, 2) || 0,
+      avgDifficulty: roundScore(avgDifficulty),
+      avgRecommend: roundScore(avgRecommend),
+      avgCoolness: roundScore(avgCoolness),
+      avgSweetness: roundScore(avgSweetness),
+      avgWorkload: roundScore(avgWorkload),
+      avgOverall: roundScore(avgOverall),
+      reviewCount,
+      positiveRatio: Math.round((positive / reviewCount) * 100),
     };
   });
 
@@ -59,18 +72,20 @@ export async function getEasyCourses(limit = 10) {
 
 export async function getSentimentSummary(courseId) {
   const reviews = (await getAll('reviews')).filter(review => String(review.courseId) === String(courseId));
-  if (reviews.length === 0) {
+  const total = getTotalReviewCount(reviews);
+  if (total === 0) {
     return { courseId, summary: '目前沒有課程評價', sentiment: 'neutral', count: 0 };
   }
 
-  const positive = reviews.filter(review => review.sentiment === 'positive').length;
-  const negative = reviews.filter(review => review.sentiment === 'negative').length;
-  const total = reviews.length;
-  const allKeywords = reviews.flatMap(review => review.keywords || []);
+  const positive = countBySentiment(reviews, 'positive');
+  const negative = countBySentiment(reviews, 'negative');
   const keywordCounts = {};
 
-  allKeywords.forEach(keyword => {
-    keywordCounts[keyword] = (keywordCounts[keyword] || 0) + 1;
+  reviews.forEach(review => {
+    const weight = getReviewWeight(review);
+    (review.keywords || []).forEach(keyword => {
+      keywordCounts[keyword] = (keywordCounts[keyword] || 0) + weight;
+    });
   });
 
   const topKeywords = Object.entries(keywordCounts)
@@ -82,8 +97,15 @@ export async function getSentimentSummary(courseId) {
     ? 'positive'
     : negative > positive ? 'negative' : 'neutral';
   const sentimentLabel = overallSentiment === 'positive'
-    ? '正向'
-    : overallSentiment === 'negative' ? '負向' : '中立';
+    ? '正面'
+    : overallSentiment === 'negative' ? '負面' : '中性';
+
+  const avgDifficulty = weightedAverageScore(reviews, 'difficultyRating');
+  const avgRecommend = weightedAverageScore(reviews, 'recommendScore');
+  const avgCoolness = weightedAverageScore(reviews, 'coolness');
+  const avgSweetness = weightedAverageScore(reviews, 'sweetness');
+  const avgWorkload = weightedAverageScore(reviews, 'workload');
+  const avgOverall = weightedAverageScore(reviews, 'overall');
 
   return {
     courseId,
@@ -92,16 +114,12 @@ export async function getSentimentSummary(courseId) {
     summary: `共 ${total} 則評價，整體偏 ${sentimentLabel}，正向 ${positive} 則，負向 ${negative} 則。`,
     positiveRatio: Math.round((positive / total) * 100),
     topKeywords,
-    avgDifficulty: Math.round(
-      reviews.reduce((sum, review) => sum + Number(review.difficultyRating || 0), 0)
-      / total
-      * 10
-    ) / 10,
-    avgRecommend: Math.round(
-      reviews.reduce((sum, review) => sum + Number(review.recommendScore || 0), 0)
-      / total
-      * 10
-    ) / 10,
+    avgDifficulty: roundScore(avgDifficulty),
+    avgRecommend: roundScore(avgRecommend),
+    avgCoolness: roundScore(avgCoolness),
+    avgSweetness: roundScore(avgSweetness),
+    avgWorkload: roundScore(avgWorkload),
+    avgOverall: roundScore(avgOverall),
   };
 }
 

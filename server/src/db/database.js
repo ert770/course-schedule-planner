@@ -82,7 +82,7 @@ function parseTimeFromBitmask(timeBitmask) {
         period: (index % periodsPerDay) + 1,
       };
     })
-    .filter(slot => slot && slot.day >= 1 && slot.day <= 5);
+    .filter(slot => slot && slot.day >= 1 && slot.day <= 7);
 
   if (activeSlots.length === 0) {
     return null;
@@ -106,9 +106,45 @@ function parseTimeFromBitmask(timeBitmask) {
   };
 }
 
+const CHINESE_DAY_TO_NUMBER = {
+  一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7,
+};
+
+// 學校課程系統的實際格式為 `(二)06-08`，同一門課可能有多個時段，
+// 以空白分隔，例如 `(四)01-04 (四)06-09 (五)01-04`。
+// 節次 `00` 代表尚未排定，視為無效。
+function parseTimeBlocks(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') {
+    return [];
+  }
+
+  const blocks = [];
+  const pattern = /[(（]\s*([一二三四五六日天])\s*[)）]\s*(\d{1,2})(?:\s*[-~]\s*(\d{1,2}))?/gu;
+
+  for (const match of timeStr.matchAll(pattern)) {
+    const dayOfWeek = CHINESE_DAY_TO_NUMBER[match[1]];
+    const startPeriod = Number(match[2]);
+    const endPeriod = match[3] === undefined ? startPeriod : Number(match[3]);
+
+    if (!dayOfWeek || !startPeriod || !endPeriod) continue;
+    if (startPeriod > endPeriod) continue;
+
+    blocks.push({ dayOfWeek, startPeriod, endPeriod });
+  }
+
+  return blocks;
+}
+
 function parseTimeFromText(timeStr) {
   if (!timeStr || typeof timeStr !== 'string') {
     return null;
+  }
+
+  const blocks = parseTimeBlocks(timeStr);
+  if (blocks.length > 0) {
+    // 目前的課程資料模型只容納單一時段，先取第一段並保留完整清單，
+    // 供後續支援多時段衝堂判定時使用。
+    return { ...blocks[0], timeBlocks: blocks };
   }
 
   const normalized = timeStr.trim();
@@ -148,6 +184,7 @@ function parseSectionTime(row) {
     dayOfWeek: null,
     startPeriod: null,
     endPeriod: null,
+    timeBlocks: [],
   };
 }
 
@@ -166,6 +203,7 @@ function mapCourseRow(row) {
     department: row.dept,
     credits,
     dayOfWeek: time.dayOfWeek,
+    timeBlocks: time.timeBlocks || [],
     startPeriod: time.startPeriod,
     endPeriod: time.endPeriod,
     location: row.room,
@@ -186,32 +224,52 @@ function mapCourseRow(row) {
   };
 }
 
-function sentimentFromReviewTag(tag) {
-  const value = String(tag || '').trim().toLowerCase();
-  if (!value) return 'neutral';
-  if (['good', 'positive', 'pos', '好', '優點', '推薦'].some(keyword => value.includes(keyword))) {
-    return 'positive';
-  }
-  if (['bad', 'negative', 'neg', '壞', '缺點', '不推'].some(keyword => value.includes(keyword))) {
-    return 'negative';
-  }
+// Course_Reviews 的評分欄位皆為 1~5 的整數且無空值，因此情緒可由整體評分直接判定，
+// 不需再從標籤文字猜測。
+function sentimentFromOverall(overall) {
+  const score = Number(overall);
+  if (!Number.isFinite(score)) return 'neutral';
+  if (score >= 4) return 'positive';
+  if (score <= 2) return 'negative';
   return 'neutral';
 }
 
+// Reviews_tags 為逗號分隔的文字標籤，例如「人很少,沒作業,兩個報告」。
+function parseReviewTags(tags) {
+  return String(tags || '')
+    .split(/[,、，]/)
+    .map(tag => tag.trim())
+    .filter(Boolean);
+}
+
 function mapReviewRow(row) {
-  const tag = row.review_tag;
-  const sentiment = sentimentFromReviewTag(tag);
+  const overall = normalizeNumber(row.overall);
+  const workload = normalizeNumber(row.workload);
 
   return {
     id: normalizeId(row.Reviews_id),
-    courseId: normalizeId(row.Course_id),
-    sentiment,
+    // 評價以 selection_code 關聯 section，courseId 對應 course.id（即 section_id）。
+    courseId: normalizeId(row.section_id),
+    selectionCode: row.selection_code,
+    sentiment: sentimentFromOverall(overall),
     summary: row.Review_content,
-    keywords: tag ? [tag] : [],
-    difficultyRating: sentiment === 'negative' ? 4 : sentiment === 'positive' ? 2 : 3,
-    recommendScore: sentiment === 'negative' ? 2 : sentiment === 'positive' ? 4 : 3,
-    source: 'mysql',
-    createdAt: null,
+    keywords: parseReviewTags(row.Reviews_tags),
+
+    // 原始評分，供排課引擎與畢業建議直接使用
+    sweetness: normalizeNumber(row.sweetness),
+    coolness: normalizeNumber(row.coolness),
+    workload,
+    value: normalizeNumber(row.value),
+    overall,
+    reviewCount: normalizeNumber(row.review_count),
+
+    // 相容既有消費端：難度取作業量，推薦度取整體評分
+    difficultyRating: workload,
+    recommendScore: overall,
+
+    source: row.source || 'mysql',
+    url: row.url || null,
+    createdAt: row.scraped_at || null,
   };
 }
 
@@ -270,21 +328,39 @@ async function getMysqlCourses() {
       cs.\`rag_tag\`,
       cs.\`selection_code\`
     FROM \`Course_Sections\` cs
-    INNER JOIN \`Courses\` c ON c.\`course_id\` = cs.\`course_id\`
+    -- Courses.course_id 與 Course_Sections.course_id 的 collation 不同，直接用 =
+    -- 比較會拋出 ER_CANT_AGGREGATE_2COLLATIONS。這裡是代碼精確匹配，因此用
+    -- BINARY 比較避開 collation 差異。
+    INNER JOIN \`Courses\` c
+      ON BINARY c.\`course_id\` = BINARY cs.\`course_id\`
     ORDER BY cs.\`year\` DESC, cs.\`semester\`, c.\`course_id\`, cs.\`section_id\`
   `);
   return rows.map(mapCourseRow);
 }
 
 async function getMysqlReviews() {
+  // 評價資料表為 `Course_Reviews`（單數），以 selection_code 關聯 Course_Sections。
+  // 舊程式碼查的 `Courses_Reviews` 並不存在，且欄位結構完全不同。
   const rows = await queryRows(`
     SELECT
-      \`Reviews_id\`,
-      \`Course_id\`,
-      \`Reviews_tags(GoodOrBad)\` AS \`review_tag\`,
-      \`Review_content\`
-    FROM \`Courses_Reviews\`
-    ORDER BY \`Reviews_id\`
+      r.\`Reviews_id\`,
+      r.\`selection_code\`,
+      cs.\`section_id\`,
+      r.\`Reviews_tags\`,
+      r.\`Review_content\`,
+      r.\`sweetness\`,
+      r.\`coolness\`,
+      r.\`workload\`,
+      r.\`value\`,
+      r.\`overall\`,
+      r.\`review_count\`,
+      r.\`source\`,
+      r.\`url\`,
+      r.\`scraped_at\`
+    FROM \`Course_Reviews\` r
+    LEFT JOIN \`Course_Sections\` cs
+      ON BINARY cs.\`selection_code\` = BINARY r.\`selection_code\`
+    ORDER BY r.\`Reviews_id\`
   `);
   return rows.map(mapReviewRow);
 }
