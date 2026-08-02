@@ -113,7 +113,7 @@ Table 'defaultdb.Courses_Reviews' doesn't exist
 
 ### D2 `avoid_time` 格式與排課引擎不符，封鎖時段靜默失效
 
-**嚴重度：高**
+**嚴重度**：🟠 高　**狀態**：✅ 已完成（2026-08-02）——詳見 [修復 avoid_time 格式不符](./2026-08-02-avoid-time-format.md)
 
 `User_Profiles.avoid_time` 的實際內容為時間字串陣列：
 
@@ -192,7 +192,7 @@ Table 'defaultdb.Courses_Reviews' doesn't exist
 | 順序 | 項目 | 理由 |
 | ---: | --- | --- |
 | ✅ | D1 評價表名稱 | 已修復：三個 API 與兩個 Agent 工具的資料取得前提已恢復，`#4`／`#5` 可接續使用結構化分數 |
-| 1 | D2 `avoid_time` 格式 | 硬約束靜默失效，使用者設定無效果且無警告 |
+| ✅ | D2 `avoid_time` 格式 | 已修復：時間字串正規化為 { day, period }，兩條路徑共用轉換 |
 | 2 | D3 `department` 引號 | 阻擋 `#13` 的系所比對 |
 | 3 | D7、D6 | 顯示層與資料一致性 |
 | 4 | D4、D5 | 需要外部資料來源，非程式可解 |

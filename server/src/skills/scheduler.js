@@ -2,6 +2,8 @@
 // Rule-based scheduler that keeps hard constraints verifiable and leaves
 // explanation/comparison to the AI Agent.
 
+import { normalizeBlockedPeriods } from '../utils/periods.js';
+
 const DEFAULT_MIN_CREDITS = 15;
 const DEFAULT_MAX_CREDITS = 22;
 const DEFAULT_MAX_COURSES_PER_DAY = 4;
@@ -524,7 +526,16 @@ function uniquePlans(plans) {
   });
 }
 
-export function generateSchedule(candidateCourses, constraints = {}) {
+export function generateSchedule(candidateCourses, rawConstraints = {}) {
+  // 封鎖時段在此統一正規化，而不是要求每個呼叫端各自處理。
+  // 使用者偏好可能存成時間字串（例如 ["08:00"]），未轉換時 bp.day 為 undefined，
+  // 比對會靜默跳過而讓設定完全失效——這正是 D2 的缺陷。
+  // 由呼叫端負責轉換等於每新增一條呼叫路徑就多一次踩坑的機會。
+  const constraints = {
+    ...rawConstraints,
+    blockedPeriods: normalizeBlockedPeriods(rawConstraints.blockedPeriods),
+  };
+
   if (!Array.isArray(candidateCourses) || candidateCourses.length === 0) {
     return {
       success: false,

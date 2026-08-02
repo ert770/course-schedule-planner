@@ -67,7 +67,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `department` | varchar(45) | `profile.department` |
 | `grade_level` | int | `profile.gradeLevel` |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
-| `avoid_time` | json | `profile.blockedPeriods` |
+| `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
 | `completed_courses` | json | `profile.completedCourseIds` |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
@@ -113,6 +113,19 @@ The following collections remain file-backed in `server/data/*.json` because the
 
 - `timeBlocks`：完整時段清單，每個元素含 `dayOfWeek`（1=週一 … 7=週日）、`startPeriod`、`endPeriod`。**衝堂與時間類限制判定必須使用此欄位。**
 - `dayOfWeek` / `startPeriod` / `endPeriod`：`timeBlocks[0]` 的內容，僅供相容用途。無法解析時為 `null`。
+
+### `avoid_time` 的兩種格式
+
+同一欄位可能存在兩種格式，讀取時必須都支援：
+
+| 來源 | 格式 | 範例 |
+| --- | --- | --- |
+| 外部匯入 | 時間字串陣列 | `["08:00"]` |
+| 本系統寫回 | 排課引擎格式 | `[{ "day": 1, "period": 3 }]` |
+
+排課引擎只認 `{ day, period }`。`server/src/utils/periods.js` 的 `normalizeBlockedPeriods()` 負責統一轉換，`database.js`（讀取已儲存偏好）與 `constraintService.js`（合併 request）兩處共用。
+
+時間字串沒有星期資訊，視為**每天的該節次都要避開**，展開為 7 筆。時間對應節次採「第一個尚未結束的節次」，例如 `08:00` 對應第 1 節、`13:05` 對應第 6 節。
 
 ### `ragTag`
 

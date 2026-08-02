@@ -1,7 +1,8 @@
 // 排課限制條件合併：REST 與 AI Agent 兩條路徑共用同一份邏輯，
 // 避免兩處各自漂移導致參數只在其中一條路徑生效。
 
-const PERIODS_PER_DAY = 14;
+import { PERIODS_PER_DAY, normalizeBlockedPeriods } from '../utils/periods.js';
+
 const MONDAY = 1;
 
 // 陣列型偏好：空陣列不帶任何資訊，視同「未指定」並退回已儲存偏好。
@@ -26,7 +27,11 @@ function pickNumber(requestValue, savedValue, fallback) {
 }
 
 function buildBlockedPeriods(input, prefs) {
-  const blockedPeriods = [...pickList(input.blockedPeriods, prefs.blockedPeriods)];
+  // request 與已儲存偏好都可能帶時間字串（例如 "08:00"），一律先正規化成
+  // 排課引擎認得的 { day, period }，否則比對時 bp.day 為 undefined 會靜默失效。
+  const blockedPeriods = normalizeBlockedPeriods(
+    pickList(input.blockedPeriods, prefs.blockedPeriods)
+  );
 
   if (input.mondayFree || prefs.mondayFree) {
     for (let period = 1; period <= PERIODS_PER_DAY; period += 1) {

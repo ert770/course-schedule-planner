@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isMysqlConfigured, queryRows } from './mysql.js';
+import { normalizeBlockedPeriods } from '../utils/periods.js';
+import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -273,12 +275,15 @@ function mapReviewRow(row) {
   };
 }
 
-function normalizeBlockedPeriods(avoidTime) {
-  const parsed = parseJson(avoidTime, []);
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-  return parsed;
+// `User_Profiles.avoid_time` 存的是時間字串（例如 ["08:00"]），但排課引擎的
+// hardConstraintReason() 只認 `{ day, period }`。先前這裡原樣回傳陣列，
+// 時間字串的 `bp.day` 為 undefined，比對永遠跳過，
+// 使用者設定的避開時段完全不生效且沒有任何錯誤或警告。
+function normalizeAvoidTime(avoidTime) {
+  return normalizeBlockedPeriods(
+    parseJson(avoidTime, []),
+    entry => logger.warn(`無法解析的封鎖時段：${JSON.stringify(entry)}`, { label: 'Profile' })
+  );
 }
 
 function mapUserProfileRow(row) {
@@ -295,7 +300,7 @@ function mapUserProfileRow(row) {
     completedCourseIds: Array.isArray(completedCourses) ? completedCourses : [],
     targetCreditsMin: 15,
     targetCreditsMax: normalizeNumber(row.max_credits, 22) || 22,
-    blockedPeriods: normalizeBlockedPeriods(row.avoid_time),
+    blockedPeriods: normalizeAvoidTime(row.avoid_time),
     preferredCategories: Array.isArray(preferenceTags) ? preferenceTags : [],
     preferenceTags: Array.isArray(preferenceTags) ? preferenceTags : [],
     mustTakeCourses: [],
