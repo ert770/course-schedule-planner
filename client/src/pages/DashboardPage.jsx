@@ -148,6 +148,7 @@ export default function DashboardPage() {
         message: err.message || '無法連接到伺服器，請確認後端已啟動。',
         warnings: [],
         excluded: [],
+        unscheduled: [],
       });
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
