@@ -4,7 +4,8 @@
 
 ## 2026-08-02
 
-1. [修復 avoid_time 格式不符導致封鎖時段靜默失效（D2）](./2026-08-02-avoid-time-format.md)
+1. [修復 department 含字面單引號（D3）](./2026-08-02-department-quote-d3.md)
+2. [修復 avoid_time 格式不符導致封鎖時段靜默失效（D2）](./2026-08-02-avoid-time-format.md)
 
 ## 2026-08-01
 

@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { isMysqlConfigured, queryRows } from './mysql.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
+import { normalizeDepartment } from '../utils/text.js';
 import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -286,6 +287,37 @@ function normalizeAvoidTime(avoidTime) {
   );
 }
 
+// D3：`User_Profiles.department` 存的是 `'資訊工程學系'`——包含字面單引號字元。
+// 帶引號的值會讓畢業建議的系所比對、前端系所下拉選單與 `#13` 的系所對照全部失敗，
+// 且不會有任何錯誤。讀取時正規化，並在第一次遇到髒值時警告，不得靜默修正。
+const warnedDepartmentUserIds = new Set();
+
+function readProfileDepartment(row) {
+  const department = normalizeDepartment(row.department);
+
+  if (department !== row.department && !warnedDepartmentUserIds.has(row.user_id)) {
+    warnedDepartmentUserIds.add(row.user_id);
+    logger.warn(
+      `User_Profiles.department 含多餘引號，已正規化：`
+        + `${JSON.stringify(row.department)} -> ${JSON.stringify(department)}`,
+      { label: 'Profile' }
+    );
+  }
+
+  return department;
+}
+
+// 本機 JSON 檔的 profile 不經過 mapUserProfileRow，仍走同一套正規化，
+// 避免依資料來源不同而有兩種 department 值。
+function normalizeProfileDepartment(profile) {
+  if (!profile || profile.department === undefined) {
+    return profile;
+  }
+
+  const department = normalizeDepartment(profile.department);
+  return department === profile.department ? profile : { ...profile, department };
+}
+
 function mapUserProfileRow(row) {
   const preferenceTags = parseJson(row.preference_tags, []);
   const completedCourses = parseJson(row.completed_courses, []);
@@ -294,7 +326,7 @@ function mapUserProfileRow(row) {
     id: normalizeId(row.user_id),
     userId: String(row.user_id),
     displayName: `User ${row.user_id}`,
-    department: row.department,
+    department: readProfileDepartment(row),
     gradeLevel: normalizeNumber(row.grade_level),
     completedCredits: 0,
     completedCourseIds: Array.isArray(completedCourses) ? completedCourses : [],
@@ -388,7 +420,9 @@ async function getMysqlUserPreferences() {
   const mysqlUserIds = new Set(mysqlProfiles.map(profile => String(profile.userId)));
   return [
     ...mysqlProfiles,
-    ...localProfiles.filter(profile => !mysqlUserIds.has(String(profile.userId))),
+    ...localProfiles
+      .filter(profile => !mysqlUserIds.has(String(profile.userId)))
+      .map(normalizeProfileDepartment),
   ];
 }
 
@@ -402,7 +436,7 @@ async function updateMysqlUserPreference(userId, item) {
 
   if (item.department !== undefined) {
     updates.push('`department` = ?');
-    params.push(item.department);
+    params.push(normalizeDepartment(item.department));
   }
   if (item.gradeLevel !== undefined || item.grade_level !== undefined) {
     updates.push('`grade_level` = ?');
@@ -445,7 +479,8 @@ async function updateMysqlUserPreference(userId, item) {
 
 async function readCollectionBySource(collection) {
   if (!usesMysql(collection)) {
-    return readCollection(collection);
+    const data = readCollection(collection);
+    return collection === 'user_preferences' ? data.map(normalizeProfileDepartment) : data;
   }
 
   if (collection === 'courses') return getMysqlCourses();
@@ -488,8 +523,11 @@ export async function update(collection, id, updates) {
 }
 
 export async function upsertByField(collection, field, value, item) {
+  // D3：寫入端也正規化，否則使用者或匯入流程送進來的帶引號值會再次污染資料。
+  const payload = collection === 'user_preferences' ? normalizeProfileDepartment(item) : item;
+
   if (usesMysql(collection) && collection === 'user_preferences' && field === 'userId') {
-    const updated = await updateMysqlUserPreference(value, item);
+    const updated = await updateMysqlUserPreference(value, payload);
     if (updated) return updated;
   }
 
@@ -497,12 +535,12 @@ export async function upsertByField(collection, field, value, item) {
   const index = data.findIndex(d => sameId(d[field], value));
   if (index === -1) {
     const maxId = data.reduce((max, d) => Math.max(max, normalizeNumber(d.id, 0) || 0), 0);
-    const newItem = { id: maxId + 1, ...item };
+    const newItem = { id: maxId + 1, ...payload };
     data.push(newItem);
     writeCollection(collection, data);
     return newItem;
   }
-  data[index] = { ...data[index], ...item };
+  data[index] = { ...data[index], ...payload };
   writeCollection(collection, data);
   return data[index];
 }

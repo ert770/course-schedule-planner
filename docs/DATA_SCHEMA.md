@@ -64,7 +64,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | Column | Type | API mapping |
 | --- | --- | --- |
 | `user_id` | int | `profile.userId` |
-| `department` | varchar(45) | `profile.department` |
+| `department` | varchar(45) | `profile.department`（見下方說明） |
 | `grade_level` | int | `profile.gradeLevel` |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
@@ -126,6 +126,20 @@ The following collections remain file-backed in `server/data/*.json` because the
 排課引擎只認 `{ day, period }`。`server/src/utils/periods.js` 的 `normalizeBlockedPeriods()` 負責統一轉換，`database.js`（讀取已儲存偏好）與 `constraintService.js`（合併 request）兩處共用。
 
 時間字串沒有星期資訊，視為**每天的該節次都要避開**，展開為 7 筆。時間對應節次採「第一個尚未結束的節次」，例如 `08:00` 對應第 1 節、`13:05` 對應第 6 節。
+
+### `department` 的引號正規化
+
+匯入資料中 `User_Profiles.department` 曾存為 `'資訊工程學系'`——**包含字面單引號字元本身**，導致所有字串比對失敗（D3）。掃描全庫 19 個文字欄位後確認**只有此欄位**有此問題，屬單一欄位的匯入缺陷；`Courses.dept` 等課程端欄位皆乾淨。
+
+`server/src/utils/text.js` 的 `normalizeDepartment()` 負責去除成對的包裹引號（半形 `'` `"` `` ` `` 與全形 `‘’` `“”` 「」 『』）並修剪空白，於三處套用：
+
+| 路徑 | 位置 |
+| --- | --- |
+| MySQL 讀取 | `database.js` 的 `mapUserProfileRow()` |
+| 本機 JSON 讀取 | `database.js` 的 `readCollectionBySource()` |
+| 寫入（兩種來源共用） | `database.js` 的 `upsertByField()` |
+
+只有真正成對時才剝除，因此 `O'Brien` 這類單邊引號不會被誤刪。讀到髒值時會寫入一筆 `logger.warn`，不靜默修正。資料庫中該筆資料已於 2026-08-02 清理。
 
 ### `ragTag`
 
