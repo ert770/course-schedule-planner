@@ -2,9 +2,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
+import { useSchedule } from '../contexts/useSchedule'; // 🌟 引入全域課表狀態
 import { scheduleAPI, chatAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
-import { X, Send, Search, Download, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles } from 'lucide-react';
+import { 
+  X, Send, Search, Download, Loader2, Calendar, 
+  LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Trash2 
+} from 'lucide-react';
 
 const PREFS = [
   { key: 'preferCompact', label: '盡量集中排課' },
@@ -22,11 +26,14 @@ const PREFS = [
 ];
 
 export default function DashboardPage() {
+  
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   
-  const [schedule, setSchedule] = useState([]);
+  // 🌟 將原本的 useState 替換為全域的 useSchedule
+  const { schedule, setSchedule } = useSchedule();
+  
   const [isScheduling, setIsScheduling] = useState(false);
   const [prefs, setPrefs] = useState(() => {
     try {
@@ -52,9 +59,12 @@ export default function DashboardPage() {
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
-  }, [chatHistory]);
+  }, [chatHistory, chatLoading]); 
 
   const generateInitialSchedule = useCallback(async (currentPrefs = prefs) => {
+    // 💡 防呆：如果全域課表已經有課，就不要一進來又自動覆蓋重排
+    if (schedule.length > 0) return; 
+
     setIsScheduling(true);
     try {
       const blockedPeriods = [];
@@ -88,7 +98,7 @@ export default function DashboardPage() {
       });
 
       if (data.success) {
-        setSchedule(data.schedule);
+        setSchedule(data.schedule); // 🌟 這裡會直接更新到全域狀態
         if (Object.keys(currentPrefs).length > 0) {
           setChatHistory(prev => [...prev, { 
             role: 'bot', 
@@ -103,7 +113,7 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [prefs, user?.studentId]);
+  }, [prefs, user?.studentId, schedule.length, setSchedule]);
 
   useEffect(() => {
     generateInitialSchedule(prefs);
@@ -114,12 +124,37 @@ export default function DashboardPage() {
     setPrefs(newPrefs);
   };
 
-  const handleRegenerate = () => {
-    generateInitialSchedule(prefs);
+  const handleRegenerate = async () => {
+    // 手動點擊重新排課時，不受「已有課表」的限制
+    setIsScheduling(true);
+    try {
+      const blockedPeriods = [];
+      if (prefs.mondayFree) {
+        for (let p = 1; p <= 14; p++) {
+          blockedPeriods.push({ day: 1, period: p });
+        }
+      }
+      const constraints = { ...prefs, blockedPeriods, maxCredits: 25, minCredits: 15 };
+      const data = await scheduleAPI.generate({ userId: user?.studentId || 'default', constraints });
+      if (data.success) {
+        setSchedule(data.schedule);
+        setChatHistory(prev => [...prev, { 
+          role: 'bot', 
+          text: `已套用偏好設定並重新排課，成功生成課表！共 ${data.schedule.length} 門課，${data.totalCredits} 學分。`,
+          schedule: data.schedule,
+          totalCredits: data.totalCredits
+        }]);
+      }
+    } catch (err) {
+      console.error('Regeneration failed:', err);
+    } finally {
+      setTimeout(() => setIsScheduling(false), 1000);
+    }
   };
 
-  const handleChatSend = async (overrideMsg) => {
-    const msg = overrideMsg || chatInput.trim();
+  const handleChatSubmit = async (e) => {
+    if (e) e.preventDefault(); 
+    const msg = chatInput.trim();
     if (!msg || chatLoading) return;
     
     setChatInput('');
@@ -129,7 +164,7 @@ export default function DashboardPage() {
     try {
       const res = await chatAPI.send(msg, user?.studentId || 'default');
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
-        setSchedule(res.data.schedule);
+        setSchedule(res.data.schedule); // 🌟 聊天機器人排課結果存入全域
         setChatHistory(prev => [...prev, { 
           role: 'bot', 
           text: `成功生成課表！共 ${res.data.schedule.length} 門課，${res.data.totalCredits} 學分。`,
@@ -160,10 +195,16 @@ export default function DashboardPage() {
     URL.revokeObjectURL(url);
   };
 
+  // 🌟 新增：從課表中移除特定課程
+  const handleRemoveCourse = (courseId) => {
+    setSchedule(schedule.filter(c => c.id !== courseId));
+    setDetailCourse(null); // 關閉 Modal
+  };
+
   return (
-    <div className="layout-container" id="dashboard-page">
-      {/* Top Navbar */}
-      <header className="top-nav">
+    <div className="layout-container" id="dashboard-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      
+      <header className="top-nav" style={{ flexShrink: 0 }}>
         <div className="nav-brand">
           <Calendar size={20} className="nav-icon" />
           <span>課表規劃助手</span>
@@ -173,39 +214,52 @@ export default function DashboardPage() {
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
         </div>
         <div className="nav-actions">
-          <div className="nav-user" onClick={() => setShowUserMenu(!showUserMenu)}>
-            <div className="avatar">{(user?.name || '同')[0]}</div>
-            <span>{user?.name || '同學'}</span>
+          <div className="nav-user" style={{ position: 'relative' }}>
+            <div 
+              className="user-trigger" 
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+            >
+              <div className="avatar">{(user?.name || '同')[0]}</div>
+              <span>{user?.name || '同學'}</span>
+            </div>
             
             {showUserMenu && (
-              <div className="user-dropdown-menu">
-                <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
-                  <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
-                </button>
-                <button className="user-dropdown-item" onClick={toggleTheme}>
-                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 
-                  切換主題 ({theme === 'dark' ? '淺色' : '深色'})
-                </button>
-                <div style={{height: '1px', background: 'var(--border-color)', margin: '4px 0'}}></div>
-                <button className="user-dropdown-item" onClick={logout}>登出 (Logout)</button>
-              </div>
+              <>
+                <div 
+                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 98 }} 
+                  onClick={() => setShowUserMenu(false)} 
+                />
+                <div className="user-dropdown-menu" style={{ position: 'absolute', top: '100%', right: 0, zIndex: 99, marginTop: '8px' }}>
+                  <button className="user-dropdown-item" onClick={() => { setShowUserMenu(false); navigate('/graduation'); }}>
+                    <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
+                  </button>
+                  <button className="user-dropdown-item" onClick={() => { setShowUserMenu(false); toggleTheme(); }}>
+                    {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 
+                    切換主題 ({theme === 'dark' ? '淺色' : '深色'})
+                  </button>
+                  <div style={{height: '1px', background: 'var(--border-color)', margin: '4px 0'}}></div>
+                  <button className="user-dropdown-item" onClick={logout}>登出 (Logout)</button>
+                </div>
+              </>
             )}
           </div>
         </div>
       </header>
 
-      <div className="dashboard-content">
-        {/* Left Sidebar: Preferences and Skill Tree */}
-        <aside className="left-sidebar">
+      <div className="dashboard-content" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        
+        <aside className="left-sidebar" style={{ overflowY: 'auto', paddingBottom: '24px' }}>
           <div className="sidebar-section">
             <h3 className="sidebar-section-title">我的排課偏好</h3>
             <div className="sidebar-prefs">
               {PREFS.map(p => (
-                <label key={p.key} className="sidebar-pref-item">
+                <label key={p.key} className="sidebar-pref-item" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <input 
                     type="checkbox" 
                     checked={!!prefs[p.key]}
                     onChange={() => handlePrefToggle(p.key)}
+                    style={{ cursor: 'pointer' }}
                   />
                   {p.label}
                 </label>
@@ -257,9 +311,8 @@ export default function DashboardPage() {
           </div>
         </aside>
 
-        {/* Center: Schedule Area */}
-        <div className="schedule-area">
-          <div className="schedule-header-bar">
+        <div className="schedule-area" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div className="schedule-header-bar" style={{ flexShrink: 0 }}>
             <div className="schedule-stats">
               <span className="stat-badge course-badge">📚 {schedule.length} 門課</span>
               <span className="stat-badge credit-badge">🎓 {schedule.reduce((s, c) => s + c.credits, 0)} 學分</span>
@@ -272,7 +325,7 @@ export default function DashboardPage() {
             </div>
           </div>
           
-          <div className="schedule-wrapper">
+          <div className="schedule-wrapper" style={{ flex: 1, overflowY: 'auto', paddingBottom: '24px' }}>
             {isScheduling && (
               <div className="scheduling-overlay">
                 <Loader2 size={40} className="spin-animation" />
@@ -283,9 +336,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Right Side: Chat Panel */}
-        <aside className="chat-panel">
-          <div className="chat-header">
+        <aside className="chat-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div className="chat-header" style={{ flexShrink: 0 }}>
             <div className="chat-bot-avatar">🤖</div>
             <div className="chat-title-info">
               <h3>課表規劃助手</h3>
@@ -293,7 +345,7 @@ export default function DashboardPage() {
             </div>
           </div>
           
-          <div className="chat-messages" ref={chatScrollRef}>
+          <div className="chat-messages" ref={chatScrollRef} style={{ flex: 1, overflowY: 'auto' }}>
             {chatHistory.map((msg, i) => (
               <div key={i} className={`chat-message ${msg.role}`}>
                 {msg.role === 'bot' && (
@@ -332,46 +384,62 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="chat-input-area">
-            <div className="input-box">
+          <div className="chat-input-area" style={{ flexShrink: 0 }}>
+            <form className="input-box" onSubmit={handleChatSubmit} style={{ display: 'flex', width: '100%' }}>
               <input
                 ref={chatInputRef}
                 type="text"
                 placeholder="輸入你的需求... 例如「幫我排課表」"
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleChatSend()}
                 disabled={chatLoading}
+                style={{ flex: 1 }}
               />
               <button 
+                type="submit"
                 className="send-btn" 
-                onClick={() => handleChatSend()} 
                 disabled={!chatInput.trim() || chatLoading}
               >
                 <Send size={18} />
               </button>
-            </div>
+            </form>
           </div>
         </aside>
       </div>
 
-      {/* Modal is same as before */}
       {detailCourse && (
         <div className="modal-overlay" onClick={() => setDetailCourse(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setDetailCourse(null)}>✕</button>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>{detailCourse.name}</h2>
-            <span className="detail-code">{detailCourse.code}</span>
-            <div className="detail-meta">
-              <span>👤 {detailCourse.instructor}</span>
-              <span>📚 {detailCourse.credits} 學分</span>
+            <h2 style={{ fontSize: '1.3rem', marginBottom: '8px', paddingRight: '20px' }}>{detailCourse.name}</h2>
+            <span className="detail-code" style={{ color: '#6b7280', fontSize: '0.9rem' }}>{detailCourse.code}</span>
+            <div className="detail-meta" style={{ margin: '16px 0', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px' }}>
+              <p style={{ margin: '4px 0' }}>👤 授課教師：{detailCourse.instructor}</p>
+              <p style={{ margin: '4px 0' }}>📚 學分數：{detailCourse.credits} 學分</p>
             </div>
             {detailCourse.description && (
               <div className="detail-desc">
-                <div className="detail-desc-label">課程說明</div>
-                <p>{detailCourse.description}</p>
+                <div className="detail-desc-label" style={{ fontWeight: 'bold', marginBottom: '8px' }}>課程說明</div>
+                <p style={{ lineHeight: '1.6' }}>{detailCourse.description}</p>
               </div>
             )}
+            
+            {/* 🌟 新增：移除課程按鈕 */}
+            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => handleRemoveCourse(detailCourse.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px',
+                  border: 'none', cursor: 'pointer', backgroundColor: '#ef4444', color: '#fff', fontWeight: 'bold',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}
+              >
+                <Trash2 size={16} /> 
+                從課表中移除
+              </button>
+            </div>
           </div>
         </div>
       )}

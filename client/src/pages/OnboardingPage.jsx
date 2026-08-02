@@ -4,11 +4,21 @@ import { Bot } from 'lucide-react';
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { markOnboarded } = useAuth();
+  // 假設 useAuth 裡面有提供 logout 函數
+  const { markOnboarded, logout } = useAuth();
 
   const handleAgree = () => {
     markOnboarded();
     navigate('/setup');
+  };
+
+  const handleLogout = () => {
+    if (logout) {
+      logout(); // 使用 context 標準作法清空狀態
+    } else {
+      localStorage.clear(); // 備用防呆方案
+    }
+    navigate('/login'); // 使用 React 路由滑順跳轉
   };
 
   return (
@@ -28,26 +38,34 @@ export default function OnboardingPage() {
           </p>
         </div>
 
-        <button
-          className="onboarding-btn"
-          onClick={handleAgree}
-          id="onboarding-agree-btn"
+        {/* 加入 Actions 容器，強制內部元素垂直排列、置中、寬度撐滿 */}
+        <div 
+          className="onboarding-actions" 
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '16px' }}
         >
-          同意並開始設定
-        </button>
+          <button
+            className="onboarding-btn"
+            onClick={handleAgree}
+            id="onboarding-agree-btn"
+            style={{ width: '100%' }} // 確保主按鈕寬度一致
+          >
+            同意並開始設定
+          </button>
 
-        <button 
-          onClick={() => {
-            localStorage.clear();
-            window.location.href = '/login';
-          }}
-          style={{
-            marginTop: '16px', background: 'transparent', border: 'none', 
-            color: '#888', cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline'
-          }}
-        >
-          切換帳號 (重新登入)
-        </button>
+          <button 
+            onClick={handleLogout}
+            style={{
+              background: 'transparent', 
+              border: 'none', 
+              color: '#888', 
+              cursor: 'pointer', 
+              fontSize: '0.85rem', 
+              textDecoration: 'underline'
+            }}
+          >
+            切換帳號 (重新登入)
+          </button>
+        </div>
       </div>
     </div>
   );

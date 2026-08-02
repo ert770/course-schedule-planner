@@ -148,13 +148,21 @@ export default function SetupPage() {
             {/* Middle - Course checklist & Basic Info */}
             <div className="setup-courses">
               <h3 className="setup-section-title">1. 基本資料</h3>
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                <select value={department} onChange={e => setDepartment(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                <select 
+                  value={department} 
+                  onChange={e => setDepartment(e.target.value)} 
+                  style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #e5e7eb', backgroundColor: '#f9fafb', outline: 'none', cursor: 'pointer' }}
+                >
                   <option value="資訊工程學系">資訊工程學系</option>
                   <option value="電機工程學系">電機工程學系</option>
                   <option value="企業管理學系">企業管理學系</option>
                 </select>
-                <select value={grade} onChange={e => setGrade(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                <select 
+                  value={grade} 
+                  onChange={e => setGrade(e.target.value)} 
+                  style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #e5e7eb', backgroundColor: '#f9fafb', outline: 'none', cursor: 'pointer' }}
+                >
                   <option value="1">大一</option>
                   <option value="2">大二</option>
                   <option value="3">大三</option>
@@ -164,20 +172,34 @@ export default function SetupPage() {
 
               <h3 className="setup-section-title">2. 已經修過的選修課程</h3>
               {loading ? (
-                <div style={{ padding: '20px', color: '#6b7280' }}>載入中...</div>
+                <div style={{ padding: '20px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Loader2 size={16} className="animate-spin" />
+                  載入中...
+                </div>
               ) : (
-                <div className="setup-course-list">
+                <div 
+                  className="setup-course-list" 
+                  style={{ 
+                    maxHeight: '380px', 
+                    overflowY: 'auto', 
+                    padding: '12px', 
+                    border: '1px solid #f3f4f6', 
+                    borderRadius: '8px',
+                    backgroundColor: '#fafafa'
+                  }}
+                >
                   {electives.length > 0 ? electives.map(course => (
-                    <label key={course.id} className="setup-course-item" id={`setup-course-${course.id}`}>
+                    <label key={course.id} className="setup-course-item" id={`setup-course-${course.id}`} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', cursor: 'pointer' }}>
                       <input
                         type="checkbox"
                         checked={checkedCourses.has(course.id)}
                         onChange={() => toggleCourse(course.id)}
+                        style={{ marginRight: '10px', cursor: 'pointer' }}
                       />
-                      <span>{course.name}</span>
+                      <span style={{ userSelect: 'none' }}>{course.name}</span>
                     </label>
                   )) : (
-                    <div style={{color: '#888', fontSize: '0.9rem'}}>尚無符合的選修課程</div>
+                    <div style={{color: '#888', fontSize: '0.9rem', textAlign: 'center', padding: '20px 0'}}>尚無符合的選修課程</div>
                   )}
                 </div>
               )}
@@ -209,11 +231,12 @@ export default function SetupPage() {
 
         {/* Bottom CTA */}
         {!generating && (
-          <div className="setup-footer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          <div className="setup-footer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #f3f4f6' }}>
             <button
               className="setup-submit-btn"
               onClick={handleSubmit}
               id="setup-submit-btn"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
             >
               <Sparkles size={18} />
               完成設定，生成推薦課表 ✨

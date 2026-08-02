@@ -1,7 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/useAuth';
 import { ThemeProvider } from './contexts/ThemeContext';
+// 🌟 新增這行：引入剛剛寫好的全域課表與關注 Context
+import { ScheduleProvider } from './contexts/useSchedule'; 
+
 import LoginPage from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SetupPage from './pages/SetupPage';
@@ -9,8 +12,6 @@ import DashboardPage from './pages/DashboardPage';
 import GraduationPage from './pages/GraduationPage';
 import SearchPage from './pages/SearchPage';
 import './App.css';
-
-import { useLocation } from 'react-router-dom';
 
 function ProtectedRoute({ children }) {
   const { isLoggedIn, isSetupDone } = useAuth();
@@ -90,7 +91,10 @@ function App() {
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
-          <AppRoutes />
+          {/* 🌟 將 ScheduleProvider 包在 AuthProvider 裡面 */}
+          <ScheduleProvider>
+            <AppRoutes />
+          </ScheduleProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, GraduationCap } from 'lucide-react';
+import { Eye, EyeOff, GraduationCap, Loader2 } from 'lucide-react';
 import { authAPI } from '../services/api';
 import { useAuth } from '../contexts/useAuth';
 
@@ -58,6 +58,7 @@ export default function LoginPage() {
               value={studentId}
               onChange={(e) => setStudentId(e.target.value)}
               autoComplete="username"
+              disabled={loading}
             />
           </div>
 
@@ -72,6 +73,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
+                disabled={loading}
               />
               <button
                 type="button"
@@ -79,6 +81,8 @@ export default function LoginPage() {
                 onClick={() => setShowPassword(!showPassword)}
                 id="toggle-password-btn"
                 tabIndex={-1}
+                aria-label={showPassword ? '隱藏密碼' : '顯示密碼'}
+                title={showPassword ? '隱藏密碼' : '顯示密碼'}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
@@ -96,8 +100,16 @@ export default function LoginPage() {
             className="login-submit-btn"
             disabled={loading}
             id="login-submit-btn"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
           >
-            {loading ? '登入中...' : '登入'}
+            {loading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                登入中...
+              </>
+            ) : (
+              '登入'
+            )}
           </button>
         </form>
 
