@@ -4,16 +4,17 @@
 
 ## 2026-08-01
 
-1. [修復無時間課程被無限排入（#14）](./2026-08-01-unscheduled-courses.md)
-2. [統一評價統計與星期顯示](./2026-08-01-review-stats-and-weekday-consistency.md)
-3. [資料庫完整稽核](./2026-08-01-database-audit.md)
-4. [修復評價資料表名稱錯誤（D1）](./2026-08-01-fix-course-reviews-d1.md)
-5. [系所簡稱對照表確認更新](./2026-08-01-department-mapping-confirmation.md)
-6. [排課演算法與資料庫對齊](./2026-08-01-align-scheduler-with-database.md)
-7. [接上 MySQL 並修復課程時間解析](./2026-08-01-mysql-connection-and-time-parsing.md)
-8. [新增 commit-push 提交流程 skill](./2026-08-01-commit-push-skill.md)
-9. [前後端對接稽核與修復追蹤（持續更新）](./2026-08-01-frontend-backend-alignment-audit.md)
-10. [個人化推薦演算法改造路線圖（持續更新）](./2026-08-01-personalization-roadmap.md)
+1. [PR #1 稽核與自動化測試](./2026-08-01-pr-audit-and-tests.md)
+2. [修復無時間課程被無限排入（#14）](./2026-08-01-unscheduled-courses.md)
+3. [統一評價統計與星期顯示](./2026-08-01-review-stats-and-weekday-consistency.md)
+4. [資料庫完整稽核](./2026-08-01-database-audit.md)
+5. [修復評價資料表名稱錯誤（D1）](./2026-08-01-fix-course-reviews-d1.md)
+6. [系所簡稱對照表確認更新](./2026-08-01-department-mapping-confirmation.md)
+7. [排課演算法與資料庫對齊](./2026-08-01-align-scheduler-with-database.md)
+8. [接上 MySQL 並修復課程時間解析](./2026-08-01-mysql-connection-and-time-parsing.md)
+9. [新增 commit-push 提交流程 skill](./2026-08-01-commit-push-skill.md)
+10. [前後端對接稽核與修復追蹤（持續更新）](./2026-08-01-frontend-backend-alignment-audit.md)
+11. [個人化推薦演算法改造路線圖（持續更新）](./2026-08-01-personalization-roadmap.md)
 
 ## 2026-06-11
 

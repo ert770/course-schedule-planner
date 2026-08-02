@@ -1,5 +1,21 @@
 # 測試規劃
 
+## 自動化測試
+
+```bash
+npm test
+```
+
+於根目錄執行，等同 `cd server && npm test`。使用 Node 內建的 `node:test`，不需額外依賴。
+
+測試位於 `server/test/`，涵蓋下方「排課邏輯測試」與「AI Agent 契約測試」的案例。測試**刻意不連資料庫**：排課邏輯是純函式，用合成資料才能穩定重現邊界情境，也讓測試在沒有 `.env` 與 MySQL 連線的環境仍可執行。
+
+一次跑完 lint、build 與測試：
+
+```bash
+npm run verify
+```
+
 ## 驗證指令
 
 前端 build：

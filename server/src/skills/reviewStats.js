@@ -17,7 +17,12 @@ export function getTotalReviewCount(reviews = []) {
 export function weightedAverageScore(reviews = [], field) {
   const weighted = reviews
     .map(review => {
-      const value = Number(review[field]);
+      const raw = review[field];
+      // Number(null) 是 0 且為有限數，若不先擋掉，缺值的評分會被當成「0 分」拉低平均。
+      if (raw === null || raw === undefined || raw === '') {
+        return null;
+      }
+      const value = Number(raw);
       if (!Number.isFinite(value)) {
         return null;
       }
