@@ -5,9 +5,11 @@ import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule'; // 🌟 引入全域課表狀態
 import { scheduleAPI, chatAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
+import { formatCourseTime } from '../utils/courseTime';
 import { 
   X, Send, Search, Download, Loader2, Calendar, 
-  LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Trash2 
+  LayoutDashboard, Settings, Moon, Sun, CheckCircle2, 
+  Sparkles, Trash2, AlertTriangle 
 } from 'lucide-react';
 
 const PREFS = [
@@ -25,14 +27,38 @@ const PREFS = [
   { key: 'learnMore', label: '學到許多知識' },
 ];
 
+const MAX_EXCLUDED_SHOWN = 5;
+
+// 把排課回應整理成畫面上要顯示的提示。成功但有警告時也要顯示，
+// 否則「學分不足」「偏好未滿足」這類訊息同樣會消失。
+function buildScheduleNotice(data) {
+  const excluded = data.excludedCourses || [];
+  // 尚未排定時間的課程有學分卻不會出現在課表格上，必須讓使用者看得到。
+  const unscheduled = data.unscheduledCourses || [];
+  const message = data.message || '無法產生符合限制的課表。';
+  // 排課失敗時後端會把 warnings[0] 當作 message，直接全部渲染會重複一次。
+  const warnings = (data.warnings || []).filter(warning => warning !== message);
+
+  if (!data.success) {
+    return { level: 'error', message, warnings, excluded, unscheduled };
+  }
+
+  if (data.watchOnly || warnings.length > 0 || unscheduled.length > 0) {
+    return { level: 'warning', message, warnings, excluded, unscheduled };
+  }
+
+  return null;
+}
+
 export default function DashboardPage() {
   
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   
-  // 🌟 將原本的 useState 替換為全域的 useSchedule
+  // 🌟 將原本的 useState 替換為全域的 useSchedule，並保留 main 分支的通知狀態
   const { schedule, setSchedule } = useSchedule();
+  const [scheduleNotice, setScheduleNotice] = useState(null);
   
   const [isScheduling, setIsScheduling] = useState(false);
   const [prefs, setPrefs] = useState(() => {
@@ -97,19 +123,32 @@ export default function DashboardPage() {
         constraints,
       });
 
+      setScheduleNotice(buildScheduleNotice(data));
+
       if (data.success) {
         setSchedule(data.schedule); // 🌟 這裡會直接更新到全域狀態
         if (Object.keys(currentPrefs).length > 0) {
-          setChatHistory(prev => [...prev, { 
-            role: 'bot', 
+          setChatHistory(prev => [...prev, {
+            role: 'bot',
             text: `已套用偏好設定並重新排課，成功生成課表！共 ${data.schedule.length} 門課，${data.totalCredits} 學分。`,
             schedule: data.schedule,
             totalCredits: data.totalCredits
           }]);
         }
+      } else {
+        setChatHistory(prev => [...prev, {
+          role: 'bot',
+          text: data.message || '排課失敗，但後端沒有回傳原因。',
+        }]);
       }
     } catch (err) {
       console.error('Schedule generation failed:', err);
+      setScheduleNotice({
+        level: 'error',
+        message: err.message || '無法連接到伺服器，請確認後端已啟動。',
+        warnings: [],
+        excluded: [],
+      });
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
@@ -125,7 +164,6 @@ export default function DashboardPage() {
   };
 
   const handleRegenerate = async () => {
-    // 手動點擊重新排課時，不受「已有課表」的限制
     setIsScheduling(true);
     try {
       const blockedPeriods = [];
@@ -136,6 +174,9 @@ export default function DashboardPage() {
       }
       const constraints = { ...prefs, blockedPeriods, maxCredits: 25, minCredits: 15 };
       const data = await scheduleAPI.generate({ userId: user?.studentId || 'default', constraints });
+      
+      setScheduleNotice(buildScheduleNotice(data));
+
       if (data.success) {
         setSchedule(data.schedule);
         setChatHistory(prev => [...prev, { 
@@ -172,7 +213,7 @@ export default function DashboardPage() {
           totalCredits: res.data.totalCredits
         }]);
       } else {
-        setChatHistory(prev => [...prev, { role: 'bot', text: res.response }]);
+        setChatHistory(prev => [...prev, { role: 'bot', text: res.reply }]);
       }
     } catch (err) {
       console.error('Chat error:', err);
@@ -184,7 +225,7 @@ export default function DashboardPage() {
 
   const handleExport = () => {
     const text = schedule.map(c =>
-      `${c.name} | ${c.instructor} | 週${'一二三四五'[c.dayOfWeek-1]} 第${c.startPeriod}-${c.endPeriod}節`
+      `${c.name} | ${c.instructor} | ${formatCourseTime(c)}`
     ).join('\n');
     const blob = new Blob([`114學年度 上學期 預排課表\n\n${text}`], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -198,7 +239,7 @@ export default function DashboardPage() {
   // 🌟 新增：從課表中移除特定課程
   const handleRemoveCourse = (courseId) => {
     setSchedule(schedule.filter(c => c.id !== courseId));
-    setDetailCourse(null); // 關閉 Modal
+    setDetailCourse(null); 
   };
 
   return (
@@ -211,6 +252,7 @@ export default function DashboardPage() {
         </div>
         <div className="nav-links">
           <button className="nav-btn active"><LayoutDashboard size={16}/> 首頁</button>
+          <button className="nav-btn" onClick={() => navigate('/schedule')}><Calendar size={16}/> 排課</button>
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
         </div>
         <div className="nav-actions">
@@ -326,6 +368,67 @@ export default function DashboardPage() {
           </div>
           
           <div className="schedule-wrapper" style={{ flex: 1, overflowY: 'auto', paddingBottom: '24px' }}>
+            {scheduleNotice && (
+              <div className={`schedule-notice ${scheduleNotice.level}`} id="schedule-notice">
+                <div className="schedule-notice-head">
+                  <AlertTriangle size={16} />
+                  <span>{scheduleNotice.message}</span>
+                  <button
+                    className="schedule-notice-close"
+                    onClick={() => setScheduleNotice(null)}
+                    aria-label="關閉提示"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                {scheduleNotice.warnings.length > 0 && (
+                  <ul className="schedule-notice-list">
+                    {scheduleNotice.warnings.map((warning, i) => (
+                      <li key={i}>{warning}</li>
+                    ))}
+                  </ul>
+                )}
+
+                {scheduleNotice.unscheduled.length > 0 && (
+                  <details className="schedule-notice-excluded">
+                    <summary>
+                      有 {scheduleNotice.unscheduled.length} 門課時間未定，查看清單
+                    </summary>
+                    <ul className="schedule-notice-list">
+                      {scheduleNotice.unscheduled.slice(0, MAX_EXCLUDED_SHOWN).map((course, i) => (
+                        <li key={i}>
+                          <strong>{course.name}</strong>（{course.credits} 學分）
+                          {course.department ? `｜${course.department}` : ''}
+                        </li>
+                      ))}
+                      {scheduleNotice.unscheduled.length > MAX_EXCLUDED_SHOWN && (
+                        <li>其餘 {scheduleNotice.unscheduled.length - MAX_EXCLUDED_SHOWN} 門未列出。</li>
+                      )}
+                    </ul>
+                  </details>
+                )}
+
+                {scheduleNotice.excluded.length > 0 && (
+                  <details className="schedule-notice-excluded">
+                    <summary>
+                      有 {scheduleNotice.excluded.length} 門課未被排入，查看原因
+                    </summary>
+                    <ul className="schedule-notice-list">
+                      {scheduleNotice.excluded.slice(0, MAX_EXCLUDED_SHOWN).map((item, i) => (
+                        <li key={i}>
+                          <strong>{item.course?.name || '未知課程'}</strong>：{item.reason}
+                        </li>
+                      ))}
+                      {scheduleNotice.excluded.length > MAX_EXCLUDED_SHOWN && (
+                        <li>其餘 {scheduleNotice.excluded.length - MAX_EXCLUDED_SHOWN} 門未列出。</li>
+                      )}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )}
+
             {isScheduling && (
               <div className="scheduling-overlay">
                 <Loader2 size={40} className="spin-animation" />
@@ -361,7 +464,7 @@ export default function DashboardPage() {
                             <div className="chat-course-details">
                               <strong>{c.name}</strong> ({c.code}) — {c.instructor}
                               <div className="chat-course-meta">
-                                週{'一二三四五'[c.dayOfWeek-1]} 第{c.startPeriod}-{c.endPeriod}節 | {c.credits}學分
+                                {formatCourseTime(c)} | {c.credits}學分
                               </div>
                             </div>
                           </div>

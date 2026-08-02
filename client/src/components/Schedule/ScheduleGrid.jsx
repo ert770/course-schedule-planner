@@ -1,6 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, Fragment } from 'react';
 
-const DAYS = ['', '星期一', '星期二', '星期三', '星期四', '星期五'];
+// 資料庫含週六與週日課程，只畫五天會讓那些課程在畫面上消失，
+// 造成學分數與課表格內容對不起來。
+const DAYS = ['', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+const DAY_NUMBERS = [1, 2, 3, 4, 5, 6, 7];
 const PERIODS = [
   { num: 1, start: '08:10', end: '09:00' },
   { num: 2, start: '09:10', end: '10:00' },
@@ -37,14 +40,26 @@ export default function ScheduleGrid({ courses = [], onCourseClick }) {
   const gridData = useMemo(() => {
     const data = {};
     courses.forEach(course => {
-      for (let p = course.startPeriod; p <= course.endPeriod; p++) {
-        const key = `${course.dayOfWeek}-${p}`;
-        data[key] = {
-          course,
-          isStart: p === course.startPeriod,
-          span: course.endPeriod - course.startPeriod + 1,
-        };
-      }
+      // 一門課可能有多個時段，逐段渲染，只畫第一段會讓其餘時段從課表上消失。
+      const blocks = Array.isArray(course.timeBlocks) && course.timeBlocks.length > 0
+        ? course.timeBlocks
+        : [{
+          dayOfWeek: course.dayOfWeek,
+          startPeriod: course.startPeriod,
+          endPeriod: course.endPeriod,
+        }];
+
+      blocks.forEach(block => {
+        if (block.dayOfWeek == null || block.startPeriod == null) return;
+        const endPeriod = block.endPeriod ?? block.startPeriod;
+        for (let p = block.startPeriod; p <= endPeriod; p += 1) {
+          data[`${block.dayOfWeek}-${p}`] = {
+            course,
+            isStart: p === block.startPeriod,
+            span: endPeriod - block.startPeriod + 1,
+          };
+        }
+      });
     });
     return data;
   }, [courses]);
@@ -53,7 +68,7 @@ export default function ScheduleGrid({ courses = [], onCourseClick }) {
     <div className="schedule-grid" id="schedule-grid">
       {/* Header row */}
       <div className="schedule-header corner"></div>
-      {[1, 2, 3, 4, 5].map(day => (
+      {DAY_NUMBERS.map(day => (
         <div key={day} className="schedule-header day">
           {DAYS[day]}
         </div>
@@ -61,12 +76,12 @@ export default function ScheduleGrid({ courses = [], onCourseClick }) {
 
       {/* Time slots */}
       {PERIODS.map(period => (
-        <>
-          <div key={`time-${period.num}`} className="time-label">
+        <Fragment key={`period-${period.num}`}>
+          <div className="time-label">
             <span className="period-num">{period.num}</span>
             <span>{period.start}</span>
           </div>
-          {[1, 2, 3, 4, 5].map(day => {
+          {DAY_NUMBERS.map(day => {
             const key = `${day}-${period.num}`;
             const slot = gridData[key];
 
@@ -96,7 +111,7 @@ export default function ScheduleGrid({ courses = [], onCourseClick }) {
 
             return <div key={key} className="time-slot" />;
           })}
-        </>
+        </Fragment>
       ))}
     </div>
   );

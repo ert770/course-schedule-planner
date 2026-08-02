@@ -14,14 +14,14 @@ MySQL tables:
 
 - `Courses`
 - `Course_Sections`
-- `Courses_Reviews`
+- `Course_Reviews`
 - `User_Profiles`
 
 Consequences:
 
 - `Course_Sections.section_id` is the API-level `course.id`.
-- `Courses_Reviews.Course_id` is treated as a section id, not a course id.
-- SQL queries use backticks for real table and column names, including `` `Reviews_tags(GoodOrBad)` ``.
+- `Course_Reviews.selection_code` is joined to `Course_Sections.selection_code`; the joined `section_id` is exposed as `review.courseId`.
+- Review sentiment and easiness use structured score columns such as `overall`, `coolness`, `sweetness`, and `workload`.
 - `server/data/*.json` remains in use for data not represented by the provided MySQL schema.
 
 ## ADR-002: Keep Local JSON for Demo-Only Data

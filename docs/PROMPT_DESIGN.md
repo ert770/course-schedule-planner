@@ -45,6 +45,32 @@ System prompt 必須讓 Agent：
 | `update_preferences` | 更新使用者偏好 |
 | `final_answer` | 輸出最終回答 |
 
+## `run_csp_scheduler` 參數
+
+排課工具的參數必須與 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 保持一致。兩條路徑（REST 與 AI Agent）共用同一份合併邏輯。
+
+| 類別 | 參數 |
+| --- | --- |
+| 學分 | `minCredits`, `maxCredits`, `maxCoursesPerDay` |
+| 時間 | `blockedPeriods`, `mondayFree`, `noMorningClasses`, `noEveningClasses`, `lunchBreakFree` |
+| 課程指定 | `mustTakeCourseIds`, `retakeCourseIds`, `completedCourseIds` |
+| 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
+| 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
+| 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
+| 畢業門檻 | `digitalCreditsNeeded` |
+
+### 個人化偏好的必要性
+
+`preferredKeywords`、`interests`、`preferCompact`、`preferEasyCourses` 決定多方案中主推哪一個。
+
+使用者表達興趣、想集中排課或想修涼課時，Agent **必須**把對應參數帶進 `run_csp_scheduler`。未帶入時系統只能改以總學分挑選方案，推薦會失去個人化，且回應的 `hasExpressedPreference` 會是 `false`。
+
+排課結果的每個方案含 `preferenceScore`（0~1 的偏好符合度），Agent 應用它向使用者說明為何主推該方案。
+
+### 陣列參數語意
+
+陣列型參數送空陣列 `[]` 視同「未指定」，會退回使用者已儲存的偏好。要覆蓋已儲存值必須送入非空陣列。
+
 ## Observation 格式
 
 工具結果應以 JSON 字串送回模型：

@@ -14,6 +14,7 @@
 | `/onboarding` | OnboardingPage | 新手導引 |
 | `/setup` | SetupPage | 初始偏好設定 |
 | `/` | DashboardPage | 儀表板與主要排課 |
+| `/schedule` | SchedulePage | 課程瀏覽、手動選課與 AI 對話排課 |
 | `/search` | SearchPage | 課程搜尋 |
 | `/graduation` | GraduationPage | 畢業學分檢查 |
 

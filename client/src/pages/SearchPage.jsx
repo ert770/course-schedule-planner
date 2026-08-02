@@ -8,7 +8,8 @@ import {
   Calendar, Search, LayoutDashboard, Settings, Moon, Sun, 
   Clock, MapPin, User, Building, Plus, Check, RotateCcw, AlertCircle, Heart, X
 } from 'lucide-react';
-import '../App.css';
+import '../App.css'; 
+import { formatCourseTime } from '../utils/courseTime';
 
 // ----------------------------------------------------------------------
 // 子元件：依系所查詢表單 (DepartmentSearchForm)
@@ -130,7 +131,6 @@ const ConditionSearchForm = ({ form, setForm, onSubmit, onReset, isLoading }) =>
     </div>
     <div className="form-group">
       <label htmlFor="cond-language">授課語言 (Language)</label>
-      {/* 🌟 修復處：加入「全部」選項，避免預設送出中文條件過濾掉沒有語言標籤的課 */}
       <select id="cond-language" value={form.language} onChange={e => setForm({...form, language: e.target.value})}>
         <option value="">全部 (All)</option>
         <option value="中文 (Chinese)">中文 (Chinese)</option>
@@ -177,7 +177,6 @@ export default function SearchPage() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   
-  // 🌟 引入 removeCourse
   const { schedule, addCourse, removeCourse, watchlist, toggleWatchlist } = useSchedule();
   
   const [activeTab, setActiveTab] = useState('dept'); // dept, cond, watchlist
@@ -189,7 +188,6 @@ export default function SearchPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // 🌟 修復處：language 預設改為空字串
   const initialDeptForm = { department: '', grade: '', classStr: '', category: '', keyword: '' };
   const initialCondForm = { code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: '' };
 
@@ -261,7 +259,6 @@ export default function SearchPage() {
     if (e) e.stopPropagation(); 
     setErrorMsg(''); setSuccessMsg('');
     
-    // 🌟 動態判斷：如果在課表中，就移除；不在課表中，就加入
     const isAdded = schedule.some(c => c.id === course.id);
     
     if (isAdded) {
@@ -279,7 +276,6 @@ export default function SearchPage() {
     }
   };
 
-  // 🌟 動態決定右側要顯示搜尋結果，還是關注清單
   const displayCourses = activeTab === 'watchlist' ? watchlist : searchResults;
 
   return (
@@ -292,6 +288,7 @@ export default function SearchPage() {
         </div>
         <div className="nav-links">
           <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
+          <button className="nav-btn" onClick={() => navigate('/schedule')}><Calendar size={16}/> 排課</button>
           <button className="nav-btn active"><Search size={16}/> 尋找課程</button>
         </div>
         <div className="nav-actions">
@@ -323,7 +320,6 @@ export default function SearchPage() {
             <button className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`} onClick={() => { setActiveTab('cond'); setErrorMsg(''); setSuccessMsg(''); }}>
               依條件查詢
             </button>
-            {/* 🌟 新增：我的關注清單 Tab */}
             <button className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`} onClick={() => { setActiveTab('watchlist'); setErrorMsg(''); setSuccessMsg(''); }}>
               ❤️ 我的關注
             </button>
@@ -336,7 +332,6 @@ export default function SearchPage() {
             <ConditionSearchForm form={condForm} setForm={setCondForm} onSubmit={handleCondSearch} onReset={() => setCondForm(initialCondForm)} isLoading={isSearching} />
           )}
           
-          {/* 關注清單專屬的左側說明 */}
           {activeTab === 'watchlist' && (
             <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-secondary)' }}>
               <Heart size={48} color="#ef4444" style={{ marginBottom: '16px', opacity: 0.8 }} />
@@ -363,8 +358,7 @@ export default function SearchPage() {
               {displayCourses.map(course => {
                 const isAdded = schedule.some(c => c.id === course.id);
                 const isWatched = watchlist.some(c => c.id === course.id);
-                const dayString = ['一','二','三','四','五','六','日'][course.dayOfWeek - 1] || '未定';
-
+                // 這裡同時保留了您的版面排版，以及吳心樂引入的 formatCourseTime
                 return (
                   <div key={course.id} className="course-card" onClick={() => setDetailCourse(course)} style={{ cursor: 'pointer', position: 'relative' }}>
                     
@@ -380,7 +374,7 @@ export default function SearchPage() {
                     </div>
                     <div className="course-card-body" style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
                       <p style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><User size={14}/> {course.instructor} | <Building size={14}/> {course.department}</p>
-                      <p style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Clock size={14}/> 週{dayString} 第{course.startPeriod}-{course.endPeriod}節</p>
+                      <p style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Clock size={14}/> {formatCourseTime(course)}</p>
                       <p style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={14}/> {course.location}</p>
                     </div>
                     <div className="course-card-footer" style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -389,7 +383,6 @@ export default function SearchPage() {
                         <span className="tag" style={{ marginLeft: '4px' }}>{course.credits} 學分</span>
                       </div>
                       
-                      {/* 🌟 變成動態：加選 / 取消加選 */}
                       <button 
                         onClick={(e) => handleToggleCourse(course, e)}
                         style={{

@@ -27,8 +27,8 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `course_id` | varchar(45) | join `Courses.course_id` |
 | `teacher` | varchar(45) | `course.instructor`, `course.teacher` |
 | `room` | varchar(45) | `course.location`, `course.room` |
-| `time_str` | text | `course.timeStr` and parsed schedule time |
-| `time_bitmask` | varchar(64) | `course.timeBitmask` and fallback parsed schedule time |
+| `time_str` | text | `course.timeStr`、`course.timeBlocks`，以及 `dayOfWeek` / `startPeriod` / `endPeriod` |
+| `time_bitmask` | varchar(64) | `course.timeBitmask`，僅在 `time_str` 無法解析時作為後備 |
 | `year` | int | `course.year` |
 | `semester` | varchar(45) | `course.semester` |
 | `current_amount` | int | `course.currentAmount` |
@@ -36,32 +36,38 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `rag_tag` | json | `course.ragTag` |
 | `selection_code` | varchar(4) | `course.selectionCode` |
 
-### `Courses_Reviews`
+### `Course_Reviews`
 
-注意：`Courses_Reviews.Course_id` 雖然名稱叫 `Course_id`，實際上外鍵連到 `Course_Sections.section_id`。
+課程評價存放於 `Course_Reviews`，並透過 `selection_code` 對應到 `Course_Sections.selection_code`。
+API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，不是課程主檔的 `Courses.course_id`。
 
 | Column | Type | API mapping |
 | --- | --- | --- |
 | `Reviews_id` | int | `review.id` |
-| `Course_id` | int | `review.courseId` as section id |
-| `Reviews_tags(GoodOrBad)` | varchar(45) | `review.keywords[0]`, sentiment source |
-| `Review_content` | varchar(45) | `review.summary` |
+| `selection_code` | varchar(4) | `review.selectionCode`, join `Course_Sections.selection_code` |
+| `Reviews_tags` | text | `review.keywords[]` |
+| `Review_content` | text | `review.summary` |
+| `sweetness` | int | `review.sweetness` |
+| `coolness` | int | `review.coolness` |
+| `workload` | int | `review.workload`, `review.difficultyRating` |
+| `value` | int | `review.value` |
+| `overall` | int | `review.overall`, `review.recommendScore` |
+| `review_count` | int | `review.reviewCount` |
+| `source` | varchar | `review.source` |
+| `url` | text | `review.url` |
+| `scraped_at` | datetime | `review.createdAt` |
 
-查詢特殊欄位時必須使用：
-
-```sql
-`Reviews_tags(GoodOrBad)`
-```
+情緒判定由 `overall` 推導：4 分以上為 positive，2 分以下為 negative，其餘為 neutral。
 
 ### `User_Profiles`
 
 | Column | Type | API mapping |
 | --- | --- | --- |
 | `user_id` | int | `profile.userId` |
-| `department` | varchar(45) | `profile.department` |
+| `department` | varchar(45) | `profile.department`（見下方說明） |
 | `grade_level` | int | `profile.gradeLevel` |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
-| `avoid_time` | json | `profile.blockedPeriods` |
+| `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
 | `completed_courses` | json | `profile.completedCourseIds` |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
@@ -93,8 +99,50 @@ The following collections remain file-backed in `server/data/*.json` because the
   "endPeriod": 4,
   "location": "B101",
   "category": "必修",
-  "timeStr": "星期一 2-4"
+  "timeStr": "(一)02-04",
+  "timeBlocks": [
+    { "dayOfWeek": 1, "startPeriod": 2, "endPeriod": 4 }
+  ],
+  "ragTag": ["資料結構", "演算法"]
 }
 ```
+
+### 課程時段欄位
+
+`time_str` 的實際格式為 `(二)06-08`，同一門課可能含多個以空白分隔的時段，例如 `(四)01-04 (四)06-09 (五)01-04`。節次 `00` 代表尚未排定。
+
+- `timeBlocks`：完整時段清單，每個元素含 `dayOfWeek`（1=週一 … 7=週日）、`startPeriod`、`endPeriod`。**衝堂與時間類限制判定必須使用此欄位。**
+- `dayOfWeek` / `startPeriod` / `endPeriod`：`timeBlocks[0]` 的內容，僅供相容用途。無法解析時為 `null`。
+
+### `avoid_time` 的兩種格式
+
+同一欄位可能存在兩種格式，讀取時必須都支援：
+
+| 來源 | 格式 | 範例 |
+| --- | --- | --- |
+| 外部匯入 | 時間字串陣列 | `["08:00"]` |
+| 本系統寫回 | 排課引擎格式 | `[{ "day": 1, "period": 3 }]` |
+
+排課引擎只認 `{ day, period }`。`server/src/utils/periods.js` 的 `normalizeBlockedPeriods()` 負責統一轉換，`database.js`（讀取已儲存偏好）與 `constraintService.js`（合併 request）兩處共用。
+
+時間字串沒有星期資訊，視為**每天的該節次都要避開**，展開為 7 筆。時間對應節次採「第一個尚未結束的節次」，例如 `08:00` 對應第 1 節、`13:05` 對應第 6 節。
+
+### `department` 的引號正規化
+
+匯入資料中 `User_Profiles.department` 曾存為 `'資訊工程學系'`——**包含字面單引號字元本身**，導致所有字串比對失敗（D3）。掃描全庫 19 個文字欄位後確認**只有此欄位**有此問題，屬單一欄位的匯入缺陷；`Courses.dept` 等課程端欄位皆乾淨。
+
+`server/src/utils/text.js` 的 `normalizeDepartment()` 負責去除成對的包裹引號（半形 `'` `"` `` ` `` 與全形 `‘’` `“”` 「」 『』）並修剪空白，於三處套用：
+
+| 路徑 | 位置 |
+| --- | --- |
+| MySQL 讀取 | `database.js` 的 `mapUserProfileRow()` |
+| 本機 JSON 讀取 | `database.js` 的 `readCollectionBySource()` |
+| 寫入（兩種來源共用） | `database.js` 的 `upsertByField()` |
+
+只有真正成對時才剝除，因此 `O'Brien` 這類單邊引號不會被誤刪。讀到髒值時會寫入一筆 `logger.warn`，不靜默修正。資料庫中該筆資料已於 2026-08-02 清理。
+
+### `ragTag`
+
+`Course_Sections.rag_tag` 的 JSON 主題標籤陣列，資料庫中 100% 有值，例如 `["機器學習","圖像處理","物件偵測"]`。排課引擎的興趣比對會使用此欄位。
 
 排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。

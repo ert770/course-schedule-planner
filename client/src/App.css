@@ -268,6 +268,175 @@
   padding: 1px; /* To show grid borders properly */
 }
 
+/* 排課結果提示：失敗原因、警告與被排除課程 */
+.schedule-notice {
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 0.85rem;
+}
+.schedule-notice.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--accent-red);
+}
+.schedule-notice.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #d97706;
+}
+[data-theme="dark"] .schedule-notice.warning { color: #fbbf24; }
+
+.schedule-notice-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.schedule-notice-head > span { flex: 1; }
+.schedule-notice-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  padding: 0;
+  line-height: 1;
+}
+.schedule-notice-close:hover { opacity: 1; }
+
+.schedule-notice-list {
+  margin: 8px 0 0;
+  padding-left: 24px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.schedule-notice-excluded { margin-top: 8px; }
+.schedule-notice-excluded summary {
+  cursor: pointer;
+  font-weight: 600;
+  outline: none;
+}
+
+/* 課程瀏覽器（SchedulePage） */
+.course-browser {
+  margin: 12px 20px 0;
+  padding: 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  max-height: 320px;
+  overflow: auto;
+}
+.course-browser-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.course-browser-filters .input-field { flex: 1; min-width: 150px; }
+.course-browser-filters select.input-field { flex: 0 0 150px; }
+.course-browser-selected {
+  font-size: 0.8rem;
+  color: #059669;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+[data-theme="dark"] .course-browser-selected { color: #34d399; }
+.course-browser-list { display: grid; gap: 8px; }
+.course-browser-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+/* 課程卡片內文 */
+.course-card-title { font-weight: 600; font-size: 0.95rem; }
+.course-card-code { font-size: 0.75rem; color: var(--text-secondary); }
+.course-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+.course-card-meta-item { white-space: nowrap; }
+
+/* ChatPanel 元件（SchedulePage 使用） */
+.chat-header-icon { font-size: 1.5rem; }
+.chat-header-info h3 { font-size: 0.95rem; font-weight: 600; }
+.chat-header-info p { font-size: 0.78rem; color: var(--text-secondary); }
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px 0;
+}
+.quick-chip {
+  padding: 5px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.quick-chip:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+
+.chat-input {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+}
+.chat-input:focus { border-color: var(--accent-blue); }
+.chat-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent-blue);
+  color: white;
+  cursor: pointer;
+}
+.chat-send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+  align-items: center;
+}
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes typing-bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
 /* Chat Panel (Right) */
 .chat-panel {
   width: 380px;
@@ -396,7 +565,8 @@
 
 /* ===== Schedule Grid (Light) ===== */
 .schedule-grid {
-  display: grid; grid-template-columns: 56px repeat(5, 1fr);
+  /* 七欄：資料庫含週六與週日課程 */
+  display: grid; grid-template-columns: 56px repeat(7, 1fr);
   gap: 1px; background: var(--border-color);
   border-radius: var(--radius-lg); overflow: hidden; min-height: 100%;
 }

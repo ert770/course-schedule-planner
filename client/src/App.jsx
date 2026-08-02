@@ -11,6 +11,7 @@ import SetupPage from './pages/SetupPage';
 import DashboardPage from './pages/DashboardPage';
 import GraduationPage from './pages/GraduationPage';
 import SearchPage from './pages/SearchPage';
+import SchedulePage from './pages/SchedulePage';
 import './App.css';
 
 function ProtectedRoute({ children }) {
@@ -62,6 +63,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/schedule"
+        element={
+          <ProtectedRoute>
+            <SchedulePage />
           </ProtectedRoute>
         }
       />

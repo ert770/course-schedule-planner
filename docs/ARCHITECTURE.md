@@ -53,7 +53,7 @@ Runtime data access is centralized in `server/src/db/database.js`.
 MySQL-backed collections:
 
 - `courses`: joined from `Course_Sections` and `Courses`
-- `reviews`: read from `Courses_Reviews`
+- `reviews`: read from `Course_Reviews`, joined to `Course_Sections` by `selection_code`
 - `user_preferences`: read from `User_Profiles` for numeric user ids
 
 Local JSON-backed collections:

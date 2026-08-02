@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS courses (
   instructor TEXT NOT NULL,
   department TEXT NOT NULL,
   credits INTEGER NOT NULL DEFAULT 3,
-  day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 1 AND 5),
+  -- 1=週一 … 7=週日。實際課程資料含週六與週日課程。
+  day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 1 AND 7),
   start_period INTEGER NOT NULL CHECK(start_period BETWEEN 1 AND 14),
   end_period INTEGER NOT NULL CHECK(end_period BETWEEN 1 AND 14),
   location TEXT DEFAULT '',
