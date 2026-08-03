@@ -230,9 +230,12 @@ Response:
 {
   "valid": true,
   "conflicts": [],
+  "duplicates": [],
   "totalCredits": 18
 }
 ```
+
+`duplicates` 為同一門課的多個班次（以 `subid3` 課號判定），例如兩門不同老師開的「計算機演算法」。學生只能選一個班次，因此即使時段不衝突也屬不合法，`valid` 為 `false`。`conflicts` 與 `duplicates` 的元素皆為 `{ course1, course2 }`。
 
 ### `POST /api/schedule/save`
 
@@ -285,6 +288,16 @@ For numeric `userId`, reads `User_Profiles.user_id` from MySQL when present.
 ### `POST /api/profile`
 
 For numeric `userId`, updates supported `User_Profiles` fields when the row exists. Demo or non-numeric users are saved to local JSON.
+
+`department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
+
+```json
+{
+  "error": "department 必須是非空字串"
+}
+```
+
+正規化不是型別轉換層：`{}` 會變成 `"[object Object]"`、`["資訊工程學系","電機工程學系"]` 會變成 `"資訊工程學系,電機工程學系"`，寫入後在資料庫與 API 回應中都像一般字串，但所有系所比對都會失敗。資料層另有一道防線，會丟棄型別錯誤的 `department` 而非寫入。
 
 ## Reviews
 

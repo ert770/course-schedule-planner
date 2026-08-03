@@ -22,7 +22,9 @@ export default function SetupPage() {
   
   // Basic info
   const [department, setDepartment] = useState(user?.department || '資訊工程學系');
-  const [grade, setGrade] = useState('1');
+  // 年級必須帶入登入使用者的實際年級。排課的必修範圍依系所與年級判定（#13），
+  // 這裡若固定預設大一，三年級學生送出設定後會被存成大一，拿到的是大一必修。
+  const [grade, setGrade] = useState(String(user?.grade || '1'));
 
   // Electives
   const [electives, setElectives] = useState([]);

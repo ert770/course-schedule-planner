@@ -1,41 +1,27 @@
 [
   {
     "id": 1,
-    "userId": "default",
-    "displayName": "同學",
-    "completedCredits": 45,
-    "targetCreditsMin": 15,
-    "targetCreditsMax": 25,
-    "blockedPeriods": [],
-    "preferredCategories": [],
-    "mustTakeCourses": [],
-    "avoidInstructors": [],
-    "preferCompact": false,
-    "noMorningClasses": false,
-    "noEveningClasses": false,
-    "preferencesJson": {},
-    "updatedAt": "2026-04-26T09:04:55.017Z"
-  },
-  {
-    "id": 2,
-    "userId": "D1249196",
+    "userId": "D1249697",
+    "department": "資訊工程學系",
+    "grade": "3",
     "noMorningClasses": false,
     "preferCompact": false,
-    "noMidterm": false,
-    "noGroupReport": false,
-    "preferDiscussion": false,
     "mondayFree": false,
-    "lunchBreak": false,
-    "completedCourseIds": [],
-    "selectedTags": [],
-    "updatedAt": "2026-05-12T05:27:42.243Z",
-    "department": "電機工程學系",
-    "grade": "2",
     "lunchBreakFree": false,
+    "noMidterm": false,
     "practicalExam": false,
     "finalReport": false,
     "weightDaily": false,
+    "noGroupReport": false,
+    "preferDiscussion": false,
     "englishTaught": false,
-    "learnMore": false
+    "learnMore": false,
+    "completedCourseIds": [],
+    "selectedTags": [],
+    "updatedAt": "2026-08-03T16:12:26.281Z"
+  },
+  {
+    "id": 2,
+    "userId": "1"
   }
 ]

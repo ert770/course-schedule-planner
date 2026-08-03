@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { isMysqlConfigured, queryRows } from './mysql.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
-import { normalizeDepartment } from '../utils/text.js';
+import { normalizeDepartment, isDepartmentInput } from '../utils/text.js';
 import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -290,16 +290,31 @@ function normalizeAvoidTime(avoidTime) {
 // D3：`User_Profiles.department` 存的是 `'資訊工程學系'`——包含字面單引號字元。
 // 帶引號的值會讓畢業建議的系所比對、前端系所下拉選單與 `#13` 的系所對照全部失敗，
 // 且不會有任何錯誤。讀取時正規化，並在第一次遇到髒值時警告，不得靜默修正。
-const warnedDepartmentUserIds = new Set();
+// 去重鍵是「user_id + 原始值」而不是只有 user_id。
+// 只用 user_id 的話，同一位使用者第一次髒值警告過後，之後**任何**髒值都會被
+// 靜默修正——匯入流程若持續寫回帶引號的值，整個行程生命週期只會留下一行日誌，
+// 看不出上游還在壞、也看不出影響多少筆。
+const warnedDepartmentValues = new Set();
+let normalizedDepartmentCount = 0;
 
 function readProfileDepartment(row) {
   const department = normalizeDepartment(row.department);
 
-  if (department !== row.department && !warnedDepartmentUserIds.has(row.user_id)) {
-    warnedDepartmentUserIds.add(row.user_id);
+  if (department === row.department) {
+    return department;
+  }
+
+  normalizedDepartmentCount += 1;
+  const fingerprint = `${row.user_id}|${String(row.department)}`;
+
+  // 相同的髒值只警告一次（避免每次請求刷版面），但累計次數照計，
+  // 讓日誌能回答「上游是不是還在持續寫入髒資料」。
+  if (!warnedDepartmentValues.has(fingerprint)) {
+    warnedDepartmentValues.add(fingerprint);
     logger.warn(
-      `User_Profiles.department 含多餘引號，已正規化：`
-        + `${JSON.stringify(row.department)} -> ${JSON.stringify(department)}`,
+      `User_Profiles.department 需正規化（user_id=${row.user_id}）：`
+        + `${JSON.stringify(row.department)} -> ${JSON.stringify(department)}`
+        + `；本行程累計正規化 ${normalizedDepartmentCount} 次、相異髒值 ${warnedDepartmentValues.size} 種`,
       { label: 'Profile' }
     );
   }
@@ -316,6 +331,28 @@ function normalizeProfileDepartment(profile) {
 
   const department = normalizeDepartment(profile.department);
   return department === profile.department ? profile : { ...profile, department };
+}
+
+// 寫入端：型別錯誤的 department 不得寫進資料庫。
+// 正規化不是型別轉換層——`{}`、`[...]`、`123` 會變成看起來正常的字串，
+// 寫進去之後在資料庫與 API 回應中都像一般值，但所有系所比對都會失敗。
+// API 層會先擋下並回 400；這裡是最後一道防線，避免其他呼叫路徑繞過檢查。
+function normalizeProfileForWrite(item) {
+  if (!item || item.department === undefined) {
+    return item;
+  }
+
+  if (!isDepartmentInput(item.department)) {
+    logger.warn(
+      `忽略無效的 department 寫入值（型別 ${typeof item.department}）：`
+        + `${JSON.stringify(item.department)}`,
+      { label: 'Profile' }
+    );
+    const { department: _invalid, ...rest } = item;
+    return rest;
+  }
+
+  return normalizeProfileDepartment(item);
 }
 
 function mapUserProfileRow(row) {
@@ -434,7 +471,8 @@ async function updateMysqlUserPreference(userId, item) {
   const updates = [];
   const params = [];
 
-  if (item.department !== undefined) {
+  // `department` 為 NOT NULL，型別錯誤或空字串一律不寫（見 normalizeProfileForWrite）。
+  if (isDepartmentInput(item.department)) {
     updates.push('`department` = ?');
     params.push(normalizeDepartment(item.department));
   }
@@ -523,8 +561,9 @@ export async function update(collection, id, updates) {
 }
 
 export async function upsertByField(collection, field, value, item) {
-  // D3：寫入端也正規化，否則使用者或匯入流程送進來的帶引號值會再次污染資料。
-  const payload = collection === 'user_preferences' ? normalizeProfileDepartment(item) : item;
+  // D3：寫入端也正規化，否則使用者或匯入流程送進來的帶引號值會再次污染資料；
+  // 型別錯誤的值則整個丟掉，不得寫進資料庫。
+  const payload = collection === 'user_preferences' ? normalizeProfileForWrite(item) : item;
 
   if (usesMysql(collection) && collection === 'user_preferences' && field === 'userId') {
     const updated = await updateMysqlUserPreference(value, payload);

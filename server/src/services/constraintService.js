@@ -46,6 +46,12 @@ function buildBlockedPeriods(input, prefs) {
 
 export function buildScheduleConstraints(input = {}, prefs = {}) {
   return {
+    // #13：必修範圍必須依學生的系所與年級收斂，否則全校 2094 筆必修都會被
+    // 當成這位學生的必修。這兩個值先前沒有帶進排課限制，排課引擎無從判定。
+    department: input.department || prefs.department || null,
+    gradeLevel: pickNumber(input.gradeLevel ?? input.grade, prefs.gradeLevel ?? prefs.grade, null),
+    degree: input.degree || prefs.degree || undefined,
+
     maxCredits: pickNumber(input.maxCredits, prefs.targetCreditsMax, 22),
     minCredits: pickNumber(input.minCredits, prefs.targetCreditsMin, 15),
     maxCoursesPerDay: pickNumber(input.maxCoursesPerDay, null, 4),

@@ -3,6 +3,12 @@
 // explanation/comparison to the AI Agent.
 
 import { normalizeBlockedPeriods } from '../utils/periods.js';
+import {
+  buildStudentScope,
+  isRequiredForStudent,
+  isOtherStudentsRequiredCourse,
+  parseClassName,
+} from './courseScope.js';
 
 const DEFAULT_MIN_CREDITS = 15;
 const DEFAULT_MAX_CREDITS = 22;
@@ -61,6 +67,22 @@ function toIdSet(value) {
 
 function getCategoryPriority(course) {
   return CATEGORY_PRIORITY[course.category] ?? 5;
+}
+
+// 排序與評分用的類別優先度。
+//
+// `Courses.type = '必修'` 只代表「某個班級的必修」。若不是這位學生的必修，
+// 就不該享有必修的最高優先度——否則通識、共同科目與跨系班級的必修會在選修填充
+// 階段直接壓過本系選修，課表照樣出現 `商創一(RMIT)` 這種學生修不到的課。
+// 這類課程仍保留為候選（適用對象規則尚未確認，見 #13），只是不再優先。
+//
+// 僅在學生範圍可判定時才降級。範圍不明時沒有更好的訊號，維持既有的必修優先排序，
+// 而不是把所有必修一起打成選修——後者會讓未帶 profile 的呼叫端結果無聲變差。
+function getEffectiveCategoryPriority(course, scope) {
+  if (scope?.resolved && course.category === '必修' && !isRequiredForStudent(course, scope)) {
+    return CATEGORY_PRIORITY['選修'];
+  }
+  return getCategoryPriority(course);
 }
 
 function getCourseStatus(course, constraints) {
@@ -182,6 +204,28 @@ function conflictsWithSchedule(course, schedule) {
   return schedule.find(existing => timeConflict(existing, course)) || null;
 }
 
+// 同一門課的識別。
+//
+// `Courses.course_id` **不是**課程識別碼，而是「班級 + 課程」的組合：
+// 計算機演算法在資訊三甲／乙／丙／丁分別是 `CE07131-28010`、`CE07132-28010`、
+// `CE07133-28010`、`CE07134-28010`，四筆各自不同。真正的課號在 `subid3`，
+// 四筆都是 `IECS3002`。
+//
+// 一門課可能由不同老師開在不同班次，但學生只能選其中一個班次。先前排課引擎
+// 把每個 section 當成獨立課程，實測課表因此出現兩門計算機演算法（許芳榮、黃秀芬）。
+//
+// 實習與正課是不同課號（`MATH1005P` 對 `MATH1005`），不會被誤判為同一門課
+// ——它們本來就該一起修（見路線圖 #15）。
+function getCourseKey(course) {
+  const code = String(course.subid3 || '').trim();
+  if (code) return `code:${code}`;
+
+  const name = String(course.name || '').trim();
+  if (name) return `name:${name}`;
+
+  return `id:${course.id}`;
+}
+
 function getEasyCourseScore(course) {
   const desc = course.description || '';
   let score = 0;
@@ -287,14 +331,14 @@ function evaluatePreference(plan, constraints, profile) {
   return { score, breakdown };
 }
 
-function scoreCourse(course, schedule, constraints, variant, requiredIds, retakeIds) {
+function scoreCourse(course, schedule, constraints, variant, requiredIds, retakeIds, scope) {
   let score = 1000;
   const id = Number(course.id);
 
   if (requiredIds.has(id)) score += 10000;
   if (retakeIds.has(id)) score += 9000;
 
-  score -= getCategoryPriority(course) * 120;
+  score -= getEffectiveCategoryPriority(course, scope) * 120;
   score += (course.credits || 0) * 12;
 
   if (variant.id === 'compact' || constraints.preferCompact) {
@@ -323,6 +367,18 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
   if (isWatching(course, constraints)) {
     plan.watchedCourses.push({ ...course, scheduleState: 'watching' });
     return true;
+  }
+
+  // 一門課只能選一個班次。同一門課的其他班次即使時段不衝突也不得再排入。
+  const courseKey = getCourseKey(course);
+  if (plan.placedCourseKeys.has(courseKey)) {
+    const placed = plan.placedCourseKeys.get(courseKey);
+    const message = `已排入同一門課的其他班次（${placed.department}／${placed.instructor || '未定'}）`;
+    plan.excludedCourses.push({ course, reason: message });
+    if (options.required) {
+      plan.failures.push(`必要課程「${course.name}」${message}`);
+    }
+    return false;
   }
 
   const hardReason = hardConstraintReason(course, constraints);
@@ -362,6 +418,8 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
     }
   }
 
+  plan.placedCourseKeys.set(courseKey, course);
+
   // 尚未排定時間的課程仍會被排入（班級活動、論文等屬必要課程），但不放進
   // 課表格的 schedule，避免與有時段的課程混在一起造成畫面與學分對不上。
   if (!hasScheduledTime(course)) {
@@ -386,11 +444,54 @@ function createEmptyPlan(variant, constraints) {
     excludedCourses: [],
     failures: [],
     warnings: [],
+    // 已排入的課號 -> 該班次，用於擋掉同一門課的其他班次。
+    placedCourseKeys: new Map(),
     totalCredits: 0,
     minCredits: constraints.minCredits ?? DEFAULT_MIN_CREDITS,
     maxCredits: constraints.maxCredits ?? DEFAULT_MAX_CREDITS,
     maxCoursesPerDay: constraints.maxCoursesPerDay ?? DEFAULT_MAX_COURSES_PER_DAY,
   };
+}
+
+// 非系所班級（通識、共同科目、學院綜合班、英語授課班、學分學程）的適用對象
+// 尚未確認，因此不當成這位學生的必修，但也不排除——`國文綜合班`、`體育選修`、
+// `軍訓` 這類全校共同科目若整批排除，學生會漏掉真正該修的課。
+// 待確認問題整理於路線圖 #13 與 `docs/DEPARTMENT_MAPPING.md`。
+function countDemotedRequiredByCategory(eligible, scope) {
+  const counts = new Map();
+
+  for (const course of eligible) {
+    if (course.category !== '必修' || isRequiredForStudent(course, scope)) continue;
+    const { category } = parseClassName(course.department);
+    counts.set(category, (counts.get(category) || 0) + 1);
+  }
+
+  return counts;
+}
+
+function addScopeWarnings(plan, eligible, otherRequired, scope) {
+  if (!scope.resolved) {
+    plan.warnings.push(
+      '未設定系所或年級，無法判定必修範圍；本方案只會排入明確指定的課程與一般候選課程。'
+    );
+    return;
+  }
+
+  if (otherRequired.length > 0) {
+    plan.warnings.push(
+      `已排除 ${otherRequired.length} 門其他系所、學制或年級的必修課`
+      + `（依 ${scope.department} ${scope.grade} 年級判定）。`
+    );
+  }
+
+  const demoted = countDemotedRequiredByCategory(eligible, scope);
+  const demotedTotal = [...demoted.values()].reduce((sum, count) => sum + count, 0);
+  if (demotedTotal > 0) {
+    plan.warnings.push(
+      `另有 ${demotedTotal} 門通識、共同科目或跨系班級的必修尚無適用對象規則，`
+      + '已視為一般候選課程而非必修。'
+    );
+  }
 }
 
 function buildPlan(candidateCourses, constraints, variant) {
@@ -407,17 +508,30 @@ function buildPlan(candidateCourses, constraints, variant) {
   const completedIds = toIdSet(constraints.completedCourseIds);
   const requiredIds = new Set([...selectedIds, ...mustTakeIds, ...retakeIds]);
 
+  // #13：`Courses.type = '必修'` 是「某系所某年級的必修」，不是「這位學生的必修」。
+  // 未依系所與年級收斂時，全校 2094 筆必修都會被當成這位學生的必修。
+  const scope = buildStudentScope(constraints);
+
   for (const course of candidateCourses) {
     if (isWatching(course, constraints)) {
       addCourseToPlan(plan, course, constraints, '關注課程');
     }
   }
 
+  // 他系、他學制或其他年級的必修，這位學生根本無法修習，因此整批排除，
+  // 不是降低優先度——降低優先度仍可能在選修階段被貪婪填充排進來。
+  const otherRequired = candidateCourses.filter(
+    course => isOtherStudentsRequiredCourse(course, scope)
+  );
+  const otherRequiredIds = new Set(otherRequired.map(course => Number(course.id)));
+
   const eligible = candidateCourses.filter(course => (
-    !completedIds.has(Number(course.id)) && !isWatching(course, constraints)
+    !completedIds.has(Number(course.id))
+    && !isWatching(course, constraints)
+    && !otherRequiredIds.has(Number(course.id))
   ));
   const requiredCourses = eligible
-    .filter(course => requiredIds.has(Number(course.id)) || course.category === '必修')
+    .filter(course => requiredIds.has(Number(course.id)) || isRequiredForStudent(course, scope))
     .sort((a, b) => {
       const aRequired = requiredIds.has(Number(a.id)) ? 0 : 1;
       const bRequired = requiredIds.has(Number(b.id)) ? 0 : 1;
@@ -433,7 +547,7 @@ function buildPlan(candidateCourses, constraints, variant) {
   }
 
   for (const course of requiredCourses) {
-    addCourseToPlan(plan, course, constraints, course.category === '必修' ? '必修優先' : '指定或重補修優先', {
+    addCourseToPlan(plan, course, constraints, isRequiredForStudent(course, scope) ? '必修優先' : '指定或重補修優先', {
       required: requiredIds.has(Number(course.id)),
     });
   }
@@ -452,8 +566,8 @@ function buildPlan(candidateCourses, constraints, variant) {
 
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
     remaining.sort((a, b) => (
-      scoreCourse(b, plan.schedule, constraints, variant, requiredIds, retakeIds)
-      - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, retakeIds)
+      scoreCourse(b, plan.schedule, constraints, variant, requiredIds, retakeIds, scope)
+      - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, retakeIds, scope)
     ));
 
     const course = remaining.shift();
@@ -473,6 +587,8 @@ function buildPlan(candidateCourses, constraints, variant) {
     if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
     return a.startPeriod - b.startPeriod;
   });
+
+  addScopeWarnings(plan, eligible, otherRequired, scope);
 
   if (plan.totalCredits < plan.minCredits) {
     plan.warnings.push(`目前方案僅 ${plan.totalCredits} 學分，低於最低目標 ${plan.minCredits} 學分`);
@@ -512,6 +628,9 @@ function buildPlan(candidateCourses, constraints, variant) {
       `有 ${plan.unscheduledCourses.length} 門課尚未排定上課時間，不會顯示在課表格上：${shown}${rest}`
     );
   }
+
+  // 內部用的去重索引不必回傳給前端（Map 也無法序列化成有意義的 JSON）。
+  delete plan.placedCourseKeys;
 
   return plan;
 }
@@ -644,9 +763,23 @@ export function validateSchedule(courses = []) {
     }
   }
 
+  // 同一門課的兩個班次即使時段不衝突，也不是合法的課表。
+  const duplicates = [];
+  const seenByKey = new Map();
+  for (const course of selectedCourses) {
+    const key = getCourseKey(course);
+    const first = seenByKey.get(key);
+    if (first) {
+      duplicates.push({ course1: first, course2: course });
+      continue;
+    }
+    seenByKey.set(key, course);
+  }
+
   return {
-    valid: conflicts.length === 0,
+    valid: conflicts.length === 0 && duplicates.length === 0,
     conflicts,
+    duplicates,
     totalCredits: selectedCourses.reduce((sum, course) => sum + (course.credits || 0), 0),
   };
 }

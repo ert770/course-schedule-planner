@@ -50,14 +50,32 @@ export function stripWrappingQuotes(value) {
 }
 
 // 系所名稱正規化。讀取與寫入兩端都要經過，避免髒值再次進入比對邏輯或資料庫。
+//
+// **只接受字串，不做型別強制轉換。** 先前這裡是 `String(value)`，會把
+// 前端或匯入流程送來的錯誤型別悄悄變成看起來正常的字串：
+//
+//   {}                              -> "[object Object]"
+//   ['資訊工程學系', '電機工程學系']  -> "資訊工程學系,電機工程學系"
+//   123                             -> "123"
+//
+// 這些值寫進 `User_Profiles.department` 後，在資料庫與 API 回應中都像一般字串，
+// 但所有系所比對都會失敗——等於用另一種形式重現 D3。非字串一律回傳 null，
+// 由呼叫端決定是拒絕（寫入端）還是視為未設定（讀取端）。
 export function normalizeDepartment(value) {
-  if (value === null || value === undefined) {
-    return value;
+  if (typeof value !== 'string') {
+    return null;
   }
-  return stripWrappingQuotes(String(value));
+  return stripWrappingQuotes(value);
+}
+
+// 寫入前的檢查：必須是字串，且去除包裹引號與空白後不得為空。
+// `User_Profiles.department` 為 `NOT NULL`，空字串同樣不可接受。
+export function isDepartmentInput(value) {
+  return typeof value === 'string' && stripWrappingQuotes(value).length > 0;
 }
 
 export default {
   stripWrappingQuotes,
   normalizeDepartment,
+  isDepartmentInput,
 };

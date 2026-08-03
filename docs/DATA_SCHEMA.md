@@ -13,9 +13,28 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `course_id` | varchar(45) | `course.courseId`, `course.code` |
 | `name` | varchar(45) | `course.name` |
 | `credits` | decimal(3,1) | `course.credits` |
-| `type` | varchar(45) | `course.category`, `course.type` |
-| `dept` | varchar(45) | `course.department` |
-| `subid3` | varchar(45) | `course.subid3` |
+| `type` | varchar(45) | `course.category`, `course.type`（見「必修的意義」） |
+| `dept` | varchar(45) | `course.department`，實際存的是**班級名稱**（見 `docs/DEPARTMENT_MAPPING.md`） |
+| `subid3` | varchar(45) | `course.subid3`，**真正的課號**（見下方說明） |
+
+#### `course_id` 不是課程識別碼，`subid3` 才是
+
+`course_id` 是「班級 + 課程」的組合，同一門課在不同班級有不同的 `course_id`：
+
+| `course_id` | `subid3` | 課名 | 班級 | 教師 |
+| --- | --- | --- | --- | --- |
+| `CE07131-28010` | `IECS3002` | 計算機演算法 | 資訊三甲 | 許芳榮 |
+| `CE07132-28010` | `IECS3002` | 計算機演算法 | 資訊三乙 | 黃秀芬 |
+| `CE07133-28010` | `IECS3002` | 計算機演算法 | 資訊三丙 | 黃秀芬 |
+| `CE07134-28010` | `IECS3002` | 計算機演算法 | 資訊三丁 | 許懷中 |
+
+**判斷「是否為同一門課」必須用 `subid3`。** 一門課可能由不同老師開在不同班次，學生只能選一個；用 `course_id` 或 `section_id` 比對會讓同一門課的多個班次同時排進課表。
+
+`subid3` 的 `P` 後綴代表實習（`MATH1005P` 對應正課 `MATH1005`），兩者是不同課號、本來就該一起修（路線圖 `#15`）。
+
+#### 必修的意義
+
+`type = '必修'` 是「**某個班級**的必修」，不是「**這位學生**的必修」。全校 2094 筆必修 section 分屬不同系所與年級，判定方式見 `docs/SCHEDULING_LOGIC.md` 的「必修範圍」。
 
 ### `Course_Sections`
 
@@ -139,7 +158,16 @@ The following collections remain file-backed in `server/data/*.json` because the
 | 本機 JSON 讀取 | `database.js` 的 `readCollectionBySource()` |
 | 寫入（兩種來源共用） | `database.js` 的 `upsertByField()` |
 
-只有真正成對時才剝除，因此 `O'Brien` 這類單邊引號不會被誤刪。讀到髒值時會寫入一筆 `logger.warn`，不靜默修正。資料庫中該筆資料已於 2026-08-02 清理。
+只有真正成對時才剝除，因此 `O'Brien` 這類單邊引號不會被誤刪。資料庫中該筆資料已於 2026-08-02 清理。
+
+**正規化不做型別轉換。** `normalizeDepartment()` 只接受字串，其餘型別一律回傳 `null`。若改用 `String(value)` 強制轉換，`{}` 會變成 `"[object Object]"`、`["資訊工程學系","電機工程學系"]` 會變成 `"資訊工程學系,電機工程學系"`、`123` 會變成 `"123"`——全都是看起來正常、實際上讓所有系所比對失敗的髒值。
+
+寫入端有兩道檢查：
+
+1. `POST /api/profile` 對非字串或空字串回 `400`。
+2. 資料層 `upsertByField()` 丟棄型別錯誤的 `department` 並寫入警告，避免其他呼叫路徑繞過 API 檢查。
+
+讀到需正規化的值時會寫入 `logger.warn`，不靜默修正。**去重鍵是「`user_id` + 原始值」**：只用 `user_id` 的話，同一位使用者第一次警告後，後續任何髒值都會被靜默處理，看不出上游匯入是否仍在寫入髒資料。日誌並附上本行程的累計正規化次數與相異髒值種類數。
 
 ### `ragTag`
 
