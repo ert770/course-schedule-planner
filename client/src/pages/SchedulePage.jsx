@@ -72,9 +72,10 @@ export default function SchedulePage() {
       if (data.success) {
         setSchedule(data.schedule);
         setShowCourses(false);
+        const warnings = data.warnings || [];
         setNotice(
-          (data.warnings || []).length > 0
-            ? { level: 'warning', text: data.message }
+          warnings.length > 0
+            ? { level: 'warning', text: data.message, details: warnings }
             : null
         );
       } else {
@@ -94,6 +95,13 @@ export default function SchedulePage() {
   };
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
+  // 軍訓國防科技、體育、班級活動要排進課表但不計入畢業學分（校規）。
+  // 後端在每門課上標記 countsTowardGraduation；未標記者一律視為計入。
+  const graduationCredits = schedule.reduce(
+    (sum, course) => (course.countsTowardGraduation === false ? sum : sum + (course.credits || 0)),
+    0
+  );
+  const hasNonGraduationCredits = graduationCredits !== totalCredits;
 
   return (
     <div className="layout-container" id="schedule-page">
@@ -137,6 +145,14 @@ export default function SchedulePage() {
             <div className="schedule-stats">
               <span className="stat-badge course-badge">📚 {schedule.length} 門課</span>
               <span className="stat-badge credit-badge">🎓 {totalCredits} 學分</span>
+              {hasNonGraduationCredits && (
+                <span
+                  className="stat-badge credit-badge"
+                  title="軍訓國防科技、體育、班級活動依校規不計入畢業學分"
+                >
+                  🧮 計入畢業 {graduationCredits} 學分
+                </span>
+              )}
             </div>
             <div className="schedule-actions">
               <button
@@ -171,6 +187,13 @@ export default function SchedulePage() {
                   ✕
                 </button>
               </div>
+              {/* 只顯示 message 的話，使用者看得到「計入畢業 0 學分」卻不知道原因，
+                  也就無從決定要不要移除那門課。 */}
+              {notice.details?.length > 0 && (
+                <ul className="schedule-notice-list">
+                  {notice.details.map(detail => <li key={detail}>{detail}</li>)}
+                </ul>
+              )}
             </div>
           )}
 

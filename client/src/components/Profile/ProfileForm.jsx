@@ -81,6 +81,22 @@ export default function ProfileForm() {
               />
             </div>
           </div>
+          <div className="form-row" style={{ marginTop: '16px' }}>
+            <div className="form-group">
+              <label className="form-label">班別</label>
+              <input
+                className="input-field"
+                value={prefs.className || ''}
+                placeholder="例如 資訊三甲"
+                onChange={(e) => setPrefs(p => ({ ...p, className: e.target.value }))}
+                id="input-class-name"
+              />
+              {/* 系上不接受必修換班，必修範圍必須收斂到班別而不只是系所與年級。 */}
+              <div className="toggle-desc" style={{ marginTop: '6px' }}>
+                系上不接受必修課程換班，填寫班別後才會只排入你選得到的必修。
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -12,6 +12,7 @@ import {
   isOtherStudentsRequiredCourse,
 } from '../src/skills/courseScope.js';
 import { getAbbreviations, getDepartmentByAbbreviation } from '../src/data/departmentMapping.js';
+import { pickClassNameTarget } from '../src/db/database.js';
 import { generateSchedule } from '../src/skills/scheduler.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
 import { makeCourse } from './fixtures.js';
@@ -189,6 +190,130 @@ describe('必修範圍判定', () => {
 
     assert.equal(isRequiredForStudent(required('資訊一甲'), unknown), false);
     assert.equal(isOtherStudentsRequiredCourse(required('資訊一甲'), unknown), false);
+  });
+});
+
+describe('必修不得換班：班別收斂', () => {
+  // 資工系選課公告明文「不接受必修課程換班級的要求」。
+  // 資訊三甲～三丁各開一班計算機演算法，學生只能選自己班的那一班。
+  const required = (department) => ({ category: '必修', department });
+  const scope = buildStudentScope({
+    department: '資訊工程學系',
+    gradeLevel: 3,
+    className: '資訊三甲',
+  });
+
+  test('班別解析成 classSuffix', () => {
+    assert.equal(parseClassName('資訊三甲').classSuffix, '甲');
+    assert.equal(parseClassName('資訊三合').classSuffix, '合');
+    assert.equal(scope.classSuffix, '甲');
+    assert.equal(scope.classMismatch, false);
+  });
+
+  test('本班的必修才算這位學生的必修', () => {
+    assert.equal(isRequiredForStudent(required('資訊三甲'), scope), true);
+    assert.equal(isRequiredForStudent(required('資訊三乙'), scope), false);
+    assert.equal(isOtherStudentsRequiredCourse(required('資訊三乙'), scope), true);
+  });
+
+  test('合班的必修是全年級共同修習，仍算本班', () => {
+    // 資料庫實例：資料結構與資料結構實習開在 `資訊二合`，是資訊二甲～二丁全體的必修。
+    const secondYear = buildStudentScope({
+      department: '資訊工程學系',
+      gradeLevel: 2,
+      className: '資訊二甲',
+    });
+
+    assert.equal(isRequiredForStudent(required('資訊二合'), secondYear), true);
+    assert.equal(isRequiredForStudent(required('資訊二甲'), secondYear), true);
+    assert.equal(isRequiredForStudent(required('資訊二乙'), secondYear), false);
+  });
+
+  test('未設定班別時維持系所 + 年級判定，不得因此排不出必修', () => {
+    const noClass = buildStudentScope({ department: '資訊工程學系', gradeLevel: 3 });
+
+    assert.equal(noClass.classSuffix, null);
+    assert.equal(isRequiredForStudent(required('資訊三甲'), noClass), true);
+    assert.equal(isRequiredForStudent(required('資訊三乙'), noClass), true);
+  });
+
+  test('班別與系所或年級不一致時忽略班別並標記', () => {
+    const mismatch = buildStudentScope({
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '電機三甲',
+    });
+
+    assert.equal(mismatch.classMismatch, true);
+    assert.equal(mismatch.classSuffix, null);
+    assert.equal(isRequiredForStudent(required('資訊三甲'), mismatch), true);
+  });
+
+  test('端到端 A/B：有班別時只排入本班必修', () => {
+    const candidates = [
+      makeCourse(1, { category: '必修', department: '資訊三甲', dayOfWeek: 1, startPeriod: 2, endPeriod: 3 }),
+      makeCourse(2, { category: '必修', department: '資訊三乙', dayOfWeek: 2, startPeriod: 2, endPeriod: 3 }),
+      makeCourse(3, { category: '必修', department: '資訊三丙', dayOfWeek: 3, startPeriod: 2, endPeriod: 3 }),
+    ];
+    const base = { department: '資訊工程學系', gradeLevel: 3, minCredits: 0, maxCredits: 99, maxCoursesPerDay: 99 };
+
+    const withoutClass = generateSchedule(candidates, base);
+    const withClass = generateSchedule(candidates, { ...base, className: '資訊三甲' });
+
+    assert.deepEqual(withoutClass.schedule.map(course => course.id).sort(), [1, 2, 3]);
+    assert.deepEqual(withClass.schedule.map(course => course.id), [1]);
+    assert.ok(
+      withoutClass.warnings.some(warning => warning.includes('未設定班別')),
+      withoutClass.warnings.join(' | ')
+    );
+  });
+
+  test('班別由已儲存偏好帶入排課限制', () => {
+    const constraints = buildScheduleConstraints({}, {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+    });
+
+    assert.equal(constraints.className, '資訊三甲');
+  });
+});
+
+describe('班別的儲存位置優先順序', () => {
+  // 目標狀態是 `User_Profiles.class_name`；欄位還沒新增前才走本機後備。
+  test('欄位存在時一律寫進 User_Profiles', () => {
+    assert.equal(
+      pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: true, hasUsersJsonRow: true }),
+      'column'
+    );
+    assert.equal(
+      pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: true, hasUsersJsonRow: false }),
+      'column'
+    );
+  });
+
+  test('欄位不存在但有 users.json 對應列時寫進 users.json', () => {
+    assert.equal(
+      pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: false, hasUsersJsonRow: true }),
+      'usersJson'
+    );
+  });
+
+  test('MySQL 使用者、無欄位、也沒有 users.json 對應列時寫進本機 profile', () => {
+    // 這是關鍵情境：先前這種使用者的班別會「儲存成功」地消失——
+    // SQL 沒有欄位可寫卻仍回傳成功的 profile，本機寫入又被提早 return 跳過，
+    // 下一次排課直接退回系所 + 年級。
+    assert.equal(
+      pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: false, hasUsersJsonRow: false }),
+      'localProfile'
+    );
+  });
+
+  test('非 MySQL 寫入路徑不會寫進欄位', () => {
+    assert.equal(
+      pickClassNameTarget({ isMysqlProfileWrite: false, hasColumn: true, hasUsersJsonRow: false }),
+      'localProfile'
+    );
   });
 });
 

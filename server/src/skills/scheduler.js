@@ -9,6 +9,13 @@ import {
   isOtherStudentsRequiredCourse,
   parseClassName,
 } from './courseScope.js';
+import { annotateCourseCategory } from './courseCategory.js';
+import { evaluateOutsideElective } from './outsideElective.js';
+import {
+  countsTowardGraduation,
+  getNonGraduationCategory,
+  UNRECOGNIZED_OUTSIDE_ELECTIVE,
+} from '../data/generalEducation.js';
 
 // 校規：每學期上限 25 學分、下限 12 學分（四年級 9），超修申請後至多 30。
 // 見 `docs/COURSE_SELECTION_RULES.md`。先前寫死的 15／22 沒有出處。
@@ -59,6 +66,12 @@ const PLAN_VARIANTS = [
     description: '在不衝堂與不超過上限的前提下，盡量補足較多學分。',
   },
 ];
+
+// 警告訊息中只列出前幾個課名。全部列出會有數十行，反而讓其他警告看不到。
+function summarizeNames(names, limit = UNSCHEDULED_NAMES_IN_WARNING) {
+  const shown = names.slice(0, limit).join('、');
+  return names.length > limit ? `${shown} 等 ${names.length} 門` : shown;
+}
 
 function toArray(value) {
   if (!value) return [];
@@ -424,16 +437,33 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
 
   plan.placedCourseKeys.set(courseKey, course);
 
+  // 通識共同必修（軍訓國防科技 1、體育 2、班級活動）要排進課表，但**不計入畢業學分**。
+  // 學期學分（12～25 上下限）仍然計入，因為那些課實際要修、也真的佔學分。
+  // 見 `docs/COURSE_SELECTION_RULES.md` 第四節。
+  const credits = course.credits || 0;
+  const nonGraduationCategory = getNonGraduationCategory(course);
+  const placed = {
+    ...course,
+    scheduleState: 'selected',
+    reason,
+    countsTowardGraduation: nonGraduationCategory === null,
+    nonGraduationCategory,
+  };
+
   // 尚未排定時間的課程仍會被排入（班級活動、論文等屬必要課程），但不放進
   // 課表格的 schedule，避免與有時段的課程混在一起造成畫面與學分對不上。
   if (!hasScheduledTime(course)) {
-    plan.unscheduledCourses.push({ ...course, scheduleState: 'selected', reason });
-    plan.totalCredits += course.credits || 0;
-    return true;
+    plan.unscheduledCourses.push(placed);
+  } else {
+    plan.schedule.push(placed);
   }
 
-  plan.schedule.push({ ...course, scheduleState: 'selected', reason });
-  plan.totalCredits += course.credits || 0;
+  plan.totalCredits += credits;
+  if (nonGraduationCategory === null) {
+    plan.graduationCredits += credits;
+  } else {
+    plan.nonGraduationCredits += credits;
+  }
   return true;
 }
 
@@ -450,7 +480,11 @@ function createEmptyPlan(variant, constraints) {
     warnings: [],
     // 已排入的課號 -> 該班次，用於擋掉同一門課的其他班次。
     placedCourseKeys: new Map(),
+    // 學期修習學分，用於 12～25 學分的上下限檢查。含通識共同必修。
     totalCredits: 0,
+    // 計入畢業的學分，用於畢業進度。不含通識共同必修（軍訓、體育、班級活動）。
+    graduationCredits: 0,
+    nonGraduationCredits: 0,
     minCredits: constraints.minCredits ?? defaultMinCredits(constraints),
     maxCredits: constraints.maxCredits ?? defaultMaxCredits(constraints),
     // 每日課程數上限沒有校方依據，預設不限制；呼叫端仍可自行指定。
@@ -492,10 +526,26 @@ function addScopeWarnings(plan, eligible, otherRequired, scope) {
     return;
   }
 
-  if (otherRequired.length > 0) {
+  // 必修不得換班（資工系明文）。沒有班別時只能收斂到年級，同年級其他班的必修
+  // 仍會進入候選，但學生實際上選不到——這件事必須講出來。
+  if (scope.classMismatch) {
     plan.warnings.push(
-      `已排除 ${otherRequired.length} 門其他系所、學制或年級的必修課`
-      + `（依 ${scope.department} ${scope.grade} 年級判定）。`
+      `班別「${scope.className}」與系所或年級不一致，已忽略班別設定，`
+      + '必修僅依系所與年級判定。'
+    );
+  } else if (!scope.classSuffix) {
+    plan.warnings.push(
+      '未設定班別，必修僅收斂到系所與年級。系上不接受必修換班，'
+      + '請補上班別（例如 資訊三甲）才能排出你實際選得到的必修。'
+    );
+  }
+
+  if (otherRequired.length > 0) {
+    const scopeLabel = scope.classSuffix
+      ? `依 ${scope.className} 判定`
+      : `依 ${scope.department} ${scope.grade} 年級判定`;
+    plan.warnings.push(
+      `已排除 ${otherRequired.length} 門其他系所、學制、年級或班別的必修課（${scopeLabel}）。`
     );
   }
 
@@ -509,8 +559,121 @@ function addScopeWarnings(plan, eligible, otherRequired, scope) {
   }
 }
 
-function buildPlan(candidateCourses, constraints, variant) {
+// 使用者明確指定的課程 id。
+//
+// `POST /api/schedule/generate` 的 `courseIds` 是「使用者在課程瀏覽器勾選的課」，
+// 它同時決定候選池，但**不會**進入 `selectedCourseIds`。若只看 `selectedCourseIds`，
+// 手動選課流程送進來的課會被當成系統自己撿的候選而遭系外選修條件靜默剔除。
+function collectExplicitCourseIds(constraints) {
+  return toIdSet([
+    ...toArray(constraints.explicitCourseIds),
+    ...toArray(constraints.selectedCourseIds),
+    ...toArray(constraints.mustTakeCourseIds),
+    ...toArray(constraints.mustTakeCourses),
+    ...toArray(constraints.retakeCourseIds),
+    ...toArray(constraints.failedRequiredCourseIds),
+  ]);
+}
+
+// 候選課程前處理。五個方案共用同一批候選，因此類別解析與系外選修認列判定
+// 只做一次——放進 buildPlan 會對 3560 筆課程重複解析五遍。
+//
+// 產出：
+//   courses     解析過類別（核心選修／系外選修）與修課路徑的候選課程
+//   exclusions  依系外選修認列條件排除的課程與原因
+//   warnings    需提醒但不排除的事項
+function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
+  const courses = [];
+  const exclusions = [];
+  const warnings = [];
+  const officeConfirmationNames = new Set();
+  const difficultyNames = new Set();
+  const unrecognizedExplicit = [];
+
+  for (const raw of candidateCourses) {
+    const course = annotateCourseCategory(raw, scope);
+    const outside = evaluateOutsideElective(course, scope);
+
+    if (!outside.checked) {
+      courses.push(course);
+      continue;
+    }
+
+    if (!outside.eligible) {
+      // 系統自己撿的候選：不推薦不能認列的課，整個剔除。
+      if (!explicitIds.has(Number(course.id))) {
+        exclusions.push({ course, reason: outside.reasons[0] });
+        continue;
+      }
+
+      // 使用者自己指定的課：**保留**。這條規則講的是「能不能計入畢業學分」，
+      // 不是「能不能修」——把使用者親手勾的課靜默刪掉，畫面上只會少一門課，
+      // 沒有任何線索。改為排入但標記不計入畢業學分，由使用者自行決定去留。
+      const marked = {
+        ...course,
+        nonGraduationCategory: UNRECOGNIZED_OUTSIDE_ELECTIVE,
+        outsideElectiveRecognized: false,
+        outsideElectiveReasons: outside.reasons,
+      };
+      unrecognizedExplicit.push(marked);
+      courses.push(marked);
+      continue;
+    }
+
+    for (const warning of outside.warnings) {
+      if (warning.type === 'difficulty') difficultyNames.add(warning.name);
+    }
+    if (outside.needsOfficeConfirmation) officeConfirmationNames.add(course.name);
+
+    courses.push(course);
+  }
+
+  if (exclusions.length > 0) {
+    warnings.push(
+      `已排除 ${exclusions.length} 門不符合系外選修認列條件的課程`
+      + '（進修部、與本系課程重複、大一概論性課程）。'
+    );
+  }
+
+  if (unrecognizedExplicit.length > 0) {
+    const detail = unrecognizedExplicit
+      .slice(0, UNSCHEDULED_NAMES_IN_WARNING)
+      .map(course => `${course.name}（${course.outsideElectiveReasons[0]}）`)
+      .join('；');
+    const rest = unrecognizedExplicit.length > UNSCHEDULED_NAMES_IN_WARNING
+      ? ` 等 ${unrecognizedExplicit.length} 門`
+      : '';
+    // 警告是純文字，直接顯示在畫面上，不得使用 markdown 語法——`**` 會原樣印出來。
+    warnings.push(
+      `你指定的課程中有 ${unrecognizedExplicit.length} 門不符合系外選修認列條件：`
+      + `${detail}${rest}。已排入課表，但學分不計入畢業，請自行決定是否移除。`
+    );
+  }
+
+  // 每門課各一條警告會有數十行，把其他警告全部淹掉。彙整成一行並只列出前幾門。
+  if (difficultyNames.size > 0) {
+    warnings.push(
+      `候選課程中有 ${difficultyNames.size} 門系外選修屬大一層級課程`
+      + `（${summarizeNames([...difficultyNames])}），難度是否不低於本系課程需自行確認。`
+    );
+  }
+
+  if (officeConfirmationNames.size > 0) {
+    warnings.push(
+      `候選課程中有 ${officeConfirmationNames.size} 門系外選修，依系上規定須先向系辦公室`
+      + '確認是否計入畢業學分。'
+    );
+  }
+
+  return { courses, exclusions, warnings, scope };
+}
+
+function buildPlan(prepared, constraints, variant) {
+  const candidateCourses = prepared.courses;
   const plan = createEmptyPlan(variant, constraints);
+  // 系外選修認列條件的排除結果對每個方案都相同，直接帶進各方案的排除清單，
+  // 讓使用者在任何一個方案上都看得到「為什麼這門課不見了」。
+  plan.excludedCourses.push(...prepared.exclusions);
   const selectedIds = toIdSet(constraints.selectedCourseIds);
   const mustTakeIds = toIdSet([
     ...toArray(constraints.mustTakeCourseIds),
@@ -525,7 +688,7 @@ function buildPlan(candidateCourses, constraints, variant) {
 
   // #13：`Courses.type = '必修'` 是「某系所某年級的必修」，不是「這位學生的必修」。
   // 未依系所與年級收斂時，全校 2094 筆必修都會被當成這位學生的必修。
-  const scope = buildStudentScope(constraints);
+  const { scope } = prepared;
 
   for (const course of candidateCourses) {
     if (isWatching(course, constraints)) {
@@ -604,13 +767,37 @@ function buildPlan(candidateCourses, constraints, variant) {
   });
 
   addScopeWarnings(plan, eligible, otherRequired, scope);
+  plan.warnings.push(...prepared.warnings);
+
+  // 學期學分與畢業學分不同時，必須明講。畫面只顯示一個數字的話，
+  // 學生會把含軍訓體育的學期學分誤當成畢業進度。
+  if (plan.nonGraduationCredits > 0) {
+    const labels = [...new Set(
+      [...plan.schedule, ...plan.unscheduledCourses]
+        .map(course => course.nonGraduationCategory)
+        .filter(Boolean)
+    )].join('、');
+    // 訊息要指名方案：`generateSchedule()` 會把所有方案的警告聯集後回傳，
+    // 寫「本方案」的話，使用者看到的是主推方案旁邊掛著別的方案的學分數。
+    // 不寫「依校規」——不計入的來源有兩種，通識共同必修是校規，
+    // 系外選修未認列是系上規定，混為一談會讓使用者查不到依據。
+    plan.warnings.push(
+      `方案「${plan.title}」的 ${plan.totalCredits} 學分中有 ${plan.nonGraduationCredits} 學分`
+      + `（${labels}）不計入畢業學分，計入畢業的為 ${plan.graduationCredits} 學分。`
+    );
+  }
 
   if (plan.totalCredits < plan.minCredits) {
     plan.warnings.push(`目前方案僅 ${plan.totalCredits} 學分，低於最低目標 ${plan.minCredits} 學分`);
   }
 
+  // 修課路徑來自 `server/src/data/csCurriculum.js`（113 課程地圖），
+  // 目前只涵蓋資訊工程學系。其他系所的候選課程解析後仍沒有 track。
   if (constraints.preferredTrack && !candidateCourses.some(course => course.track)) {
-    plan.warnings.push('目前課程資料缺少 track 欄位，尚無法完整支援核心選修路徑排序');
+    plan.warnings.push(
+      `候選課程中沒有屬於「${constraints.preferredTrack}」的課程，`
+      + '修課路徑偏好對本次排課沒有作用。'
+    );
   }
 
   if (constraints.digitalCreditsNeeded && !candidateCourses.some(course => course.digitalCredits)) {
@@ -676,6 +863,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
       schedule: [],
       plans: [],
       totalCredits: 0,
+      graduationCredits: 0,
+      nonGraduationCredits: 0,
       courseCount: 0,
       excludedCourses: [],
       watchedCourses: [],
@@ -688,10 +877,18 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
   const preferenceProfile = buildPreferenceProfile(constraints);
   const hasExpressedPreference = Object.values(preferenceProfile).some(weight => weight > 0);
 
+  // 類別解析（核心選修／系外選修／修課路徑）與系外選修認列條件對所有方案相同，
+  // 在此做一次後共用。
+  const prepared = prepareCandidates(
+    candidateCourses,
+    buildStudentScope(constraints),
+    collectExplicitCourseIds(constraints)
+  );
+
   const plans = uniquePlans(
     PLAN_VARIANTS
       .map(variant => {
-        const plan = buildPlan(candidateCourses, constraints, variant);
+        const plan = buildPlan(prepared, constraints, variant);
         const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
         plan.preferenceScore = score;
         plan.preferenceBreakdown = breakdown;
@@ -718,6 +915,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
       schedule: [],
       plans,
       totalCredits: 0,
+      graduationCredits: 0,
+      nonGraduationCredits: 0,
       courseCount: 0,
       excludedCourses: primary?.excludedCourses || [],
       // 失敗時仍要帶回關注課程，否則使用者標記的關注會從畫面上消失。
@@ -742,9 +941,14 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
   const unscheduledNote = primary.unscheduledCourses.length > 0
     ? `（另有 ${primary.unscheduledCourses.length} 門時間未定）`
     : '';
+  // 學期學分含軍訓、體育、班級活動，畢業學分不含。兩者不同時一併寫出，
+  // 否則學生會把學期學分當成畢業進度。
+  const creditNote = primary.nonGraduationCredits > 0
+    ? `共 ${primary.totalCredits} 學分（計入畢業 ${primary.graduationCredits} 學分）。`
+    : `共 ${primary.totalCredits} 學分。`;
   const message = primary.watchOnly
     ? `目前沒有可排入的正式加選課程，僅顯示 ${primary.watchedCourses.length} 門關注課程供你比較時段。`
-    : `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課${unscheduledNote}，共 ${primary.totalCredits} 學分。`;
+    : `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課${unscheduledNote}，${creditNote}`;
 
   return {
     success: true,
@@ -752,6 +956,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
     schedule: primary.schedule,
     plans,
     totalCredits: primary.totalCredits,
+    graduationCredits: primary.graduationCredits,
+    nonGraduationCredits: primary.nonGraduationCredits,
     courseCount: primary.courseCount,
     excludedCourses: primary.excludedCourses,
     watchedCourses: primary.watchedCourses,
@@ -791,11 +997,20 @@ export function validateSchedule(courses = []) {
     seenByKey.set(key, course);
   }
 
+  const totalCredits = selectedCourses.reduce((sum, course) => sum + (course.credits || 0), 0);
+  // 軍訓、體育、班級活動要排進課表但不計入畢業學分，因此驗證結果同時回報兩個數字。
+  const graduationCredits = selectedCourses.reduce(
+    (sum, course) => (countsTowardGraduation(course) ? sum + (course.credits || 0) : sum),
+    0
+  );
+
   return {
     valid: conflicts.length === 0 && duplicates.length === 0,
     conflicts,
     duplicates,
-    totalCredits: selectedCourses.reduce((sum, course) => sum + (course.credits || 0), 0),
+    totalCredits,
+    graduationCredits,
+    nonGraduationCredits: totalCredits - graduationCredits,
   };
 }
 

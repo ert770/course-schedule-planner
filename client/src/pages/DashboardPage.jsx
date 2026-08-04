@@ -79,6 +79,15 @@ export default function DashboardPage() {
     }
   }, [chatHistory]);
 
+  const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
+  // 軍訓國防科技、體育、班級活動要排進課表但不計入畢業學分（校規）。
+  // 後端在每門課上標記 countsTowardGraduation；未標記者一律視為計入。
+  const graduationCredits = schedule.reduce(
+    (sum, course) => (course.countsTowardGraduation === false ? sum : sum + (course.credits || 0)),
+    0
+  );
+  const hasNonGraduationCredits = graduationCredits !== totalCredits;
+
   const generateInitialSchedule = useCallback(async (currentPrefs = prefs) => {
     setIsScheduling(true);
     try {
@@ -305,7 +314,15 @@ export default function DashboardPage() {
           <div className="schedule-header-bar">
             <div className="schedule-stats">
               <span className="stat-badge course-badge">📚 {schedule.length} 門課</span>
-              <span className="stat-badge credit-badge">🎓 {schedule.reduce((s, c) => s + c.credits, 0)} 學分</span>
+              <span className="stat-badge credit-badge">🎓 {totalCredits} 學分</span>
+              {hasNonGraduationCredits && (
+                <span
+                  className="stat-badge credit-badge"
+                  title="軍訓國防科技、體育、班級活動依校規不計入畢業學分"
+                >
+                  🧮 計入畢業 {graduationCredits} 學分
+                </span>
+              )}
             </div>
             <div className="schedule-actions">
               <button className="action-btn secondary" onClick={handleExport}>匯出課表</button>

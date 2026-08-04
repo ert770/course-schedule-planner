@@ -51,6 +51,9 @@ export function buildScheduleConstraints(input = {}, prefs = {}) {
     department: input.department || prefs.department || null,
     gradeLevel: pickNumber(input.gradeLevel ?? input.grade, prefs.gradeLevel ?? prefs.grade, null),
     degree: input.degree || prefs.degree || undefined,
+    // 必修不得換班（資工系明文），因此必修範圍要再收斂到班別。
+    // 見 `docs/COURSE_SELECTION_RULES.md` 第八節。
+    className: input.className || prefs.className || null,
 
     // 校規：上限 25、下限 12（四年級 9），超修申請後 30。
     // 見 `docs/COURSE_SELECTION_RULES.md`；未指定時交由排課引擎依年級與超修選擇決定。
@@ -84,6 +87,10 @@ export function buildScheduleConstraints(input = {}, prefs = {}) {
 
     selectedCourseIds: pickRequestList(input.selectedCourseIds),
     watchingCourseIds: pickRequestList(input.watchingCourseIds),
+    // 使用者在課程瀏覽器手動勾選的課（`POST /api/schedule/generate` 的 `courseIds`）。
+    // 這些課不得因系外選修認列條件被靜默剔除——那條規則講的是能不能計入畢業學分，
+    // 不是能不能修。屬本次操作的當下狀態，不從已儲存偏好回填。
+    explicitCourseIds: pickRequestList(input.explicitCourseIds),
     courseStates: input.courseStates || {},
 
     preferCompact: pickFlag(input.preferCompact, prefs.preferCompact),

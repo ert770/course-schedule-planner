@@ -90,6 +90,52 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `completed_courses` | json | `profile.completedCourseIds` |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
+**`class_name` 欄位尚未新增**（待組員加上）。見下方「`className`（班別）」。
+
+### `className`（班別）
+
+資工系不接受必修換班，必修範圍必須收斂到班別（`資訊三甲`／`資訊三乙`…），
+見 `docs/COURSE_SELECTION_RULES.md` 第八節。
+
+**目標欄位**：
+
+```sql
+ALTER TABLE `User_Profiles` ADD COLUMN `class_name` varchar(45) NULL;
+```
+
+本專案**不自行執行**這道 DDL——該表與組員共用。程式已具備此欄位的完整讀寫：
+
+| 路徑 | 位置 |
+| --- | --- |
+| 欄位偵測 | `database.js` 的 `hasUserProfileClassNameColumn()`（`SHOW COLUMNS`，結果快取） |
+| 讀取 | `getMysqlUserPreferences()` 依偵測結果決定是否 SELECT `class_name`；`mapUserProfileRow()` 映射成 `profile.className` |
+| 寫入 | `updateMysqlUserPreference()` 依偵測結果決定是否 UPDATE `class_name` |
+| 位置決策 | `pickClassNameTarget()`（純函式，有測試） |
+
+**欄位一新增就自動改走 SQL，不需要再改任何程式**；偵測結果快取於行程內，
+新增欄位後需重啟後端才會生效（`npm run dev:server` 使用 `node --watch`）。
+
+`class_name` 不會被無條件寫進 SQL：欄位不存在時把它加進 `SELECT` 會讓整個查詢失敗，
+等於所有 profile 一起壞掉。
+
+#### 欄位到位前的後備順序
+
+讀取優先度與寫入目標一致：
+
+| 順位 | 位置 | 適用 |
+| ---: | --- | --- |
+| 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
+| 2 | `user_preferences.json` 的 `className` | MySQL 使用者，但 `users.json` 沒有對應列 |
+| 3 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
+
+`users.json` 的對照方式：`studentId`（demo 登入用，例如 `D1249697`）與 `id`
+（對應 `User_Profiles.user_id`）都建索引，兩者都能對到同一筆 profile。
+
+**第 2 順位不可省略**：只寫 `users.json` 的話，存在於 `User_Profiles` 但沒有 `users.json`
+對應列的使用者，班別會被「儲存成功」地丟掉——`updateMysqlUserPreference()` 沒有欄位可寫、
+卻仍回傳成功的 profile，本機寫入又被提早 `return` 跳過，下一次排課直接退回系所 + 年級。
+`upsertByField()` 因此在這個情況下不提早返回，先把班別寫進本機 profile 再回傳。
+
 ## Local JSON Collections
 
 The following collections remain file-backed in `server/data/*.json` because the provided MySQL schema does not include equivalent tables:

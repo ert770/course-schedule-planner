@@ -1,5 +1,11 @@
 import { Router } from 'express';
-import { searchCourses, getCourseDetail, getDepartments, getInstructors } from '../skills/courseQuery.js';
+import {
+  searchCourses,
+  getCourseDetail,
+  getDepartments,
+  getInstructors,
+  getClassNames,
+} from '../skills/courseQuery.js';
 
 const router = Router();
 
@@ -27,6 +33,20 @@ router.get('/', async (req, res) => {
 router.get('/departments', async (req, res) => {
   try {
     res.json({ departments: await getDepartments() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 某系所某年級的班別清單（必修不得換班，學生需指定自己的班別）。
+// 必須放在 `/:id` 之前，否則會被當成課程 id。
+router.get('/classes', async (req, res) => {
+  try {
+    const { department, grade } = req.query;
+    if (!department) {
+      return res.status(400).json({ error: 'department 為必填' });
+    }
+    res.json({ classes: await getClassNames(department, grade) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

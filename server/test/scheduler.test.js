@@ -91,15 +91,70 @@ describe('S3-S4 必修與重補修優先', () => {
 });
 
 describe('S5-S6 核心選修路徑', () => {
-  // 課程資料目前沒有 track 欄位，三條修課路徑無法實作。
-  // 這裡驗證的是「資料缺漏時必須明說」，而不是路徑排序本身。
-  test('S5/S6 缺少 track 欄位時回報警告而非靜默通過', () => {
+  // 修課路徑資料來自 113 課程地圖（`server/src/data/csCurriculum.js`）。
+  const csScope = { department: '資訊工程學系', gradeLevel: 3, minCredits: 0 };
+
+  test('S5 資工系選修依必選修科目表解析成核心選修，並帶出修課路徑', () => {
+    const course = makeCourse(1, {
+      name: '人工智慧導論',
+      subid3: 'IECS3059',
+      department: '資訊三合',
+      category: '選修',
+    });
+
+    const result = generateSchedule([course], csScope);
+    const placed = result.schedule.find(item => item.id === 1);
+
+    assert.equal(placed.category, '核心選修');
+    assert.equal(placed.sourceCategory, '選修');
+    assert.equal(placed.track, '技術應用類');
+  });
+
+  test('S5 同名的他系課程不得被當成資工系核心選修', () => {
+    // 資料庫中「網路程式設計」只有通訊工程學系的 COME3016，
+    // 只比對課名會把他系課程誤判成資工系核心選修。它是系外選修，
+    // 且因課名與本系科目表重複而不得認列。
+    const course = makeCourse(2, {
+      name: '網路程式設計',
+      subid3: 'COME3016',
+      department: '通訊三合',
+      category: '選修',
+    });
+
+    const result = generateSchedule([course], csScope);
+
+    assert.ok(!result.schedule.some(item => item.id === 2), '不得排入');
+    assert.ok(
+      result.excludedCourses.some(item => item.reason.includes('與本系')),
+      JSON.stringify(result.excludedCourses)
+    );
+  });
+
+  test('S5 他系且與本系不重複的選修解析為系外選修', () => {
+    const course = makeCourse(3, {
+      name: '個體經濟學',
+      subid3: 'ECON2001',
+      department: '經濟二甲',
+      category: '選修',
+    });
+
+    const result = generateSchedule([course], csScope);
+    const placed = result.schedule.find(item => item.id === 3);
+
+    assert.equal(placed.category, '系外選修');
+    assert.equal(placed.track, null);
+  });
+
+  test('S6 候選課程中沒有該路徑的課程時回報警告而非靜默通過', () => {
     const result = generateSchedule([makeCourse(1)], {
       preferredTrack: '技術應用類',
       minCredits: 0,
     });
 
-    assert.ok(result.warnings.some(warning => warning.includes('track')));
+    assert.ok(
+      result.warnings.some(warning => warning.includes('技術應用類')),
+      result.warnings.join(' | ')
+    );
   });
 });
 

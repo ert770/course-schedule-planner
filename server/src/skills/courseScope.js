@@ -106,7 +106,7 @@ export function parseClassName(className) {
 
 function parseClassNameUncached(name) {
   if (!name) {
-    return { className: name, isDepartmentClass: false, category: 'unknown', department: null, abbreviation: null, degree: null, grade: null };
+    return { className: name, isDepartmentClass: false, category: 'unknown', department: null, abbreviation: null, degree: null, grade: null, classSuffix: null };
   }
 
   const nonDepartment = matchPattern(name, NON_DEPARTMENT_PATTERNS);
@@ -126,6 +126,9 @@ function parseClassNameUncached(name) {
           abbreviation,
           degree,
           grade,
+          // 年級字之後的部分即班別，例如 `資訊三甲` 的 `甲`、`資訊三合` 的 `合`。
+          // 空字串代表該班級名稱沒有分班（例如 `合經一`）。
+          classSuffix: rest.slice(1),
         };
       }
     }
@@ -140,21 +143,62 @@ function parseClassNameUncached(name) {
     abbreviation: null,
     degree: null,
     grade: findGradeInName(name),
+    classSuffix: null,
   };
+}
+
+// 合班：該年級所有班別共同修習的班級，例如 `資訊二合` 的資料結構是
+// 資訊二甲～二丁全體的必修。班別收斂時必須連同合班一起視為「本班」，
+// 否則資訊二甲的學生會漏掉開在 `資訊二合` 的資料結構與資料結構實習。
+function isMergedClassSuffix(suffix) {
+  return typeof suffix === 'string' && suffix.includes('合');
+}
+
+// 這門課的班別是否涵蓋學生所屬班別。
+//
+// 資工系選課公告明文「不接受必修課程換班級的要求」，因此必修範圍必須收斂到班別，
+// 而不只是系所與年級——資訊三甲、三乙、三丙、三丁各自開一班計算機演算法，
+// 學生只能選自己班的那一班。見 `docs/COURSE_SELECTION_RULES.md` 第八節。
+//
+// 學生未設定班別時回傳 true，維持既有的「系所 + 年級」判定，
+// 不因為多了一個欄位就讓原本能排課的使用者突然排不出必修。
+function classSuffixCovers(courseSuffix, studentSuffix) {
+  if (!studentSuffix) return true;
+  if (!courseSuffix) return true;
+  if (courseSuffix === studentSuffix) return true;
+  return isMergedClassSuffix(courseSuffix);
 }
 
 // 學生條件。`User_Profiles` 目前沒有學制欄位，因此預設為學士；
 // 若日後補上，profile 帶 `degree` 即可生效。
+//
+// 班別（`className`，例如 `資訊三甲`）同樣不在 `User_Profiles`，目前存在
+// `server/data/users.json`，由 `database.js` 合併進 profile。等資料庫補上欄位後
+// 改成從 `User_Profiles` 讀即可，本模組不需更動。
 export function buildStudentScope(profile = {}) {
   const department = normalizeDepartment(profile.department) || null;
   const gradeValue = Number(profile.gradeLevel ?? profile.grade);
   const grade = Number.isInteger(gradeValue) && gradeValue > 0 ? gradeValue : null;
+
+  const className = String(profile.className || '').trim() || null;
+  const parsedClass = className ? parseClassName(className) : null;
+  // 班別與系所／年級對不起來時（例如系所寫資工、班別填 `電機三甲`）不套用班別收斂，
+  // 否則會靜默排除掉全部必修。呼叫端據此發出警告。
+  const classMatchesProfile = Boolean(
+    parsedClass?.isDepartmentClass
+    && (!department || parsedClass.department === department)
+    && (!grade || parsedClass.grade === grade)
+  );
 
   return {
     department,
     grade,
     degree: profile.degree || DEFAULT_DEGREE,
     abbreviations: department ? getAbbreviations(department) : [],
+    className,
+    classSuffix: classMatchesProfile ? parsedClass.classSuffix || null : null,
+    // 有填班別但與系所／年級不一致，值得回報而不是靜默忽略。
+    classMismatch: Boolean(className && !classMatchesProfile),
     // 系所或年級任一缺漏都無法判定必修範圍。此時不得退回「全校必修都算」，
     // 那正是 #13 的缺陷本身。
     resolved: Boolean(department && grade && getAbbreviations(department).length > 0),
@@ -171,7 +215,9 @@ export function isRequiredForStudent(course, scope) {
 
   return scope.abbreviations.includes(parsed.abbreviation)
     && parsed.degree === scope.degree
-    && parsed.grade === scope.grade;
+    && parsed.grade === scope.grade
+    // 必修不得換班：同系所同年級但別班的必修，這位學生選不到。
+    && classSuffixCovers(parsed.classSuffix, scope.classSuffix);
 }
 
 // 這門課是否為「別人的必修」——他系、他學制或其他年級的必修。
@@ -194,9 +240,25 @@ export function isOtherStudentsRequiredCourse(course, scope) {
   return !isRequiredForStudent(course, scope);
 }
 
+// 這門課是否開在學生本系的班級底下（不論年級與班別）。
+// 系外選修判定用：只有系所班級才分本系／外系，通識、共同科目、學院綜合班、
+// 學分學程等非系所班級不屬於任何一系，不在此判定範圍。
+export function isOwnDepartmentClass(course, scope) {
+  if (!scope?.resolved) return false;
+
+  const parsed = parseClassName(course?.department);
+  if (!parsed.isDepartmentClass) return false;
+
+  return scope.abbreviations.includes(parsed.abbreviation);
+}
+
+export { classSuffixCovers };
+
 export default {
   parseClassName,
   buildStudentScope,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
+  isOwnDepartmentClass,
+  classSuffixCovers,
 };

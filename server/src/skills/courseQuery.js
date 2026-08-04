@@ -1,5 +1,8 @@
 import { getAll, getById } from '../db/database.js';
 import { summarizeReviews } from './reviewStats.js';
+import { parseClassName } from './courseScope.js';
+import { getAbbreviations } from '../data/departmentMapping.js';
+import { normalizeDepartment } from '../utils/text.js';
 
 function textIncludes(value, keyword) {
   return String(value || '').toLowerCase().includes(keyword);
@@ -94,4 +97,31 @@ export async function getInstructors() {
   return [...new Set(courses.map(course => course.instructor).filter(Boolean))];
 }
 
-export default { searchCourses, getCourseDetail, getDepartments, getInstructors };
+// 某個系所某個年級實際存在的班別（例如 `資訊三甲`、`資訊三乙`、`資訊三合`）。
+//
+// 供前端讓學生選班別使用。班別清單從課程資料現場推導，而不是寫死在前端——
+// 系所簡稱與班級命名的對照只有 `server/src/data/departmentMapping.js` 一份，
+// 複製到前端就會有兩份各自漂移。
+export async function getClassNames(department, grade) {
+  const normalized = normalizeDepartment(department);
+  const abbreviations = normalized ? getAbbreviations(normalized) : [];
+  if (abbreviations.length === 0) return [];
+
+  const gradeValue = Number(grade);
+  const courses = await getAll('courses');
+  const names = new Set();
+
+  for (const course of courses) {
+    const parsed = parseClassName(course.department);
+    if (!parsed.isDepartmentClass) continue;
+    if (!abbreviations.includes(parsed.abbreviation)) continue;
+    if (parsed.degree !== 'bachelor') continue;
+    if (Number.isFinite(gradeValue) && gradeValue > 0 && parsed.grade !== gradeValue) continue;
+
+    names.add(parsed.className);
+  }
+
+  return [...names].sort();
+}
+
+export default { searchCourses, getCourseDetail, getDepartments, getInstructors, getClassNames };

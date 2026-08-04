@@ -62,6 +62,12 @@ export const coursesAPI = {
   },
   getDetail: (id) => request(`/courses/${id}`),
   getDepartments: () => request('/courses/departments'),
+  // 某系所某年級實際存在的班別（例如 資訊三甲）。必修不得換班，需指定班別。
+  getClasses: (department, grade) => {
+    const params = new URLSearchParams({ department });
+    if (grade) params.append('grade', grade);
+    return request(`/courses/classes?${params}`);
+  },
   getInstructors: () => request('/courses/instructors'),
 };
 
