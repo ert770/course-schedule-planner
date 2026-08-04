@@ -10,9 +10,13 @@ import {
   parseClassName,
 } from './courseScope.js';
 
-const DEFAULT_MIN_CREDITS = 15;
-const DEFAULT_MAX_CREDITS = 22;
-const DEFAULT_MAX_COURSES_PER_DAY = 4;
+// 校規：每學期上限 25 學分、下限 12 學分（四年級 9），超修申請後至多 30。
+// 見 `docs/COURSE_SELECTION_RULES.md`。先前寫死的 15／22 沒有出處。
+const DEFAULT_MIN_CREDITS = 12;
+const DEFAULT_MAX_CREDITS = 25;
+const FINAL_YEAR_MIN_CREDITS = 9;
+const FINAL_YEAR = 4;
+const OVERLOAD_MAX_CREDITS = 30;
 // 資料庫實際含週六與週日課程（週六 81 筆、週日 9 筆），因此以七天為準。
 const WEEK_DAYS = 7;
 const INTEREST_KEYWORD_SCORE = 40;
@@ -447,10 +451,21 @@ function createEmptyPlan(variant, constraints) {
     // 已排入的課號 -> 該班次，用於擋掉同一門課的其他班次。
     placedCourseKeys: new Map(),
     totalCredits: 0,
-    minCredits: constraints.minCredits ?? DEFAULT_MIN_CREDITS,
-    maxCredits: constraints.maxCredits ?? DEFAULT_MAX_CREDITS,
-    maxCoursesPerDay: constraints.maxCoursesPerDay ?? DEFAULT_MAX_COURSES_PER_DAY,
+    minCredits: constraints.minCredits ?? defaultMinCredits(constraints),
+    maxCredits: constraints.maxCredits ?? defaultMaxCredits(constraints),
+    // 每日課程數上限沒有校方依據，預設不限制；呼叫端仍可自行指定。
+    maxCoursesPerDay: constraints.maxCoursesPerDay ?? Infinity,
   };
+}
+
+// 四年級的學分下限為 9（其餘年級 12）。
+function defaultMinCredits(constraints) {
+  return Number(constraints.gradeLevel) >= FINAL_YEAR ? FINAL_YEAR_MIN_CREDITS : DEFAULT_MIN_CREDITS;
+}
+
+// 超修須由使用者明確選擇，不得預設開啟。
+function defaultMaxCredits(constraints) {
+  return constraints.allowCreditOverload ? OVERLOAD_MAX_CREDITS : DEFAULT_MAX_CREDITS;
 }
 
 // 非系所班級（通識、共同科目、學院綜合班、英語授課班、學分學程）的適用對象

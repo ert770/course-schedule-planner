@@ -7,24 +7,17 @@
     "department": "資訊工程學系",
     "grade": 3,
     "completedCredits": 107,
-    "totalRequired": 128,
     "completedCourseIds": [1, 2, 3, 4, 5, 6, 7, 8, 46],
     "completedCourseNames": [
       "程式語言", "資料結構", "系統安全", "西班牙文（一）",
       "資料庫系統", "作業系統", "離散數學", "計算機結構學",
       "組合數學", "軟體測試"
     ],
-    "requiredCredits": {
-      "必修": 60,
-      "系內選修": 40,
-      "通識": 20,
-      "系外選修": 8
-    },
     "earnedCredits": {
-      "必修": 50,
-      "系內選修": 31,
-      "通識": 16,
-      "系外選修": 10
+      "required": 50,
+      "elective": 31,
+      "general": 16,
+      "external": 10
     },
     "watchlist": [
       { "id": 101, "name": "密碼學", "category": "選修", "credits": 3 },

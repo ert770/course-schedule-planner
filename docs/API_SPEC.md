@@ -328,6 +328,35 @@ Response:
 
 Uses local demo users when available, otherwise uses numeric MySQL `User_Profiles.user_id` for basic profile data.
 
+畢業學分要求**依學生系所查 `server/src/data/graduationRequirements.js`**，沒有全校通用的預設值（總學分有 128／130／131／134／156 五種）。
+
+Response:
+
+```json
+{
+  "totalRequired": 128,
+  "totalEarned": 107,
+  "required": { "required": 63, "elective": 28, "general": 28, "external": 9, "unspecified": 0 },
+  "earned": { "required": 50, "elective": 31, "general": 16, "external": 10 },
+  "gaps": { "required": 13, "elective": 0, "general": 12, "external": 0, "unspecified": 0 },
+  "warnings": [],
+  "recommendations": [],
+  "watchlist": [],
+  "skillTree": [],
+  "overallScore": 80,
+  "overallScoreMax": 100
+}
+```
+
+| 欄位 | 說明 |
+| --- | --- |
+| `required` | 該系所的畢業學分要求。`general` 為通識基礎與通識選修之和，`unspecified` 為未列明學分（通常是自由選修） |
+| `earned` | 使用者已修學分，key 與 `required` 一致 |
+| `gaps` | 每類的缺口，不會小於 0 |
+| `warnings` | 查不到系所對照、或該系資料標記為待人工複核時的說明。**查無對照時不會用臆測的數字填補** |
+
+`totalRequired` 在查不到系所對照且使用者資料也沒有時為 `null`。
+
 ## Error Response
 
 ```json

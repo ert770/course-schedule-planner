@@ -6,8 +6,8 @@ export default function ProfileForm() {
   const [prefs, setPrefs] = useState({
     displayName: '同學',
     completedCredits: 45,
-    targetCreditsMin: 15,
-    targetCreditsMax: 22,
+    targetCreditsMin: 12,
+    targetCreditsMax: 25,
     noMorningClasses: false,
     noEveningClasses: false,
     preferCompact: false,

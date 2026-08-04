@@ -81,6 +81,12 @@ node --check src/app.js
 | B3 | 正課 `MATH1005` 與實習 `MATH1005P` | 視為不同課號，不受一課一班次限制 |
 | B4 | `POST /api/schedule/validate` 收到同一門課的兩個班次 | `valid` 為 false 並回傳 `duplicates`，不得報成衝堂 |
 | B5 | 課程無 `subid3` | 以課程名稱作為同一門課的後備判定 |
+| C1 | 未指定學分上限 | 上限為校規的 25 學分（非舊值 22） |
+| C2 | 未指定學分下限且總學分不足 | 警告「低於最低目標 12」（非舊值 15） |
+| C3 | `gradeLevel` 為 4 且排入 9 學分 | 視為已達下限，不發出學分不足警告 |
+| C4 | `allowCreditOverload` 為 true | 上限放寬至 30 學分；未開啟時維持 25 |
+| C5 | 同一天 6 門不衝堂的課 | 全部可排入，無「每日 N 門」限制 |
+| C6 | 呼叫端指定 `maxCoursesPerDay: 3` | 該日只排入 3 門 |
 
 ## AI Agent 契約測試
 

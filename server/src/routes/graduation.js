@@ -1,24 +1,31 @@
 import { Router } from 'express';
 import { getAll } from '../db/database.js';
+import { getGraduationRequirement } from '../data/graduationRequirements.js';
+import { normalizeDepartment } from '../utils/text.js';
 
 const router = Router();
 
-function getDefaultRequiredCredits() {
+// 先前這裡寫死 必修60／選修40／通識20／系外8（合計 128），沒有任何出處，
+// 且與官方必選修科目表不符——以資訊工程學系為例，實際是
+// 本系必修 63／本系選修 28／外系選修 9／通識基礎 16／通識選修 12。
+// 各系畢業總學分也不一致（128／130／131／134／156）。
+// 見 `docs/COURSE_SELECTION_RULES.md` 與 `server/src/data/graduationRequirements.js`。
+function toCreditBreakdown(requirement) {
   return {
-    required: 60,
-    elective: 40,
-    general: 20,
-    external: 8,
+    required: requirement.deptRequired,
+    elective: requirement.deptElective,
+    general: requirement.generalBasic + requirement.generalElective,
+    external: requirement.outsideElective,
+    unspecified: requirement.unspecified,
   };
 }
 
+function getEmptyCredits() {
+  return { required: 0, elective: 0, general: 0, external: 0, unspecified: 0 };
+}
+
 function getDefaultEarnedCredits(user) {
-  return user.earnedCredits || {
-    required: 0,
-    elective: 0,
-    general: 0,
-    external: 0,
-  };
+  return user.earnedCredits || getEmptyCredits();
 }
 
 router.get('/:studentId', async (req, res) => {
@@ -33,9 +40,27 @@ router.get('/:studentId', async (req, res) => {
       return res.status(404).json({ error: '找不到使用者' });
     }
 
-    const required = user.requiredCredits || getDefaultRequiredCredits();
+    // 畢業學分依系所而定，沒有全校通用的預設值。查不到對照時明確回報，
+    // 不得用臆測的數字讓畫面看起來正常。
+    const department = normalizeDepartment(user.department);
+    const requirement = getGraduationRequirement(department);
+    const warnings = [];
+
+    if (!requirement) {
+      warnings.push(`找不到「${department || '未設定系所'}」的畢業學分規定，無法計算學分缺口。`);
+    } else if (requirement.needsVerification) {
+      warnings.push(`「${department}」的畢業學分資料尚待人工複核，缺口僅供參考。`);
+    }
+
+    // 官方對照表優先於使用者資料上的 requiredCredits。
+    // 反過來的話，舊資料裡捏造的數字（必修60／選修40／通識20／系外8）會蓋過官方值，
+    // 而且完全沒有跡象——這正是這批數字能存活到現在的原因。
+    // 使用者自帶的值只在查不到對照時作為後備。
+    const required = requirement
+      ? toCreditBreakdown(requirement)
+      : (user.requiredCredits || getEmptyCredits());
     const earned = getDefaultEarnedCredits(user);
-    const totalRequired = user.totalRequired || 128;
+    const totalRequired = requirement?.total ?? user.totalRequired ?? null;
     const totalEarned = Number(user.completedCredits || 0);
     const gaps = Object.fromEntries(
       Object.entries(required).map(([key, value]) => [
@@ -61,11 +86,13 @@ router.get('/:studentId', async (req, res) => {
     }
 
     res.json({
+      department,
       totalRequired,
       totalEarned,
       required,
       earned,
       gaps,
+      warnings,
       recommendations,
       watchlist: user.watchlist || [],
       skillTree: user.skillTree || [],

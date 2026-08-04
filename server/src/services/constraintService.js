@@ -52,9 +52,13 @@ export function buildScheduleConstraints(input = {}, prefs = {}) {
     gradeLevel: pickNumber(input.gradeLevel ?? input.grade, prefs.gradeLevel ?? prefs.grade, null),
     degree: input.degree || prefs.degree || undefined,
 
-    maxCredits: pickNumber(input.maxCredits, prefs.targetCreditsMax, 22),
-    minCredits: pickNumber(input.minCredits, prefs.targetCreditsMin, 15),
-    maxCoursesPerDay: pickNumber(input.maxCoursesPerDay, null, 4),
+    // 校規：上限 25、下限 12（四年級 9），超修申請後 30。
+    // 見 `docs/COURSE_SELECTION_RULES.md`；未指定時交由排課引擎依年級與超修選擇決定。
+    maxCredits: input.maxCredits ?? prefs.targetCreditsMax ?? undefined,
+    minCredits: input.minCredits ?? prefs.targetCreditsMin ?? undefined,
+    allowCreditOverload: pickFlag(input.allowCreditOverload, prefs.allowCreditOverload),
+    // 每日課程數上限沒有校方依據，不再預設 4 門。
+    maxCoursesPerDay: input.maxCoursesPerDay ?? undefined,
     blockedPeriods: buildBlockedPeriods(input, prefs),
 
     noMorningClasses: pickFlag(input.noMorningClasses, prefs.noMorningClasses),

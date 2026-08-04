@@ -102,8 +102,9 @@ export default function DashboardPage() {
         lunchBreakFree: currentPrefs.lunchBreakFree || false,
         preferCompact: currentPrefs.preferCompact || false,
         hideConflict: currentPrefs.hideConflict || false,
+        // 校規：每學期上限 25、下限 12（見 docs/COURSE_SELECTION_RULES.md）
         maxCredits: 25,
-        minCredits: 15,
+        minCredits: 12,
         blockedPeriods,
       };
 

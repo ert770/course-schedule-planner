@@ -395,3 +395,85 @@ describe('B1-B5 同一門課只能選一個班次', () => {
     assert.equal(result.schedule.length, 1);
   });
 });
+
+// C1-C6：學分上下限依校規（docs/COURSE_SELECTION_RULES.md）。
+//
+// 先前寫死下限 15、上限 22、每日最多 4 門課，三個數字都沒有出處。
+// 校規為上限 25、下限 12（四年級 9），超修申請後 30；每日課程數校方無規定。
+describe('C1-C6 學分上下限與每日課程數', () => {
+  const manyCourses = (count) => Array.from({ length: count }, (_, i) => makeCourse(i + 1, {
+    credits: 3,
+    dayOfWeek: (i % 5) + 1,
+    startPeriod: (i % 10) + 1,
+    endPeriod: (i % 10) + 1,
+  }));
+
+  test('C1 未指定時上限為 25 學分', () => {
+    const result = generateSchedule(manyCourses(20), { minCredits: 0 });
+
+    assert.ok(result.totalCredits <= 25, `排出 ${result.totalCredits} 學分，超過上限 25`);
+    assert.ok(result.totalCredits > 22, `排出 ${result.totalCredits} 學分，仍停在舊上限 22`);
+  });
+
+  test('C2 未指定時下限為 12 學分', () => {
+    const result = generateSchedule(manyCourses(2), {});
+
+    assert.ok(
+      result.warnings.some(w => w.includes('低於最低目標 12')),
+      result.warnings.join(' | ')
+    );
+  });
+
+  test('C3 四年級下限為 9 學分', () => {
+    const result = generateSchedule(manyCourses(3), { gradeLevel: 4 });
+
+    assert.equal(result.totalCredits, 9);
+    assert.ok(
+      !result.warnings.some(w => w.includes('低於最低目標')),
+      '四年級 9 學分已達下限，不應警告'
+    );
+  });
+
+  test('C4 超修須明確開啟，開啟後上限為 30 學分', () => {
+    const withoutOverload = generateSchedule(manyCourses(20), { minCredits: 0 });
+    const withOverload = generateSchedule(manyCourses(20), { minCredits: 0, allowCreditOverload: true });
+
+    assert.ok(withoutOverload.totalCredits <= 25);
+    assert.ok(
+      withOverload.totalCredits > withoutOverload.totalCredits,
+      `超修 ${withOverload.totalCredits} 應多於未超修 ${withoutOverload.totalCredits}`
+    );
+    assert.ok(withOverload.totalCredits <= 30, `排出 ${withOverload.totalCredits} 學分，超過超修上限 30`);
+  });
+
+  test('C5 每日課程數預設不限制', () => {
+    // 同一天 6 門不衝堂的課，舊版預設每日 4 門會擋掉兩門。
+    const sameDay = Array.from({ length: 6 }, (_, i) => makeCourse(i + 1, {
+      credits: 1,
+      dayOfWeek: 1,
+      startPeriod: i + 1,
+      endPeriod: i + 1,
+    }));
+
+    const result = generateSchedule(sameDay, { minCredits: 0 });
+
+    assert.equal(result.schedule.length, 6);
+    assert.ok(
+      !result.excludedCourses.some(item => item.reason.includes('每日')),
+      result.excludedCourses.map(item => item.reason).join(' | ')
+    );
+  });
+
+  test('C6 呼叫端仍可自行指定每日課程數上限', () => {
+    const sameDay = Array.from({ length: 6 }, (_, i) => makeCourse(i + 1, {
+      credits: 1,
+      dayOfWeek: 1,
+      startPeriod: i + 1,
+      endPeriod: i + 1,
+    }));
+
+    const result = generateSchedule(sameDay, { minCredits: 0, maxCoursesPerDay: 3 });
+
+    assert.equal(result.schedule.length, 3);
+  });
+});

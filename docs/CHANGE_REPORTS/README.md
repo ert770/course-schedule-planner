@@ -4,7 +4,8 @@
 
 ## 2026-08-04
 
-1. [department 寫入型別檢查與髒值警告去重修正（D3 後續）](./2026-08-04-department-write-validation.md)
+1. [以官方選課規則取代寫死的學分數字](./2026-08-04-official-course-selection-rules.md)
+2. [department 寫入型別檢查與髒值警告去重修正（D3 後續）](./2026-08-04-department-write-validation.md)
 
 ## 2026-08-02
 

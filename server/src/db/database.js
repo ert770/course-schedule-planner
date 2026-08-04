@@ -367,8 +367,9 @@ function mapUserProfileRow(row) {
     gradeLevel: normalizeNumber(row.grade_level),
     completedCredits: 0,
     completedCourseIds: Array.isArray(completedCourses) ? completedCourses : [],
-    targetCreditsMin: 15,
-    targetCreditsMax: normalizeNumber(row.max_credits, 22) || 22,
+    // 校規下限 12、上限 25（見 docs/COURSE_SELECTION_RULES.md）。
+    targetCreditsMin: 12,
+    targetCreditsMax: normalizeNumber(row.max_credits, 25) || 25,
     blockedPeriods: normalizeAvoidTime(row.avoid_time),
     preferredCategories: Array.isArray(preferenceTags) ? preferenceTags : [],
     preferenceTags: Array.isArray(preferenceTags) ? preferenceTags : [],
