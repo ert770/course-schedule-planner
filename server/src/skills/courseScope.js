@@ -178,30 +178,48 @@ function classSuffixCovers(courseSuffix, studentSuffix) {
 export function buildStudentScope(profile = {}) {
   const department = normalizeDepartment(profile.department) || null;
   const gradeValue = Number(profile.gradeLevel ?? profile.grade);
-  const grade = Number.isInteger(gradeValue) && gradeValue > 0 ? gradeValue : null;
+  const profileGrade = Number.isInteger(gradeValue) && gradeValue > 0 ? gradeValue : null;
 
   const className = String(profile.className || '').trim() || null;
   const parsedClass = className ? parseClassName(className) : null;
-  // 班別與系所／年級對不起來時（例如系所寫資工、班別填 `電機三甲`）不套用班別收斂，
-  // 否則會靜默排除掉全部必修。呼叫端據此發出警告。
-  const classMatchesProfile = Boolean(
+
+  // 班別要能用，前提是它確實是**本系**的系所班級。系所對不上（例如系所寫資工、
+  // 班別填 `電機三甲`）就無從調解，只能忽略班別，否則會靜默排除掉全部必修。
+  const classUsable = Boolean(
     parsedClass?.isDepartmentClass
     && (!department || parsedClass.department === department)
-    && (!grade || parsedClass.grade === grade)
   );
+
+  // **年級以班別為準。** 班別名稱本身就編碼了年級（`資訊二乙` → 二年級），
+  // 而且它是使用者最後明確選的值。先前的做法是「年級與班別不一致就忽略班別」，
+  // 結果是使用者改了班別、課表卻毫無變化（見稽核報告 F16）。
+  const grade = classUsable ? parsedClass.grade : profileGrade;
+  const gradeOverridden = Boolean(classUsable && profileGrade && parsedClass.grade !== profileGrade);
+
+  const abbreviations = department ? getAbbreviations(department) : [];
 
   return {
     department,
     grade,
     degree: profile.degree || DEFAULT_DEGREE,
-    abbreviations: department ? getAbbreviations(department) : [],
+    abbreviations,
     className,
-    classSuffix: classMatchesProfile ? parsedClass.classSuffix || null : null,
-    // 有填班別但與系所／年級不一致，值得回報而不是靜默忽略。
-    classMismatch: Boolean(className && !classMatchesProfile),
+    classSuffix: classUsable ? parsedClass.classSuffix || null : null,
+    // 系所對不上的班別：忽略並回報，不得靜默處理。
+    classMismatch: Boolean(className && !classUsable),
+    // 班別覆寫了 profile 的年級：仍要講出來，否則資料哪裡不一致無從追查。
+    gradeOverriddenByClass: gradeOverridden,
+    profileGrade,
+    // 「沒填系所」與「填了但對照表查不到」是兩種完全不同的問題，必須分開回報。
+    // 兩者都會讓 resolved 為 false，但前者要使用者去填，後者是資料錯誤
+    // ——可能是組員把系所名稱打錯，或 A 表少了一個單位。合併成同一句
+    // 「未設定系所或年級」會讓後者永遠查不出來。
+    departmentMissing: !department,
+    departmentUnmapped: Boolean(department && abbreviations.length === 0),
+    gradeMissing: !grade,
     // 系所或年級任一缺漏都無法判定必修範圍。此時不得退回「全校必修都算」，
     // 那正是 #13 的缺陷本身。
-    resolved: Boolean(department && grade && getAbbreviations(department).length > 0),
+    resolved: Boolean(department && grade && abbreviations.length > 0),
   };
 }
 

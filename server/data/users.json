@@ -4,8 +4,6 @@
     "studentId": "D1249697",
     "password": "123",
     "name": "黃思瑜",
-    "department": "資訊工程學系",
-    "grade": 3,
     "className": "資訊三甲",
     "completedCredits": 107,
     "completedCourseIds": [1, 2, 3, 4, 5, 6, 7, 8, 46],

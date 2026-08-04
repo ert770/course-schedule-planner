@@ -21,14 +21,22 @@ export default function SetupPage() {
   const { user, markSetupDone } = useAuth();
   
   // Basic info
-  const [department, setDepartment] = useState(user?.department || '資訊工程學系');
-  // 年級必須帶入登入使用者的實際年級。排課的必修範圍依系所與年級判定（#13），
-  // 這裡若固定預設大一，三年級學生送出設定後會被存成大一，拿到的是大一必修。
-  const [grade, setGrade] = useState(String(user?.grade || '1'));
+  //
+  // 初始值只是等待 profile 載入前的暫時值。**真正的來源是 `GET /api/profile`**——
+  // 登入回傳的 `user` 物件來自 `users.json`，它沒有 `className`，系所與年級也不是
+  // 排課實際採用的那一份（見稽核報告 F16）。用它當預設值會讓使用者一進設定頁
+  // 就看到與系統實際狀態不符的值，按下儲存後把正確的資料覆蓋掉。
+  const [department, setDepartment] = useState('資訊工程學系');
+  // 年級必須帶入使用者的實際年級。排課的必修範圍依系所與年級判定（#13），
+  // 這裡若固定送出預設大一，三年級學生的設定會被存成大一，拿到的是大一必修。
+  // 因此在 profile 載入完成前不開放送出（見 `profileLoaded`）。
+  const [grade, setGrade] = useState('1');
   // 必修不得換班（資工系明文），因此必修範圍要收斂到班別而不只是系所與年級。
   // 班別清單向後端取得，不在前端複製一份系所簡稱對照表。
-  const [className, setClassName] = useState(user?.className || '');
+  const [className, setClassName] = useState('');
   const [classOptions, setClassOptions] = useState([]);
+  // profile 尚未載入完成前不得送出，否則會用暫時值覆蓋已儲存的設定。
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Electives
   const [electives, setElectives] = useState([]);
@@ -60,6 +68,27 @@ export default function SetupPage() {
   useEffect(() => {
     loadElectiveCourses();
   }, [loadElectiveCourses]);
+
+  // 帶回已儲存的系所、年級與班別。沒有這一步，使用者只要進到設定頁按儲存，
+  // 已存的班別就會被空值蓋掉——表單送出的是它自己的初始值，而初始值裡沒有班別。
+  useEffect(() => {
+    let cancelled = false;
+
+    profileAPI.get(user?.studentId || 'default')
+      .then(profile => {
+        if (cancelled || !profile) return;
+        if (profile.department) setDepartment(profile.department);
+        const savedGrade = profile.gradeLevel ?? profile.grade;
+        if (savedGrade) setGrade(String(savedGrade));
+        if (profile.className) setClassName(profile.className);
+      })
+      .catch(() => { /* 讀不到就沿用初始值，不阻斷設定流程 */ })
+      .finally(() => {
+        if (!cancelled) setProfileLoaded(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [user?.studentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,13 +280,15 @@ export default function SetupPage() {
         {/* Bottom CTA */}
         {!generating && (
           <div className="setup-footer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            {/* profile 載入完成前送出會把暫時值寫回去，蓋掉已儲存的設定。 */}
             <button
               className="setup-submit-btn"
               onClick={handleSubmit}
+              disabled={!profileLoaded}
               id="setup-submit-btn"
             >
               <Sparkles size={18} />
-              完成設定，生成推薦課表 ✨
+              {profileLoaded ? '完成設定，生成推薦課表 ✨' : '載入設定中...'}
             </button>
             
             <button 

@@ -197,10 +197,19 @@ Request:
 
 `courseIds`, `selectedCourseIds`, `watchingCourseIds`, `completedCourseIds`, and `retakeCourseIds` should use section ids.
 
-`courseIds` 決定候選池，同時代表「使用者明確指定的課」。這類課程即使不符合系外選修
-認列條件也**不會被剔除**，而是排入課表並標記為不計入畢業學分，由使用者決定去留
-（見 `docs/COURSE_SELECTION_RULES.md` 第九節）。route 會把它併入 `explicitCourseIds`
-傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds`、`retakeCourseIds` 同樣視為明確指定。
+`courseIds` 決定候選池，同時代表「使用者明確指定的課」。route 會把它併入
+`explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds`、
+`retakeCourseIds` 同樣視為明確指定。
+
+明確指定的課程**不會被系統的推論規則剔除**，一律排入並附警告：
+
+| 規則 | 系統自撿的候選 | 明確指定 |
+| --- | --- | --- |
+| 系外選修不符認列條件 | 剔除，原因記入 `excludedCourses` | 排入，標記不計入畢業學分 |
+| 他班／他系的必修 | 剔除，不進候選 | 排入，警告需自行向系辦確認 |
+
+理由：這兩條都是「依系所、年級、班別**推論**」，不是校方的選課權限。
+見 `docs/SCHEDULING_LOGIC.md` 的「明確指定的課程豁免整批排除」。
 
 `preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供任何一項時，主推方案改以總學分決定。
 

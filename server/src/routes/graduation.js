@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getAll } from '../db/database.js';
 import { getGraduationRequirement } from '../data/graduationRequirements.js';
 import { normalizeDepartment } from '../utils/text.js';
+import { parseClassName } from '../skills/courseScope.js';
 
 const router = Router();
 
@@ -40,9 +41,16 @@ router.get('/:studentId', async (req, res) => {
       return res.status(404).json({ error: '找不到使用者' });
     }
 
+    // 系所以**排課使用的同一份 profile** 為準。
+    //
+    // 先前這裡讀的是 `users.json` 的 `user.department`，但排課讀的是
+    // `user_preferences`／`User_Profiles`。同一位使用者的系所存在兩處，
+    // 兩邊可以各自漂移——畢業進度與課表會依不同的系所計算而毫無跡象（稽核報告 F16）。
+    const profile = userProfiles.find(item => String(item.userId) === String(studentId));
+
     // 畢業學分依系所而定，沒有全校通用的預設值。查不到對照時明確回報，
     // 不得用臆測的數字讓畫面看起來正常。
-    const department = normalizeDepartment(user.department);
+    const department = normalizeDepartment(profile?.department ?? user.department);
     const requirement = getGraduationRequirement(department);
     const warnings = [];
 
@@ -72,8 +80,13 @@ router.get('/:studentId', async (req, res) => {
     const completedCourseIds = new Set((user.completedCourseIds || []).map(String));
     const recommendations = [];
 
+    // `course.department` 存的是**班級名稱**（`資訊三甲`），不是系所全名。
+    // 先前這裡直接用 `course.department === user.department` 比對，等於拿
+    // 「資訊三甲」比「資訊工程學系」，永遠不成立——這條建議從來沒出現過。
+    // 判定方式與排課一致：解析班級名稱後比對系所。
     const departmentCourses = courses.filter(course =>
-      course.department === user.department && !completedCourseIds.has(String(course.id))
+      parseClassName(course.department).department === department
+      && !completedCourseIds.has(String(course.id))
     );
 
     if (departmentCourses.length > 0) {

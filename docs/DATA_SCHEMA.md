@@ -2,6 +2,17 @@
 
 目前後端主要課程資料來源為 MySQL database `defaultdb`。`server/data/*.json` 仍保留給 demo 登入、聊天紀錄、已儲存課表，以及沒有對應 MySQL 表的本機資料。
 
+## 未設定 `DB_*` 時的行為
+
+`courses` 與 `reviews` **只存在於 MySQL**——種子資料已於 2026-08-02 移除，
+`server/data/` 沒有對應的 JSON 檔。未設定 `DB_HOST` / `DB_USER` / `DB_NAME` 時，
+`database.js` 會**丟出明確錯誤**，而不是回傳空陣列。
+
+先前的行為是靜默回傳 `[]`（檔案根本不存在），排課因此回報「找不到符合條件的候選課程」
+——看起來像篩選條件太嚴，實際上是資料庫沒接上。這是最難查的一種失敗。
+
+`user_preferences` 不在此限：它有合法的本機 demo 資料，未接資料庫時仍可運作。
+
 ## MySQL Tables
 
 SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小寫或特殊字元欄位。
@@ -144,6 +155,16 @@ The following collections remain file-backed in `server/data/*.json` because the
 - `chat_history`
 - `saved_schedules`
 - non-numeric or demo `user_preferences`
+
+### `users.json` 的職責
+
+`users.json` **只負責登入身分與 demo 展示資料**（`studentId`、`password`、`name`、
+`completedCredits`、`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
+
+**不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
+`user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——
+先前 `graduation.js` 讀 `users.json`、排課讀 `user_preferences`，兩邊可以依不同的系所
+計算而毫無跡象，且手改 `users.json` 的年級完全不生效（見稽核報告 F16）。
 
 ## API Course Shape
 

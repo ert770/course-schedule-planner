@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { isMysqlConfigured, queryRows } from './mysql.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
 import { normalizeDepartment, isDepartmentInput } from '../utils/text.js';
+import { getAbbreviations } from '../data/departmentMapping.js';
 import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -297,8 +298,26 @@ function normalizeAvoidTime(avoidTime) {
 const warnedDepartmentValues = new Set();
 let normalizedDepartmentCount = 0;
 
+// 系所對照失敗。`User_Profiles.department` 是組員的匯入資料，打錯字或用了
+// A 表沒有的寫法時，`getAbbreviations()` 會回空陣列，排課的必修範圍就完全判不出來。
+// 這種值不能靜默通過——它看起來是正常字串，只是所有系所比對都不會成立。
+const warnedUnmappedDepartments = new Set();
+
+function checkDepartmentMapping(department, userId) {
+  if (!department || getAbbreviations(department).length > 0) return;
+  if (warnedUnmappedDepartments.has(department)) return;
+
+  warnedUnmappedDepartments.add(department);
+  logger.error(
+    `User_Profiles.department 對不到系所對照表（user_id=${userId}）：${JSON.stringify(department)}。`
+      + '該使用者的必修範圍將無法判定。請確認系所名稱，或補進 `docs/DEPARTMENT_MAPPING.md` 的 A 表。',
+    { label: 'Profile' }
+  );
+}
+
 function readProfileDepartment(row) {
   const department = normalizeDepartment(row.department);
+  checkDepartmentMapping(department, row.user_id);
 
   if (department === row.department) {
     return department;
@@ -662,7 +681,21 @@ async function updateMysqlUserPreference(userId, item) {
   return allProfiles.find(profile => sameId(profile.userId, userId)) || null;
 }
 
+// 只存在於 MySQL 的資料。`server/data/` 沒有對應的 JSON 檔——種子資料已於
+// 2026-08-02 移除（見 AGENTS.md）。
+const MYSQL_ONLY_COLLECTIONS = new Set(['courses', 'reviews']);
+
 async function readCollectionBySource(collection) {
+  // 未設定 DB_* 時，這些集合先前會靜默回傳空陣列（檔案根本不存在），
+  // 排課因此回報「找不到符合條件的候選課程」——看起來像篩選條件太嚴，
+  // 實際上是資料庫沒接上。這是最難查的一種失敗，必須明講。
+  if (MYSQL_ONLY_COLLECTIONS.has(collection) && !isMysqlConfigured()) {
+    throw new Error(
+      `${collection} 只能來自 MySQL，但未設定資料庫連線。`
+      + '請在 `server/.env` 設定 DB_HOST、DB_USER 與 DB_NAME（見 `.env.example`）。'
+    );
+  }
+
   if (!usesMysql(collection)) {
     const data = readCollection(collection);
     if (collection !== 'user_preferences') return data;

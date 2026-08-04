@@ -520,8 +520,23 @@ function countDemotedRequiredByCategory(eligible, scope) {
 
 function addScopeWarnings(plan, eligible, otherRequired, scope) {
   if (!scope.resolved) {
+    // 「沒填」與「填了但對不到系所對照表」是兩種問題：前者要使用者去補，
+    // 後者是資料錯誤（系所名稱打錯，或 A 表少了一個單位）。合併成同一句
+    // 「未設定系所或年級」會讓後者永遠查不出來。
+    if (scope.departmentUnmapped) {
+      plan.failures.push(
+        `系所「${scope.department}」不在系所對照表中，無法判定必修範圍。`
+        + '請確認個人資料的系所名稱是否正確；若確為本校單位，需補進 `docs/DEPARTMENT_MAPPING.md` 的 A 表。'
+      );
+      return;
+    }
+
+    const missing = [
+      scope.departmentMissing ? '系所' : null,
+      scope.gradeMissing ? '年級' : null,
+    ].filter(Boolean).join('與');
     plan.warnings.push(
-      '未設定系所或年級，無法判定必修範圍；本方案只會排入明確指定的課程與一般候選課程。'
+      `未設定${missing}，無法判定必修範圍；本方案只會排入明確指定的課程與一般候選課程。`
     );
     return;
   }
@@ -530,8 +545,14 @@ function addScopeWarnings(plan, eligible, otherRequired, scope) {
   // 仍會進入候選，但學生實際上選不到——這件事必須講出來。
   if (scope.classMismatch) {
     plan.warnings.push(
-      `班別「${scope.className}」與系所或年級不一致，已忽略班別設定，`
+      `班別「${scope.className}」不屬於 ${scope.department}，已忽略班別設定，`
       + '必修僅依系所與年級判定。'
+    );
+  } else if (scope.gradeOverriddenByClass) {
+    // 年級以班別為準，但兩份資料不一致本身就是要修的問題，必須講出來。
+    plan.warnings.push(
+      `班別「${scope.className}」為 ${scope.grade} 年級，與個人資料的 `
+      + `${scope.profileGrade} 年級不一致；已依班別判定。請確認個人資料的年級是否需要更新。`
     );
   } else if (!scope.classSuffix) {
     plan.warnings.push(
@@ -665,7 +686,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
     );
   }
 
-  return { courses, exclusions, warnings, scope };
+  return { courses, exclusions, warnings, scope, explicitIds };
 }
 
 function buildPlan(prepared, constraints, variant) {
@@ -696,12 +717,32 @@ function buildPlan(prepared, constraints, variant) {
     }
   }
 
-  // 他系、他學制或其他年級的必修，這位學生根本無法修習，因此整批排除，
+  // 他系、他學制、其他年級或其他班別的必修，這位學生一般無法修習，因此整批排除，
   // 不是降低優先度——降低優先度仍可能在選修階段被貪婪填充排進來。
-  const otherRequired = candidateCourses.filter(
+  //
+  // **使用者明確指定的課程豁免。** 這裡的判定是「依系所、年級、班別推論」，
+  // 不是校方的選課權限；轉系、輔系、雙主修、跨班加簽都可能讓學生真的修得到。
+  // 把使用者親手指定的課靜默刪掉，畫面上只會少一門課而沒有任何線索。
+  // 與系外選修的處理一致：保留、排入、明講。
+  const allOtherRequired = candidateCourses.filter(
     course => isOtherStudentsRequiredCourse(course, scope)
   );
+  const exemptedRequired = allOtherRequired.filter(
+    course => prepared.explicitIds.has(Number(course.id))
+  );
+  const otherRequired = allOtherRequired.filter(
+    course => !prepared.explicitIds.has(Number(course.id))
+  );
   const otherRequiredIds = new Set(otherRequired.map(course => Number(course.id)));
+
+  if (exemptedRequired.length > 0) {
+    const names = [...new Set(exemptedRequired.map(course => `${course.name}（${course.department}）`))];
+    plan.warnings.push(
+      `你指定的課程中有 ${exemptedRequired.length} 門是其他班別或系所的必修：`
+      + `${summarizeNames(names)}。系上不接受必修換班，能否修習需自行向系辦確認，`
+      + '本方案仍依你的指定排入。'
+    );
+  }
 
   const eligible = candidateCourses.filter(course => (
     !completedIds.has(Number(course.id))

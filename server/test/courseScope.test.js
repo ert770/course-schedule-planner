@@ -237,7 +237,8 @@ describe('必修不得換班：班別收斂', () => {
     assert.equal(isRequiredForStudent(required('資訊三乙'), noClass), true);
   });
 
-  test('班別與系所或年級不一致時忽略班別並標記', () => {
+  test('班別的系所與 profile 不符時忽略班別並標記', () => {
+    // 系所對不上就無從調解，只能忽略班別——否則會靜默排除掉全部必修。
     const mismatch = buildStudentScope({
       department: '資訊工程學系',
       gradeLevel: 3,
@@ -246,7 +247,63 @@ describe('必修不得換班：班別收斂', () => {
 
     assert.equal(mismatch.classMismatch, true);
     assert.equal(mismatch.classSuffix, null);
+    assert.equal(mismatch.grade, 3, '年級沿用 profile');
     assert.equal(isRequiredForStudent(required('資訊三甲'), mismatch), true);
+  });
+
+  test('F16-b 年級以班別為準：班別是本系班級時覆寫 profile 的年級', () => {
+    // 班別名稱本身就編碼了年級，而且是使用者最後明確選的值。
+    // 先前的做法是「不一致就忽略班別」，導致改了班別課表卻毫無變化。
+    const scope = buildStudentScope({
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊二乙',
+    });
+
+    assert.equal(scope.classMismatch, false);
+    assert.equal(scope.grade, 2, '年級應改依班別');
+    assert.equal(scope.profileGrade, 3);
+    assert.equal(scope.gradeOverriddenByClass, true);
+    assert.equal(scope.classSuffix, '乙');
+
+    assert.equal(isRequiredForStudent(required('資訊二乙'), scope), true);
+    assert.equal(isRequiredForStudent(required('資訊二合'), scope), true);
+    assert.equal(isRequiredForStudent(required('資訊三甲'), scope), false);
+  });
+
+  test('F16-b 年級與班別一致時不標記覆寫', () => {
+    const scope = buildStudentScope({
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+    });
+
+    assert.equal(scope.gradeOverriddenByClass, false);
+    assert.equal(scope.grade, 3);
+  });
+
+  test('F16-b 端到端：只改班別，課表隨之改變並附上不一致警告', () => {
+    const candidates = [
+      makeCourse(1, { category: '必修', department: '資訊三甲', dayOfWeek: 1, startPeriod: 2, endPeriod: 3 }),
+      makeCourse(2, { category: '必修', department: '資訊二乙', dayOfWeek: 2, startPeriod: 2, endPeriod: 3 }),
+    ];
+    const base = {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      minCredits: 0,
+      maxCredits: 99,
+      maxCoursesPerDay: 99,
+    };
+
+    const asThirdYear = generateSchedule(candidates, { ...base, className: '資訊三甲' });
+    const asSecondYear = generateSchedule(candidates, { ...base, className: '資訊二乙' });
+
+    assert.deepEqual(asThirdYear.schedule.map(course => course.id), [1]);
+    assert.deepEqual(asSecondYear.schedule.map(course => course.id), [2]);
+    assert.ok(
+      asSecondYear.warnings.some(warning => warning.includes('與個人資料的 3 年級不一致')),
+      asSecondYear.warnings.join(' | ')
+    );
   });
 
   test('端到端 A/B：有班別時只排入本班必修', () => {
@@ -373,8 +430,69 @@ describe('#13 端到端：課表不得出現他系或他年級的必修', () => 
     const result = generateSchedule(candidates, { minCredits: 0, maxCredits: 6 });
 
     assert.ok(
-      result.warnings.some(w => w.includes('未設定系所或年級')),
+      result.warnings.some(w => w.includes('未設定系所與年級')),
       result.warnings.join(' | ')
+    );
+  });
+
+  test('只缺年級時，訊息只提年級', () => {
+    const result = generateSchedule(candidates, {
+      department: '資訊工程學系',
+      minCredits: 0,
+      maxCredits: 6,
+    });
+
+    assert.ok(
+      result.warnings.some(w => w.includes('未設定年級') && !w.includes('系所')),
+      result.warnings.join(' | ')
+    );
+  });
+
+  test('系所對不到對照表時報錯，不得與「未設定」混為一談', () => {
+    // 「沒填」要使用者去補，「填了但查不到」是資料錯誤（打錯字或 A 表缺漏）。
+    // 合併成同一句話會讓後者永遠查不出來。
+    const result = generateSchedule(candidates, {
+      department: '資訊工程學糸',
+      gradeLevel: 1,
+      minCredits: 0,
+      maxCredits: 6,
+    });
+
+    assert.equal(result.success, false);
+    assert.ok(
+      result.warnings.some(w => w.includes('不在系所對照表中')),
+      result.warnings.join(' | ')
+    );
+    assert.ok(
+      !result.warnings.some(w => w.includes('未設定系所')),
+      '不得回報成「未設定系所」'
+    );
+  });
+
+  test('明確指定的他班必修豁免整批排除，改為排入並警告', () => {
+    // 這裡的判定是依系所與年級「推論」，不是校方的選課權限——
+    // 轉系、輔系、跨班加簽都可能讓學生真的修得到。
+    const auto = generateSchedule(candidates, {
+      department: '資訊工程學系',
+      gradeLevel: 1,
+      minCredits: 0,
+      maxCredits: 99,
+      maxCoursesPerDay: 99,
+    });
+    const explicit = generateSchedule(candidates, {
+      department: '資訊工程學系',
+      gradeLevel: 1,
+      minCredits: 0,
+      maxCredits: 99,
+      maxCoursesPerDay: 99,
+      explicitCourseIds: [2],
+    });
+
+    assert.ok(!auto.schedule.some(course => course.id === 2), '未指定時應排除資訊三甲的必修');
+    assert.ok(explicit.schedule.some(course => course.id === 2), '明確指定時應排入');
+    assert.ok(
+      explicit.warnings.some(w => w.includes('其他班別或系所的必修')),
+      explicit.warnings.join(' | ')
     );
   });
 
