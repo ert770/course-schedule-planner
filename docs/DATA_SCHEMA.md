@@ -2,6 +2,17 @@
 
 目前後端主要課程資料來源為 MySQL database `defaultdb`。`server/data/*.json` 仍保留給 demo 登入、聊天紀錄、已儲存課表，以及沒有對應 MySQL 表的本機資料。
 
+## 未設定 `DB_*` 時的行為
+
+`courses` 與 `reviews` **只存在於 MySQL**——種子資料已於 2026-08-02 移除，
+`server/data/` 沒有對應的 JSON 檔。未設定 `DB_HOST` / `DB_USER` / `DB_NAME` 時，
+`database.js` 會**丟出明確錯誤**，而不是回傳空陣列。
+
+先前的行為是靜默回傳 `[]`（檔案根本不存在），排課因此回報「找不到符合條件的候選課程」
+——看起來像篩選條件太嚴，實際上是資料庫沒接上。這是最難查的一種失敗。
+
+`user_preferences` 不在此限：它有合法的本機 demo 資料，未接資料庫時仍可運作。
+
 ## MySQL Tables
 
 SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小寫或特殊字元欄位。
@@ -13,9 +24,28 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `course_id` | varchar(45) | `course.courseId`, `course.code` |
 | `name` | varchar(45) | `course.name` |
 | `credits` | decimal(3,1) | `course.credits` |
-| `type` | varchar(45) | `course.category`, `course.type` |
-| `dept` | varchar(45) | `course.department` |
-| `subid3` | varchar(45) | `course.subid3` |
+| `type` | varchar(45) | `course.category`, `course.type`（見「必修的意義」） |
+| `dept` | varchar(45) | `course.department`，實際存的是**班級名稱**（見 `docs/DEPARTMENT_MAPPING.md`） |
+| `subid3` | varchar(45) | `course.subid3`，**真正的課號**（見下方說明） |
+
+#### `course_id` 不是課程識別碼，`subid3` 才是
+
+`course_id` 是「班級 + 課程」的組合，同一門課在不同班級有不同的 `course_id`：
+
+| `course_id` | `subid3` | 課名 | 班級 | 教師 |
+| --- | --- | --- | --- | --- |
+| `CE07131-28010` | `IECS3002` | 計算機演算法 | 資訊三甲 | 許芳榮 |
+| `CE07132-28010` | `IECS3002` | 計算機演算法 | 資訊三乙 | 黃秀芬 |
+| `CE07133-28010` | `IECS3002` | 計算機演算法 | 資訊三丙 | 黃秀芬 |
+| `CE07134-28010` | `IECS3002` | 計算機演算法 | 資訊三丁 | 許懷中 |
+
+**判斷「是否為同一門課」必須用 `subid3`。** 一門課可能由不同老師開在不同班次，學生只能選一個；用 `course_id` 或 `section_id` 比對會讓同一門課的多個班次同時排進課表。
+
+`subid3` 的 `P` 後綴代表實習（`MATH1005P` 對應正課 `MATH1005`），兩者是不同課號、本來就該一起修（路線圖 `#15`）。
+
+#### 必修的意義
+
+`type = '必修'` 是「**某個班級**的必修」，不是「**這位學生**的必修」。全校 2094 筆必修 section 分屬不同系所與年級，判定方式見 `docs/SCHEDULING_LOGIC.md` 的「必修範圍」。
 
 ### `Course_Sections`
 
@@ -71,6 +101,52 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `completed_courses` | json | `profile.completedCourseIds` |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
+**`class_name` 欄位尚未新增**（待組員加上）。見下方「`className`（班別）」。
+
+### `className`（班別）
+
+資工系不接受必修換班，必修範圍必須收斂到班別（`資訊三甲`／`資訊三乙`…），
+見 `docs/COURSE_SELECTION_RULES.md` 第八節。
+
+**目標欄位**：
+
+```sql
+ALTER TABLE `User_Profiles` ADD COLUMN `class_name` varchar(45) NULL;
+```
+
+本專案**不自行執行**這道 DDL——該表與組員共用。程式已具備此欄位的完整讀寫：
+
+| 路徑 | 位置 |
+| --- | --- |
+| 欄位偵測 | `database.js` 的 `hasUserProfileClassNameColumn()`（`SHOW COLUMNS`，結果快取） |
+| 讀取 | `getMysqlUserPreferences()` 依偵測結果決定是否 SELECT `class_name`；`mapUserProfileRow()` 映射成 `profile.className` |
+| 寫入 | `updateMysqlUserPreference()` 依偵測結果決定是否 UPDATE `class_name` |
+| 位置決策 | `pickClassNameTarget()`（純函式，有測試） |
+
+**欄位一新增就自動改走 SQL，不需要再改任何程式**；偵測結果快取於行程內，
+新增欄位後需重啟後端才會生效（`npm run dev:server` 使用 `node --watch`）。
+
+`class_name` 不會被無條件寫進 SQL：欄位不存在時把它加進 `SELECT` 會讓整個查詢失敗，
+等於所有 profile 一起壞掉。
+
+#### 欄位到位前的後備順序
+
+讀取優先度與寫入目標一致：
+
+| 順位 | 位置 | 適用 |
+| ---: | --- | --- |
+| 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
+| 2 | `user_preferences.json` 的 `className` | MySQL 使用者，但 `users.json` 沒有對應列 |
+| 3 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
+
+`users.json` 的對照方式：`studentId`（demo 登入用，例如 `D1249697`）與 `id`
+（對應 `User_Profiles.user_id`）都建索引，兩者都能對到同一筆 profile。
+
+**第 2 順位不可省略**：只寫 `users.json` 的話，存在於 `User_Profiles` 但沒有 `users.json`
+對應列的使用者，班別會被「儲存成功」地丟掉——`updateMysqlUserPreference()` 沒有欄位可寫、
+卻仍回傳成功的 profile，本機寫入又被提早 `return` 跳過，下一次排課直接退回系所 + 年級。
+`upsertByField()` 因此在這個情況下不提早返回，先把班別寫進本機 profile 再回傳。
+
 ## Local JSON Collections
 
 The following collections remain file-backed in `server/data/*.json` because the provided MySQL schema does not include equivalent tables:
@@ -79,6 +155,16 @@ The following collections remain file-backed in `server/data/*.json` because the
 - `chat_history`
 - `saved_schedules`
 - non-numeric or demo `user_preferences`
+
+### `users.json` 的職責
+
+`users.json` **只負責登入身分與 demo 展示資料**（`studentId`、`password`、`name`、
+`completedCredits`、`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
+
+**不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
+`user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——
+先前 `graduation.js` 讀 `users.json`、排課讀 `user_preferences`，兩邊可以依不同的系所
+計算而毫無跡象，且手改 `users.json` 的年級完全不生效（見稽核報告 F16）。
 
 ## API Course Shape
 
@@ -139,7 +225,16 @@ The following collections remain file-backed in `server/data/*.json` because the
 | 本機 JSON 讀取 | `database.js` 的 `readCollectionBySource()` |
 | 寫入（兩種來源共用） | `database.js` 的 `upsertByField()` |
 
-只有真正成對時才剝除，因此 `O'Brien` 這類單邊引號不會被誤刪。讀到髒值時會寫入一筆 `logger.warn`，不靜默修正。資料庫中該筆資料已於 2026-08-02 清理。
+只有真正成對時才剝除，因此 `O'Brien` 這類單邊引號不會被誤刪。資料庫中該筆資料已於 2026-08-02 清理。
+
+**正規化不做型別轉換。** `normalizeDepartment()` 只接受字串，其餘型別一律回傳 `null`。若改用 `String(value)` 強制轉換，`{}` 會變成 `"[object Object]"`、`["資訊工程學系","電機工程學系"]` 會變成 `"資訊工程學系,電機工程學系"`、`123` 會變成 `"123"`——全都是看起來正常、實際上讓所有系所比對失敗的髒值。
+
+寫入端有兩道檢查：
+
+1. `POST /api/profile` 對非字串或空字串回 `400`。
+2. 資料層 `upsertByField()` 丟棄型別錯誤的 `department` 並寫入警告，避免其他呼叫路徑繞過 API 檢查。
+
+讀到需正規化的值時會寫入 `logger.warn`，不靜默修正。**去重鍵是「`user_id` + 原始值」**：只用 `user_id` 的話，同一位使用者第一次警告後，後續任何髒值都會被靜默處理，看不出上游匯入是否仍在寫入髒資料。日誌並附上本行程的累計正規化次數與相異髒值種類數。
 
 ### `ragTag`
 

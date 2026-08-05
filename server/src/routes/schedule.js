@@ -36,7 +36,16 @@ router.post('/generate', async (req, res) => {
       });
     }
 
-    const mergedConstraints = buildScheduleConstraints(constraints, prefs);
+    // `courseIds` 是使用者在課程瀏覽器手動勾選的課。它決定候選池，但不會進入
+    // `selectedCourseIds`，因此必須另外告訴排課引擎「這些是使用者指定的」，
+    // 否則不符合系外選修認列條件的課會被當成系統自撿的候選而靜默剔除。
+    const mergedConstraints = buildScheduleConstraints(
+      {
+        ...constraints,
+        explicitCourseIds: [...(constraints.explicitCourseIds || []), ...courseIds],
+      },
+      prefs
+    );
 
     const result = generateSchedule(candidates, mergedConstraints);
     res.json(result);

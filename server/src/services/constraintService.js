@@ -46,9 +46,22 @@ function buildBlockedPeriods(input, prefs) {
 
 export function buildScheduleConstraints(input = {}, prefs = {}) {
   return {
-    maxCredits: pickNumber(input.maxCredits, prefs.targetCreditsMax, 22),
-    minCredits: pickNumber(input.minCredits, prefs.targetCreditsMin, 15),
-    maxCoursesPerDay: pickNumber(input.maxCoursesPerDay, null, 4),
+    // #13：必修範圍必須依學生的系所與年級收斂，否則全校 2094 筆必修都會被
+    // 當成這位學生的必修。這兩個值先前沒有帶進排課限制，排課引擎無從判定。
+    department: input.department || prefs.department || null,
+    gradeLevel: pickNumber(input.gradeLevel ?? input.grade, prefs.gradeLevel ?? prefs.grade, null),
+    degree: input.degree || prefs.degree || undefined,
+    // 必修不得換班（資工系明文），因此必修範圍要再收斂到班別。
+    // 見 `docs/COURSE_SELECTION_RULES.md` 第八節。
+    className: input.className || prefs.className || null,
+
+    // 校規：上限 25、下限 12（四年級 9），超修申請後 30。
+    // 見 `docs/COURSE_SELECTION_RULES.md`；未指定時交由排課引擎依年級與超修選擇決定。
+    maxCredits: input.maxCredits ?? prefs.targetCreditsMax ?? undefined,
+    minCredits: input.minCredits ?? prefs.targetCreditsMin ?? undefined,
+    allowCreditOverload: pickFlag(input.allowCreditOverload, prefs.allowCreditOverload),
+    // 每日課程數上限沒有校方依據，不再預設 4 門。
+    maxCoursesPerDay: input.maxCoursesPerDay ?? undefined,
     blockedPeriods: buildBlockedPeriods(input, prefs),
 
     noMorningClasses: pickFlag(input.noMorningClasses, prefs.noMorningClasses),
@@ -74,6 +87,10 @@ export function buildScheduleConstraints(input = {}, prefs = {}) {
 
     selectedCourseIds: pickRequestList(input.selectedCourseIds),
     watchingCourseIds: pickRequestList(input.watchingCourseIds),
+    // 使用者在課程瀏覽器手動勾選的課（`POST /api/schedule/generate` 的 `courseIds`）。
+    // 這些課不得因系外選修認列條件被靜默剔除——那條規則講的是能不能計入畢業學分，
+    // 不是能不能修。屬本次操作的當下狀態，不從已儲存偏好回填。
+    explicitCourseIds: pickRequestList(input.explicitCourseIds),
     courseStates: input.courseStates || {},
 
     preferCompact: pickFlag(input.preferCompact, prefs.preferCompact),

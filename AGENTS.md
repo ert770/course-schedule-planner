@@ -27,11 +27,7 @@ C:/Users/yamat/Agent_project
 npm run install:all
 ```
 
-初始化資料：
-
-```bash
-npm run seed
-```
+課程與評價資料一律來自後端 MySQL 資料庫（`server/.env` 的 `DB_*` 設定），不再有種子資料指令。原本的 `npm run seed` 與 `server/src/db/seed.js` 產生的是模擬課程，已於 2026-08-02 移除。
 
 同時啟動前後端：
 

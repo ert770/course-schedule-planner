@@ -3,7 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { isMysqlConfigured, queryRows } from './mysql.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
-import { normalizeDepartment } from '../utils/text.js';
+import { normalizeDepartment, isDepartmentInput } from '../utils/text.js';
+import { getAbbreviations } from '../data/departmentMapping.js';
 import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -290,21 +291,183 @@ function normalizeAvoidTime(avoidTime) {
 // D3：`User_Profiles.department` 存的是 `'資訊工程學系'`——包含字面單引號字元。
 // 帶引號的值會讓畢業建議的系所比對、前端系所下拉選單與 `#13` 的系所對照全部失敗，
 // 且不會有任何錯誤。讀取時正規化，並在第一次遇到髒值時警告，不得靜默修正。
-const warnedDepartmentUserIds = new Set();
+// 去重鍵是「user_id + 原始值」而不是只有 user_id。
+// 只用 user_id 的話，同一位使用者第一次髒值警告過後，之後**任何**髒值都會被
+// 靜默修正——匯入流程若持續寫回帶引號的值，整個行程生命週期只會留下一行日誌，
+// 看不出上游還在壞、也看不出影響多少筆。
+const warnedDepartmentValues = new Set();
+let normalizedDepartmentCount = 0;
+
+// 系所對照失敗。`User_Profiles.department` 是組員的匯入資料，打錯字或用了
+// A 表沒有的寫法時，`getAbbreviations()` 會回空陣列，排課的必修範圍就完全判不出來。
+// 這種值不能靜默通過——它看起來是正常字串，只是所有系所比對都不會成立。
+const warnedUnmappedDepartments = new Set();
+
+function checkDepartmentMapping(department, userId) {
+  if (!department || getAbbreviations(department).length > 0) return;
+  if (warnedUnmappedDepartments.has(department)) return;
+
+  warnedUnmappedDepartments.add(department);
+  logger.error(
+    `User_Profiles.department 對不到系所對照表（user_id=${userId}）：${JSON.stringify(department)}。`
+      + '該使用者的必修範圍將無法判定。請確認系所名稱，或補進 `docs/DEPARTMENT_MAPPING.md` 的 A 表。',
+    { label: 'Profile' }
+  );
+}
 
 function readProfileDepartment(row) {
   const department = normalizeDepartment(row.department);
+  checkDepartmentMapping(department, row.user_id);
 
-  if (department !== row.department && !warnedDepartmentUserIds.has(row.user_id)) {
-    warnedDepartmentUserIds.add(row.user_id);
+  if (department === row.department) {
+    return department;
+  }
+
+  normalizedDepartmentCount += 1;
+  const fingerprint = `${row.user_id}|${String(row.department)}`;
+
+  // 相同的髒值只警告一次（避免每次請求刷版面），但累計次數照計，
+  // 讓日誌能回答「上游是不是還在持續寫入髒資料」。
+  if (!warnedDepartmentValues.has(fingerprint)) {
+    warnedDepartmentValues.add(fingerprint);
     logger.warn(
-      `User_Profiles.department 含多餘引號，已正規化：`
-        + `${JSON.stringify(row.department)} -> ${JSON.stringify(department)}`,
+      `User_Profiles.department 需正規化（user_id=${row.user_id}）：`
+        + `${JSON.stringify(row.department)} -> ${JSON.stringify(department)}`
+        + `；本行程累計正規化 ${normalizedDepartmentCount} 次、相異髒值 ${warnedDepartmentValues.size} 種`,
       { label: 'Profile' }
     );
   }
 
   return department;
+}
+
+// 班別（`資訊三甲`／`資訊三乙`…）的儲存位置。
+//
+// 資工系選課公告明文「不接受必修課程換班級的要求」，因此必修範圍必須收斂到班別
+// （見 `docs/COURSE_SELECTION_RULES.md` 第八節）。
+//
+// **目標狀態是 `User_Profiles.class_name` 欄位。** 該表與組員共用，本專案不自行
+// `ALTER TABLE`；欄位一出現，下方的 `hasUserProfileClassNameColumn()` 會偵測到，
+// 讀寫自動改走 SQL，不需要再改任何程式。
+//
+// 欄位還沒出現前的後備順序（讀取時優先度亦同）：
+//
+// | 順位 | 位置 | 適用 |
+// | ---: | --- | --- |
+// | 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
+// | 2 | `user_preferences.json` 的 `className` | MySQL 使用者，但 `users.json` 沒有對應列 |
+// | 3 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
+//
+// 第 2 順位是必要的：只寫 `users.json` 的話，存在於 `User_Profiles` 但沒有
+// `users.json` 對應列的使用者，班別會被「儲存成功」地丟掉——`updateMysqlUserPreference()`
+// 沒有這個欄位可寫、卻仍回傳成功的 profile，下一次排課就退回系所 + 年級。
+
+function normalizeClassName(value) {
+  const className = String(value ?? '').trim();
+  return className || null;
+}
+
+// `SHOW COLUMNS` 只查一次並快取。組員新增欄位後需重啟後端才會生效
+// （`npm run dev:server` 使用 `node --watch`，改動任一後端檔案即會重啟）。
+let classNameColumnPromise = null;
+
+function hasUserProfileClassNameColumn() {
+  if (!isMysqlConfigured()) return Promise.resolve(false);
+
+  if (!classNameColumnPromise) {
+    classNameColumnPromise = queryRows('SHOW COLUMNS FROM `User_Profiles` LIKE \'class_name\'')
+      .then(rows => rows.length > 0)
+      .catch(err => {
+        logger.warn(`無法確認 User_Profiles.class_name 欄位是否存在：${err.message}`, { label: 'Profile' });
+        return false;
+      });
+  }
+
+  return classNameColumnPromise;
+}
+
+function readClassNameOverrides() {
+  const index = new Map();
+
+  // 先讀 users.json（順位 3），再讓 user_preferences.json（順位 2）覆蓋。
+  for (const user of readCollection('users')) {
+    const className = normalizeClassName(user.className);
+    if (!className) continue;
+
+    if (user.studentId !== undefined) index.set(String(user.studentId), className);
+    if (user.id !== undefined) index.set(String(user.id), className);
+  }
+
+  for (const profile of readCollection('user_preferences')) {
+    const className = normalizeClassName(profile.className);
+    if (className && profile.userId !== undefined) {
+      index.set(String(profile.userId), className);
+    }
+  }
+
+  return index;
+}
+
+function applyClassNameOverride(profile, overrides) {
+  // 已有值代表來自 `User_Profiles.class_name`（順位 1），不得被後備來源覆蓋。
+  if (!profile || profile.className) return profile;
+
+  const className = overrides.get(String(profile.userId));
+  return className ? { ...profile, className } : profile;
+}
+
+// 寫入 `users.json` 的對應使用者。找不到對應列時回傳 false，
+// 由呼叫端改寫進 `user_preferences.json`。
+function writeClassNameOverride(userId, className) {
+  const users = readCollection('users');
+  const index = users.findIndex(user =>
+    sameId(user.studentId, userId) || sameId(user.id, userId)
+  );
+
+  if (index === -1) return false;
+
+  users[index] = { ...users[index], className: normalizeClassName(className) };
+  writeCollection('users', users);
+  return true;
+}
+
+function hasUsersJsonRow(userId) {
+  return readCollection('users').some(user =>
+    sameId(user.studentId, userId) || sameId(user.id, userId)
+  );
+}
+
+// 班別要寫到哪裡。純函式，與 I/O 分離才測得到——這段優先順序正是
+// 「存在 User_Profiles 但沒有 users.json 對應列的使用者，班別被靜默丟掉」的修正點。
+export function pickClassNameTarget({ isMysqlProfileWrite, hasColumn, hasUsersJsonRow: hasRow }) {
+  if (isMysqlProfileWrite && hasColumn) return 'column';
+  if (hasRow) return 'usersJson';
+  return 'localProfile';
+}
+
+async function resolveClassNameTarget(userId, isMysqlProfileWrite) {
+  return pickClassNameTarget({
+    isMysqlProfileWrite,
+    hasColumn: isMysqlProfileWrite ? await hasUserProfileClassNameColumn() : false,
+    hasUsersJsonRow: hasUsersJsonRow(userId),
+  });
+}
+
+// 只把班別寫進本機 `user_preferences.json`，不連帶寫入其他欄位——
+// 那些欄位的真相來源是 `User_Profiles`，在本機留一份副本只會製造漂移。
+function writeLocalProfileClassName(userId, className) {
+  const profiles = readCollection('user_preferences');
+  const index = profiles.findIndex(profile => sameId(profile.userId, userId));
+  const value = normalizeClassName(className);
+
+  if (index === -1) {
+    const maxId = profiles.reduce((max, item) => Math.max(max, normalizeNumber(item.id, 0) || 0), 0);
+    profiles.push({ id: maxId + 1, userId: String(userId), className: value });
+  } else {
+    profiles[index] = { ...profiles[index], className: value };
+  }
+
+  writeCollection('user_preferences', profiles);
 }
 
 // 本機 JSON 檔的 profile 不經過 mapUserProfileRow，仍走同一套正規化，
@@ -318,6 +481,28 @@ function normalizeProfileDepartment(profile) {
   return department === profile.department ? profile : { ...profile, department };
 }
 
+// 寫入端：型別錯誤的 department 不得寫進資料庫。
+// 正規化不是型別轉換層——`{}`、`[...]`、`123` 會變成看起來正常的字串，
+// 寫進去之後在資料庫與 API 回應中都像一般值，但所有系所比對都會失敗。
+// API 層會先擋下並回 400；這裡是最後一道防線，避免其他呼叫路徑繞過檢查。
+function normalizeProfileForWrite(item) {
+  if (!item || item.department === undefined) {
+    return item;
+  }
+
+  if (!isDepartmentInput(item.department)) {
+    logger.warn(
+      `忽略無效的 department 寫入值（型別 ${typeof item.department}）：`
+        + `${JSON.stringify(item.department)}`,
+      { label: 'Profile' }
+    );
+    const { department: _invalid, ...rest } = item;
+    return rest;
+  }
+
+  return normalizeProfileDepartment(item);
+}
+
 function mapUserProfileRow(row) {
   const preferenceTags = parseJson(row.preference_tags, []);
   const completedCourses = parseJson(row.completed_courses, []);
@@ -328,10 +513,14 @@ function mapUserProfileRow(row) {
     displayName: `User ${row.user_id}`,
     department: readProfileDepartment(row),
     gradeLevel: normalizeNumber(row.grade_level),
+    // `class_name` 欄位還不存在時 row 沒有這個鍵，值為 null，
+    // 由 applyClassNameOverride() 從後備來源補上。
+    className: normalizeClassName(row.class_name),
     completedCredits: 0,
     completedCourseIds: Array.isArray(completedCourses) ? completedCourses : [],
-    targetCreditsMin: 15,
-    targetCreditsMax: normalizeNumber(row.max_credits, 22) || 22,
+    // 校規下限 12、上限 25（見 docs/COURSE_SELECTION_RULES.md）。
+    targetCreditsMin: 12,
+    targetCreditsMax: normalizeNumber(row.max_credits, 25) || 25,
     blockedPeriods: normalizeAvoidTime(row.avoid_time),
     preferredCategories: Array.isArray(preferenceTags) ? preferenceTags : [],
     preferenceTags: Array.isArray(preferenceTags) ? preferenceTags : [],
@@ -403,27 +592,36 @@ async function getMysqlReviews() {
 }
 
 async function getMysqlUserPreferences() {
+  // `class_name` 只在欄位存在時才選取——直接寫進 SQL 會讓欄位尚未新增的環境
+  // 整個查詢失敗，等於所有 profile 一起壞掉。
+  const columns = [
+    'user_id',
+    'department',
+    'grade_level',
+    'preference_tags',
+    'avoid_time',
+    'completed_courses',
+    'max_credits',
+  ];
+  if (await hasUserProfileClassNameColumn()) {
+    columns.push('class_name');
+  }
+
   const rows = await queryRows(`
-    SELECT
-      \`user_id\`,
-      \`department\`,
-      \`grade_level\`,
-      \`preference_tags\`,
-      \`avoid_time\`,
-      \`completed_courses\`,
-      \`max_credits\`
+    SELECT ${columns.map(column => `\`${column}\``).join(', ')}
     FROM \`User_Profiles\`
     ORDER BY \`user_id\`
   `);
   const mysqlProfiles = rows.map(mapUserProfileRow);
   const localProfiles = readCollection('user_preferences');
   const mysqlUserIds = new Set(mysqlProfiles.map(profile => String(profile.userId)));
+  const classNames = readClassNameOverrides();
   return [
     ...mysqlProfiles,
     ...localProfiles
       .filter(profile => !mysqlUserIds.has(String(profile.userId)))
       .map(normalizeProfileDepartment),
-  ];
+  ].map(profile => applyClassNameOverride(profile, classNames));
 }
 
 async function updateMysqlUserPreference(userId, item) {
@@ -434,7 +632,8 @@ async function updateMysqlUserPreference(userId, item) {
   const updates = [];
   const params = [];
 
-  if (item.department !== undefined) {
+  // `department` 為 NOT NULL，型別錯誤或空字串一律不寫（見 normalizeProfileForWrite）。
+  if (isDepartmentInput(item.department)) {
     updates.push('`department` = ?');
     params.push(normalizeDepartment(item.department));
   }
@@ -458,6 +657,11 @@ async function updateMysqlUserPreference(userId, item) {
     updates.push('`max_credits` = ?');
     params.push(item.targetCreditsMax ?? item.maxCredits);
   }
+  // 班別。欄位一旦由組員新增就自動改走 SQL，不需要再改程式。
+  if (item.className !== undefined && await hasUserProfileClassNameColumn()) {
+    updates.push('`class_name` = ?');
+    params.push(normalizeClassName(item.className));
+  }
 
   if (updates.length === 0) {
     return null;
@@ -477,10 +681,29 @@ async function updateMysqlUserPreference(userId, item) {
   return allProfiles.find(profile => sameId(profile.userId, userId)) || null;
 }
 
+// 只存在於 MySQL 的資料。`server/data/` 沒有對應的 JSON 檔——種子資料已於
+// 2026-08-02 移除（見 AGENTS.md）。
+const MYSQL_ONLY_COLLECTIONS = new Set(['courses', 'reviews']);
+
 async function readCollectionBySource(collection) {
+  // 未設定 DB_* 時，這些集合先前會靜默回傳空陣列（檔案根本不存在），
+  // 排課因此回報「找不到符合條件的候選課程」——看起來像篩選條件太嚴，
+  // 實際上是資料庫沒接上。這是最難查的一種失敗，必須明講。
+  if (MYSQL_ONLY_COLLECTIONS.has(collection) && !isMysqlConfigured()) {
+    throw new Error(
+      `${collection} 只能來自 MySQL，但未設定資料庫連線。`
+      + '請在 `server/.env` 設定 DB_HOST、DB_USER 與 DB_NAME（見 `.env.example`）。'
+    );
+  }
+
   if (!usesMysql(collection)) {
     const data = readCollection(collection);
-    return collection === 'user_preferences' ? data.map(normalizeProfileDepartment) : data;
+    if (collection !== 'user_preferences') return data;
+
+    const classNames = readClassNameOverrides();
+    return data
+      .map(normalizeProfileDepartment)
+      .map(profile => applyClassNameOverride(profile, classNames));
   }
 
   if (collection === 'courses') return getMysqlCourses();
@@ -523,12 +746,47 @@ export async function update(collection, id, updates) {
 }
 
 export async function upsertByField(collection, field, value, item) {
-  // D3：寫入端也正規化，否則使用者或匯入流程送進來的帶引號值會再次污染資料。
-  const payload = collection === 'user_preferences' ? normalizeProfileDepartment(item) : item;
+  // D3：寫入端也正規化，否則使用者或匯入流程送進來的帶引號值會再次污染資料；
+  // 型別錯誤的值則整個丟掉，不得寫進資料庫。
+  let payload = collection === 'user_preferences' ? normalizeProfileForWrite(item) : item;
 
-  if (usesMysql(collection) && collection === 'user_preferences' && field === 'userId') {
+  const isMysqlProfileWrite = usesMysql(collection)
+    && collection === 'user_preferences'
+    && field === 'userId';
+
+  // 班別的儲存位置：`User_Profiles.class_name` > `users.json` > `user_preferences.json`。
+  // 見上方 resolveClassNameTarget() 的說明。
+  //
+  // 這裡不可原地 delete——`normalizeProfileForWrite()` 在不需正規化時會原樣
+  // 回傳呼叫端傳進來的物件，改到它等於改到呼叫端的資料。
+  let className;
+  let classNameTarget = null;
+  if (collection === 'user_preferences' && payload?.className !== undefined) {
+    className = payload.className;
+    classNameTarget = await resolveClassNameTarget(value, isMysqlProfileWrite);
+
+    if (classNameTarget === 'usersJson') {
+      // 已經存進 users.json，就從 payload 移除，避免同一個值在兩處各存一份而漂移。
+      writeClassNameOverride(value, className);
+      const { className: _storedInUsersJson, ...rest } = payload;
+      payload = rest;
+    }
+    // `column` 保留在 payload 交給 SQL；
+    // `localProfile` 也保留，讓下方的本機 JSON upsert 寫進去。
+  }
+
+  if (isMysqlProfileWrite) {
     const updated = await updateMysqlUserPreference(value, payload);
-    if (updated) return updated;
+    if (updated) {
+      // `User_Profiles` 沒有班別欄位、`users.json` 也沒有對應列時，班別必須落在
+      // 本機 profile。此處若直接回傳 SQL 結果，使用者剛儲存的班別會「成功」地消失
+      // ——下一次排課就退回系所 + 年級，而且沒有任何跡象。
+      if (classNameTarget === 'localProfile') {
+        writeLocalProfileClassName(value, className);
+        return { ...updated, className: normalizeClassName(className) };
+      }
+      return updated;
+    }
   }
 
   const data = readCollection(collection);

@@ -51,13 +51,22 @@ System prompt 必須讓 Agent：
 
 | 類別 | 參數 |
 | --- | --- |
-| 學分 | `minCredits`, `maxCredits`, `maxCoursesPerDay` |
+| 學分 | `minCredits`, `maxCredits`, `allowCreditOverload`, `maxCoursesPerDay` |
+| 學籍 | `department`, `gradeLevel` |
 | 時間 | `blockedPeriods`, `mondayFree`, `noMorningClasses`, `noEveningClasses`, `lunchBreakFree` |
 | 課程指定 | `mustTakeCourseIds`, `retakeCourseIds`, `completedCourseIds` |
 | 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
 | 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
 | 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
 | 畢業門檻 | `digitalCreditsNeeded` |
+
+### 學分上下限與超修
+
+未指定 `minCredits` / `maxCredits` 時，排課引擎依校規給預設值：上限 **25**、下限 **12**（`gradeLevel` 為 4 時下限 **9**）。
+
+**`allowCreditOverload` 必須由使用者明確表達才可帶入**——超修至 30 學分需另行申請，Agent 不得自行開啟。使用者若說「我想多修一點」「可以超修」，才帶 `allowCreditOverload: true`。
+
+`department` 與 `gradeLevel` 決定必修範圍（見 `docs/SCHEDULING_LOGIC.md`）。兩者通常來自已儲存的使用者資料，Agent 僅在使用者明確更正時才需帶入。
 
 ### 個人化偏好的必要性
 

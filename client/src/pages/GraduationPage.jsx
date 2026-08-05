@@ -5,6 +5,17 @@ import { useTheme } from '../contexts/useTheme';
 import { graduationAPI } from '../services/api';
 import { X, Plus, Search, AlertTriangle, Lightbulb, Calendar, LayoutDashboard, Settings, Moon, Sun } from 'lucide-react';
 
+// `GET /api/graduation/:studentId` 的學分類別 key 對應中文標題。
+// API 依 `server/src/data/graduationRequirements.js` 的欄位回傳英文 key，
+// 直接當標題渲染會在畫面上出現「尚缺 required」。
+const CREDIT_CATEGORY_LABELS = {
+  required: '本系必修',
+  elective: '本系選修',
+  general: '通識',
+  external: '外系選修',
+  unspecified: '自由選修',
+};
+
 export default function GraduationPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -23,7 +34,7 @@ export default function GraduationPage() {
       setData({
         totalRequired: 128,
         totalEarned: 107,
-        gaps: { '必修': 10, '系內選修': 9, '通識': 4, '系外選修': 0 },
+        gaps: { required: 10, elective: 9, general: 4, external: 0 },
         recommendations: [
           {
             type: 'warning',
@@ -121,7 +132,7 @@ export default function GraduationPage() {
           <div className="grad-gaps-grid">
             {Object.entries(data?.gaps || {}).map(([category, gap]) => (
               <div key={category} className="grad-card grad-gap-card">
-                <div className="grad-gap-label">尚缺{category}</div>
+                <div className="grad-gap-label">尚缺{CREDIT_CATEGORY_LABELS[category] || category}</div>
                 <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
                   {gap} <span className="grad-gap-unit">學分</span>
                 </div>

@@ -5,7 +5,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { stripWrappingQuotes, normalizeDepartment } from '../src/utils/text.js';
+import { stripWrappingQuotes, normalizeDepartment, isDepartmentInput } from '../src/utils/text.js';
 
 describe('去除包裹引號', () => {
   test('半形單引號（D3 的實際值）', () => {
@@ -56,14 +56,43 @@ describe('去除包裹引號', () => {
 });
 
 describe('系所名稱正規化', () => {
-  test('去除引號並轉為字串', () => {
+  test('去除引號並修剪空白', () => {
     assert.equal(normalizeDepartment("'資訊工程學系'"), '資訊工程學系');
     assert.equal(normalizeDepartment('  電機工程學系  '), '電機工程學系');
   });
 
-  test('null 與 undefined 原樣回傳，不會變成 "null"', () => {
+  test('null 與 undefined 回傳 null，不會變成 "null"', () => {
     assert.equal(normalizeDepartment(null), null);
-    assert.equal(normalizeDepartment(undefined), undefined);
+    assert.equal(normalizeDepartment(undefined), null);
+  });
+
+  test('不做型別強制轉換，錯誤型別一律為 null', () => {
+    // String() 轉換會產生看起來正常的髒值：物件變 "[object Object]"、
+    // 陣列變 "資訊工程學系,電機工程學系"、數字變 "123"，寫進資料庫後
+    // 在 API 回應中都像一般字串，但所有系所比對都會失敗。
+    for (const value of [{}, { name: '資訊工程學系' }, ['資訊工程學系', '電機工程學系'], 123, true, false, () => {}]) {
+      assert.equal(normalizeDepartment(value), null, JSON.stringify(value));
+    }
+  });
+});
+
+describe('系所寫入值檢查', () => {
+  test('非空字串才可寫入', () => {
+    assert.equal(isDepartmentInput('資訊工程學系'), true);
+    assert.equal(isDepartmentInput("'資訊工程學系'"), true);
+  });
+
+  test('錯誤型別一律拒絕', () => {
+    for (const value of [{}, ['資訊工程學系'], 123, true, null, undefined]) {
+      assert.equal(isDepartmentInput(value), false, JSON.stringify(value));
+    }
+  });
+
+  test('空字串與只有引號或空白的值一律拒絕', () => {
+    // `User_Profiles.department` 為 NOT NULL，空值不是合法輸入。
+    for (const value of ['', '   ', "''", '「」', '  ""  ']) {
+      assert.equal(isDepartmentInput(value), false, JSON.stringify(value));
+    }
   });
 });
 

@@ -91,15 +91,70 @@ describe('S3-S4 必修與重補修優先', () => {
 });
 
 describe('S5-S6 核心選修路徑', () => {
-  // 課程資料目前沒有 track 欄位，三條修課路徑無法實作。
-  // 這裡驗證的是「資料缺漏時必須明說」，而不是路徑排序本身。
-  test('S5/S6 缺少 track 欄位時回報警告而非靜默通過', () => {
+  // 修課路徑資料來自 113 課程地圖（`server/src/data/csCurriculum.js`）。
+  const csScope = { department: '資訊工程學系', gradeLevel: 3, minCredits: 0 };
+
+  test('S5 資工系選修依必選修科目表解析成核心選修，並帶出修課路徑', () => {
+    const course = makeCourse(1, {
+      name: '人工智慧導論',
+      subid3: 'IECS3059',
+      department: '資訊三合',
+      category: '選修',
+    });
+
+    const result = generateSchedule([course], csScope);
+    const placed = result.schedule.find(item => item.id === 1);
+
+    assert.equal(placed.category, '核心選修');
+    assert.equal(placed.sourceCategory, '選修');
+    assert.equal(placed.track, '技術應用類');
+  });
+
+  test('S5 同名的他系課程不得被當成資工系核心選修', () => {
+    // 資料庫中「網路程式設計」只有通訊工程學系的 COME3016，
+    // 只比對課名會把他系課程誤判成資工系核心選修。它是系外選修，
+    // 且因課名與本系科目表重複而不得認列。
+    const course = makeCourse(2, {
+      name: '網路程式設計',
+      subid3: 'COME3016',
+      department: '通訊三合',
+      category: '選修',
+    });
+
+    const result = generateSchedule([course], csScope);
+
+    assert.ok(!result.schedule.some(item => item.id === 2), '不得排入');
+    assert.ok(
+      result.excludedCourses.some(item => item.reason.includes('與本系')),
+      JSON.stringify(result.excludedCourses)
+    );
+  });
+
+  test('S5 他系且與本系不重複的選修解析為系外選修', () => {
+    const course = makeCourse(3, {
+      name: '個體經濟學',
+      subid3: 'ECON2001',
+      department: '經濟二甲',
+      category: '選修',
+    });
+
+    const result = generateSchedule([course], csScope);
+    const placed = result.schedule.find(item => item.id === 3);
+
+    assert.equal(placed.category, '系外選修');
+    assert.equal(placed.track, null);
+  });
+
+  test('S6 候選課程中沒有該路徑的課程時回報警告而非靜默通過', () => {
     const result = generateSchedule([makeCourse(1)], {
       preferredTrack: '技術應用類',
       minCredits: 0,
     });
 
-    assert.ok(result.warnings.some(warning => warning.includes('track')));
+    assert.ok(
+      result.warnings.some(warning => warning.includes('技術應用類')),
+      result.warnings.join(' | ')
+    );
   });
 });
 
@@ -323,5 +378,157 @@ describe('U1-U4 尚未排定時間的課程', () => {
       const hasLegacyTime = course.dayOfWeek != null && course.startPeriod != null;
       assert.ok(hasBlocks || hasLegacyTime, `${course.name} 應有排定時間`);
     }
+  });
+});
+
+// B1-B5：一門課只能選一個班次。
+//
+// `Courses.course_id` 是「班級 + 課程」的組合（`CE07131-28010` 與 `CE07133-28010`
+// 是同一門課的不同班次），真正的課號在 `subid3`（兩者皆為 `IECS3002`）。
+// 排課引擎原本把每個 section 當成獨立課程，實測課表出現兩門計算機演算法。
+describe('B1-B5 同一門課只能選一個班次', () => {
+  const section = (id, overrides = {}) => makeCourse(id, {
+    subid3: 'IECS3002',
+    name: '計算機演算法',
+    ...overrides,
+  });
+
+  test('B1 同課號不同班次不會同時排入，即使時段不衝突', () => {
+    const result = generateSchedule([
+      section(1, { instructor: '許芳榮', department: '資訊三甲', dayOfWeek: 2, startPeriod: 9, endPeriod: 9 }),
+      section(2, { instructor: '黃秀芬', department: '資訊三丙', dayOfWeek: 3, startPeriod: 8, endPeriod: 9 }),
+    ], { minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.schedule.length, 1);
+    assert.ok(
+      result.excludedCourses.some(item => item.reason.includes('其他班次')),
+      result.excludedCourses.map(item => item.reason).join(' | ')
+    );
+  });
+
+  test('B2 第一個班次違反硬性限制時改排另一個班次', () => {
+    const result = generateSchedule([
+      section(1, { instructor: '許芳榮', dayOfWeek: 2, startPeriod: 1, endPeriod: 2 }),
+      section(2, { instructor: '黃秀芬', dayOfWeek: 3, startPeriod: 8, endPeriod: 9 }),
+    ], { noMorningClasses: true, minCredits: 0, maxCredits: 22 });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [2]);
+  });
+
+  test('B3 正課與實習是不同課號，不得被當成同一門課的兩個班次', () => {
+    // `MATH1005P` 實習搭配 `MATH1005` 正課，本來就該一起修（#15）。
+    // 實習為 0 學分，不會被貪婪填充主動加入（U1），因此明確指定兩者。
+    const result = generateSchedule([
+      makeCourse(1, { subid3: 'MATH1005', name: '微積分(一)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3 }),
+      makeCourse(2, { subid3: 'MATH1005P', name: '微積分(一)實習', credits: 0, dayOfWeek: 4, startPeriod: 5, endPeriod: 5 }),
+    ], { mustTakeCourseIds: [1, 2], minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.schedule.length, 2);
+    assert.ok(
+      !result.excludedCourses.some(item => item.reason.includes('其他班次')),
+      '正課與實習不是同一門課的兩個班次'
+    );
+  });
+
+  test('B4 validateSchedule 對重複班次回報不合法', () => {
+    const result = validateSchedule([
+      section(1, { instructor: '許芳榮', dayOfWeek: 2, startPeriod: 9, endPeriod: 9 }),
+      section(2, { instructor: '黃秀芬', dayOfWeek: 3, startPeriod: 8, endPeriod: 9 }),
+    ]);
+
+    assert.equal(result.valid, false);
+    assert.equal(result.duplicates.length, 1);
+    assert.equal(result.conflicts.length, 0, '時段沒有重疊，不該報成衝堂');
+  });
+
+  test('B5 沒有 subid3 時以課程名稱視為同一門課', () => {
+    const result = generateSchedule([
+      makeCourse(1, { name: '體育(二)', dayOfWeek: 2, startPeriod: 3, endPeriod: 3 }),
+      makeCourse(2, { name: '體育(二)', dayOfWeek: 4, startPeriod: 3, endPeriod: 3 }),
+    ], { minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.schedule.length, 1);
+  });
+});
+
+// C1-C6：學分上下限依校規（docs/COURSE_SELECTION_RULES.md）。
+//
+// 先前寫死下限 15、上限 22、每日最多 4 門課，三個數字都沒有出處。
+// 校規為上限 25、下限 12（四年級 9），超修申請後 30；每日課程數校方無規定。
+describe('C1-C6 學分上下限與每日課程數', () => {
+  const manyCourses = (count) => Array.from({ length: count }, (_, i) => makeCourse(i + 1, {
+    credits: 3,
+    dayOfWeek: (i % 5) + 1,
+    startPeriod: (i % 10) + 1,
+    endPeriod: (i % 10) + 1,
+  }));
+
+  test('C1 未指定時上限為 25 學分', () => {
+    const result = generateSchedule(manyCourses(20), { minCredits: 0 });
+
+    assert.ok(result.totalCredits <= 25, `排出 ${result.totalCredits} 學分，超過上限 25`);
+    assert.ok(result.totalCredits > 22, `排出 ${result.totalCredits} 學分，仍停在舊上限 22`);
+  });
+
+  test('C2 未指定時下限為 12 學分', () => {
+    const result = generateSchedule(manyCourses(2), {});
+
+    assert.ok(
+      result.warnings.some(w => w.includes('低於最低目標 12')),
+      result.warnings.join(' | ')
+    );
+  });
+
+  test('C3 四年級下限為 9 學分', () => {
+    const result = generateSchedule(manyCourses(3), { gradeLevel: 4 });
+
+    assert.equal(result.totalCredits, 9);
+    assert.ok(
+      !result.warnings.some(w => w.includes('低於最低目標')),
+      '四年級 9 學分已達下限，不應警告'
+    );
+  });
+
+  test('C4 超修須明確開啟，開啟後上限為 30 學分', () => {
+    const withoutOverload = generateSchedule(manyCourses(20), { minCredits: 0 });
+    const withOverload = generateSchedule(manyCourses(20), { minCredits: 0, allowCreditOverload: true });
+
+    assert.ok(withoutOverload.totalCredits <= 25);
+    assert.ok(
+      withOverload.totalCredits > withoutOverload.totalCredits,
+      `超修 ${withOverload.totalCredits} 應多於未超修 ${withoutOverload.totalCredits}`
+    );
+    assert.ok(withOverload.totalCredits <= 30, `排出 ${withOverload.totalCredits} 學分，超過超修上限 30`);
+  });
+
+  test('C5 每日課程數預設不限制', () => {
+    // 同一天 6 門不衝堂的課，舊版預設每日 4 門會擋掉兩門。
+    const sameDay = Array.from({ length: 6 }, (_, i) => makeCourse(i + 1, {
+      credits: 1,
+      dayOfWeek: 1,
+      startPeriod: i + 1,
+      endPeriod: i + 1,
+    }));
+
+    const result = generateSchedule(sameDay, { minCredits: 0 });
+
+    assert.equal(result.schedule.length, 6);
+    assert.ok(
+      !result.excludedCourses.some(item => item.reason.includes('每日')),
+      result.excludedCourses.map(item => item.reason).join(' | ')
+    );
+  });
+
+  test('C6 呼叫端仍可自行指定每日課程數上限', () => {
+    const sameDay = Array.from({ length: 6 }, (_, i) => makeCourse(i + 1, {
+      credits: 1,
+      dayOfWeek: 1,
+      startPeriod: i + 1,
+      endPeriod: i + 1,
+    }));
+
+    const result = generateSchedule(sameDay, { minCredits: 0, maxCoursesPerDay: 3 });
+
+    assert.equal(result.schedule.length, 3);
   });
 });
