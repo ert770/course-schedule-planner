@@ -77,8 +77,10 @@ Request:
 
 Query params:
 
+- `department`（必填；完整系所名稱，例如 `資訊工程學系`）
+- `grade`（必填；由使用者完整班級解析出的年級，例如 `3`）
+- `className`（必填；由完整班級解析出的班別尾碼，例如 `甲`）
 - `keyword`
-- `department`
 - `category`
 - `dayOfWeek`
 - `credits`
@@ -86,6 +88,23 @@ Query params:
 - `code`
 - `period`
 - `language`
+
+`department`、`grade`、`className` 必須使用 `GET /api/profile` 回傳的
+`courseSearchScope`，前端不得自行拆解完整班級名稱。API 不接受 `class` alias。
+缺少任一班級範圍欄位時不會退回廣泛搜尋，而是回傳 `400`：
+
+```json
+{
+  "error": "缺少班級資料，請先匯入學生班級再搜尋課程。",
+  "code": "CLASS_NAME_REQUIRED"
+}
+```
+
+例如完整班級 `資訊三甲` 會產生：
+
+```text
+GET /api/courses?department=資訊工程學系&grade=3&className=甲
+```
 
 Response:
 
@@ -354,6 +373,21 @@ Response:
 
 For numeric `userId`, reads `User_Profiles.user_id` from MySQL when present.
 
+回應保留完整 `className`，並由後端共用 `parseClassName()` 產生課程搜尋範圍：
+
+```json
+{
+  "className": "資訊三甲",
+  "courseSearchScope": {
+    "department": "資訊工程學系",
+    "grade": 3,
+    "className": "甲"
+  }
+}
+```
+
+完整班級缺少或無法解析時，`courseSearchScope` 的三個欄位均為 `null`。
+
 ### `POST /api/profile`
 
 For numeric `userId`, updates supported `User_Profiles` fields when the row exists. Demo or non-numeric users are saved to local JSON.
@@ -403,6 +437,8 @@ Response:
 
 ```json
 {
+  "courseHistoryAvailable": true,
+  "courseHistoryMessage": null,
   "totalRequired": 128,
   "totalEarned": 107,
   "required": { "required": 63, "elective": 28, "general": 28, "external": 9, "unspecified": 0 },
@@ -419,12 +455,16 @@ Response:
 
 | 欄位 | 說明 |
 | --- | --- |
+| `courseHistoryAvailable` | 是否已有可供計算畢業進度的歷史修課資料；必須同時具備總學分及分類學分彙總，只有課程 ID／名稱清單仍視為不足 |
+| `courseHistoryMessage` | 缺少歷史修課資料時的使用者提示；資料可用時為 `null` |
 | `required` | 該系所的畢業學分要求。`general` 為通識基礎與通識選修之和，`unspecified` 為未列明學分（通常是自由選修） |
 | `earned` | 使用者已修學分，key 與 `required` 一致 |
 | `gaps` | 每類的缺口，不會小於 0 |
 | `warnings` | 查不到系所對照、或該系資料標記為待人工複核時的說明。**查無對照時不會用臆測的數字填補** |
 
 `totalRequired` 在查不到系所對照且使用者資料也沒有時為 `null`。
+
+當 `courseHistoryAvailable` 為 `false` 時，`totalEarned`、`earned` 與 `gaps` 均為 `null`，前端不得將缺少資料解讀為已修 0 學分或據此顯示學分缺口與補課建議。
 
 ## Error Response
 

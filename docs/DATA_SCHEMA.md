@@ -161,6 +161,32 @@ The following collections remain file-backed in `server/data/*.json` because the
 `users.json` **只負責登入身分與 demo 展示資料**（`studentId`、`password`、`name`、
 `completedCredits`、`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
 
+歷史修課 demo 資料使用以下欄位：
+
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `completedCredits` | number | 計入畢業的已修總學分，不包含體育、國防科技等不計畢業學分課程 |
+| `completedCourseIds` | array | section id 清單；無法由歷史資料可靠對應當期 section 時必須留空，不得填入模擬 ID |
+| `completedCourseCodes` | string[] | 歷史修課的正式課程編碼 |
+| `completedCourseNames` | string[] | 歷史修課科目名稱，順序與 `completedCourseCodes` 相同 |
+| `earnedCredits` | object | 畢業分類學分彙總：`required`、`elective`、`general`、`external` |
+| `courseHistory` | object[] | 完整歷年修課與成績明細，欄位定義如下 |
+
+`courseHistory` 項目：
+
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `academicYear` | number | 學年度，例如 `112` |
+| `semester` | number | 學期，例如 `1`、`2` |
+| `courseCode` | string | 正式課程編碼，例如 `IECS2001` |
+| `courseName` | string | 科目名稱 |
+| `score` | number | 百分制成績 |
+| `letterGrade` | string | 等第成績 |
+| `credits` | number | 修習學分 |
+| `requirementType` | string | 成績資料中的修習別：`必修` 或 `選修` |
+| `generalEducationCategory` | string \| null | 原始通識類別，例如 `(M)`、`(N)`；未標示時為 `null` |
+| `graduationCategory` | string | 畢業分類：`required`、`elective`、`general`、`external` 或 `nonGraduation` |
+
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——
 先前 `graduation.js` 讀 `users.json`、排課讀 `user_preferences`，兩邊可以依不同的系所

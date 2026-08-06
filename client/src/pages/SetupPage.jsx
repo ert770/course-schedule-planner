@@ -16,6 +16,8 @@ const PREFERENCE_TAGS = {
   ],
 };
 
+const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
+
 export default function SetupPage() {
   const navigate = useNavigate();
   const { user, markSetupDone } = useAuth();
@@ -35,6 +37,8 @@ export default function SetupPage() {
   // 班別清單向後端取得，不在前端複製一份系所簡稱對照表。
   const [className, setClassName] = useState('');
   const [classOptions, setClassOptions] = useState([]);
+  const [courseSearchScope, setCourseSearchScope] = useState(null);
+  const [electiveError, setElectiveError] = useState('');
   // profile 尚未載入完成前不得送出，否則會用暫時值覆蓋已儲存的設定。
   const [profileLoaded, setProfileLoaded] = useState(false);
 
@@ -47,23 +51,26 @@ export default function SetupPage() {
   const [generating, setGenerating] = useState(false);
 
   const loadElectiveCourses = useCallback(async () => {
+    if (!profileLoaded) return;
+    if (!courseSearchScope?.className) {
+      setElectives([]);
+      setElectiveError(CLASS_REQUIRED_MESSAGE);
+      return;
+    }
+
     setLoading(true);
+    setElectiveError('');
     try {
-      const data = await coursesAPI.search({ department, grade });
+      const data = await coursesAPI.search({ ...courseSearchScope, category: '選修' });
       const courses = (data.courses || []).filter(c => c.category === '選修');
       setElectives(courses);
-    } catch {
-      // If API fails, use some defaults
-      setElectives([
-        { id: 'e1', name: '密碼學' },
-        { id: 'e2', name: '人工智慧導論' },
-        { id: 'e3', name: '軟體工程' },
-        { id: 'e4', name: '資訊實務專題' },
-      ]);
+    } catch (err) {
+      setElectives([]);
+      setElectiveError(err.message || '選修課程載入失敗');
     } finally {
       setLoading(false);
     }
-  }, [department, grade]);
+  }, [courseSearchScope, profileLoaded]);
 
   useEffect(() => {
     loadElectiveCourses();
@@ -81,6 +88,7 @@ export default function SetupPage() {
         const savedGrade = profile.gradeLevel ?? profile.grade;
         if (savedGrade) setGrade(String(savedGrade));
         if (profile.className) setClassName(profile.className);
+        setCourseSearchScope(profile.courseSearchScope || null);
       })
       .catch(() => { /* 讀不到就沿用初始值，不阻斷設定流程 */ })
       .finally(() => {
@@ -235,6 +243,8 @@ export default function SetupPage() {
               <h3 className="setup-section-title">2. 已經修過的選修課程</h3>
               {loading ? (
                 <div style={{ padding: '20px', color: '#6b7280' }}>載入中...</div>
+              ) : electiveError ? (
+                <div className="error-text" role="alert">{electiveError}</div>
               ) : (
                 <div className="setup-course-list">
                   {electives.length > 0 ? electives.map(course => (

@@ -11,9 +11,27 @@ const router = Router();
 
 router.get('/', async (req, res) => {
   try {
+    const { department, grade, className } = req.query;
+    const gradeNumber = Number(grade);
+    if (
+      typeof department !== 'string'
+      || !department.trim()
+      || !Number.isInteger(gradeNumber)
+      || gradeNumber <= 0
+      || typeof className !== 'string'
+      || !className.trim()
+    ) {
+      return res.status(400).json({
+        error: '缺少班級資料，請先匯入學生班級再搜尋課程。',
+        code: 'CLASS_NAME_REQUIRED',
+      });
+    }
+
     const filters = {};
     if (req.query.keyword) filters.keyword = req.query.keyword;
-    if (req.query.department) filters.department = req.query.department;
+    filters.department = department.trim();
+    filters.grade = gradeNumber;
+    filters.className = className.trim();
     if (req.query.category) filters.category = req.query.category;
     if (req.query.dayOfWeek) filters.dayOfWeek = Number(req.query.dayOfWeek);
     if (req.query.credits) filters.credits = Number(req.query.credits);

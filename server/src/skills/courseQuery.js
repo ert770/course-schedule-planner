@@ -1,6 +1,6 @@
 import { getAll, getById } from '../db/database.js';
 import { summarizeReviews } from './reviewStats.js';
-import { parseClassName } from './courseScope.js';
+import { classSuffixCovers, parseClassName } from './courseScope.js';
 import { getAbbreviations } from '../data/departmentMapping.js';
 import { normalizeDepartment } from '../utils/text.js';
 
@@ -8,8 +8,26 @@ function textIncludes(value, keyword) {
   return String(value || '').toLowerCase().includes(keyword);
 }
 
-export async function searchCourses(filters = {}) {
-  let courses = await getAll('courses');
+export function filterCourses(courseList = [], filters = {}) {
+  let courses = courseList;
+
+  if (filters.department && filters.grade && filters.className) {
+    const department = normalizeDepartment(filters.department);
+    const grade = Number(filters.grade);
+    const className = String(filters.className || '').trim();
+
+    courses = courses.filter(course => {
+      const parsed = parseClassName(course.department);
+      return parsed.isDepartmentClass
+        && parsed.department === department
+        && parsed.grade === grade
+        && classSuffixCovers(parsed.classSuffix, className);
+    });
+  } else if (filters.department) {
+    // 內部服務的舊呼叫可能只帶 department；REST 搜尋 route 已在邊界強制要求
+    // 完整班級範圍。這裡保留既有字串比對，避免改動排課與 Agent 內部行為。
+    courses = courses.filter(course => String(course.department || '').includes(filters.department));
+  }
 
   if (filters.keyword) {
     const keyword = String(filters.keyword).toLowerCase();
@@ -22,10 +40,6 @@ export async function searchCourses(filters = {}) {
       || textIncludes(course.description, keyword)
       || textIncludes(course.selectionCode, keyword)
     );
-  }
-
-  if (filters.department) {
-    courses = courses.filter(course => String(course.department || '').includes(filters.department));
   }
 
   if (filters.category) {
@@ -70,6 +84,10 @@ export async function searchCourses(filters = {}) {
   }
 
   return courses;
+}
+
+export async function searchCourses(filters = {}) {
+  return filterCourses(await getAll('courses'), filters);
 }
 
 export async function getCourseDetail(courseId) {
@@ -124,4 +142,4 @@ export async function getClassNames(department, grade) {
   return [...names].sort();
 }
 
-export default { searchCourses, getCourseDetail, getDepartments, getInstructors, getClassNames };
+export default { searchCourses, filterCourses, getCourseDetail, getDepartments, getInstructors, getClassNames };

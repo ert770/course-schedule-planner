@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   parseClassName,
+  buildCourseSearchScope,
   buildStudentScope,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
@@ -16,6 +17,22 @@ import { pickClassNameTarget } from '../src/db/database.js';
 import { generateSchedule } from '../src/skills/scheduler.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
 import { makeCourse } from './fixtures.js';
+
+describe('課程搜尋範圍', () => {
+  test('完整班級由後端解析成系所、年級與班別尾碼', () => {
+    assert.deepEqual(buildCourseSearchScope({ className: '資訊三甲' }), {
+      department: '資訊工程學系',
+      grade: 3,
+      className: '甲',
+    });
+  });
+
+  test('缺少或無法解析的班級不得產生廣泛搜尋範圍', () => {
+    const emptyScope = { department: null, grade: null, className: null };
+    assert.deepEqual(buildCourseSearchScope({}), emptyScope);
+    assert.deepEqual(buildCourseSearchScope({ className: '資電學院綜合班' }), emptyScope);
+  });
+});
 
 describe('班級名稱解析：系所班級', () => {
   test('學士班：簡稱 + 年級 + 班別', () => {

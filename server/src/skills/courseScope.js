@@ -223,6 +223,27 @@ export function buildStudentScope(profile = {}) {
   };
 }
 
+// 課程搜尋 API 使用拆開的系所、年級與班別尾碼；使用者 profile 則保存完整班級
+// 名稱（例如 `資訊三甲`）。解析只能在後端共用這一份規則，前端不得自行切字串。
+export function buildCourseSearchScope(profile = {}) {
+  const sourceClassName = String(profile.className || '').trim();
+  const parsed = parseClassName(sourceClassName);
+
+  if (!parsed.isDepartmentClass || !parsed.department || !parsed.grade || !parsed.classSuffix) {
+    return {
+      department: null,
+      grade: null,
+      className: null,
+    };
+  }
+
+  return {
+    department: parsed.department,
+    grade: parsed.grade,
+    className: parsed.classSuffix,
+  };
+}
+
 // 這門課是否為「這位學生的必修」。
 export function isRequiredForStudent(course, scope) {
   if (!course || course.category !== '必修') return false;
@@ -275,6 +296,7 @@ export { classSuffixCovers };
 export default {
   parseClassName,
   buildStudentScope,
+  buildCourseSearchScope,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
   isOwnDepartmentClass,

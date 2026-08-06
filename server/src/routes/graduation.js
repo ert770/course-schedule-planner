@@ -29,6 +29,20 @@ function getDefaultEarnedCredits(user) {
   return user.earnedCredits || getEmptyCredits();
 }
 
+function hasCourseHistory(user) {
+  const earnedCredits = user.earnedCredits;
+  const hasCreditBreakdown = earnedCredits
+    && typeof earnedCredits === 'object'
+    && Object.keys(earnedCredits).length > 0
+    && Object.values(earnedCredits).every(value => Number.isFinite(Number(value)));
+  const hasTotalCredits = Object.prototype.hasOwnProperty.call(user, 'completedCredits')
+    && Number.isFinite(Number(user.completedCredits));
+
+  // 課程 ID 或名稱清單本身不足以顯示分類學分進度；必須同時有總學分與
+  // 分類學分彙總，否則仍應引導使用者匯入完整歷史資料。
+  return Boolean(hasCreditBreakdown && hasTotalCredits);
+}
+
 router.get('/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
@@ -67,16 +81,23 @@ router.get('/:studentId', async (req, res) => {
     const required = requirement
       ? toCreditBreakdown(requirement)
       : (user.requiredCredits || getEmptyCredits());
-    const earned = getDefaultEarnedCredits(user);
+    const courseHistoryAvailable = hasCourseHistory(user);
+    const courseHistoryMessage = courseHistoryAvailable
+      ? null
+      : '缺少歷史修課資料，請至 MyFCU 擷取歷史修課資料並匯入。';
+    const earned = courseHistoryAvailable ? getDefaultEarnedCredits(user) : null;
     const totalRequired = requirement?.total ?? user.totalRequired ?? null;
-    const totalEarned = Number(user.completedCredits || 0);
-    const gaps = Object.fromEntries(
-      Object.entries(required).map(([key, value]) => [
-        key,
-        Math.max(0, Number(value || 0) - Number(earned[key] || 0)),
-      ])
-    );
-    const courses = await getAll('courses');
+    const totalEarned = courseHistoryAvailable
+      ? Number(user.completedCredits || 0)
+      : null;
+    const gaps = courseHistoryAvailable
+      ? Object.fromEntries(
+        Object.entries(required).map(([key, value]) => [
+          key,
+          Math.max(0, Number(value || 0) - Number(earned[key] || 0)),
+        ])
+      )
+      : null;
     const completedCourseIds = new Set((user.completedCourseIds || []).map(String));
     const recommendations = [];
 
@@ -84,12 +105,14 @@ router.get('/:studentId', async (req, res) => {
     // 先前這裡直接用 `course.department === user.department` 比對，等於拿
     // 「資訊三甲」比「資訊工程學系」，永遠不成立——這條建議從來沒出現過。
     // 判定方式與排課一致：解析班級名稱後比對系所。
-    const departmentCourses = courses.filter(course =>
-      parseClassName(course.department).department === department
-      && !completedCourseIds.has(String(course.id))
-    );
+    const departmentCourses = courseHistoryAvailable
+      ? (await getAll('courses')).filter(course =>
+        parseClassName(course.department).department === department
+        && !completedCourseIds.has(String(course.id))
+      )
+      : [];
 
-    if (departmentCourses.length > 0) {
+    if (courseHistoryAvailable && departmentCourses.length > 0) {
       recommendations.push({
         type: 'suggestion',
         title: '建議補足系上課程',
@@ -100,6 +123,8 @@ router.get('/:studentId', async (req, res) => {
 
     res.json({
       department,
+      courseHistoryAvailable,
+      courseHistoryMessage,
       totalRequired,
       totalEarned,
       required,

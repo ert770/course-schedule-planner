@@ -74,7 +74,9 @@ export default function GraduationPage() {
     );
   }
 
-  const progressPercent = data ? Math.round((data.totalEarned / data.totalRequired) * 100) : 0;
+  const progressPercent = data?.courseHistoryAvailable && data.totalRequired
+    ? Math.round((data.totalEarned / data.totalRequired) * 100)
+    : 0;
 
   return (
     <div className="layout-container" id="graduation-page">
@@ -115,30 +117,44 @@ export default function GraduationPage() {
       <div className="graduation-content">
         {/* Left - Credit cards */}
         <div className="graduation-left">
-          {/* Total progress */}
-          <div className="grad-card grad-total">
-            <div className="grad-card-label">已修學分</div>
-            <div className="grad-card-big-number">
-              <span className="grad-number-main">{data?.totalEarned || 0}</span>
-              <span className="grad-number-divider"> / </span>
-              <span className="grad-number-total">{data?.totalRequired || 128}</span>
+          {data?.courseHistoryAvailable === false ? (
+            <div className="grad-card grad-history-missing" role="alert">
+              <AlertTriangle size={24} className="grad-history-missing-icon" />
+              <div>
+                <div className="grad-history-missing-title">無法顯示修課進度</div>
+                <p className="grad-history-missing-message">
+                  {data.courseHistoryMessage || '缺少歷史修課資料，請至 MyFCU 擷取歷史修課資料並匯入。'}
+                </p>
+              </div>
             </div>
-            <div className="grad-progress-bar">
-              <div className="grad-progress-fill" style={{ width: `${progressPercent}%` }} />
-            </div>
-          </div>
-
-          {/* Gap cards */}
-          <div className="grad-gaps-grid">
-            {Object.entries(data?.gaps || {}).map(([category, gap]) => (
-              <div key={category} className="grad-card grad-gap-card">
-                <div className="grad-gap-label">尚缺{CREDIT_CATEGORY_LABELS[category] || category}</div>
-                <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
-                  {gap} <span className="grad-gap-unit">學分</span>
+          ) : (
+            <>
+              {/* Total progress */}
+              <div className="grad-card grad-total">
+                <div className="grad-card-label">已修學分</div>
+                <div className="grad-card-big-number">
+                  <span className="grad-number-main">{data?.totalEarned || 0}</span>
+                  <span className="grad-number-divider"> / </span>
+                  <span className="grad-number-total">{data?.totalRequired || 128}</span>
+                </div>
+                <div className="grad-progress-bar">
+                  <div className="grad-progress-fill" style={{ width: `${progressPercent}%` }} />
                 </div>
               </div>
-            ))}
-          </div>
+
+              {/* Gap cards */}
+              <div className="grad-gaps-grid">
+                {Object.entries(data?.gaps || {}).map(([category, gap]) => (
+                  <div key={category} className="grad-card grad-gap-card">
+                    <div className="grad-gap-label">尚缺{CREDIT_CATEGORY_LABELS[category] || category}</div>
+                    <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
+                      {gap} <span className="grad-gap-unit">學分</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Watchlist */}
           <div className="grad-watchlist">

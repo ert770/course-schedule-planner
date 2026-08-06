@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getUserPreferences, updateUserPreferences } from '../services/memoryService.js';
 import { isDepartmentInput } from '../utils/text.js';
+import { buildCourseSearchScope } from '../skills/courseScope.js';
 
 const router = Router();
 
@@ -8,7 +9,10 @@ router.get('/', async (req, res) => {
   try {
     const userId = req.query.userId || 'default';
     const prefs = await getUserPreferences(userId);
-    res.json(prefs);
+    res.json({
+      ...prefs,
+      courseSearchScope: buildCourseSearchScope(prefs),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

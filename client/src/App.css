@@ -642,6 +642,15 @@
   height: 100%; border-radius: 4px; background: var(--accent-blue);
   transition: width 0.8s ease;
 }
+.grad-history-missing {
+  display: flex; align-items: flex-start; gap: 14px;
+  background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.35);
+}
+.grad-history-missing-icon { flex: 0 0 auto; color: #d97706; }
+.grad-history-missing-title { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+.grad-history-missing-message {
+  color: var(--text-secondary); font-size: 0.88rem; line-height: 1.6; margin: 0;
+}
 .grad-gaps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .grad-gap-card { text-align: center; padding: 20px; }
 .grad-gap-label { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 6px; }

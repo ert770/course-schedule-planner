@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
-import { coursesAPI } from '../services/api';
+import { coursesAPI, profileAPI } from '../services/api';
 import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, X } from 'lucide-react';
 import '../App.css'; // Reuse some layout styles
 import { formatCourseTime } from '../utils/courseTime';
+
+const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
 export default function SearchPage() {
   const navigate = useNavigate();
@@ -17,12 +19,15 @@ export default function SearchPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [courseSearchScope, setCourseSearchScope] = useState(null);
+  const [scopeLoading, setScopeLoading] = useState(true);
+  const [searchError, setSearchError] = useState('');
 
   // Form states for Tab 1
   const [deptForm, setDeptForm] = useState({
     department: '',
     grade: '',
-    classStr: '',
+    className: '',
     category: '', // 新增：必修/選修/通識
     keyword: ''
   });
@@ -39,12 +44,43 @@ export default function SearchPage() {
     description: ''
   });
 
+  useEffect(() => {
+    let cancelled = false;
+
+    profileAPI.get(user?.studentId || 'default')
+      .then(profile => {
+        if (cancelled) return;
+        const scope = profile?.courseSearchScope || null;
+        setCourseSearchScope(scope);
+        setDeptForm(prev => ({
+          ...prev,
+          department: scope?.department || '',
+          grade: scope?.grade ? String(scope.grade) : '',
+          className: scope?.className || '',
+        }));
+        setSearchError(scope?.className ? '' : CLASS_REQUIRED_MESSAGE);
+      })
+      .catch(err => {
+        if (!cancelled) setSearchError(err.message || CLASS_REQUIRED_MESSAGE);
+      })
+      .finally(() => {
+        if (!cancelled) setScopeLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [user?.studentId]);
+
   const handleDeptSearch = async (e) => {
     e.preventDefault();
+    if (!courseSearchScope?.className) {
+      setSearchError(CLASS_REQUIRED_MESSAGE);
+      return;
+    }
     setIsSearching(true);
+    setSearchError('');
     try {
       const filters = {
-        department: deptForm.department,
+        ...courseSearchScope,
         keyword: deptForm.keyword,
         category: deptForm.category
       };
@@ -54,11 +90,10 @@ export default function SearchPage() {
         if (!filters[k]) delete filters[k];
       });
 
-      // Mock API call to our backend search
       const data = await coursesAPI.search(filters);
       setSearchResults(data.courses || []);
     } catch (err) {
-      console.error(err);
+      setSearchError(err.message || '課程搜尋失敗');
     } finally {
       setIsSearching(false);
     }
@@ -66,9 +101,15 @@ export default function SearchPage() {
 
   const handleCondSearch = async (e) => {
     e.preventDefault();
+    if (!courseSearchScope?.className) {
+      setSearchError(CLASS_REQUIRED_MESSAGE);
+      return;
+    }
     setIsSearching(true);
+    setSearchError('');
     try {
       const filters = {
+        ...courseSearchScope,
         code: condForm.code,
         keyword: condForm.keyword || condForm.description,
         instructor: condForm.instructor,
@@ -85,7 +126,7 @@ export default function SearchPage() {
       const data = await coursesAPI.search(filters);
       setSearchResults(data.courses || []);
     } catch (err) {
-      console.error(err);
+      setSearchError(err.message || '課程搜尋失敗');
     } finally {
       setIsSearching(false);
     }
@@ -148,7 +189,7 @@ export default function SearchPage() {
             <form className="search-form" onSubmit={handleDeptSearch}>
               <div className="form-group">
                 <label>系所 (Department)</label>
-                <select value={deptForm.department} onChange={e => setDeptForm({...deptForm, department: e.target.value})}>
+                <select value={deptForm.department} disabled>
                   <option value="">全部 (All)</option>
                   <option value="資訊工程學系">資訊工程學系</option>
                   <option value="電機工程學系">電機工程學系</option>
@@ -157,7 +198,7 @@ export default function SearchPage() {
               </div>
               <div className="form-group">
                 <label>年級 (Grade)</label>
-                <select value={deptForm.grade} onChange={e => setDeptForm({...deptForm, grade: e.target.value})}>
+                <select value={deptForm.grade} disabled>
                   <option value="">全部 (All)</option>
                   <option value="1">大一</option>
                   <option value="2">大二</option>
@@ -167,11 +208,7 @@ export default function SearchPage() {
               </div>
               <div className="form-group">
                 <label>班級 (Class)</label>
-                <select value={deptForm.classStr} onChange={e => setDeptForm({...deptForm, classStr: e.target.value})}>
-                  <option value="">全部 (All)</option>
-                  <option value="A">甲班</option>
-                  <option value="B">乙班</option>
-                </select>
+                <input value={deptForm.className} readOnly disabled placeholder="尚未匯入班級" />
               </div>
               <div className="form-group">
                 <label>修別 (Category)</label>
@@ -190,8 +227,8 @@ export default function SearchPage() {
                   onChange={e => setDeptForm({...deptForm, keyword: e.target.value})}
                 />
               </div>
-              <button type="submit" className="search-submit-btn" disabled={isSearching}>
-                {isSearching ? '搜尋中...' : '開始搜尋'}
+              <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>
+                {scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}
               </button>
             </form>
           )}
@@ -280,8 +317,8 @@ export default function SearchPage() {
                 />
               </div>
 
-              <button type="submit" className="search-submit-btn" disabled={isSearching}>
-                {isSearching ? '搜尋中...' : '開始搜尋'}
+              <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>
+                {scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}
               </button>
             </form>
           )}
@@ -291,7 +328,9 @@ export default function SearchPage() {
           <div className="results-header">
             <h3>搜尋結果 ({searchResults.length} 筆)</h3>
           </div>
-          {searchResults.length === 0 ? (
+          {searchError ? (
+            <div className="no-results error-text" role="alert">{searchError}</div>
+          ) : searchResults.length === 0 ? (
             <div className="no-results">請設定條件並開始搜尋</div>
           ) : (
             <div className="results-grid">

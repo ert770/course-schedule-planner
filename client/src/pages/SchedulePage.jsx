@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
@@ -6,8 +6,10 @@ import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, 
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
-import { coursesAPI, scheduleAPI } from '../services/api';
+import { coursesAPI, profileAPI, scheduleAPI } from '../services/api';
 import { formatCourseTime } from '../utils/courseTime';
+
+const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
 export default function SchedulePage() {
   const navigate = useNavigate();
@@ -19,29 +21,43 @@ export default function SchedulePage() {
   const [selectedCourses, setSelectedCourses] = useState([]);
   const [showCourses, setShowCourses] = useState(false);
   const [filters, setFilters] = useState({ keyword: '', category: '', department: '' });
-  const [departments, setDepartments] = useState([]);
+  const [courseSearchScope, setCourseSearchScope] = useState(null);
   const [loading, setLoading] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
   const [notice, setNotice] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  const loadDepartments = useCallback(async () => {
-    try {
-      const data = await coursesAPI.getDepartments();
-      setDepartments(data.departments || []);
-    } catch (err) {
-      console.error('Failed to load departments:', err);
-    }
-  }, []);
-
   useEffect(() => {
-    loadDepartments();
-  }, [loadDepartments]);
+    let cancelled = false;
+
+    profileAPI.get(user?.studentId || 'default')
+      .then(profile => {
+        if (cancelled) return;
+        const scope = profile?.courseSearchScope || null;
+        setCourseSearchScope(scope);
+        setFilters(prev => ({ ...prev, department: scope?.department || '' }));
+        if (!scope?.className) {
+          setNotice({ level: 'error', text: CLASS_REQUIRED_MESSAGE });
+        }
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setNotice({ level: 'error', text: err.message || CLASS_REQUIRED_MESSAGE });
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [user?.studentId]);
 
   const searchCourses = async () => {
+    if (!courseSearchScope?.className) {
+      setNotice({ level: 'error', text: CLASS_REQUIRED_MESSAGE });
+      return;
+    }
+
     setLoading(true);
     try {
-      const data = await coursesAPI.search(filters);
+      const data = await coursesAPI.search({ ...filters, ...courseSearchScope });
       setCourses(data.courses || []);
       setShowCourses(true);
     } catch (err) {
@@ -207,17 +223,16 @@ export default function SchedulePage() {
                   onChange={(e) => setFilters(f => ({ ...f, keyword: e.target.value }))}
                   id="course-search-input"
                 />
-                <select
+                <input
                   className="input-field"
-                  value={filters.department}
-                  onChange={(e) => setFilters(f => ({ ...f, department: e.target.value }))}
+                  value={courseSearchScope
+                    ? `${courseSearchScope.department}／大${courseSearchScope.grade}／${courseSearchScope.className}班`
+                    : ''}
+                  readOnly
+                  disabled
+                  placeholder="尚未匯入班級"
                   id="department-select"
-                >
-                  <option value="">所有系所</option>
-                  {departments.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                />
                 <select
                   className="input-field"
                   value={filters.category}
