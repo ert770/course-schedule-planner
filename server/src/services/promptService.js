@@ -31,7 +31,7 @@ export function buildSystemPrompt(userPrefs = {}) {
 只輸出一個 JSON 物件，不要在 JSON 外加解釋。
 
 可用工具：
-- query_course_db：查詢課程資料。參數可包含 keyword, department, category, dayOfWeek, grade。
+- query_course_db：依目前使用者的後端 profile 查詢課程資料。參數可包含 keyword, category, dayOfWeek；category 只可使用必修、核心選修、一般選修、系外選修。不得自行猜測或傳入班級。
 - search_dcard_reviews：查詢課程評價摘要。參數可包含 keyword。
 - get_easy_courses：查詢涼課或高分課程。參數可包含 limit。
 - update_preferences：更新使用者偏好。參數可包含 noMorningClasses, noEveningClasses, preferCompact, targetCreditsMin, targetCreditsMax, blockedPeriods。

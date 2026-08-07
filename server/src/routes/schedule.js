@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { generateSchedule, validateSchedule } from '../skills/scheduler.js';
-import { searchCourses } from '../skills/courseQuery.js';
+import { searchCoursesForSchedule } from '../skills/courseQuery.js';
 import { getUserPreferences, saveSchedule, getSavedSchedules } from '../services/memoryService.js';
 import { buildScheduleConstraints } from '../services/constraintService.js';
 import { getAll } from '../db/database.js';
+import { buildStudentScope } from '../skills/courseScope.js';
 
 const router = Router();
 
@@ -18,13 +19,21 @@ router.post('/generate', async (req, res) => {
 
     const prefs = await getUserPreferences(userId);
 
+    const mergedConstraints = buildScheduleConstraints(
+      {
+        ...constraints,
+        explicitCourseIds: [...(constraints.explicitCourseIds || []), ...courseIds],
+      },
+      prefs
+    );
+
     let candidates;
     if (courseIds.length > 0) {
       const courseIdSet = new Set(courseIds.map(String));
       const allCourses = await getAll('courses');
       candidates = allCourses.filter(course => courseIdSet.has(String(course.id)));
     } else {
-      candidates = await searchCourses(filters);
+      candidates = await searchCoursesForSchedule(filters, buildStudentScope(mergedConstraints));
     }
 
     if (candidates.length === 0) {
@@ -39,19 +48,11 @@ router.post('/generate', async (req, res) => {
     // `courseIds` 是使用者在課程瀏覽器手動勾選的課。它決定候選池，但不會進入
     // `selectedCourseIds`，因此必須另外告訴排課引擎「這些是使用者指定的」，
     // 否則不符合系外選修認列條件的課會被當成系統自撿的候選而靜默剔除。
-    const mergedConstraints = buildScheduleConstraints(
-      {
-        ...constraints,
-        explicitCourseIds: [...(constraints.explicitCourseIds || []), ...courseIds],
-      },
-      prefs
-    );
-
     const result = generateSchedule(candidates, mergedConstraints);
     res.json(result);
   } catch (err) {
-    console.error('Schedule error:', err);
-    res.status(500).json({ error: err.message });
+    if (!err.status) console.error('Schedule error:', err);
+    res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 });
 

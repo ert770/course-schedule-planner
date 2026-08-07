@@ -1,33 +1,38 @@
 import { getAll, getById } from '../db/database.js';
 import { summarizeReviews } from './reviewStats.js';
 import { classSuffixCovers, parseClassName } from './courseScope.js';
+import {
+  annotateCourseCategory,
+  CATEGORY_CORE_ELECTIVE,
+  CATEGORY_ELECTIVE,
+  CATEGORY_GENERAL_EDUCATION,
+  CATEGORY_OUTSIDE_ELECTIVE,
+  CATEGORY_REQUIRED,
+} from './courseCategory.js';
+import { evaluateOutsideElective } from './outsideElective.js';
 import { getAbbreviations } from '../data/departmentMapping.js';
 import { normalizeDepartment } from '../utils/text.js';
+
+export const COURSE_SEARCH_CATEGORIES = new Set([
+  CATEGORY_REQUIRED,
+  CATEGORY_CORE_ELECTIVE,
+  CATEGORY_ELECTIVE,
+  CATEGORY_OUTSIDE_ELECTIVE,
+]);
+
+function courseSearchError(message, code, status = 400) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  return error;
+}
 
 function textIncludes(value, keyword) {
   return String(value || '').toLowerCase().includes(keyword);
 }
 
-export function filterCourses(courseList = [], filters = {}) {
+function applyCommonFilters(courseList, filters = {}, { filterCategory = true } = {}) {
   let courses = courseList;
-
-  if (filters.department && filters.grade && filters.className) {
-    const department = normalizeDepartment(filters.department);
-    const grade = Number(filters.grade);
-    const className = String(filters.className || '').trim();
-
-    courses = courses.filter(course => {
-      const parsed = parseClassName(course.department);
-      return parsed.isDepartmentClass
-        && parsed.department === department
-        && parsed.grade === grade
-        && classSuffixCovers(parsed.classSuffix, className);
-    });
-  } else if (filters.department) {
-    // 內部服務的舊呼叫可能只帶 department；REST 搜尋 route 已在邊界強制要求
-    // 完整班級範圍。這裡保留既有字串比對，避免改動排課與 Agent 內部行為。
-    courses = courses.filter(course => String(course.department || '').includes(filters.department));
-  }
 
   if (filters.keyword) {
     const keyword = String(filters.keyword).toLowerCase();
@@ -42,8 +47,8 @@ export function filterCourses(courseList = [], filters = {}) {
     );
   }
 
-  if (filters.category) {
-    courses = courses.filter(course => course.category === filters.category || course.type === filters.category);
+  if (filterCategory && filters.category) {
+    courses = courses.filter(course => course.category === filters.category);
   }
 
   if (filters.dayOfWeek) {
@@ -86,8 +91,105 @@ export function filterCourses(courseList = [], filters = {}) {
   return courses;
 }
 
-export async function searchCourses(filters = {}) {
-  return filterCourses(await getAll('courses'), filters);
+function isInStudentClass(course, scope) {
+  const parsed = parseClassName(course.department);
+  return parsed.isDepartmentClass
+    && parsed.department === scope.department
+    && parsed.degree === scope.degree
+    && parsed.grade === scope.grade
+    && classSuffixCovers(parsed.classSuffix, scope.classSuffix);
+}
+
+function validateCategorizedSearch(filters, scope) {
+  if (!scope?.resolved || !scope.classSuffix) {
+    throw courseSearchError(
+      '缺少班級資料，請先匯入學生班級再搜尋課程。',
+      'CLASS_NAME_REQUIRED'
+    );
+  }
+
+  if (filters.category === CATEGORY_GENERAL_EDUCATION) {
+    throw courseSearchError(
+      '通識課程分類資料尚未建立，目前無法依通識分類搜尋。',
+      'GENERAL_EDUCATION_CATEGORY_UNAVAILABLE',
+      422
+    );
+  }
+
+  if (filters.category && !COURSE_SEARCH_CATEGORIES.has(filters.category)) {
+    throw courseSearchError('不支援的課程分類。', 'INVALID_COURSE_CATEGORY');
+  }
+}
+
+function categorizeCourses(courseList, scope) {
+  return courseList.map(rawCourse => {
+    const course = annotateCourseCategory(rawCourse, scope);
+    if (course.category !== CATEGORY_OUTSIDE_ELECTIVE) return course;
+
+    return {
+      ...course,
+      outsideElective: evaluateOutsideElective(course, scope),
+    };
+  });
+}
+
+export function filterCategorizedCourses(courseList = [], filters = {}, scope) {
+  validateCategorizedSearch(filters, scope);
+
+  let courses = categorizeCourses(courseList, scope);
+  if (filters.category === CATEGORY_OUTSIDE_ELECTIVE) {
+    courses = courses.filter(course => {
+      if (course.category !== CATEGORY_OUTSIDE_ELECTIVE) return false;
+      const parsed = parseClassName(course.department);
+      return parsed.isDepartmentClass && parsed.degree === scope.degree;
+    });
+  } else {
+    courses = courses.filter(course => isInStudentClass(course, scope));
+    if (filters.category) {
+      courses = courses.filter(course => course.category === filters.category);
+    }
+  }
+
+  return applyCommonFilters(courses, filters, { filterCategory: false });
+}
+
+// 保留純函式供既有測試與內部低階用途使用；REST、排課與 Agent 應使用下方
+// 三個具名入口，避免不同呼叫端的班級規則互相滲透。
+export function filterCourses(courseList = [], filters = {}) {
+  let courses = courseList;
+
+  if (filters.department && filters.grade && filters.className) {
+    const department = normalizeDepartment(filters.department);
+    const grade = Number(filters.grade);
+    const className = String(filters.className || '').trim();
+    courses = courses.filter(course => {
+      const parsed = parseClassName(course.department);
+      return parsed.isDepartmentClass
+        && parsed.department === department
+        && parsed.grade === grade
+        && classSuffixCovers(parsed.classSuffix, className);
+    });
+  } else if (filters.department) {
+    courses = courses.filter(course => String(course.department || '').includes(filters.department));
+  }
+
+  return applyCommonFilters(courses, filters);
+}
+
+async function runCategorizedSearch(filters, scope) {
+  return filterCategorizedCourses(await getAll('courses'), filters, scope);
+}
+
+export async function searchCoursesForStudent(filters, scope) {
+  return runCategorizedSearch(filters, scope);
+}
+
+export async function searchCoursesForSchedule(filters, scope) {
+  return runCategorizedSearch(filters, scope);
+}
+
+export async function searchCoursesForAgent(filters, scope) {
+  return runCategorizedSearch(filters, scope);
 }
 
 export async function getCourseDetail(courseId) {
@@ -142,4 +244,14 @@ export async function getClassNames(department, grade) {
   return [...names].sort();
 }
 
-export default { searchCourses, filterCourses, getCourseDetail, getDepartments, getInstructors, getClassNames };
+export default {
+  searchCoursesForStudent,
+  searchCoursesForSchedule,
+  searchCoursesForAgent,
+  filterCategorizedCourses,
+  filterCourses,
+  getCourseDetail,
+  getDepartments,
+  getInstructors,
+  getClassNames,
+};

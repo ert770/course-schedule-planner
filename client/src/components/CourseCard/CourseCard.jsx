@@ -3,6 +3,9 @@ import { formatCourseTime } from '../../utils/courseTime';
 export default function CourseCard({ course, onSelect, selected }) {
   const categoryBadge = {
     '必修': 'badge-required',
+    '核心選修': 'badge-elective',
+    '一般選修': 'badge-elective',
+    '系外選修': 'badge-general',
     '選修': 'badge-elective',
     '通識': 'badge-general',
   };

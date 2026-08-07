@@ -1,12 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
 import { buildSystemPrompt } from './promptService.js';
 import { getChatHistory, addChatMessage, getUserPreferences, updateUserPreferences } from './memoryService.js';
-import { searchCourses, getCourseDetail } from '../skills/courseQuery.js';
+import { searchCoursesForAgent, searchCoursesForSchedule, getCourseDetail } from '../skills/courseQuery.js';
 import { getEasyCourses, getSentimentSummary, searchReviews } from '../skills/reviewSearch.js';
 import { generateSchedule } from '../skills/scheduler.js';
 import { buildScheduleConstraints } from './constraintService.js';
-import { getAll } from '../db/database.js';
 import { logger } from '../utils/logger.js';
+import { buildStudentScope } from '../skills/courseScope.js';
 
 let ai = null;
 
@@ -34,6 +34,7 @@ export async function handleChat(userId, message) {
 
   // 3. 取得偏好與歷史紀錄
   const prefs = await getUserPreferences(userId);
+  const studentScope = buildStudentScope(prefs);
   logger.debug(`已載入使用者限制條件：${JSON.stringify(prefs)}`, { label: 'Memory' });
   
   const systemInstruction = buildSystemPrompt(prefs);
@@ -100,13 +101,13 @@ export async function handleChat(userId, message) {
           try {
             switch (fnName) {
               case 'query_course_db':
-                result = await searchCourses(args);
+                result = await searchCoursesForAgent(args, studentScope);
                 if (result.length > 10) result = result.slice(0, 10);
                 responseData = result;
                 break;
                 
               case 'search_dcard_reviews': {
-                const courses = await searchCourses({ keyword: args.keyword });
+                const courses = await searchCoursesForAgent({ keyword: args.keyword }, studentScope);
                 if (courses.length > 0) {
                   result = { ...(await getSentimentSummary(courses[0].id)), courseName: courses[0].name };
                 } else {
@@ -118,7 +119,7 @@ export async function handleChat(userId, message) {
 
               case 'run_csp_scheduler': {
                 const constraints = buildScheduleConstraints(args, prefs);
-                let candidates = await getAll('courses');
+                const candidates = await searchCoursesForSchedule({}, studentScope);
                 result = generateSchedule(candidates, constraints);
                 responseData = result;
                 break;

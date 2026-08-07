@@ -178,11 +178,17 @@
 | --- | --- |
 | `type = '必修'` | `必修`（是否為這位學生的必修由上方必修範圍判定） |
 | 選修，且在資工系核心選修清單中 | `核心選修` |
-| 選修，且在資工系選修清單中 | `選修` |
+| 選修，且在資工系選修清單中 | `一般選修` |
 | 選修，且開在其他系所班級 | `系外選修` |
 | 其他 | 維持原值 |
 
-原始值保留在 `sourceCategory`，才分得出「資料庫寫選修」與「系統判定為核心選修」。
+原始值保留在 `sourceCategory`，分類依據保留在 `classificationSource`，才分得出
+「資料庫寫選修」與「系統依資工科目表判定為核心選修／一般選修」。
+
+課程搜尋、排課與 Agent 各有獨立入口：`searchCoursesForStudent()`、
+`searchCoursesForSchedule()`、`searchCoursesForAgent()`；三者共用
+`annotateCourseCategory()`，因此入口的班級限制可以不同，但分類規則不會漂移。
+通識分類資料尚未建立，目前不得推測或回傳假通識結果。
 
 核心選修與修課路徑資料來自 `server/src/data/csCurriculum.js`（114 必選修科目表 + 113 課程地圖），
 比對條件為**課號 `subid3` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的

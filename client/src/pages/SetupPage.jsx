@@ -61,8 +61,10 @@ export default function SetupPage() {
     setLoading(true);
     setElectiveError('');
     try {
-      const data = await coursesAPI.search({ ...courseSearchScope, category: '選修' });
-      const courses = (data.courses || []).filter(c => c.category === '選修');
+      const data = await coursesAPI.search(courseSearchScope);
+      const courses = (data.courses || []).filter(c =>
+        c.category === '核心選修' || c.category === '一般選修'
+      );
       setElectives(courses);
     } catch (err) {
       setElectives([]);

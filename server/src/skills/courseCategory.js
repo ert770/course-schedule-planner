@@ -10,7 +10,7 @@
 // | --- | --- |
 // | `type = '必修'` | `必修`（是否為這位學生的必修由 `courseScope.js` 判定） |
 // | 選修，且在資工系核心選修清單中 | `核心選修` |
-// | 選修，且在資工系選修清單中 | `選修` |
+// | 選修，且在資工系選修清單中 | `一般選修` |
 // | 選修，且開在其他系所班級 | `系外選修` |
 // | 其他 | 維持原值 |
 //
@@ -23,28 +23,43 @@ import { isOutsideElective } from './outsideElective.js';
 const CS_DEPARTMENT = '資訊工程學系';
 
 export const CATEGORY_REQUIRED = '必修';
+export const CATEGORY_CORE_ELECTIVE = '核心選修';
+export const CATEGORY_ELECTIVE = '一般選修';
 export const CATEGORY_OUTSIDE_ELECTIVE = '系外選修';
+export const CATEGORY_GENERAL_EDUCATION = '通識';
 
 // 解析一門課對這位學生而言的類別與修課路徑。
 export function resolveCourseCategory(course, scope) {
-  const original = course?.category ?? null;
+  const original = course?.category ?? course?.type ?? null;
 
   if (!course || original === CATEGORY_REQUIRED) {
-    return { category: original, track: null };
+    return { category: original, track: null, classificationSource: 'mysql' };
   }
 
   if (scope?.department === CS_DEPARTMENT) {
     const classified = classifyCsCourse(course);
     if (classified) {
-      return { category: classified.category, track: classified.track };
+      return {
+        category: classified.category === '選修' ? CATEGORY_ELECTIVE : classified.category,
+        track: classified.track,
+        classificationSource: 'cs_curriculum',
+      };
     }
   }
 
   if (isOutsideElective(course, scope)) {
-    return { category: CATEGORY_OUTSIDE_ELECTIVE, track: null };
+    return {
+      category: CATEGORY_OUTSIDE_ELECTIVE,
+      track: null,
+      classificationSource: 'outside_department',
+    };
   }
 
-  return { category: original, track: course.track ?? null };
+  return {
+    category: original,
+    track: course.track ?? null,
+    classificationSource: 'mysql',
+  };
 }
 
 // 產生帶有解析後類別的課程物件。
@@ -53,16 +68,14 @@ export function resolveCourseCategory(course, scope) {
 // 直接覆蓋 `category` 而不留痕跡，之後就無從分辨「資料庫寫選修」與
 // 「系統判定為核心選修」的差別。
 export function annotateCourseCategory(course, scope) {
-  const { category, track } = resolveCourseCategory(course, scope);
-
-  if (category === course.category && (track ?? null) === (course.track ?? null)) {
-    return course;
-  }
+  const sourceCategory = course?.sourceCategory ?? course?.category ?? course?.type ?? null;
+  const { category, track, classificationSource } = resolveCourseCategory(course, scope);
 
   return {
     ...course,
     category,
-    sourceCategory: course.category,
+    sourceCategory,
+    classificationSource,
     track: track ?? course.track ?? null,
   };
 }

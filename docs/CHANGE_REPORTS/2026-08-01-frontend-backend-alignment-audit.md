@@ -47,13 +47,13 @@
 | F4 | 個人化偏好在 UI 上無法觸發 | 🟠 高 | ⬜ 未開始 |
 | F5 | 多方案課表沒有任何 UI | 🟠 高 | ⬜ 未開始 |
 | F6 | 關注／加選前端零實作 | 🟠 高 | ⬜ 未開始 |
-| F7 | `grade` 過濾器不存在，被靜默丟棄 | 🟡 中 | ⬜ 未開始 |
+| F7 | `grade` 過濾器不存在，被靜默丟棄 | 🟡 中 | ✅ 已完成 |
 | F8 | `hideConflict` 是死參數 | 🟡 中 | ⬜ 未開始 |
 | F9 | 學分上下限寫死 25/15，忽略使用者設定 | 🟡 中 | ⬜ 未開始 |
 | F10 | 技能樹是寫死的假資料 | 🟡 中 | ⬜ 未開始 |
 | F11 | `authAPI.updateWatchlist` 定義但零呼叫 | 🟡 中 | ⬜ 未開始 |
 | F12 | GraduationPage 三種按鈕沒有 onClick | 🟡 中 | ⬜ 未開始 |
-| F13 | 畢業學分分類會渲染出英文 key，且與規格不符 | 🟡 中 | ⬜ 未開始 |
+| F13 | 畢業學分分類會渲染出英文 key，且與規格不符 | 🟡 中 | 🟡 部分完成 |
 | F14 | `SchedulePage` 未掛載到任何路由 | 🟡 中 | ✅ 已完成 |
 | F15 | `ScheduleGrid` 缺少 React key，持續污染 console | 🟡 中 | ✅ 已完成 |
 | F16 | 年級有兩份、只有一份生效；改班別／年級後課表不動 | 🟠 高 | ✅ 已完成 |
@@ -238,7 +238,9 @@ if (data.success) {
 
 ## F7 `grade` 過濾器不存在
 
-**嚴重度**：🟡 中　**狀態**：⬜ 未開始
+**嚴重度**：🟡 中　**狀態**：✅ 已完成（2026-08-06）
+
+後端已從完整班級解析 `department`、`grade`、`className`，`GET /api/courses` 強制要求三個學生範圍欄位；缺少資料時回傳指定錯誤，不再進行廣泛搜尋。前端搜尋、排課課程抽屜及設定頁均使用 profile 提供的班級範圍。詳見 [F7 課程搜尋班級契約修正報告](./2026-08-06-course-search-grade-class-contract.md)。
 
 `client/src/pages/SetupPage.jsx:38` 送出 `coursesAPI.search({ department, grade })`，但 `server/src/routes/courses.js:8-17` 只讀取 `keyword`、`department`、`category`、`dayOfWeek`、`credits`、`instructor`、`code`、`period`、`language` 九個 filter，**`grade` 不在其中，被靜默丟棄**。
 
@@ -310,7 +312,11 @@ UI 上還標示「基於歷年成績與修課紀錄動態生成」，與實作�
 
 ## F13 畢業學分分類渲染出英文 key 且與規格不符
 
-**嚴重度**：🟡 中　**狀態**：⬜ 未開始
+**嚴重度**：🟡 中　**狀態**：🟡 部分完成（2026-08-06）
+
+**已完成**：缺少歷史資料時不再把未知學分顯示成 0，改為隱藏總進度與分類缺口並要求匯入；demo 使用者已匯入 53 門真實歷史課程，畢業學分改由匯入資料顯示。詳見 [F13 缺少歷史修課資料提示](./2026-08-06-graduation-history-data-warning.md)及[個人歷年修課成績資料匯入](./2026-08-06-personal-course-history-import.md)。
+
+**尚未完成**：API 失敗時的前端 mock fallback 尚未移除；正式通識分類與六分類畢業規則仍待 #12B，因此本項不可標為全部完成。
 
 **問題一：英文 key 會出現在 UI 上**
 

@@ -244,6 +244,29 @@ export function buildCourseSearchScope(profile = {}) {
   };
 }
 
+// REST 課程搜尋收到的是 profile 已解析完成的三個欄位，不應再由 route 拼回
+// `資訊三乙` 後重跑字串解析。這個 helper 直接建立分類與搜尋共用的學生 scope。
+export function buildCourseQueryScope(input = {}) {
+  const department = normalizeDepartment(input.department) || null;
+  const gradeValue = Number(input.grade);
+  const grade = Number.isInteger(gradeValue) && gradeValue > 0 ? gradeValue : null;
+  const classSuffix = String(input.className || '').trim() || null;
+  const abbreviations = department ? getAbbreviations(department) : [];
+
+  return {
+    department,
+    grade,
+    degree: input.degree || DEFAULT_DEGREE,
+    abbreviations,
+    className: null,
+    classSuffix,
+    departmentMissing: !department,
+    departmentUnmapped: Boolean(department && abbreviations.length === 0),
+    gradeMissing: !grade,
+    resolved: Boolean(department && grade && classSuffix && abbreviations.length > 0),
+  };
+}
+
 // 這門課是否為「這位學生的必修」。
 export function isRequiredForStudent(course, scope) {
   if (!course || course.category !== '必修') return false;
@@ -297,6 +320,7 @@ export default {
   parseClassName,
   buildStudentScope,
   buildCourseSearchScope,
+  buildCourseQueryScope,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
   isOwnDepartmentClass,

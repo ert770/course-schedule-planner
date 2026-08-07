@@ -81,7 +81,7 @@ Query params:
 - `grade`（必填；由使用者完整班級解析出的年級，例如 `3`）
 - `className`（必填；由完整班級解析出的班別尾碼，例如 `甲`）
 - `keyword`
-- `category`
+- `category`（選填：`必修`、`核心選修`、`一般選修`、`系外選修`）
 - `dayOfWeek`
 - `credits`
 - `instructor`
@@ -106,10 +106,32 @@ Query params:
 GET /api/courses?department=資訊工程學系&grade=3&className=甲
 ```
 
+後端會先以學生 scope 解析每門課的分類，再套用 category 與其他搜尋條件。未指定
+category 時維持 F7，只回傳本人班級及同年級合班；只有明確指定 `系外選修` 時才會
+查詢其他系所班級。通識分類資料尚未建立，傳入 `category=通識` 回傳 `422`：
+
+```json
+{
+  "error": "通識課程分類資料尚未建立，目前無法依通識分類搜尋。",
+  "code": "GENERAL_EDUCATION_CATEGORY_UNAVAILABLE"
+}
+```
+
 Response:
 
 ```json
 {
+  "scope": {
+    "department": "資訊工程學系",
+    "grade": 3,
+    "className": "甲"
+  },
+  "appliedFilters": {
+    "department": "資訊工程學系",
+    "grade": 3,
+    "className": "甲",
+    "category": "核心選修"
+  },
   "courses": [
     {
       "id": 1,
@@ -124,13 +146,25 @@ Response:
       "startPeriod": 2,
       "endPeriod": 4,
       "location": "B101",
-      "category": "必修",
-      "timeStr": "星期一 2-4"
+      "category": "核心選修",
+      "sourceCategory": "選修",
+      "classificationSource": "cs_curriculum",
+      "track": "技術應用類"
     }
   ],
   "total": 1
 }
 ```
+
+分類欄位：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `category` | 後端依學生範圍解析後的分類，供搜尋、排課與 UI 使用 |
+| `sourceCategory` | MySQL 原始 `Courses.type`（必修／選修） |
+| `classificationSource` | `mysql`、`cs_curriculum` 或 `outside_department` |
+| `track` | 資工科目表對應的修課路徑，沒有資料時為 `null` |
+| `outsideElective` | 系外選修的認列檢查、原因、警告及系辦確認狀態 |
 
 ### `GET /api/courses/departments`
 
@@ -212,7 +246,10 @@ Request:
 
 `department`、`gradeLevel`、`className` 決定必修範圍。`className` 為班別——
 系上不接受必修換班，未提供時必修只收斂到系所與年級，並在 `warnings` 提醒。
-三者未提供時會從使用者已儲存的 profile 帶入。
+三者未提供時會從使用者已儲存的 profile 帶入。系統自動建立候選池時，若 profile
+缺少可解析班級，不會退回全校課程，而是回傳 `CLASS_NAME_REQUIRED`。前端不需要在
+schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再呼叫
+`searchCoursesForSchedule()`。
 
 `courseIds`, `selectedCourseIds`, `watchingCourseIds`, `completedCourseIds`, and `retakeCourseIds` should use section ids.
 

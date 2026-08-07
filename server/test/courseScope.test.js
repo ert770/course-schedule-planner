@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   parseClassName,
   buildCourseSearchScope,
+  buildCourseQueryScope,
   buildStudentScope,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
@@ -31,6 +32,19 @@ describe('課程搜尋範圍', () => {
     const emptyScope = { department: null, grade: null, className: null };
     assert.deepEqual(buildCourseSearchScope({}), emptyScope);
     assert.deepEqual(buildCourseSearchScope({ className: '資電學院綜合班' }), emptyScope);
+  });
+
+  test('API 拆分欄位可建立分類與搜尋共用的學生 scope', () => {
+    const scope = buildCourseQueryScope({
+      department: '資訊工程學系',
+      grade: '3',
+      className: '乙',
+    });
+
+    assert.equal(scope.department, '資訊工程學系');
+    assert.equal(scope.grade, 3);
+    assert.equal(scope.classSuffix, '乙');
+    assert.equal(scope.resolved, true);
   });
 });
 

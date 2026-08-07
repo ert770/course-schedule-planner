@@ -28,7 +28,7 @@ export default function SearchPage() {
     department: '',
     grade: '',
     className: '',
-    category: '', // 新增：必修/選修/通識
+    category: '',
     keyword: ''
   });
 
@@ -215,7 +215,10 @@ export default function SearchPage() {
                 <select value={deptForm.category} onChange={e => setDeptForm({...deptForm, category: e.target.value})}>
                   <option value="">全部 (All)</option>
                   <option value="必修">必修 (Required)</option>
-                  <option value="選修">選修 (Elective)</option>
+                  <option value="核心選修">核心選修 (Core Elective)</option>
+                  <option value="一般選修">一般選修 (Elective)</option>
+                  <option value="系外選修">系外選修 (Outside Elective)</option>
+                  <option value="通識" disabled>通識（分類資料尚未建立）</option>
                 </select>
               </div>
               <div className="form-group">
@@ -302,8 +305,9 @@ export default function SearchPage() {
                     type="checkbox" 
                     checked={condForm.isGenEd}
                     onChange={e => setCondForm({...condForm, isGenEd: e.target.checked})}
+                    disabled
                   />
-                  特定科目類別: 通識課程 (GenEd)
+                  特定科目類別：通識課程（分類資料尚未建立）
                 </label>
               </div>
 
@@ -348,6 +352,13 @@ export default function SearchPage() {
                   <div className="course-card-footer">
                     <span className="tag">{course.category}</span>
                     <span className="tag">{course.credits} 學分</span>
+                    {course.category === '系外選修' && course.outsideElective && (
+                      <span className={`tag ${course.outsideElective.eligible ? '' : 'error-text'}`}>
+                        {course.outsideElective.eligible
+                          ? '須向系辦確認'
+                          : `不可認列：${course.outsideElective.reasons.join('；')}`}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

@@ -43,6 +43,10 @@ System prompt 必須讓 Agent：
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
+
+`query_course_db` 由後端依目前 `userId` 的 profile 建立班級範圍，Agent 不傳入或猜測
+`department`、`grade`、`className`。可用 `category` 為 `必修`、`核心選修`、
+`一般選修`、`系外選修`；通識分類資料尚未建立，不得要求工具假造結果。
 | `final_answer` | 輸出最終回答 |
 
 ## `run_csp_scheduler` 參數

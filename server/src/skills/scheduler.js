@@ -34,6 +34,8 @@ const UNSCHEDULED_NAMES_IN_WARNING = 3;
 const CATEGORY_PRIORITY = {
   '必修': 0,
   '核心選修': 1,
+  '一般選修': 2,
+  // 尚未能由正式規則細分的 MySQL 原始選修保留相同優先度。
   '選修': 2,
   '通識': 3,
   '系外選修': 4,
@@ -97,7 +99,7 @@ function getCategoryPriority(course) {
 // 而不是把所有必修一起打成選修——後者會讓未帶 profile 的呼叫端結果無聲變差。
 function getEffectiveCategoryPriority(course, scope) {
   if (scope?.resolved && course.category === '必修' && !isRequiredForStudent(course, scope)) {
-    return CATEGORY_PRIORITY['選修'];
+    return CATEGORY_PRIORITY['一般選修'];
   }
   return getCategoryPriority(course);
 }

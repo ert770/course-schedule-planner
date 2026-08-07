@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import {
-  searchCourses,
+  searchCoursesForStudent,
   getCourseDetail,
   getDepartments,
   getInstructors,
   getClassNames,
 } from '../skills/courseQuery.js';
+import { buildCourseQueryScope } from '../skills/courseScope.js';
 
 const router = Router();
 
@@ -40,11 +41,21 @@ router.get('/', async (req, res) => {
     if (req.query.period) filters.period = Number(req.query.period);
     if (req.query.language) filters.language = req.query.language;
 
-    const courses = await searchCourses(filters);
-    res.json({ courses, total: courses.length });
+    const scope = buildCourseQueryScope(filters);
+    const courses = await searchCoursesForStudent(filters, scope);
+    res.json({
+      scope: {
+        department: scope.department,
+        grade: scope.grade,
+        className: scope.classSuffix,
+      },
+      appliedFilters: filters,
+      courses,
+      total: courses.length,
+    });
   } catch (err) {
-    console.error('Courses error:', err);
-    res.status(500).json({ error: err.message });
+    if (!err.status) console.error('Courses error:', err);
+    res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 });
 
