@@ -2,9 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isMysqlConfigured, queryRows } from './mysql.js';
-import { normalizeBlockedPeriods } from '../utils/periods.js';
+import { normalizeBlockedPeriods, MORNING_PERIOD } from '../utils/periods.js';
 import { normalizeDepartment, isDepartmentInput } from '../utils/text.js';
 import { getAbbreviations } from '../data/departmentMapping.js';
+import { tagsToFlags, extractTags, FLAG_TO_TAG } from '../data/preferenceTags.js';
 import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -281,11 +282,63 @@ function mapReviewRow(row) {
 // hardConstraintReason() 只認 `{ day, period }`。先前這裡原樣回傳陣列，
 // 時間字串的 `bp.day` 為 undefined，比對永遠跳過，
 // 使用者設定的避開時段完全不生效且沒有任何錯誤或警告。
+//
+// 決策 C：`avoid_time` 只保存第 2～14 節。既有資料若含第 1 節（實測有一筆
+// `["08:00"]`），讀取時剝除並改由 `#不排早八` 標籤表達，否則同一個限制會
+// 同時存在兩處。剝除要留下紀錄，不得靜默。
+// canonical ID（學號）與 `User_Profiles.user_id`（數字主鍵）的對照。
+//
+// canonical 是學號，但 MySQL 的 `WHERE user_id = ?` 只認數字。轉換只在這一層發生，
+// 對照來源是 `users.json` 的同一列——**不做任何推測**，對不到就維持原值，
+// 由 `updateMysqlUserPreference()` 的數字檢查擋下。
+function buildUserIdIndex() {
+  const toNumeric = new Map();
+  const toStudentId = new Map();
+
+  for (const user of readCollection('users')) {
+    if (user.studentId === undefined || user.id === undefined) continue;
+    toNumeric.set(String(user.studentId), String(user.id));
+    toStudentId.set(String(user.id), String(user.studentId));
+  }
+
+  return { toNumeric, toStudentId };
+}
+
+// 學號 → `User_Profiles.user_id`。已經是數字時原樣回傳。
+function toMysqlUserId(canonicalId) {
+  const key = String(canonicalId ?? '');
+  return buildUserIdIndex().toNumeric.get(key) ?? key;
+}
+
+// `User_Profiles.user_id` → 學號。對不到時維持數字，讓呼叫端看得出資料缺對照。
+function toCanonicalUserId(mysqlUserId) {
+  const key = String(mysqlUserId ?? '');
+  return buildUserIdIndex().toStudentId.get(key) ?? key;
+}
+
 function normalizeAvoidTime(avoidTime) {
-  return normalizeBlockedPeriods(
+  const all = normalizeBlockedPeriods(
     parseJson(avoidTime, []),
     entry => logger.warn(`無法解析的封鎖時段：${JSON.stringify(entry)}`, { label: 'Profile' })
   );
+
+  const morning = all.filter(entry => entry.period === MORNING_PERIOD);
+  if (morning.length > 0) {
+    logger.warn(
+      `avoid_time 含第 ${MORNING_PERIOD} 節（早八）${morning.length} 筆，已改由 `
+      + '`#不排早八` 標籤表達（決策 C：語意分離）。',
+      { label: 'Profile' }
+    );
+  }
+
+  return all.filter(entry => entry.period !== MORNING_PERIOD);
+}
+
+// 既有 `avoid_time` 是否隱含「不排早八」。用於讀取時把 legacy 資料
+// 轉成標籤，讓 MySQL 與前端對這個偏好的答案一致。
+function avoidTimeImpliesNoMorning(avoidTime) {
+  return normalizeBlockedPeriods(parseJson(avoidTime, []))
+    .some(entry => entry.period === MORNING_PERIOD);
 }
 
 // D3：`User_Profiles.department` 存的是 `'資訊工程學系'`——包含字面單引號字元。
@@ -507,9 +560,19 @@ function mapUserProfileRow(row) {
   const preferenceTags = parseJson(row.preference_tags, []);
   const completedCourses = parseJson(row.completed_courses, []);
 
+  const tags = Array.isArray(preferenceTags) ? preferenceTags : [];
+
+  // legacy `avoid_time` 若含第 1 節，等同於使用者選了 `#不排早八`（決策 C）。
+  // 實測資料就是這種狀態：MySQL `avoid_time: ["08:00"]` 但 JSON `noMorningClasses: false`。
+  const impliedTags = avoidTimeImpliesNoMorning(row.avoid_time)
+    ? [...new Set([...tags, FLAG_TO_TAG.get('noMorningClasses')])]
+    : tags;
+
   return {
     id: normalizeId(row.user_id),
-    userId: String(row.user_id),
+    // canonical 是學號，不是 `user_id`。這裡換過來之後，上層程式一律只看得到學號。
+    userId: toCanonicalUserId(row.user_id),
+    mysqlUserId: String(row.user_id),
     displayName: `User ${row.user_id}`,
     department: readProfileDepartment(row),
     gradeLevel: normalizeNumber(row.grade_level),
@@ -522,14 +585,20 @@ function mapUserProfileRow(row) {
     targetCreditsMin: 12,
     targetCreditsMax: normalizeNumber(row.max_credits, 25) || 25,
     blockedPeriods: normalizeAvoidTime(row.avoid_time),
-    preferredCategories: Array.isArray(preferenceTags) ? preferenceTags : [],
-    preferenceTags: Array.isArray(preferenceTags) ? preferenceTags : [],
+    preferredCategories: impliedTags,
+    preferenceTags: impliedTags,
+    selectedTags: impliedTags,
     mustTakeCourses: [],
     avoidInstructors: [],
-    preferCompact: false,
-    noMorningClasses: false,
-    noEveningClasses: false,
     preferencesJson: {},
+
+    // 偏好旗標**由標籤推導**，且只展開為 true 的項目。
+    //
+    // 先前這裡硬寫 `preferCompact: false`、`noMorningClasses: false`，那是
+    // **合成值**而非使用者存的值。合併多個 profile 來源時，這些 false 會被
+    // 當成有效資料，把使用者真正勾選的 true 蓋掉——偏好因此靜默消失，
+    // API 卻回報儲存成功。缺席即代表未勾選，不得補預設值。
+    ...tagsToFlags(impliedTags),
   };
 }
 
@@ -624,8 +693,19 @@ async function getMysqlUserPreferences() {
   ].map(profile => applyClassNameOverride(profile, classNames));
 }
 
-async function updateMysqlUserPreference(userId, item) {
+async function updateMysqlUserPreference(canonicalId, item) {
+  // canonical 是學號，MySQL 的主鍵是數字。轉換在此發生，其餘程式不需要知道。
+  const userId = toMysqlUserId(canonicalId);
+
+  // 對照不到 numeric id 就不能寫——但這代表 `users.json` 缺對照列，是資料問題，
+  // 必須講出來。先前這裡靜默 `return null`，導致前端送學號時
+  // **每一次 profile 寫入都被跳過**而毫無跡象。
   if (!/^\d+$/.test(String(userId))) {
+    logger.warn(
+      `無法把 ${JSON.stringify(canonicalId)} 對應到 User_Profiles.user_id，`
+      + 'MySQL profile 未更新。請確認 `users.json` 有對應的 id 欄位。',
+      { label: 'Profile' }
+    );
     return null;
   }
 
@@ -641,13 +721,34 @@ async function updateMysqlUserPreference(userId, item) {
     updates.push('`grade_level` = ?');
     params.push(item.gradeLevel ?? item.grade_level);
   }
-  if (item.preferenceTags !== undefined || item.preferredCategories !== undefined) {
+  // 偏好標籤。**先前只認 `preferenceTags` 與 `preferredCategories`，而 Setup 頁送的是
+  // `selectedTags`**——兩者對不上，`preference_tags` 因此從未被前端更新過，
+  // 資料庫裡那筆 legacy `["#不點名"]` 才會留存至今（稽核報告 F4）。
+  // `extractTags()` 三種寫法都認得，也接受只送旗標的呼叫端（例如 AI Agent）。
+  const tags = extractTags(item);
+  if (tags !== null) {
     updates.push('`preference_tags` = ?');
-    params.push(JSON.stringify(item.preferenceTags ?? item.preferredCategories ?? []));
+    params.push(JSON.stringify(tags));
   }
+
+  // 決策 C：`avoid_time` 只保存第 2～14 節。第 1 節由 `#不排早八` 標籤表達，
+  // 兩處都存必然漂移。呼叫端應在邊界擋下（見 `routes/profile.js`），
+  // 這裡是最後一道防線，剝除並記錄，不靜默寫入。
   if (item.blockedPeriods !== undefined || item.avoidTime !== undefined) {
+    const raw = item.blockedPeriods ?? item.avoidTime ?? [];
+    const normalized = normalizeBlockedPeriods(raw);
+    const kept = normalized.filter(entry => entry.period !== MORNING_PERIOD);
+
+    if (kept.length !== normalized.length) {
+      logger.warn(
+        `寫入的 avoid_time 含第 ${MORNING_PERIOD} 節，已剝除；`
+        + '早八請改用 `#不排早八` 標籤（決策 C）。',
+        { label: 'Profile' }
+      );
+    }
+
     updates.push('`avoid_time` = ?');
-    params.push(JSON.stringify(item.blockedPeriods ?? item.avoidTime ?? []));
+    params.push(JSON.stringify(kept));
   }
   if (item.completedCourseIds !== undefined || item.completedCourses !== undefined) {
     updates.push('`completed_courses` = ?');
@@ -677,8 +778,9 @@ async function updateMysqlUserPreference(userId, item) {
     return null;
   }
 
+  // 回傳的 profile 以 canonical（學號）為鍵，不是剛才用來 UPDATE 的數字主鍵。
   const allProfiles = await getMysqlUserPreferences();
-  return allProfiles.find(profile => sameId(profile.userId, userId)) || null;
+  return allProfiles.find(profile => sameId(profile.mysqlUserId, userId)) || null;
 }
 
 // 只存在於 MySQL 的資料。`server/data/` 沒有對應的 JSON 檔——種子資料已於

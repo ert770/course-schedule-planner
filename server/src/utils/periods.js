@@ -99,11 +99,41 @@ export function normalizeBlockedPeriods(value, onInvalid) {
   return blocked;
 }
 
+// 第 1 節（早八）的歸屬。
+//
+// **決策 C：語意分離。** `avoid_time` 與 `#不排早八` 原本會表達同一件事——
+// `normalizeBlockedPeriods(["08:00"])` 展開成「每天第 1 節」，而排課引擎的
+// `noMorningClasses` 排除的是 `startPeriod <= 1` 的課，兩者效果完全相同。
+// 同一個限制存在兩處必然漂移（實測到 MySQL `avoid_time: ["08:00"]` 與
+// JSON `noMorningClasses: false` 互相矛盾）。
+//
+// 因此劃清界線：
+//   - 第 1 節 → 只由 `#不排早八` 標籤控制
+//   - 第 2～14 節 → 只由 `avoid_time` 控制
+//
+// `#星期一排空` 展開的週一 1～14 節**允許**與第 1 節重疊——那是「整天」語意，
+// 硬挖掉第 1 節反而違反直覺。兩者取聯集。
+export const MORNING_PERIOD = 1;
+
+// 這些封鎖時段裡有沒有落在第 1 節的項目。用於寫入時的守門，
+// 避免第 1 節同時存在於 `avoid_time` 與標籤兩處。
+export function findMorningPeriodEntries(value) {
+  return normalizeBlockedPeriods(value).filter(entry => entry.period === MORNING_PERIOD);
+}
+
+// 移除第 1 節的項目，回傳 `avoid_time` 該保存的內容。
+export function stripMorningPeriods(value) {
+  return normalizeBlockedPeriods(value).filter(entry => entry.period !== MORNING_PERIOD);
+}
+
 export default {
   PERIODS_PER_DAY,
   DAYS_PER_WEEK,
   PERIOD_TIMES,
+  MORNING_PERIOD,
   toMinutes,
   findPeriodByTime,
   normalizeBlockedPeriods,
+  findMorningPeriodEntries,
+  stripMorningPeriods,
 };

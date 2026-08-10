@@ -42,12 +42,27 @@ export const graduationAPI = {
   get: (studentId) => request(`/graduation/${studentId}`),
 };
 
+// `userId` 不再有 `'default'` 預設值。
+//
+// 舊的預設值會讓未登入或身分讀取失敗的請求靜默落到一個共用假使用者，
+// 偏好、聊天記憶與課表全部寫到同一份資料上。現在缺身分就直接拋錯，
+// 由呼叫端負責在登入完成後才呼叫。
+//
+// **改這個函式時務必列出全部呼叫端**，包含共用元件（例如 `components/Chat/ChatPanel.jsx`）
+// 而不只是 pages——漏掉共用元件會讓整個頁面的功能失效。
+function requireUserId(userId, apiName) {
+  if (userId === undefined || userId === null || userId === '' || userId === 'default') {
+    throw new Error(`${apiName} 需要已登入的使用者身分`);
+  }
+  return userId;
+}
+
 // Chat API
 export const chatAPI = {
-  send: (message, userId = 'default') =>
+  send: (message, userId) =>
     request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ userId, message }),
+      body: JSON.stringify({ userId: requireUserId(userId, 'chatAPI.send'), message }),
     }),
 };
 
@@ -83,22 +98,28 @@ export const scheduleAPI = {
       method: 'POST',
       body: JSON.stringify({ courses }),
     }),
-  save: (name, schedule, totalCredits, userId = 'default') =>
+  save: (name, schedule, totalCredits, userId) =>
     request('/schedule/save', {
       method: 'POST',
-      body: JSON.stringify({ userId, name, schedule, totalCredits }),
+      body: JSON.stringify({
+        userId: requireUserId(userId, 'scheduleAPI.save'),
+        name,
+        schedule,
+        totalCredits,
+      }),
     }),
-  getSaved: (userId = 'default') =>
-    request(`/schedule/saved?userId=${userId}`),
+  getSaved: (userId) =>
+    request(`/schedule/saved?userId=${encodeURIComponent(requireUserId(userId, 'scheduleAPI.getSaved'))}`),
 };
 
 // Profile API
 export const profileAPI = {
-  get: (userId = 'default') => request(`/profile?userId=${userId}`),
-  update: (data, userId = 'default') =>
+  get: (userId) =>
+    request(`/profile?userId=${encodeURIComponent(requireUserId(userId, 'profileAPI.get'))}`),
+  update: (data, userId) =>
     request('/profile', {
       method: 'POST',
-      body: JSON.stringify({ userId, ...data }),
+      body: JSON.stringify({ userId: requireUserId(userId, 'profileAPI.update'), ...data }),
     }),
 };
 

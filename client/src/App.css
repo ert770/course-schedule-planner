@@ -102,6 +102,34 @@
 .setup-course-item input[type="checkbox"] {
   width: 18px; height: 18px; accent-color: var(--accent-blue); cursor: pointer;
 }
+/* 避開時段選擇器（對應 User_Profiles.avoid_time）。
+   決策 C：第 1 節由「#不排早八」控制，這裡停用該列。 */
+.avoid-time-picker { font-size: 0.82rem; }
+.avoid-time-hint { color: var(--text-secondary); margin: 0 0 10px; line-height: 1.5; }
+.avoid-time-scroll { overflow-x: auto; }
+.avoid-time-table { border-collapse: collapse; width: 100%; min-width: 420px; }
+.avoid-time-table th {
+  font-weight: 500; font-size: 0.75rem; color: var(--text-secondary);
+  padding: 4px; text-align: center; white-space: nowrap;
+}
+.avoid-time-period-head { display: table-cell; }
+.avoid-time-period-num { font-weight: 600; color: var(--text-primary); }
+.avoid-time-period-clock { display: block; font-size: 0.68rem; opacity: 0.7; }
+.avoid-time-table td { padding: 2px; }
+.avoid-time-cell {
+  width: 100%; min-width: 34px; height: 26px; border-radius: 5px;
+  background: var(--bg-card); border: 1.5px solid var(--border-color);
+  color: var(--accent-blue); font-size: 0.75rem; cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.avoid-time-cell:hover:not(:disabled) { border-color: var(--accent-blue); }
+.avoid-time-cell.selected {
+  border-color: var(--accent-blue); background: rgba(74, 124, 247, 0.16);
+}
+.avoid-time-cell:disabled { cursor: not-allowed; opacity: 0.35; }
+.avoid-time-row-disabled { opacity: 0.55; }
+.avoid-time-summary { color: var(--text-secondary); margin: 10px 0 0; }
+
 .setup-pref-group { margin-bottom: 20px; }
 .setup-pref-category { font-size: 0.95rem; font-weight: 600; margin-bottom: 10px; }
 .setup-pref-tags { display: flex; flex-wrap: wrap; gap: 8px; }

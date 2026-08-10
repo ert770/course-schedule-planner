@@ -3,6 +3,8 @@ import { getAll } from '../db/database.js';
 import { getGraduationRequirement } from '../data/graduationRequirements.js';
 import { normalizeDepartment } from '../utils/text.js';
 import { parseClassName } from '../skills/courseScope.js';
+import { resolveIdentity, identityErrorResponse } from '../services/identityService.js';
+import { getUserPreferences } from '../services/memoryService.js';
 
 const router = Router();
 
@@ -46,21 +48,24 @@ function hasCourseHistory(user) {
 router.get('/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
-    const users = await getAll('users');
-    const userProfiles = await getAll('user_preferences');
-    const user = users.find(item => String(item.studentId) === String(studentId))
-      || userProfiles.find(item => String(item.userId) === String(studentId));
 
-    if (!user) {
-      return res.status(404).json({ error: '找不到使用者' });
+    // canonical identity 解析，學號與 numeric id 都認得。
+    const identity = await resolveIdentity(studentId);
+    if (!identity.found) {
+      const { status, error } = identityErrorResponse(identity);
+      return res.status(status).json({ error });
     }
+
+    const users = await getAll('users');
+    const user = users.find(item => String(item.studentId) === String(identity.canonicalId)) || {};
 
     // 系所以**排課使用的同一份 profile** 為準。
     //
     // 先前這裡讀的是 `users.json` 的 `user.department`，但排課讀的是
-    // `user_preferences`／`User_Profiles`。同一位使用者的系所存在兩處，
-    // 兩邊可以各自漂移——畢業進度與課表會依不同的系所計算而毫無跡象（稽核報告 F16）。
-    const profile = userProfiles.find(item => String(item.userId) === String(studentId));
+    // `User_Profiles`。同一位使用者的系所存在兩處，兩邊可以各自漂移——
+    // 畢業進度與課表會依不同的系所計算而毫無跡象（稽核報告 F16）。
+    // `getUserPreferences()` 是排課用的同一支，因此兩邊必然一致。
+    const profile = await getUserPreferences(identity);
 
     // 畢業學分依系所而定，沒有全校通用的預設值。查不到對照時明確回報，
     // 不得用臆測的數字讓畫面看起來正常。

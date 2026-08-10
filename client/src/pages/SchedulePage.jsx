@@ -30,7 +30,14 @@ export default function SchedulePage() {
   useEffect(() => {
     let cancelled = false;
 
-    profileAPI.get(user?.studentId || 'default')
+    // 未登入時不呼叫，也不退回 `default` 使用者——那會讀到共用假帳號的 scope，
+    // 畫面看起來正常但資料是別人的。
+    if (!user?.studentId) {
+      setNotice({ level: 'error', text: '尚未登入，請重新登入後再操作。' });
+      return () => { cancelled = true; };
+    }
+
+    profileAPI.get(user.studentId)
       .then(profile => {
         if (cancelled) return;
         const scope = profile?.courseSearchScope || null;
@@ -77,10 +84,15 @@ export default function SchedulePage() {
   };
 
   const generateSchedule = async () => {
+    if (!user?.studentId) {
+      setNotice({ level: 'error', text: '尚未登入，無法產生個人化課表。' });
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await scheduleAPI.generate({
-        userId: user?.studentId || 'default',
+        userId: user.studentId,
         courseIds: selectedCourses.map(c => c.id),
         constraints: {},
       });

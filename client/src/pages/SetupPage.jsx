@@ -3,7 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { coursesAPI, profileAPI } from '../services/api';
 import { Sparkles, CheckCircle2, Circle, Loader2 } from 'lucide-react';
+import AvoidTimePicker from '../components/Setup/AvoidTimePicker';
 
+// 標籤清單必須與後端的 `server/src/data/preferenceTags.js` 一致——
+// 那份是標籤與排課旗標的唯一對照表。這裡多一個或少一個，
+// 使用者勾了就會存進去卻沒有任何排課效果。
+//
+// `#不點名` 原本只存在於資料庫、不在這份清單裡（稽核報告 F4），
+// 使用者因此看不到也改不掉。現已納入。
 const PREFERENCE_TAGS = {
   '上課時間': [
     '#盡量集中排課', '#不排早八', '#星期一排空', '#午休務必空出'
@@ -12,7 +19,7 @@ const PREFERENCE_TAGS = {
     '#無期中考', '#上機實作考試', '#期末報告為主', '#平時成績佔比高'
   ],
   '課程型態與互動': [
-    '#無分組報告', '#高度課堂討論', '#全英授課', '#學到許多知識'
+    '#無分組報告', '#高度課堂討論', '#全英授課', '#學到許多知識', '#不點名'
   ],
 };
 
@@ -47,6 +54,9 @@ export default function SetupPage() {
   const [checkedCourses, setCheckedCourses] = useState(new Set());
   
   const [selectedTags, setSelectedTags] = useState(new Set());
+  // 對應 `User_Profiles.avoid_time`。決策 C：只含第 2～14 節，
+  // 第 1 節由 `#不排早八` 標籤表達。
+  const [avoidPeriods, setAvoidPeriods] = useState([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -83,7 +93,13 @@ export default function SetupPage() {
   useEffect(() => {
     let cancelled = false;
 
-    profileAPI.get(user?.studentId || 'default')
+    // 未登入時不退回 `default` 使用者，沿用初始值。
+    if (!user?.studentId) {
+      setProfileLoaded(true);
+      return () => { cancelled = true; };
+    }
+
+    profileAPI.get(user.studentId)
       .then(profile => {
         if (cancelled || !profile) return;
         if (profile.department) setDepartment(profile.department);
@@ -91,6 +107,16 @@ export default function SetupPage() {
         if (savedGrade) setGrade(String(savedGrade));
         if (profile.className) setClassName(profile.className);
         setCourseSearchScope(profile.courseSearchScope || null);
+
+        // 已儲存的偏好必須帶回表單，否則使用者一進設定頁按儲存，
+        // 先前勾選的標籤會被空的初始值蓋掉——與班別是同一類問題。
+        // 偏好的真相來源是 `User_Profiles.preference_tags`。
+        if (Array.isArray(profile.selectedTags)) {
+          setSelectedTags(new Set(profile.selectedTags));
+        }
+        if (Array.isArray(profile.blockedPeriods)) {
+          setAvoidPeriods(profile.blockedPeriods);
+        }
       })
       .catch(() => { /* 讀不到就沿用初始值，不阻斷設定流程 */ })
       .finally(() => {
@@ -137,29 +163,30 @@ export default function SetupPage() {
   };
 
   const handleSubmit = async () => {
+    // 偏好會寫進這位使用者的 profile，沒有身分就不能存。
+    if (!user?.studentId) {
+      alert('尚未登入，無法儲存個人偏好設定。請重新登入後再試。');
+      return;
+    }
+
     setGenerating(true);
     try {
-      // Save preferences to backend
+      // **只送標籤，不逐一送 12 個布林。**
+      //
+      // 每個標籤與一個排課旗標一對一，布林由後端從標籤推導
+      // （`server/src/data/preferenceTags.js`）。前端逐一展開會變成
+      // 同一份資訊存兩種格式，而兩種格式一旦不同步就沒有東西能判斷誰對。
       const prefData = {
         department,
         grade,
         className,
-        noMorningClasses: selectedTags.has('#不排早八'),
-        preferCompact: selectedTags.has('#盡量集中排課'),
-        mondayFree: selectedTags.has('#星期一排空'),
-        lunchBreakFree: selectedTags.has('#午休務必空出'),
-        noMidterm: selectedTags.has('#無期中考'),
-        practicalExam: selectedTags.has('#上機實作考試'),
-        finalReport: selectedTags.has('#期末報告為主'),
-        weightDaily: selectedTags.has('#平時成績佔比高'),
-        noGroupReport: selectedTags.has('#無分組報告'),
-        preferDiscussion: selectedTags.has('#高度課堂討論'),
-        englishTaught: selectedTags.has('#全英授課'),
-        learnMore: selectedTags.has('#學到許多知識'),
-        completedCourseIds: [...checkedCourses],
         selectedTags: [...selectedTags],
+        // 決策 C：只含第 2～14 節。第 1 節由 `#不排早八` 標籤表達，
+        // 後端會拒絕含第 1 節的寫入。
+        blockedPeriods: avoidPeriods,
+        completedCourseIds: [...checkedCourses],
       };
-      await profileAPI.update(prefData, user?.studentId || 'default');
+      await profileAPI.update(prefData, user.studentId);
 
       markSetupDone();
 
@@ -285,6 +312,11 @@ export default function SetupPage() {
                   </div>
                 </div>
               ))}
+
+              <div className="setup-pref-group">
+                <h4 className="setup-pref-category">避開特定時段</h4>
+                <AvoidTimePicker value={avoidPeriods} onChange={setAvoidPeriods} />
+              </div>
             </div>
           </div>
         )}
