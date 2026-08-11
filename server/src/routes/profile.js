@@ -4,8 +4,21 @@ import { isDepartmentInput } from '../utils/text.js';
 import { buildCourseSearchScope } from '../skills/courseScope.js';
 import { resolveIdentity, identityErrorResponse } from '../services/identityService.js';
 import { findMorningPeriodEntries, MORNING_PERIOD } from '../utils/periods.js';
+import { PREFERENCE_TAG_GROUPS } from '../data/preferenceTags.js';
 
 const router = Router();
+
+// 偏好標籤的定義清單。
+//
+// **為什麼要開一支 API**：這份清單原本在前端寫死兩份（`SetupPage.jsx` 與
+// `DashboardPage.jsx`），加上後端一份共三份各自維護。實測時 Dashboard 那份
+// 已經漏掉 `#不點名`，而且用的是舊的布林 key 而非標籤——人工對照多份清單
+// 必然漂移，只是遲早的問題。
+//
+// 這裡不需要身分驗證：回傳的是標籤目錄本身，不是任何使用者的資料。
+router.get('/preference-tags', (req, res) => {
+  res.json({ groups: PREFERENCE_TAG_GROUPS });
+});
 
 router.get('/', async (req, res) => {
   try {

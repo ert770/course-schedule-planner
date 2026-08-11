@@ -5,23 +5,12 @@ import { coursesAPI, profileAPI } from '../services/api';
 import { Sparkles, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import AvoidTimePicker from '../components/Setup/AvoidTimePicker';
 
-// 標籤清單必須與後端的 `server/src/data/preferenceTags.js` 一致——
-// 那份是標籤與排課旗標的唯一對照表。這裡多一個或少一個，
-// 使用者勾了就會存進去卻沒有任何排課效果。
+// 標籤清單改由 `GET /api/profile/preference-tags` 提供，不再在前端寫死。
 //
-// `#不點名` 原本只存在於資料庫、不在這份清單裡（稽核報告 F4），
-// 使用者因此看不到也改不掉。現已納入。
-const PREFERENCE_TAGS = {
-  '上課時間': [
-    '#盡量集中排課', '#不排早八', '#星期一排空', '#午休務必空出'
-  ],
-  '評量方式偏好': [
-    '#無期中考', '#上機實作考試', '#期末報告為主', '#平時成績佔比高'
-  ],
-  '課程型態與互動': [
-    '#無分組報告', '#高度課堂討論', '#全英授課', '#學到許多知識', '#不點名'
-  ],
-};
+// 先前這份清單前端有兩份（本檔與 `DashboardPage.jsx`）、後端一份，共三份各自
+// 維護。實測時 Dashboard 那份已經漏掉 `#不點名` 且用的是舊布林 key——
+// 人工對照多份清單必然漂移。唯一定義來源是
+// `server/src/data/preferenceTags.js`，那也是標籤與排課旗標的對照表。
 
 const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
@@ -54,6 +43,8 @@ export default function SetupPage() {
   const [checkedCourses, setCheckedCourses] = useState(new Set());
   
   const [selectedTags, setSelectedTags] = useState(new Set());
+  // 標籤目錄由後端提供（單一定義來源），不在前端寫死。
+  const [tagGroups, setTagGroups] = useState([]);
   // 對應 `User_Profiles.avoid_time`。決策 C：只含第 2～14 節，
   // 第 1 節由 `#不排早八` 標籤表達。
   const [avoidPeriods, setAvoidPeriods] = useState([]);
@@ -87,6 +78,19 @@ export default function SetupPage() {
   useEffect(() => {
     loadElectiveCourses();
   }, [loadElectiveCourses]);
+
+  // 標籤目錄不隨使用者變動，載入一次即可。
+  useEffect(() => {
+    let cancelled = false;
+
+    profileAPI.getPreferenceTags()
+      .then(data => {
+        if (!cancelled) setTagGroups(data.groups || []);
+      })
+      .catch(() => { /* 取不到就不顯示標籤區，不阻斷其餘設定流程 */ });
+
+    return () => { cancelled = true; };
+  }, []);
 
   // 帶回已儲存的系所、年級與班別。沒有這一步，使用者只要進到設定頁按儲存，
   // 已存的班別就會被空值蓋掉——表單送出的是它自己的初始值，而初始值裡沒有班別。
@@ -190,8 +194,10 @@ export default function SetupPage() {
 
       markSetupDone();
 
-      // Ensure Dashboard generates a new schedule based on these exact prefs when mounted
-      localStorage.setItem('fcu_initial_prefs', JSON.stringify(prefData));
+      // 這裡原本另外把 prefData 寫進 `localStorage.fcu_initial_prefs` 給 Dashboard 用。
+      // 那是同一份偏好的第二份副本——Setup 改存標籤陣列之後，Dashboard 仍在讀
+      // 舊格式的布林鍵，側邊面板因此永遠不打勾。Dashboard 現在直接向 profile API
+      // 要同一份資料，不需要副本。
 
       // Small delay for animation feel
       await new Promise(r => setTimeout(r, 1500));
@@ -295,7 +301,7 @@ export default function SetupPage() {
             {/* Right - Preference tags */}
             <div className="setup-preferences">
               <h3 className="setup-section-title">3. 排課偏好設定</h3>
-              {Object.entries(PREFERENCE_TAGS).map(([category, tags]) => (
+              {tagGroups.map(({ category, tags }) => (
                 <div key={category} className="setup-pref-group">
                   <h4 className="setup-pref-category">{category}</h4>
                   <div className="setup-pref-tags">

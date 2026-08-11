@@ -121,6 +121,9 @@ export const profileAPI = {
       method: 'POST',
       body: JSON.stringify({ userId: requireUserId(userId, 'profileAPI.update'), ...data }),
     }),
+  // 偏好標籤目錄。不帶身分——回傳的是標籤定義本身，不是任何人的資料。
+  // 前端各頁不再自己寫死清單，避免像先前 Dashboard 那樣漏掉 `#不點名`。
+  getPreferenceTags: () => request('/profile/preference-tags'),
 };
 
 // Reviews API

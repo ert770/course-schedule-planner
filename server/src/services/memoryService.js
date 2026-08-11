@@ -82,6 +82,16 @@ async function readCourseHistory(identity) {
 //
 // 合併順序刻意讓 MySQL 最後蓋上去：`user_preferences.json` 留有 canonical 化之前
 // 寫入的舊值，若讓它覆蓋 MySQL，使用者剛存的偏好會被過期值取代。
+//
+// **`user_preferences.json` 目前的角色**：整合後該檔對 demo 使用者只剩
+// `{ id, userId, updatedAt }`，沒有任何實質欄位。它唯一剩下的用途是
+// **服務「不在 `User_Profiles` 裡的使用者」**——那種使用者沒有 MySQL 列可寫，
+// 偏好只能落在本機。
+//
+// 因此：**凡是 `User_Profiles` 已有欄位的資料（系所、年級、偏好標籤、避開時段、
+// 學分上限），一律不得再寫進這個檔案。** 同一個欄位存兩份必然漂移——實測就出現過
+// MySQL 說「避開早八」而 JSON 說「不避」的矛盾。若日後確認所有使用者都會建立
+// `User_Profiles` 列，這個檔案連同這段後備邏輯可以整個移除。
 export async function getUserPreferences(identity) {
   const prefs = (await getAll('user_preferences'))
     .find(profile => String(profile.userId) === String(identity.canonicalId));
