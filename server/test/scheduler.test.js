@@ -90,6 +90,104 @@ describe('S3-S4 必修與重補修優先', () => {
   });
 });
 
+describe('H4-H8 已修課程依課號排除', () => {
+  const passedHistory = [{ courseCode: 'IECS3002', passed: true }];
+
+  test('H4 已修課號的所有班次都被排除，並逐班次附上原因', () => {
+    const sections = [
+      makeCourse(101, {
+        name: '計算機演算法',
+        subid3: 'IECS3002',
+        department: '資訊三甲',
+        dayOfWeek: 2,
+      }),
+      makeCourse(202, {
+        name: '計算機演算法',
+        subid3: 'IECS3002',
+        department: '資訊三乙',
+        dayOfWeek: 3,
+      }),
+    ];
+
+    const result = generateSchedule(sections, {
+      courseHistory: passedHistory,
+      minCredits: 0,
+      maxCredits: 9,
+    });
+
+    assert.equal(result.schedule.length, 0);
+    assert.deepEqual(
+      result.excludedCourses.map(item => item.course.id).sort((a, b) => a - b),
+      [101, 202]
+    );
+    assert.ok(result.excludedCourses.every(
+      item => item.reason === '已修過並通過（課號 IECS3002）'
+    ));
+  });
+
+  test('H5 同一課號換成不同 section id 仍會被排除', () => {
+    const currentSection = makeCourse(999, {
+      name: '計算機演算法',
+      subid3: 'IECS3002',
+    });
+
+    const result = generateSchedule([currentSection], {
+      courseHistory: passedHistory,
+      minCredits: 0,
+    });
+
+    assert.ok(!result.schedule.some(course => course.id === 999));
+    assert.ok(result.excludedCourses.some(item => item.course.id === 999));
+  });
+
+  test('H6 passed: false 不被排除，且可由 retakeCourseIds 排入', () => {
+    const retake = makeCourse(303, {
+      name: '計算機演算法',
+      subid3: 'IECS3002',
+    });
+
+    const result = generateSchedule([retake], {
+      courseHistory: [{ courseCode: 'IECS3002', passed: false }],
+      retakeCourseIds: [303],
+      minCredits: 0,
+      maxCredits: 3,
+    });
+
+    assert.ok(result.schedule.some(course => course.id === 303));
+    assert.ok(!result.excludedCourses.some(item => item.reason.includes('已修過並通過')));
+  });
+
+  test('H7 缺少 subid3 時不以課名 fallback 誤判為已修', () => {
+    const missingCode = makeCourse(404, {
+      name: '計算機演算法',
+      subid3: undefined,
+    });
+
+    const result = generateSchedule([missingCode], {
+      courseHistory: passedHistory,
+      minCredits: 0,
+    });
+
+    assert.ok(result.schedule.some(course => course.id === 404));
+    assert.ok(!result.excludedCourses.some(item => item.reason.includes('已修過並通過')));
+  });
+
+  test('H8 課號精確比對，不做 trim 或大小寫正規化', () => {
+    const currentSection = makeCourse(505, {
+      name: '計算機演算法',
+      subid3: 'IECS3002',
+    });
+
+    const result = generateSchedule([currentSection], {
+      courseHistory: [{ courseCode: ' iecs3002 ', passed: true }],
+      minCredits: 0,
+    });
+
+    assert.ok(result.schedule.some(course => course.id === 505));
+    assert.ok(!result.excludedCourses.some(item => item.reason.includes('已修過並通過')));
+  });
+});
+
 describe('S5-S6 核心選修路徑', () => {
   // 修課路徑資料來自 113 課程地圖（`server/src/data/csCurriculum.js`）。
   const csScope = { department: '資訊工程學系', gradeLevel: 3, minCredits: 0 };

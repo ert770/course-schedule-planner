@@ -58,11 +58,23 @@ System prompt 必須讓 Agent：
 | 學分 | `minCredits`, `maxCredits`, `allowCreditOverload`, `maxCoursesPerDay` |
 | 學籍 | `department`, `gradeLevel` |
 | 時間 | `blockedPeriods`, `mondayFree`, `noMorningClasses`, `noEveningClasses`, `lunchBreakFree` |
-| 課程指定 | `mustTakeCourseIds`, `retakeCourseIds`, `completedCourseIds` |
+| 課程指定 | `mustTakeCourseIds`, `retakeCourseIds` |
 | 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
 | 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
 | 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
 | 畢業門檻 | `digitalCreditsNeeded` |
+
+### 修課歷史不屬於工具參數
+
+`completedCourseIds` 與 `courseHistory` 都不得出現在 `run_csp_scheduler` 的參數中。
+模型無法可靠得知使用者實際修過哪些課，讓模型提供這些值只會誘導它編造資料。
+
+同一次對話開始時，後端已把 profile（含 `courseHistory`）載入 `prefs`；
+`agentService.js` 呼叫 `generateForUser(identity, { constraints: args }, { prefs })`，再由
+`buildScheduleConstraints()` 只取 `prefs.courseHistory`。因此已修排除會自動生效，
+即使模型自行在參數中加入 `courseHistory` 也會被忽略。
+
+`retakeCourseIds` 維持為工具參數，因為重補修是使用者在當次對話中可以明確表達的需求。
 
 ### 學分上下限與超修
 

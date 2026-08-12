@@ -5,118 +5,6 @@
     "password": "123",
     "name": "黃思瑜",
     "className": "資訊三乙",
-    "completedCredits": 118,
-    "completedCourseIds": [],
-    "completedCourseCodes": [
-      "ATHL1003",
-      "CHIN1065",
-      "ENGL1008",
-      "GEK2000",
-      "IECS1005",
-      "IECS1006",
-      "IECS1007",
-      "IEE1010",
-      "MATH1005",
-      "MILT1035",
-      "ATHL1004",
-      "CHIN1066",
-      "ENGL1027",
-      "GEG2000",
-      "IECS1008",
-      "IECS1009",
-      "IEE1005",
-      "IEE1006",
-      "IEE1007",
-      "IEE1011",
-      "MATH1006",
-      "ENGL1048",
-      "IECS2001",
-      "IECS2004",
-      "IECS2007",
-      "IECS2061",
-      "GEG1016",
-      "GEH1028",
-      "GEH1081",
-      "IEE3011",
-      "ENGL1056",
-      "IECS2003",
-      "IECS2025",
-      "IECS3022",
-      "IECS2006",
-      "IECS2011",
-      "IECS2072",
-      "IINE2814",
-      "IECS2012",
-      "IECS2013",
-      "IECS3001",
-      "ENGL3121",
-      "IECS3045",
-      "IECS3046",
-      "IECS4052",
-      "IEE3017",
-      "SPAN1001",
-      "IECS3002",
-      "IECS3003",
-      "IECS4926",
-      "GEK1018",
-      "IECS3059",
-      "SPAN1002"
-    ],
-    "completedCourseNames": [
-      "體育(一)",
-      "中文思辨與表達(一)",
-      "大學基礎英文(一)中級",
-      "科學與人文的對話",
-      "計算機概論",
-      "程式設計(I)",
-      "程式設計(II)",
-      "普通物理-電、磁、光",
-      "微積分(一)",
-      "國防科技",
-      "體育(二)",
-      "中文思辨與表達(二)",
-      "大學基礎英文(二)中級",
-      "現代公民與社會實踐",
-      "程式設計(III)",
-      "程式設計(IV)",
-      "線性代數",
-      "邏輯設計",
-      "邏輯設計實習",
-      "普通物理-電、磁、光實驗",
-      "微積分(二)",
-      "大學精進英文(一)中級",
-      "資料結構",
-      "通訊與網路概論",
-      "離散數學",
-      "資料結構實習",
-      "生態環境保育",
-      "決策與賽局:溝通創造雙贏",
-      "美好時光，社群聚場",
-      "智慧機器人概論與實作",
-      "大學精進英文(二)中級",
-      "系統程式",
-      "機率與統計",
-      "資料庫系統",
-      "UNIX應用與實務",
-      "系統分析與設計",
-      "Web程式設計",
-      "當教育大數據遇見AI",
-      "微處理機系統",
-      "微處理機系統實習",
-      "作業系統(一)",
-      "從電影中的文化反思看性別多元議題",
-      "軟體測試",
-      "軟體工程開發實務",
-      "資訊與網路安全",
-      "Python程式設計",
-      "西班牙文(一)",
-      "計算機演算法",
-      "計算機結構學",
-      "專題研究(一)",
-      "奈米科技與生活",
-      "人工智慧導論",
-      "西班牙文(二)"
-    ],
     "courseHistory": [
       {
         "academicYear": 112,
@@ -126,6 +14,7 @@
         "score": 86,
         "letterGrade": "A",
         "credits": 1,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "nonGraduation"
@@ -138,6 +27,7 @@
         "score": 79,
         "letterGrade": "B+",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "general"
@@ -150,6 +40,7 @@
         "score": 82,
         "letterGrade": "A-",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "general"
@@ -162,6 +53,7 @@
         "score": 88,
         "letterGrade": "A",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "general"
@@ -174,6 +66,7 @@
         "score": 88,
         "letterGrade": "A",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -186,6 +79,7 @@
         "score": 76,
         "letterGrade": "B",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -198,6 +92,7 @@
         "score": 76,
         "letterGrade": "B",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -210,6 +105,7 @@
         "score": 92,
         "letterGrade": "A+",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -222,6 +118,7 @@
         "score": 77,
         "letterGrade": "B+",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -234,6 +131,7 @@
         "score": 81,
         "letterGrade": "A-",
         "credits": 1,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "nonGraduation"
@@ -246,6 +144,7 @@
         "score": 92,
         "letterGrade": "A+",
         "credits": 1,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "nonGraduation"
@@ -258,6 +157,7 @@
         "score": 92,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "general"
@@ -270,6 +170,7 @@
         "score": 80,
         "letterGrade": "A-",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "general"
@@ -282,6 +183,7 @@
         "score": 82,
         "letterGrade": "A-",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "general"
@@ -294,6 +196,7 @@
         "score": 60,
         "letterGrade": "C-",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -306,6 +209,7 @@
         "score": 71,
         "letterGrade": "B-",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -318,6 +222,7 @@
         "score": 81,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -330,6 +235,7 @@
         "score": 80,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -342,6 +248,7 @@
         "score": 87,
         "letterGrade": "A",
         "credits": 1,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -354,6 +261,7 @@
         "score": 83,
         "letterGrade": "A-",
         "credits": 1,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -366,6 +274,7 @@
         "score": 82,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -378,6 +287,7 @@
         "score": 89,
         "letterGrade": "A",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "general"
@@ -390,6 +300,7 @@
         "score": 88,
         "letterGrade": "A",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -402,6 +313,7 @@
         "score": 84,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -414,6 +326,7 @@
         "score": 86,
         "letterGrade": "A",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -426,6 +339,7 @@
         "score": 88,
         "letterGrade": "A",
         "credits": 1,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -438,6 +352,7 @@
         "score": 96,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": "(M)",
         "graduationCategory": "general"
@@ -450,6 +365,7 @@
         "score": 91,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": "(M)",
         "graduationCategory": "general"
@@ -462,6 +378,7 @@
         "score": 88,
         "letterGrade": "A",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": "(M)",
         "graduationCategory": "general"
@@ -474,6 +391,7 @@
         "score": 92,
         "letterGrade": "A+",
         "credits": 3,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "external"
@@ -486,6 +404,7 @@
         "score": 89,
         "letterGrade": "A",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "general"
@@ -498,6 +417,7 @@
         "score": 85,
         "letterGrade": "A",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -510,6 +430,7 @@
         "score": 71,
         "letterGrade": "B-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -522,6 +443,7 @@
         "score": 81,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -534,6 +456,7 @@
         "score": 91,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "elective"
@@ -546,6 +469,7 @@
         "score": 82,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "elective"
@@ -558,6 +482,7 @@
         "score": 94,
         "letterGrade": "A+",
         "credits": 3,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "elective"
@@ -570,6 +495,7 @@
         "score": 93,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "external"
@@ -582,6 +508,7 @@
         "score": 80,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -594,6 +521,7 @@
         "score": 80,
         "letterGrade": "A-",
         "credits": 1,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -606,6 +534,7 @@
         "score": 61,
         "letterGrade": "C-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -618,6 +547,7 @@
         "score": 94,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "external"
@@ -630,6 +560,7 @@
         "score": 79,
         "letterGrade": "B+",
         "credits": 3,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "elective"
@@ -642,6 +573,7 @@
         "score": 82,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "elective"
@@ -654,6 +586,7 @@
         "score": 81,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "elective"
@@ -666,6 +599,7 @@
         "score": 92,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "elective"
@@ -678,6 +612,7 @@
         "score": 100,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "external"
@@ -690,6 +625,7 @@
         "score": 91,
         "letterGrade": "A+",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -702,6 +638,7 @@
         "score": 80,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -714,6 +651,7 @@
         "score": 89,
         "letterGrade": "A",
         "credits": 2,
+        "passed": true,
         "requirementType": "必修",
         "generalEducationCategory": null,
         "graduationCategory": "required"
@@ -726,6 +664,7 @@
         "score": 92,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": "(N)",
         "graduationCategory": "general"
@@ -738,6 +677,7 @@
         "score": 80,
         "letterGrade": "A-",
         "credits": 3,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "elective"
@@ -750,17 +690,12 @@
         "score": 90,
         "letterGrade": "A+",
         "credits": 2,
+        "passed": true,
         "requirementType": "選修",
         "generalEducationCategory": null,
         "graduationCategory": "external"
       }
     ],
-    "earnedCredits": {
-      "required": 61,
-      "elective": 22,
-      "general": 24,
-      "external": 11
-    },
     "watchlist": [
       {
         "id": 101,

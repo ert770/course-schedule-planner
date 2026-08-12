@@ -277,6 +277,11 @@ request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/co
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
 - **`selectedCourseIds`、`watchingCourseIds`、`courseStates`**：屬於本次操作的當下狀態，不從已儲存偏好回填。
 - **`mondayFree`**：會展開成週一第 1~14 節的 `blockedPeriods`，並與既有封鎖時段合併。
+- **`blockedPeriods` 與 `noMorningClasses`**：兩者獨立判定、取聯集。`blockedPeriods`
+  接受第 1～14 節（逐格指定星期），`noMorningClasses` 只影響第 1 節但涵蓋每一天。
+  兩者可重疊，不互相推導：`blockedPeriods` 含第 1 節**不會**讓 `noMorningClasses`
+  變成 `true`。（2026-08-11 前 `POST /api/profile` 會對含第 1 節的 `blockedPeriods`
+  回 `400`，該限制已移除。）
 
 Response:
 

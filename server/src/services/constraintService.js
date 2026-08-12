@@ -79,7 +79,17 @@ export function buildScheduleConstraints(input = {}, prefs = {}) {
     englishTaught: pickFlag(input.englishTaught, prefs.englishTaught),
 
     mustTakeCourseIds: pickList(input.mustTakeCourseIds, prefs.mustTakeCourses),
-    completedCourseIds: pickList(input.completedCourseIds, prefs.completedCourseIds),
+    // 修課歷史直通，**不做 request／偏好合併**。
+    //
+    // `pickList()` 的用途是「request 可以覆蓋已儲存偏好」，但修課歷史沒有任何
+    // 呼叫端會在 request 裡送：`POST /api/schedule/generate` 不送，AI Agent 的
+    // `run_csp_scheduler` 工具參數也不含它（見 `promptService.js`）。寫成雙來源
+    // 合併只會暗示一個不存在的覆蓋能力，還讓模型有機會塞造假的修課紀錄。
+    //
+    // 先前這裡是 `completedCourseIds: pickList(input.completedCourseIds, prefs.completedCourseIds)`，
+    // 兩邊恆為 `undefined` 與 `[]`，結果永遠是空陣列——這正是已修排除從未生效的原因之一。
+    // 已修課號改由 `skills/scheduler.js` 呼叫 `data/courseHistory.js` 當場推導。
+    courseHistory: prefs.courseHistory ?? [],
     retakeCourseIds: pickList(
       input.retakeCourseIds || input.failedRequiredCourseIds,
       prefs.retakeCourseIds || prefs.failedRequiredCourseIds

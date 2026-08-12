@@ -122,12 +122,10 @@
   color: var(--accent-blue); font-size: 0.75rem; cursor: pointer;
   transition: all var(--transition-fast);
 }
-.avoid-time-cell:hover:not(:disabled) { border-color: var(--accent-blue); }
+.avoid-time-cell:hover { border-color: var(--accent-blue); }
 .avoid-time-cell.selected {
   border-color: var(--accent-blue); background: rgba(74, 124, 247, 0.16);
 }
-.avoid-time-cell:disabled { cursor: not-allowed; opacity: 0.35; }
-.avoid-time-row-disabled { opacity: 0.55; }
 .avoid-time-summary { color: var(--text-secondary); margin: 10px 0 0; }
 
 .setup-pref-group { margin-bottom: 20px; }

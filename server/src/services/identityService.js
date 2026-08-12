@@ -9,11 +9,14 @@
 //
 // **實測到的後果**：`updateMysqlUserPreference()` 對非數字 userId 直接 `return null`，
 // 所以前端送 `studentId` 時 MySQL profile 寫入會被**靜默跳過**，資料改落到
-// `user_preferences.json`。同一位學生因此同時存在：
+// 當時還存在的 `server/data/user_preferences.json`。同一位學生因此同時存在：
 //
 //   - `User_Profiles.user_id = 1`（真正被排課讀到的那份）
 //   - `user_preferences.json` 的 `userId = "D1249697"`（內容已過期的副本）
 //   - `user_preferences.json` 的 `userId = "1"`（空殼）
+//
+// 那個檔案已於 2026-08-11 刪除，`User_Profiles` 是 profile 的唯一儲存體；
+// 寫不進去會拋錯而不是落到別處（見 `services/memoryService.js` 的欄位擁有權契約）。
 //
 // canonical ID 選 **`studentId`**：學號是這個領域裡「這個人是誰」的答案，
 // 使用者、登入表單、畢業查詢用的都是它。`User_Profiles.user_id = 1` 只是

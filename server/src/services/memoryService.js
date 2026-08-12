@@ -28,13 +28,16 @@ export async function clearChatHistory(userId) {
 // **不含任何偏好旗標。** 偏好一律由 `preference_tags` 推導，缺席即代表未勾選；
 // 在這裡補 `noMorningClasses: false` 之類的合成值，會在與其他來源合併時
 // 把使用者真正存的 true 蓋掉——那正是偏好靜默消失的成因。
+//
+// 同理**不含任何修課歷史的派生欄位**（`completedCourseCodes`、`completedCredits`
+// 之類）。修課歷史只有 `courseHistory` 一個代表，課號與學分一律由
+// `data/courseHistory.js` 的函式當場算。
 function emptyProfile(identity) {
   return {
     userId: String(identity.canonicalId),
     studentId: identity.studentId ?? null,
     displayName: identity.displayName || '使用者',
-    completedCredits: 0,
-    completedCourseIds: [],
+    courseHistory: [],
     targetCreditsMin: 12,
     targetCreditsMax: 25,
     blockedPeriods: [],
@@ -49,6 +52,12 @@ function emptyProfile(identity) {
 
 // 歷史修課存在 `users.json`（2026-08-06 匯入），偏好存在 `User_Profiles`。
 // 排課只讀後者，因此在 profile 層合併——否則排課器永遠看不到修課歷史。
+//
+// **只回傳 `courseHistory` 本身，不派生任何欄位。** 先前這裡另外回傳
+// `completedCourseCodes` 與 `completedCredits`，那是把同一份資料從檔案搬到
+// 記憶體再存一次；需要課號或學分的呼叫端改為自行呼叫
+// `data/courseHistory.js` 的 `getPassedCourseCodes()` / `getEarnedCredits()` /
+// `getTotalEarnedCredits()`。
 async function readCourseHistory(identity) {
   const users = await getAll('users');
   const user = users.find(item =>
@@ -58,11 +67,7 @@ async function readCourseHistory(identity) {
 
   if (!user) return {};
 
-  return {
-    completedCourseCodes: user.completedCourseCodes ?? [],
-    courseHistory: user.courseHistory ?? [],
-    completedCredits: user.completedCredits ?? 0,
-  };
+  return { courseHistory: user.courseHistory ?? [] };
 }
 
 // Profile 的欄位擁有權契約。
@@ -74,24 +79,25 @@ async function readCourseHistory(identity) {
 // | --- | --- | --- |
 // | `department`、`gradeLevel` | `User_Profiles` | 有對應欄位，排課直接讀 |
 // | 偏好標籤與其推導出的旗標 | `User_Profiles.preference_tags` | 有對應欄位；標籤是儲存格式 |
-// | `blockedPeriods`（第 2～14 節） | `User_Profiles.avoid_time` | 有對應欄位（決策 C） |
+// | `blockedPeriods`（第 1～14 節） | `User_Profiles.avoid_time` | 有對應欄位 |
 // | `targetCreditsMax` | `User_Profiles.max_credits` | 有對應欄位 |
 // | `studentId`、`name`、`className` | `users.json` | `User_Profiles` 沒有這些欄位 |
-// | `courseHistory`、`completedCourseCodes`、`completedCredits`、`earnedCredits` | `users.json` | 同上；2026-08-06 由成績單匯入 |
-// | 其餘本機設定 | `user_preferences.json` | 前兩者都沒有欄位時的落腳處 |
+// | `courseHistory` | `users.json` | 同上；2026-08-06 由成績單匯入 |
 //
-// 合併順序刻意讓 MySQL 最後蓋上去：`user_preferences.json` 留有 canonical 化之前
-// 寫入的舊值，若讓它覆蓋 MySQL，使用者剛存的偏好會被過期值取代。
+// **修課歷史只有 `courseHistory` 一個代表。** `completedCourseCodes`、
+// `completedCourseNames`、`completedCourseIds`、`completedCredits`、`earnedCredits`
+// 五個欄位都是它算得出來的東西，已於 2026-08-11 從 `users.json` 移除；
+// 課號與學分請呼叫 `data/courseHistory.js` 的派生函式，不要在 profile 上
+// 重新長出同名欄位。
 //
-// **`user_preferences.json` 目前的角色**：整合後該檔對 demo 使用者只剩
-// `{ id, userId, updatedAt }`，沒有任何實質欄位。它唯一剩下的用途是
-// **服務「不在 `User_Profiles` 裡的使用者」**——那種使用者沒有 MySQL 列可寫，
-// 偏好只能落在本機。
+// **`User_Profiles` 是 profile 的唯一儲存體。** 曾經有第三個位置
+// `server/data/user_preferences.json`，用來接住「MySQL 沒有這個人」的情況。
+// 該檔已於 2026-08-11 刪除，理由是同一個欄位存兩份必然漂移——實測就出現過
+// MySQL 說「避開早八」而 JSON 說「不避」，而且沒有任何東西能判斷誰對。
 //
-// 因此：**凡是 `User_Profiles` 已有欄位的資料（系所、年級、偏好標籤、避開時段、
-// 學分上限），一律不得再寫進這個檔案。** 同一個欄位存兩份必然漂移——實測就出現過
-// MySQL 說「避開早八」而 JSON 說「不避」的矛盾。若日後確認所有使用者都會建立
-// `User_Profiles` 列，這個檔案連同這段後備邏輯可以整個移除。
+// 因此 `getAll('user_preferences')` 現在只會回傳 `User_Profiles` 的內容
+// （集合名稱維持不變，是這個 store 的邏輯名稱）。寫不進 MySQL 時
+// `upsertByField()` 會拋錯，不再有靜默落到本機檔案的後路。
 export async function getUserPreferences(identity) {
   const prefs = (await getAll('user_preferences'))
     .find(profile => String(profile.userId) === String(identity.canonicalId));
@@ -106,9 +112,9 @@ export async function getUserPreferences(identity) {
   };
 }
 
-// 寫入走 canonical ID。canonical 是 numeric id，因此 MySQL 的
-// `UPDATE User_Profiles WHERE user_id = ?` 會真的命中，而不是像先前那樣
-// 對非數字 userId 直接 return null 後靜默落到 JSON。
+// 寫入走 canonical ID（學號），由 `db/database.js` 在 MySQL 邊界換成
+// `User_Profiles.user_id`。先前對非數字 userId 直接 return null 再靜默落到
+// 本機 JSON，前端送學號時每一次寫入都被跳過而毫無跡象；現在寫不進去會拋錯。
 export async function updateUserPreferences(identity, updates) {
   const canonicalId = String(identity.canonicalId);
 

@@ -3,7 +3,6 @@ import { getUserPreferences, updateUserPreferences } from '../services/memorySer
 import { isDepartmentInput } from '../utils/text.js';
 import { buildCourseSearchScope } from '../skills/courseScope.js';
 import { resolveIdentity, identityErrorResponse } from '../services/identityService.js';
-import { findMorningPeriodEntries, MORNING_PERIOD } from '../utils/periods.js';
 import { PREFERENCE_TAG_GROUPS } from '../data/preferenceTags.js';
 
 const router = Router();
@@ -57,20 +56,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'department 必須是非空字串' });
     }
 
-    // 決策 C：第 1 節（早八）由 `#不排早八` 標籤表達，`avoid_time` 只管第 2～14 節。
-    // 同一個限制存在兩處必然漂移，因此在邊界明確拒絕而非靜默剝除——
-    // 靜默剝除會讓使用者以為存好了，實際上設定沒有生效。
-    const blocked = updates.blockedPeriods ?? updates.avoidTime;
-    if (blocked !== undefined) {
-      const morning = findMorningPeriodEntries(blocked);
-      if (morning.length > 0) {
-        return res.status(400).json({
-          error: `避開時段不得包含第 ${MORNING_PERIOD} 節（早八）。`
-            + '早八請改用「#不排早八」偏好標籤設定。',
-        });
-      }
-    }
-
+    // 避開時段接受第 1～14 節。先前這裡會在含第 1 節時回 400，要求改用
+    // 「#不排早八」標籤（舊決策 C）——但那兩者不是同一件事：標籤是「每天的
+    // 第一節都不要」，避開時段是「這個星期幾的這一節不要」。擋掉第 1 節等於
+    // 讓使用者無法只避開某一天的早八。兩者可重疊，排課時取聯集。
     const updated = await updateUserPreferences(identity, updates);
     res.json({ success: true, preferences: updated });
   } catch (err) {

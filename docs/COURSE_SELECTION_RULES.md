@@ -245,12 +245,12 @@
 | 順位 | 位置 | 適用 |
 | ---: | --- | --- |
 | 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
-| 2 | `user_preferences.json` 的 `className` | MySQL 使用者，但 `users.json` 沒有對應列 |
-| 3 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
+| 2 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
 
-**第 2 順位是必要的**：只寫 `users.json` 的話，存在於 `User_Profiles` 但沒有 `users.json`
-對應列的使用者，班別會被「儲存成功」地丟掉——`updateMysqlUserPreference()` 沒有這個欄位
-可寫、卻仍回傳成功的 profile，下一次排課直接退回系所 + 年級，而且沒有任何跡象。
+**兩者都沒有時班別無處可存，寫入會拋錯。** 這種使用者在 `User_Profiles` 裡、
+但該表沒有 `class_name` 欄位，`users.json` 也沒有他的列。原本的第 3 順位
+`user_preferences.json` 已於 2026-08-11 刪除（同一份 profile 存兩處必然漂移）。
+明確失敗優於「儲存成功」地丟掉——後者會讓下一次排課無聲地退回系所 + 年級。
 
 優先順序的決策邏輯抽成純函式 `pickClassNameTarget()` 並有測試涵蓋。
 

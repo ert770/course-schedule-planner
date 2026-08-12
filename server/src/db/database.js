@@ -2,10 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isMysqlConfigured, queryRows } from './mysql.js';
-import { normalizeBlockedPeriods, MORNING_PERIOD } from '../utils/periods.js';
+import { normalizeBlockedPeriods } from '../utils/periods.js';
 import { normalizeDepartment, isDepartmentInput } from '../utils/text.js';
 import { getAbbreviations } from '../data/departmentMapping.js';
-import { tagsToFlags, extractTags, FLAG_TO_TAG } from '../data/preferenceTags.js';
+import { tagsToFlags, extractTags } from '../data/preferenceTags.js';
 import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -278,14 +278,6 @@ function mapReviewRow(row) {
   };
 }
 
-// `User_Profiles.avoid_time` 存的是時間字串（例如 ["08:00"]），但排課引擎的
-// hardConstraintReason() 只認 `{ day, period }`。先前這裡原樣回傳陣列，
-// 時間字串的 `bp.day` 為 undefined，比對永遠跳過，
-// 使用者設定的避開時段完全不生效且沒有任何錯誤或警告。
-//
-// 決策 C：`avoid_time` 只保存第 2～14 節。既有資料若含第 1 節（實測有一筆
-// `["08:00"]`），讀取時剝除並改由 `#不排早八` 標籤表達，否則同一個限制會
-// 同時存在兩處。剝除要留下紀錄，不得靜默。
 // canonical ID（學號）與 `User_Profiles.user_id`（數字主鍵）的對照。
 //
 // canonical 是學號，但 MySQL 的 `WHERE user_id = ?` 只認數字。轉換只在這一層發生，
@@ -316,29 +308,18 @@ function toCanonicalUserId(mysqlUserId) {
   return buildUserIdIndex().toStudentId.get(key) ?? key;
 }
 
+// `User_Profiles.avoid_time` 存的是時間字串（例如 ["08:00"]），但排課引擎的
+// hardConstraintReason() 只認 `{ day, period }`。先前這裡原樣回傳陣列，
+// 時間字串的 `bp.day` 為 undefined，比對永遠跳過，使用者設定的避開時段
+// 完全不生效且沒有任何錯誤或警告。
+//
+// 這裡只做格式轉換，**不篩掉任何節次**——第 1～14 節都是使用者可以合法
+// 避開的時段（見 `utils/periods.js` 對第 1 節歸屬的說明）。
 function normalizeAvoidTime(avoidTime) {
-  const all = normalizeBlockedPeriods(
+  return normalizeBlockedPeriods(
     parseJson(avoidTime, []),
     entry => logger.warn(`無法解析的封鎖時段：${JSON.stringify(entry)}`, { label: 'Profile' })
   );
-
-  const morning = all.filter(entry => entry.period === MORNING_PERIOD);
-  if (morning.length > 0) {
-    logger.warn(
-      `avoid_time 含第 ${MORNING_PERIOD} 節（早八）${morning.length} 筆，已改由 `
-      + '`#不排早八` 標籤表達（決策 C：語意分離）。',
-      { label: 'Profile' }
-    );
-  }
-
-  return all.filter(entry => entry.period !== MORNING_PERIOD);
-}
-
-// 既有 `avoid_time` 是否隱含「不排早八」。用於讀取時把 legacy 資料
-// 轉成標籤，讓 MySQL 與前端對這個偏好的答案一致。
-function avoidTimeImpliesNoMorning(avoidTime) {
-  return normalizeBlockedPeriods(parseJson(avoidTime, []))
-    .some(entry => entry.period === MORNING_PERIOD);
 }
 
 // D3：`User_Profiles.department` 存的是 `'資訊工程學系'`——包含字面單引號字元。
@@ -408,12 +389,13 @@ function readProfileDepartment(row) {
 // | 順位 | 位置 | 適用 |
 // | ---: | --- | --- |
 // | 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
-// | 2 | `user_preferences.json` 的 `className` | MySQL 使用者，但 `users.json` 沒有對應列 |
-// | 3 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
+// | 2 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
 //
-// 第 2 順位是必要的：只寫 `users.json` 的話，存在於 `User_Profiles` 但沒有
-// `users.json` 對應列的使用者，班別會被「儲存成功」地丟掉——`updateMysqlUserPreference()`
-// 沒有這個欄位可寫、卻仍回傳成功的 profile，下一次排課就退回系所 + 年級。
+// 曾經有第 3 順位 `user_preferences.json`，用來接住「在 `User_Profiles` 裡、
+// 但 `users.json` 沒有對應列」的使用者。該檔已於 2026-08-11 刪除（同一份 profile
+// 存兩個檔案必然漂移），因此這種使用者的班別**無處可存**。
+// `pickClassNameTarget()` 對這種情況回傳 `null`，由 `upsertByField()` 拋錯——
+// 不得靜默丟棄。先前那個 bug 正是「儲存成功但值消失」。
 
 function normalizeClassName(value) {
   const className = String(value ?? '').trim();
@@ -442,20 +424,12 @@ function hasUserProfileClassNameColumn() {
 function readClassNameOverrides() {
   const index = new Map();
 
-  // 先讀 users.json（順位 3），再讓 user_preferences.json（順位 2）覆蓋。
   for (const user of readCollection('users')) {
     const className = normalizeClassName(user.className);
     if (!className) continue;
 
     if (user.studentId !== undefined) index.set(String(user.studentId), className);
     if (user.id !== undefined) index.set(String(user.id), className);
-  }
-
-  for (const profile of readCollection('user_preferences')) {
-    const className = normalizeClassName(profile.className);
-    if (className && profile.userId !== undefined) {
-      index.set(String(profile.userId), className);
-    }
   }
 
   return index;
@@ -469,8 +443,7 @@ function applyClassNameOverride(profile, overrides) {
   return className ? { ...profile, className } : profile;
 }
 
-// 寫入 `users.json` 的對應使用者。找不到對應列時回傳 false，
-// 由呼叫端改寫進 `user_preferences.json`。
+// 寫入 `users.json` 的對應使用者。找不到對應列時回傳 false。
 function writeClassNameOverride(userId, className) {
   const users = readCollection('users');
   const index = users.findIndex(user =>
@@ -490,12 +463,15 @@ function hasUsersJsonRow(userId) {
   );
 }
 
-// 班別要寫到哪裡。純函式，與 I/O 分離才測得到——這段優先順序正是
-// 「存在 User_Profiles 但沒有 users.json 對應列的使用者，班別被靜默丟掉」的修正點。
+// 班別要寫到哪裡。純函式，與 I/O 分離才測得到。
+//
+// 回傳 `null` 代表**無處可存**：這位使用者在 `User_Profiles` 裡，但該表還沒有
+// `class_name` 欄位，`users.json` 也沒有他的列。這種情況必須讓寫入失敗，
+// 不得回報成功——「儲存成功但值消失」正是先前那個 bug。
 export function pickClassNameTarget({ isMysqlProfileWrite, hasColumn, hasUsersJsonRow: hasRow }) {
   if (isMysqlProfileWrite && hasColumn) return 'column';
   if (hasRow) return 'usersJson';
-  return 'localProfile';
+  return null;
 }
 
 async function resolveClassNameTarget(userId, isMysqlProfileWrite) {
@@ -506,24 +482,7 @@ async function resolveClassNameTarget(userId, isMysqlProfileWrite) {
   });
 }
 
-// 只把班別寫進本機 `user_preferences.json`，不連帶寫入其他欄位——
-// 那些欄位的真相來源是 `User_Profiles`，在本機留一份副本只會製造漂移。
-function writeLocalProfileClassName(userId, className) {
-  const profiles = readCollection('user_preferences');
-  const index = profiles.findIndex(profile => sameId(profile.userId, userId));
-  const value = normalizeClassName(className);
-
-  if (index === -1) {
-    const maxId = profiles.reduce((max, item) => Math.max(max, normalizeNumber(item.id, 0) || 0), 0);
-    profiles.push({ id: maxId + 1, userId: String(userId), className: value });
-  } else {
-    profiles[index] = { ...profiles[index], className: value };
-  }
-
-  writeCollection('user_preferences', profiles);
-}
-
-// 本機 JSON 檔的 profile 不經過 mapUserProfileRow，仍走同一套正規化，
+// 寫入前的 department 正規化，與 `mapUserProfileRow()` 共用同一套規則，
 // 避免依資料來源不同而有兩種 department 值。
 function normalizeProfileDepartment(profile) {
   if (!profile || profile.department === undefined) {
@@ -558,15 +517,14 @@ function normalizeProfileForWrite(item) {
 
 function mapUserProfileRow(row) {
   const preferenceTags = parseJson(row.preference_tags, []);
-  const completedCourses = parseJson(row.completed_courses, []);
 
+  // `avoid_time` 與偏好標籤是兩組獨立的設定，不互相推導。
+  //
+  // 先前這裡會在 `avoid_time` 含第 1 節時自動補上 `#不排早八` 標籤（舊決策 C）。
+  // 那等於把「星期三第 1 節不要」放大成「每天都不要」，而且使用者在偏好面板上
+  // 會看到一個自己沒有勾過的標籤。兩者的聯集由排課引擎在 `findHardViolations()`
+  // 各自判定，不需要在讀取時合成。
   const tags = Array.isArray(preferenceTags) ? preferenceTags : [];
-
-  // legacy `avoid_time` 若含第 1 節，等同於使用者選了 `#不排早八`（決策 C）。
-  // 實測資料就是這種狀態：MySQL `avoid_time: ["08:00"]` 但 JSON `noMorningClasses: false`。
-  const impliedTags = avoidTimeImpliesNoMorning(row.avoid_time)
-    ? [...new Set([...tags, FLAG_TO_TAG.get('noMorningClasses')])]
-    : tags;
 
   return {
     id: normalizeId(row.user_id),
@@ -580,14 +538,13 @@ function mapUserProfileRow(row) {
     // 由 applyClassNameOverride() 從後備來源補上。
     className: normalizeClassName(row.class_name),
     completedCredits: 0,
-    completedCourseIds: Array.isArray(completedCourses) ? completedCourses : [],
     // 校規下限 12、上限 25（見 docs/COURSE_SELECTION_RULES.md）。
     targetCreditsMin: 12,
     targetCreditsMax: normalizeNumber(row.max_credits, 25) || 25,
     blockedPeriods: normalizeAvoidTime(row.avoid_time),
-    preferredCategories: impliedTags,
-    preferenceTags: impliedTags,
-    selectedTags: impliedTags,
+    preferredCategories: tags,
+    preferenceTags: tags,
+    selectedTags: tags,
     mustTakeCourses: [],
     avoidInstructors: [],
     preferencesJson: {},
@@ -598,7 +555,7 @@ function mapUserProfileRow(row) {
     // **合成值**而非使用者存的值。合併多個 profile 來源時，這些 false 會被
     // 當成有效資料，把使用者真正勾選的 true 蓋掉——偏好因此靜默消失，
     // API 卻回報儲存成功。缺席即代表未勾選，不得補預設值。
-    ...tagsToFlags(impliedTags),
+    ...tagsToFlags(tags),
   };
 }
 
@@ -669,7 +626,6 @@ async function getMysqlUserPreferences() {
     'grade_level',
     'preference_tags',
     'avoid_time',
-    'completed_courses',
     'max_credits',
   ];
   if (await hasUserProfileClassNameColumn()) {
@@ -681,16 +637,14 @@ async function getMysqlUserPreferences() {
     FROM \`User_Profiles\`
     ORDER BY \`user_id\`
   `);
-  const mysqlProfiles = rows.map(mapUserProfileRow);
-  const localProfiles = readCollection('user_preferences');
-  const mysqlUserIds = new Set(mysqlProfiles.map(profile => String(profile.userId)));
+  // `User_Profiles` 是 profile 的**唯一**來源。先前這裡還會串接
+  // `user_preferences.json` 裡沒有 MySQL 對應列的 profile——同一份資料存兩個
+  // 檔案、各自演化，實測就出現過 MySQL 與 JSON 對同一個偏好給出相反答案。
+  // 該檔已於 2026-08-11 刪除。
   const classNames = readClassNameOverrides();
-  return [
-    ...mysqlProfiles,
-    ...localProfiles
-      .filter(profile => !mysqlUserIds.has(String(profile.userId)))
-      .map(normalizeProfileDepartment),
-  ].map(profile => applyClassNameOverride(profile, classNames));
+  return rows
+    .map(mapUserProfileRow)
+    .map(profile => applyClassNameOverride(profile, classNames));
 }
 
 async function updateMysqlUserPreference(canonicalId, item) {
@@ -731,28 +685,12 @@ async function updateMysqlUserPreference(canonicalId, item) {
     params.push(JSON.stringify(tags));
   }
 
-  // 決策 C：`avoid_time` 只保存第 2～14 節。第 1 節由 `#不排早八` 標籤表達，
-  // 兩處都存必然漂移。呼叫端應在邊界擋下（見 `routes/profile.js`），
-  // 這裡是最後一道防線，剝除並記錄，不靜默寫入。
+  // `avoid_time` 保存第 1～14 節，不篩掉任何節次。正規化只是把時間字串
+  // （legacy 匯入格式）換算成 `{ day, period }`，讓讀寫兩端格式一致。
   if (item.blockedPeriods !== undefined || item.avoidTime !== undefined) {
     const raw = item.blockedPeriods ?? item.avoidTime ?? [];
-    const normalized = normalizeBlockedPeriods(raw);
-    const kept = normalized.filter(entry => entry.period !== MORNING_PERIOD);
-
-    if (kept.length !== normalized.length) {
-      logger.warn(
-        `寫入的 avoid_time 含第 ${MORNING_PERIOD} 節，已剝除；`
-        + '早八請改用 `#不排早八` 標籤（決策 C）。',
-        { label: 'Profile' }
-      );
-    }
-
     updates.push('`avoid_time` = ?');
-    params.push(JSON.stringify(kept));
-  }
-  if (item.completedCourseIds !== undefined || item.completedCourses !== undefined) {
-    updates.push('`completed_courses` = ?');
-    params.push(JSON.stringify(item.completedCourseIds ?? item.completedCourses ?? []));
+    params.push(JSON.stringify(normalizeBlockedPeriods(raw)));
   }
   if (item.targetCreditsMax !== undefined || item.maxCredits !== undefined) {
     updates.push('`max_credits` = ?');
@@ -783,30 +721,30 @@ async function updateMysqlUserPreference(canonicalId, item) {
   return allProfiles.find(profile => sameId(profile.mysqlUserId, userId)) || null;
 }
 
-// 只存在於 MySQL 的資料。`server/data/` 沒有對應的 JSON 檔——種子資料已於
-// 2026-08-02 移除（見 AGENTS.md）。
-const MYSQL_ONLY_COLLECTIONS = new Set(['courses', 'reviews']);
+// 只存在於 MySQL 的資料。`server/data/` 沒有對應的 JSON 檔——課程與評價的
+// 種子資料已於 2026-08-02 移除，`user_preferences.json` 於 2026-08-11 刪除
+// （見 AGENTS.md 與 `services/memoryService.js` 的欄位擁有權契約）。
+const MYSQL_ONLY_COLLECTIONS = new Set(['courses', 'reviews', 'user_preferences']);
 
-async function readCollectionBySource(collection) {
-  // 未設定 DB_* 時，這些集合先前會靜默回傳空陣列（檔案根本不存在），
-  // 排課因此回報「找不到符合條件的候選課程」——看起來像篩選條件太嚴，
-  // 實際上是資料庫沒接上。這是最難查的一種失敗，必須明講。
+// 未設定 DB_* 時，這些集合先前會靜默回傳空陣列（檔案根本不存在），
+// 排課因此回報「找不到符合條件的候選課程」——看起來像篩選條件太嚴，
+// 實際上是資料庫沒接上。這是最難查的一種失敗，必須明講。
+//
+// **寫入路徑也要擋。** `writeCollection()` 會直接建檔，若不擋，未設定資料庫時
+// 存一次偏好就會把剛刪掉的 `user_preferences.json` 長回來。
+function assertMysqlAvailable(collection) {
   if (MYSQL_ONLY_COLLECTIONS.has(collection) && !isMysqlConfigured()) {
     throw new Error(
       `${collection} 只能來自 MySQL，但未設定資料庫連線。`
       + '請在 `server/.env` 設定 DB_HOST、DB_USER 與 DB_NAME（見 `.env.example`）。'
     );
   }
+}
 
-  if (!usesMysql(collection)) {
-    const data = readCollection(collection);
-    if (collection !== 'user_preferences') return data;
+async function readCollectionBySource(collection) {
+  assertMysqlAvailable(collection);
 
-    const classNames = readClassNameOverrides();
-    return data
-      .map(normalizeProfileDepartment)
-      .map(profile => applyClassNameOverride(profile, classNames));
-  }
+  if (!usesMysql(collection)) return readCollection(collection);
 
   if (collection === 'courses') return getMysqlCourses();
   if (collection === 'reviews') return getMysqlReviews();
@@ -848,6 +786,8 @@ export async function update(collection, id, updates) {
 }
 
 export async function upsertByField(collection, field, value, item) {
+  assertMysqlAvailable(collection);
+
   // D3：寫入端也正規化，否則使用者或匯入流程送進來的帶引號值會再次污染資料；
   // 型別錯誤的值則整個丟掉，不得寫進資料庫。
   let payload = collection === 'user_preferences' ? normalizeProfileForWrite(item) : item;
@@ -856,16 +796,24 @@ export async function upsertByField(collection, field, value, item) {
     && collection === 'user_preferences'
     && field === 'userId';
 
-  // 班別的儲存位置：`User_Profiles.class_name` > `users.json` > `user_preferences.json`。
+  // 班別的儲存位置：`User_Profiles.class_name` > `users.json`。
   // 見上方 resolveClassNameTarget() 的說明。
   //
   // 這裡不可原地 delete——`normalizeProfileForWrite()` 在不需正規化時會原樣
   // 回傳呼叫端傳進來的物件，改到它等於改到呼叫端的資料。
-  let className;
-  let classNameTarget = null;
   if (collection === 'user_preferences' && payload?.className !== undefined) {
-    className = payload.className;
-    classNameTarget = await resolveClassNameTarget(value, isMysqlProfileWrite);
+    const className = payload.className;
+    const classNameTarget = await resolveClassNameTarget(value, isMysqlProfileWrite);
+
+    if (classNameTarget === null) {
+      // 兩個位置都沒有，班別無處可存。靜默丟棄會讓使用者以為存好了，
+      // 下一次排課卻退回系所 + 年級而沒有任何跡象。
+      throw new Error(
+        `班別無處可存：${JSON.stringify(String(value))} 在 User_Profiles 中，`
+        + '但該表沒有 class_name 欄位，`users.json` 也沒有對應列。'
+        + '請先在 `users.json` 建立該使用者，或請組員為 User_Profiles 新增 class_name 欄位。'
+      );
+    }
 
     if (classNameTarget === 'usersJson') {
       // 已經存進 users.json，就從 payload 移除，避免同一個值在兩處各存一份而漂移。
@@ -873,22 +821,19 @@ export async function upsertByField(collection, field, value, item) {
       const { className: _storedInUsersJson, ...rest } = payload;
       payload = rest;
     }
-    // `column` 保留在 payload 交給 SQL；
-    // `localProfile` 也保留，讓下方的本機 JSON upsert 寫進去。
+    // `column` 保留在 payload 交給 SQL。
   }
 
   if (isMysqlProfileWrite) {
     const updated = await updateMysqlUserPreference(value, payload);
-    if (updated) {
-      // `User_Profiles` 沒有班別欄位、`users.json` 也沒有對應列時，班別必須落在
-      // 本機 profile。此處若直接回傳 SQL 結果，使用者剛儲存的班別會「成功」地消失
-      // ——下一次排課就退回系所 + 年級，而且沒有任何跡象。
-      if (classNameTarget === 'localProfile') {
-        writeLocalProfileClassName(value, className);
-        return { ...updated, className: normalizeClassName(className) };
-      }
-      return updated;
-    }
+    if (updated) return updated;
+
+    // `User_Profiles` 沒有這一列。先前這裡會落回本機 `user_preferences.json`，
+    // 於是同一位使用者的 profile 同時存在兩處並各自演化。該檔已刪除，
+    // 現在直接拋錯——寫不進去就要講出來，不得回報成功。
+    throw new Error(
+      `更新 User_Profiles 失敗：找不到 ${JSON.stringify(String(value))} 對應的資料列。`
+    );
   }
 
   const data = readCollection(collection);

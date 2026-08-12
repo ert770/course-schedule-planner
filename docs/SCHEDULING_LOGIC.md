@@ -104,8 +104,8 @@
 資工系選課公告明文**不接受必修課程換班級的要求**（見 `docs/COURSE_SELECTION_RULES.md` 第八節）。
 資訊三甲～三丁各開一班計算機演算法，學生只能選自己班的那一班，因此必修範圍必須收斂到**班別**。
 
-班別的真相來源是 `User_Profiles.class_name`；該欄位尚未新增，因此目前走本機後備
-（`user_preferences.json` > `users.json`）。儲存位置與遷移方式見
+班別的真相來源是 `User_Profiles.class_name`；該欄位尚未新增，因此目前退回
+`users.json`。儲存位置與遷移方式見
 `docs/COURSE_SELECTION_RULES.md` 第八節與 `docs/DATA_SCHEMA.md`。
 讀取由 `database.js` 合併進 profile，再經 `constraintService.js` 帶入排課限制。
 

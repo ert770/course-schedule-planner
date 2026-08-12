@@ -19,11 +19,10 @@ import {
   isKnownTag,
   TAG_TO_FLAG,
 } from '../src/data/preferenceTags.js';
-import {
-  findMorningPeriodEntries,
-  stripMorningPeriods,
-  MORNING_PERIOD,
-} from '../src/utils/periods.js';
+import { normalizeBlockedPeriods, MORNING_PERIOD } from '../src/utils/periods.js';
+import { buildScheduleConstraints } from '../src/services/constraintService.js';
+import { generateSchedule } from '../src/skills/scheduler.js';
+import { makeCourse } from './fixtures.js';
 
 const USERS = [
   { id: 1, studentId: 'D1249697', name: '黃思瑜', className: '資訊三乙' },
@@ -126,28 +125,79 @@ describe('P2 三種標籤欄位名都認得', () => {
   });
 });
 
-describe('C1 決策 C：第 1 節與 avoid_time 語意分離', () => {
-  test('C1 08:00 解析為第 1 節，屬標籤領域', () => {
-    // `findPeriodByTime` 明文規定 08:00 → 第 1 節（使用者說「避開八點」指的是早八）。
-    const morning = findMorningPeriodEntries(['08:00']);
-
-    assert.equal(morning.length, 7, '時間字串沒有星期資訊，展開為每天');
-    assert.ok(morning.every(entry => entry.period === MORNING_PERIOD));
+// 第 1 節（早八）由兩組**互相獨立**的設定涵蓋，可以重疊，排課時取聯集：
+//
+//   avoid_time  → 逐格指定星期，第 1～14 節皆可（「星期三第 1 節不要」）
+//   #不排早八   → 只有第 1 節，但跨整週（「每天第一節都不要」）
+//
+// 這組測試釘住「兩者語意不同」。曾經一度規定第 1 節只能用標籤設定、
+// `avoid_time` 讀寫時都剝掉第 1 節，那會讓「只避開某一天的早八」無法表達。
+describe('C1 avoid_time 與 #不排早八 互相獨立', () => {
+  const morningCourse = (id, dayOfWeek) => makeCourse(id, {
+    dayOfWeek,
+    startPeriod: 1,
+    endPeriod: 2,
+    category: '選修',
   });
 
-  test('C1 avoid_time 剝除第 1 節後只剩第 2～14 節', () => {
-    const kept = stripMorningPeriods([
-      { day: 1, period: 1 },
-      { day: 1, period: 3 },
-      { day: 2, period: 5 },
-    ]);
+  const scheduledIds = (result) => new Set(result.schedule.map(course => Number(course.id)));
 
-    assert.deepEqual(kept, [{ day: 1, period: 3 }, { day: 2, period: 5 }]);
+  test('C1 avoid_time 保留第 1 節，不再被剝除', () => {
+    const input = [{ day: 3, period: MORNING_PERIOD }, { day: 1, period: 5 }];
+
+    assert.deepEqual(normalizeBlockedPeriods(input), input);
   });
 
-  test('C1 沒有第 1 節時原樣保留', () => {
-    const input = [{ day: 3, period: 7 }];
-    assert.deepEqual(stripMorningPeriods(input), input);
-    assert.deepEqual(findMorningPeriodEntries(input), []);
+  test('C1 只設 avoid_time 星期三第 1 節時，其他天的早八不受影響', () => {
+    // 語意差異的核心：這不是「不排早八」，只是「星期三的早八不要」。
+    const constraints = buildScheduleConstraints(
+      { blockedPeriods: [{ day: 3, period: MORNING_PERIOD }], minCredits: 0 },
+      {}
+    );
+
+    assert.equal(constraints.noMorningClasses, false, 'avoid_time 不得推導出標籤');
+
+    const result = generateSchedule(
+      [morningCourse(1, 3), morningCourse(2, 4)],
+      constraints
+    );
+    const ids = scheduledIds(result);
+
+    assert.ok(!ids.has(1), '星期三的早八要被擋下');
+    assert.ok(ids.has(2), '星期四的早八不該被擋');
+  });
+
+  test('C1 只勾 #不排早八 時，每一天的第 1 節都排不進來', () => {
+    const constraints = buildScheduleConstraints({ minCredits: 0 }, { noMorningClasses: true });
+
+    assert.deepEqual(constraints.blockedPeriods, [], '標籤不得寫進 avoid_time');
+
+    const result = generateSchedule(
+      [morningCourse(1, 3), morningCourse(2, 4)],
+      constraints
+    );
+
+    assert.equal(result.schedule.length, 0);
+  });
+
+  test('C1 兩者同時設定時取聯集，不互相抵銷', () => {
+    const constraints = buildScheduleConstraints(
+      { blockedPeriods: [{ day: 2, period: 6 }], minCredits: 0 },
+      { noMorningClasses: true }
+    );
+
+    const result = generateSchedule(
+      [
+        morningCourse(1, 3),
+        makeCourse(2, { dayOfWeek: 2, startPeriod: 6, endPeriod: 7 }),
+        makeCourse(3, { dayOfWeek: 5, startPeriod: 8, endPeriod: 9 }),
+      ],
+      constraints
+    );
+    const ids = scheduledIds(result);
+
+    assert.ok(!ids.has(1), '早八由標籤擋下');
+    assert.ok(!ids.has(2), '星期二第 6 節由 avoid_time 擋下');
+    assert.ok(ids.has(3), '兩者都沒涵蓋的時段仍可排入');
   });
 });

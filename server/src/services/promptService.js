@@ -39,7 +39,7 @@ export function buildSystemPrompt(userPrefs = {}) {
   - minCredits, maxCredits, allowCreditOverload
   - department, gradeLevel
   - blockedPeriods, mondayFree, noMorningClasses, noEveningClasses, lunchBreakFree
-  - mustTakeCourseIds, retakeCourseIds, completedCourseIds
+  - mustTakeCourseIds, retakeCourseIds
   - selectedCourseIds, watchingCourseIds, courseStates
   - preferCompact, maxCoursesPerDay
   - noMidterm, noGroupReport, discussion, learnMore

@@ -45,8 +45,8 @@ export default function SetupPage() {
   const [selectedTags, setSelectedTags] = useState(new Set());
   // 標籤目錄由後端提供（單一定義來源），不在前端寫死。
   const [tagGroups, setTagGroups] = useState([]);
-  // 對應 `User_Profiles.avoid_time`。決策 C：只含第 2～14 節，
-  // 第 1 節由 `#不排早八` 標籤表達。
+  // 對應 `User_Profiles.avoid_time`，第 1～14 節皆可。與 `#不排早八` 標籤
+  // 是兩組獨立設定（逐格 vs 每天第一節），排課時取聯集。
   const [avoidPeriods, setAvoidPeriods] = useState([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -185,8 +185,7 @@ export default function SetupPage() {
         grade,
         className,
         selectedTags: [...selectedTags],
-        // 決策 C：只含第 2～14 節。第 1 節由 `#不排早八` 標籤表達，
-        // 後端會拒絕含第 1 節的寫入。
+        // 第 1～14 節皆可。後端不再篩掉第 1 節。
         blockedPeriods: avoidPeriods,
         completedCourseIds: [...checkedCourses],
       };

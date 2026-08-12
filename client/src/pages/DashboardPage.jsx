@@ -36,7 +36,10 @@ function buildScheduleNotice(data) {
     return makeNotice({ level: 'error', message, warnings, excluded, unscheduled });
   }
 
-  if (data.watchOnly || warnings.length > 0 || unscheduled.length > 0) {
+  // 成功排出課表不代表所有候選課都被採用。已修課程會由 A3 主動放進
+  // excludedCourses；若這裡只看 warnings／時間未定課程，排除原因仍會在畫面上
+  // 靜默消失，使用者無法知道候選池為何少了那些課。
+  if (data.watchOnly || warnings.length > 0 || excluded.length > 0 || unscheduled.length > 0) {
     return makeNotice({ level: 'warning', message, warnings, excluded, unscheduled });
   }
 

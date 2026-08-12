@@ -136,16 +136,17 @@ ALTER TABLE `User_Profiles` ADD COLUMN `class_name` varchar(45) NULL;
 | 順位 | 位置 | 適用 |
 | ---: | --- | --- |
 | 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
-| 2 | `user_preferences.json` 的 `className` | MySQL 使用者，但 `users.json` 沒有對應列 |
-| 3 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
+| 2 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
 
 `users.json` 的對照方式：`studentId`（demo 登入用，例如 `D1249697`）與 `id`
 （對應 `User_Profiles.user_id`）都建索引，兩者都能對到同一筆 profile。
 
-**第 2 順位不可省略**：只寫 `users.json` 的話，存在於 `User_Profiles` 但沒有 `users.json`
-對應列的使用者，班別會被「儲存成功」地丟掉——`updateMysqlUserPreference()` 沒有欄位可寫、
-卻仍回傳成功的 profile，本機寫入又被提早 `return` 跳過，下一次排課直接退回系所 + 年級。
-`upsertByField()` 因此在這個情況下不提早返回，先把班別寫進本機 profile 再回傳。
+**兩者都沒有時班別無處可存。** `pickClassNameTarget()` 回傳 `null`，
+`upsertByField()` 據此拋錯。這是刻意的：先前的第 3 順位是
+`user_preferences.json`，該檔已於 2026-08-11 刪除（同一份 profile 存兩處必然漂移）。
+寧可讓寫入失敗，也不能像最早那個 bug 一樣「儲存成功」地把班別丟掉——
+`updateMysqlUserPreference()` 沒有欄位可寫卻仍回傳成功的 profile，
+下一次排課就無聲地退回系所 + 年級。
 
 ## Local JSON Collections
 
@@ -154,7 +155,12 @@ The following collections remain file-backed in `server/data/*.json` because the
 - `users`
 - `chat_history`
 - `saved_schedules`
-- non-numeric or demo `user_preferences`
+
+`user_preferences` **不在此列**。`server/data/user_preferences.json` 已於 2026-08-11
+刪除，profile 的唯一儲存體是 `User_Profiles`；未設定資料庫連線時
+`getAll('user_preferences')` 與 `upsertByField()` 都會拋出明確錯誤，
+不再靜默回空陣列或把檔案長回來。集合名稱 `user_preferences` 保留為這個
+store 的邏輯名稱。
 
 ### `users.json` 的職責
 
@@ -238,6 +244,25 @@ The following collections remain file-backed in `server/data/*.json` because the
 排課引擎只認 `{ day, period }`。`server/src/utils/periods.js` 的 `normalizeBlockedPeriods()` 負責統一轉換，`database.js`（讀取已儲存偏好）與 `constraintService.js`（合併 request）兩處共用。
 
 時間字串沒有星期資訊，視為**每天的該節次都要避開**，展開為 7 筆。時間對應節次採「第一個尚未結束的節次」，例如 `08:00` 對應第 1 節、`13:05` 對應第 6 節。
+
+#### `avoid_time` 與 `#不排早八` 的分工
+
+`avoid_time` 保存**第 1～14 節**，讀寫兩端都不篩掉任何節次。它與 `#不排早八`
+標籤**不是同一件事，可以重疊，排課時取聯集**：
+
+| 設定 | 涵蓋範圍 | 語意 |
+| --- | --- | --- |
+| `avoid_time` | 第 1～14 節，逐格指定星期 | 「星期三第 1 節我不要」 |
+| `#不排早八` | 只有第 1 節，但跨整週 | 「每天第一節我都不要」 |
+
+聯集是現成行為：`scheduler.js` 的 `hardConstraintReason()` 分別判定
+`noMorningClasses`（`startPeriod <= 1`）與 `blockedPeriods`，互不干涉。
+
+2026-08-11 前曾規定「第 1 節只能用標籤設定，`avoid_time` 只管第 2～14 節」，
+讀寫時都把第 1 節剝掉，`POST /api/profile` 還會對含第 1 節的寫入回 `400`。
+那是錯的：使用者可能只想避開某一天的早八，剝除等於讓他無法表達這個需求。
+讀取時把 `avoid_time` 的第 1 節反推成 `#不排早八` 標籤同樣有害——那會把
+「星期三第 1 節」放大成「每天第一節」，而且偏好面板上會出現使用者沒勾過的標籤。
 
 ### `department` 的引號正規化
 

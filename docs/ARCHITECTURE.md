@@ -54,14 +54,15 @@ MySQL-backed collections:
 
 - `courses`: joined from `Course_Sections` and `Courses`
 - `reviews`: read from `Course_Reviews`, joined to `Course_Sections` by `selection_code`
-- `user_preferences`: read from `User_Profiles` for numeric user ids
+- `user_preferences`: read from `User_Profiles` — the **only** profile store.
+  `server/data/user_preferences.json` was deleted on 2026-08-11; without a
+  database connection both reads and writes throw instead of falling back to disk.
 
 Local JSON-backed collections:
 
 - `users`
 - `chat_history`
 - `saved_schedules`
-- demo or non-numeric `user_preferences`
 
 The MySQL connection pool is configured in `server/src/db/mysql.js` through environment variables:
 

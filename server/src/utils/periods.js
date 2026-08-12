@@ -99,32 +99,22 @@ export function normalizeBlockedPeriods(value, onInvalid) {
   return blocked;
 }
 
-// 第 1 節（早八）的歸屬。
+// 第 1 節（早八）與 `avoid_time` 的關係。
 //
-// **決策 C：語意分離。** `avoid_time` 與 `#不排早八` 原本會表達同一件事——
-// `normalizeBlockedPeriods(["08:00"])` 展開成「每天第 1 節」，而排課引擎的
-// `noMorningClasses` 排除的是 `startPeriod <= 1` 的課，兩者效果完全相同。
-// 同一個限制存在兩處必然漂移（實測到 MySQL `avoid_time: ["08:00"]` 與
-// JSON `noMorningClasses: false` 互相矛盾）。
+// 兩者**不是同一件事，可以重疊，排課時取聯集**：
 //
-// 因此劃清界線：
-//   - 第 1 節 → 只由 `#不排早八` 標籤控制
-//   - 第 2～14 節 → 只由 `avoid_time` 控制
+// | 設定 | 涵蓋範圍 | 語意 |
+// | --- | --- | --- |
+// | `avoid_time` | 第 1～14 節，逐格指定星期 | 「星期三第 1 節我不要」 |
+// | `#不排早八` | 只有第 1 節，但跨整週 | 「每天第一節我都不要」 |
 //
-// `#星期一排空` 展開的週一 1～14 節**允許**與第 1 節重疊——那是「整天」語意，
-// 硬挖掉第 1 節反而違反直覺。兩者取聯集。
+// 曾經一度規定「第 1 節只能用標籤設定，`avoid_time` 只管第 2～14 節」
+// （舊決策 C），讀寫時都會把第 1 節剝掉。那是錯的：使用者可能只想避開
+// 某一天的早八，剝除等於讓他無法表達這個需求。
+//
+// 排課引擎本來就分別判定 `noMorningClasses`（`scheduler.js` 的
+// `startPeriod <= 1`）與 `blockedPeriods`，聯集是現成行為，不需要額外處理。
 export const MORNING_PERIOD = 1;
-
-// 這些封鎖時段裡有沒有落在第 1 節的項目。用於寫入時的守門，
-// 避免第 1 節同時存在於 `avoid_time` 與標籤兩處。
-export function findMorningPeriodEntries(value) {
-  return normalizeBlockedPeriods(value).filter(entry => entry.period === MORNING_PERIOD);
-}
-
-// 移除第 1 節的項目，回傳 `avoid_time` 該保存的內容。
-export function stripMorningPeriods(value) {
-  return normalizeBlockedPeriods(value).filter(entry => entry.period !== MORNING_PERIOD);
-}
 
 export default {
   PERIODS_PER_DAY,
@@ -134,6 +124,4 @@ export default {
   toMinutes,
   findPeriodByTime,
   normalizeBlockedPeriods,
-  findMorningPeriodEntries,
-  stripMorningPeriods,
 };

@@ -441,6 +441,41 @@ scheduler 理解 watching/selected，但狀態只取 request；`SchedulePage` �
 
 **最小建議**：先定義 MySQL section-level watchlist contract，再接 UI。
 
+### F14：Setup 存偏好失敗時前端靜默視為成功（2026-08-11 新發現）
+
+**狀態：確認存在，目前資料剛好不觸發**
+
+`server/src/routes/auth.js:6-26` 的登入與 `identityService.js` 的身分解析都只查
+`users.json`，跟 `User_Profiles` 是否有對應列無關。因此理論上可能出現「登入得了，
+但 `User_Profiles` 沒有這個人」的使用者——GET `/api/profile` 對這種人會退回
+`emptyProfile()` 正常回 200，不會露出破綻；問題出在 **POST** 存偏好時。
+
+`database.js` 的 `upsertByField()`（`:802-843`）對這種使用者的行為是**部分成功**：
+`className` 因為走 `pickClassNameTarget()` 選到 `'usersJson'`，會成功寫進
+`users.json`；但其餘欄位要 `UPDATE User_Profiles WHERE user_id = ?`，該表沒有這一列，
+`affectedRows === 0`，`updateMysqlUserPreference()` 回傳 `null`，`upsertByField()`
+據此 `throw`（`:842`，2026-08-11 由「刪除 `user_preferences.json`」一併改的守門，
+見 `docs/CHANGE_REPORTS/2026-08-11-drop-local-profile-store-and-restore-period-one.md`）。
+
+問題在 `SetupPage.jsx:70` 的 `catch (err)`：只 `console.error` 後就呼叫
+`markSetupDone()` 並 `navigate('/')`，把任何存檔失敗都當成功處理。使用者會看到
+「設定完成」，但除了 `className` 以外的偏好（標籤、避開時段、學分上限等）全部遺失，
+且沒有任何畫面提示。
+
+**驗證**：目前 `users.json` 與 `User_Profiles` 剛好都只有 `D1249697` 這一筆且互相對應，
+所以現況不會觸發；但這是資料巧合，不是機制保證。只要出現一筆「有登入帳號、
+`User_Profiles` 還沒建對應列」的使用者，此問題立即重現。
+
+**影響**：範圍是前端錯誤處理（`SetupPage.jsx` 的 catch block），不是本次
+`user_preferences.json` 刪除的直接後果——後端這次是把原本的靜默退回 JSON
+改成明確拋錯，前端沒有跟著處理這個新增的失敗路徑。
+
+**最小建議**：`SetupPage.jsx` 存檔失敗時不得呼叫 `markSetupDone()` 或導頁，
+應留在頁面上顯示伺服器回傳的錯誤訊息。是否要讓後端在缺列時自動 upsert
+`User_Profiles`，或維持「拒絕並要求人工建列」，需另外定案。
+
+**歸類**：前端問題，非本次範圍，暫不處理。
+
 ### D5：資料規模與跨學期資料
 
 **狀態：已確認存在**
@@ -578,6 +613,7 @@ teacher 空字串 87/3,560＝2.44%；room 空字串 153/3,560＝4.30%。欄位 N
 10. Graduation API 失敗時顯示虛構成功資料。
 11. watchlist API 存在，但 UI 沒有呼叫或按鈕事件。
 12. SchedulePage 選課只送 courseIds，沒有明確傳 selectedCourseIds/courseStates。
+13. Setup 存偏好失敗時 `catch` 區塊靜默視為成功並導頁（F14，2026-08-11）。
 
 ## 九、唯讀 SQL
 

@@ -34,15 +34,8 @@ export const PERIODS = [
   { num: 14, start: '21:20', end: '22:10' },
 ];
 
-// 決策 C：第 1 節（早八）由 `#不排早八` 標籤控制，避開時段只管第 2～14 節。
-// 同一個限制若能從兩個地方設定，兩邊必然漂移——實測就出現過
-// MySQL `avoid_time: ["08:00"]` 與 `noMorningClasses: false` 互相矛盾。
-export const MORNING_PERIOD = 1;
-
-export const SELECTABLE_PERIODS = PERIODS.filter(period => period.num !== MORNING_PERIOD);
-
 export function periodKey(day, period) {
   return `${day}-${period}`;
 }
 
-export default { DAYS, PERIODS, MORNING_PERIOD, SELECTABLE_PERIODS, periodKey };
+export default { DAYS, PERIODS, periodKey };
