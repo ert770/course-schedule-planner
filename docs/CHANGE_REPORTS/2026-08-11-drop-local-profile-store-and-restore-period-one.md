@@ -134,3 +134,8 @@ Step 2（課號統一，`subid3` = `catalogCourseCode`）與移除 Setup
 已經修過並通過的課**（`IECS3003` 計算機結構學、`IECS3002` 計算機演算法、
 `IECS4926` 專題研究(一) 三門必修，以及 `IECS3059` 人工智慧導論的 3 個班次）。
 本次驗證產出的課表確實含有這 3 門必修——已修排除機制目前完全失效。
+
+## 六、Commit 與 Push
+
+- Commit：是，整合提交 `ad306a5`（`feat: unify profile and course history scheduling data`）。
+- Push：是，已推送至 `origin/backend`。

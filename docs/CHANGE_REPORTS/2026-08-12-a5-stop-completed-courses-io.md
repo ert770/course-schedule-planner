@@ -45,5 +45,5 @@
 
 ## Commit 與 Push
 
-- Commit：否。
-- Push：否。
+- Commit：是，整合提交 `ad306a5`（`feat: unify profile and course history scheduling data`）。
+- Push：是，已推送至 `origin/backend`。
