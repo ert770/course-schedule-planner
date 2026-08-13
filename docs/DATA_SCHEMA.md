@@ -98,7 +98,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `grade_level` | int | `profile.gradeLevel` |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
-| `completed_courses` | json | `profile.completedCourseIds` |
+| `completed_courses` | json | **已停用**（2026-08-13）。本專案不再讀寫此欄位——已修排除改用 `users.json` 的 `courseHistory`，理由與遷移細節見 `docs/CHANGE_REPORTS/2026-08-13-part-a-course-history-scheduling-data.md`。欄位本身仍存在於共用表，本專案不自行 `ALTER TABLE`，清理需與組員協調 |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
 **`class_name` 欄位尚未新增**（待組員加上）。見下方「`className`（班別）」。
@@ -165,18 +165,16 @@ store 的邏輯名稱。
 ### `users.json` 的職責
 
 `users.json` **只負責登入身分與 demo 展示資料**（`studentId`、`password`、`name`、
-`completedCredits`、`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
+`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
 
-歷史修課 demo 資料使用以下欄位：
-
-| 欄位 | 型別 | 說明 |
-| --- | --- | --- |
-| `completedCredits` | number | 計入畢業的已修總學分，不包含體育、國防科技等不計畢業學分課程 |
-| `completedCourseIds` | array | section id 清單；無法由歷史資料可靠對應當期 section 時必須留空，不得填入模擬 ID |
-| `completedCourseCodes` | string[] | 歷史修課的正式課程編碼 |
-| `completedCourseNames` | string[] | 歷史修課科目名稱，順序與 `completedCourseCodes` 相同 |
-| `earnedCredits` | object | 畢業分類學分彙總：`required`、`elective`、`general`、`external` |
-| `courseHistory` | object[] | 完整歷年修課與成績明細，欄位定義如下 |
+**歷史修課只有 `courseHistory` 一個欄位。** 2026-08-11 前這裡另外存了
+`completedCredits`、`completedCourseIds`、`completedCourseCodes`、
+`completedCourseNames`、`earnedCredits` 五個衍生欄位——全部是 `courseHistory`
+逐門加總／篩選就能算出來的東西，同一份資料存六份必然漂移。已修課號、
+已修學分、分類學分彙總一律呼叫 `server/src/data/courseHistory.js` 的
+`getPassedCourseCodes()`／`getEarnedCredits()`／`getTotalEarnedCredits()`
+當場算，**不得**在 `users.json` 或任何 profile 物件上重新造出這幾個名字的
+派生欄位（`server/test/courseHistory.test.js` 的 H3 有回歸測試釘住這件事）。
 
 `courseHistory` 項目：
 
@@ -184,14 +182,15 @@ store 的邏輯名稱。
 | --- | --- | --- |
 | `academicYear` | number | 學年度，例如 `112` |
 | `semester` | number | 學期，例如 `1`、`2` |
-| `courseCode` | string | 正式課程編碼，例如 `IECS2001` |
+| `courseCode` | string | 正式課程編碼，例如 `IECS2001`。與 `Courses.subid3` 同一值域、同一格式（已實測：兩側皆無前後空白、無非大寫、無空值），排課引擎比對時不做正規化 |
 | `courseName` | string | 科目名稱 |
 | `score` | number | 百分制成績 |
 | `letterGrade` | string | 等第成績 |
 | `credits` | number | 修習學分 |
+| `passed` | boolean | 是否通過（`score >= 60`），於資料匯入時一次寫入，不由消費端各自用 `score` 現算——及格門檻是校規，未來可能有例外（抵免、停修等），收斂成單一欄位比讓每個呼叫端各自判斷不容易漂移 |
 | `requirementType` | string | 成績資料中的修習別：`必修` 或 `選修` |
 | `generalEducationCategory` | string \| null | 原始通識類別，例如 `(M)`、`(N)`；未標示時為 `null` |
-| `graduationCategory` | string | 畢業分類：`required`、`elective`、`general`、`external` 或 `nonGraduation` |
+| `graduationCategory` | string | 畢業分類：`required`、`elective`、`general`、`external` 或 `nonGraduation`。`nonGraduation`（體育、國防科技、班級活動等）不計入畢業學分，但**仍視為已修過**——`getPassedCourseCodes()` 不排除它，`getEarnedCredits()` 才排除其學分，兩者是不同的判定 |
 
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——

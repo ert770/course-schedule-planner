@@ -90,6 +90,38 @@ describe('S3-S4 必修與重補修優先', () => {
   });
 });
 
+describe('P1-P2 課程類別優先度', () => {
+  test('P1 一般選修使用選修優先度，不會落到未知類別的預設值', () => {
+    const generalElective = makeCourse(1, { category: '一般選修' });
+    const unknownCategory = makeCourse(2, { category: '未分類' });
+
+    const result = generateSchedule([unknownCategory, generalElective], {
+      minCredits: 0,
+      maxCredits: 3,
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [1]);
+  });
+
+  test('P2 非系所班級的必修降為一般選修優先度', () => {
+    const generalElective = makeCourse(1, { category: '一般選修' });
+    const commonRequired = makeCourse(2, {
+      category: '必修',
+      department: '共同科目',
+    });
+
+    const result = generateSchedule([generalElective, commonRequired], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      minCredits: 0,
+      maxCredits: 3,
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [1]);
+  });
+});
+
 describe('H4-H8 已修課程依課號排除', () => {
   const passedHistory = [{ courseCode: 'IECS3002', passed: true }];
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { coursesAPI, profileAPI } from '../services/api';
@@ -11,8 +11,6 @@ import AvoidTimePicker from '../components/Setup/AvoidTimePicker';
 // 維護。實測時 Dashboard 那份已經漏掉 `#不點名` 且用的是舊布林 key——
 // 人工對照多份清單必然漂移。唯一定義來源是
 // `server/src/data/preferenceTags.js`，那也是標籤與排課旗標的對照表。
-
-const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
 export default function SetupPage() {
   const navigate = useNavigate();
@@ -33,51 +31,16 @@ export default function SetupPage() {
   // 班別清單向後端取得，不在前端複製一份系所簡稱對照表。
   const [className, setClassName] = useState('');
   const [classOptions, setClassOptions] = useState([]);
-  const [courseSearchScope, setCourseSearchScope] = useState(null);
-  const [electiveError, setElectiveError] = useState('');
   // profile 尚未載入完成前不得送出，否則會用暫時值覆蓋已儲存的設定。
   const [profileLoaded, setProfileLoaded] = useState(false);
 
-  // Electives
-  const [electives, setElectives] = useState([]);
-  const [checkedCourses, setCheckedCourses] = useState(new Set());
-  
   const [selectedTags, setSelectedTags] = useState(new Set());
   // 標籤目錄由後端提供（單一定義來源），不在前端寫死。
   const [tagGroups, setTagGroups] = useState([]);
   // 對應 `User_Profiles.avoid_time`，第 1～14 節皆可。與 `#不排早八` 標籤
   // 是兩組獨立設定（逐格 vs 每天第一節），排課時取聯集。
   const [avoidPeriods, setAvoidPeriods] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
-
-  const loadElectiveCourses = useCallback(async () => {
-    if (!profileLoaded) return;
-    if (!courseSearchScope?.className) {
-      setElectives([]);
-      setElectiveError(CLASS_REQUIRED_MESSAGE);
-      return;
-    }
-
-    setLoading(true);
-    setElectiveError('');
-    try {
-      const data = await coursesAPI.search(courseSearchScope);
-      const courses = (data.courses || []).filter(c =>
-        c.category === '核心選修' || c.category === '一般選修'
-      );
-      setElectives(courses);
-    } catch (err) {
-      setElectives([]);
-      setElectiveError(err.message || '選修課程載入失敗');
-    } finally {
-      setLoading(false);
-    }
-  }, [courseSearchScope, profileLoaded]);
-
-  useEffect(() => {
-    loadElectiveCourses();
-  }, [loadElectiveCourses]);
 
   // 標籤目錄不隨使用者變動，載入一次即可。
   useEffect(() => {
@@ -110,7 +73,6 @@ export default function SetupPage() {
         const savedGrade = profile.gradeLevel ?? profile.grade;
         if (savedGrade) setGrade(String(savedGrade));
         if (profile.className) setClassName(profile.className);
-        setCourseSearchScope(profile.courseSearchScope || null);
 
         // 已儲存的偏好必須帶回表單，否則使用者一進設定頁按儲存，
         // 先前勾選的標籤會被空的初始值蓋掉——與班別是同一類問題。
@@ -148,15 +110,6 @@ export default function SetupPage() {
     return () => { cancelled = true; };
   }, [department, grade]);
 
-  const toggleCourse = (id) => {
-    setCheckedCourses(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const toggleTag = (tag) => {
     setSelectedTags(prev => {
       const next = new Set(prev);
@@ -187,7 +140,6 @@ export default function SetupPage() {
         selectedTags: [...selectedTags],
         // 第 1～14 節皆可。後端不再篩掉第 1 節。
         blockedPeriods: avoidPeriods,
-        completedCourseIds: [...checkedCourses],
       };
       await profileAPI.update(prefData, user.studentId);
 
@@ -241,7 +193,7 @@ export default function SetupPage() {
               </div>
             </div>
 
-            {/* Middle - Course checklist & Basic Info */}
+            {/* Middle - Basic Info */}
             <div className="setup-courses">
               <h3 className="setup-section-title">1. 基本資料</h3>
               <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
@@ -273,33 +225,11 @@ export default function SetupPage() {
               <div style={{ marginTop: '-12px', marginBottom: '20px', fontSize: '0.8rem', color: '#6b7280' }}>
                 系上不接受必修課程換班。指定班別後，才只會排入你實際選得到的必修。
               </div>
-
-              <h3 className="setup-section-title">2. 已經修過的選修課程</h3>
-              {loading ? (
-                <div style={{ padding: '20px', color: '#6b7280' }}>載入中...</div>
-              ) : electiveError ? (
-                <div className="error-text" role="alert">{electiveError}</div>
-              ) : (
-                <div className="setup-course-list">
-                  {electives.length > 0 ? electives.map(course => (
-                    <label key={course.id} className="setup-course-item" id={`setup-course-${course.id}`}>
-                      <input
-                        type="checkbox"
-                        checked={checkedCourses.has(course.id)}
-                        onChange={() => toggleCourse(course.id)}
-                      />
-                      <span>{course.name}</span>
-                    </label>
-                  )) : (
-                    <div style={{color: '#888', fontSize: '0.9rem'}}>尚無符合的選修課程</div>
-                  )}
-                </div>
-              )}
             </div>
 
             {/* Right - Preference tags */}
             <div className="setup-preferences">
-              <h3 className="setup-section-title">3. 排課偏好設定</h3>
+              <h3 className="setup-section-title">2. 排課偏好設定</h3>
               {tagGroups.map(({ category, tags }) => (
                 <div key={category} className="setup-pref-group">
                   <h4 className="setup-pref-category">{category}</h4>

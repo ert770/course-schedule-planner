@@ -677,6 +677,16 @@
 .grad-history-missing-message {
   color: var(--text-secondary); font-size: 0.88rem; line-height: 1.6; margin: 0;
 }
+.grad-warnings {
+  display: flex; flex-direction: column; gap: 8px;
+  background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.35);
+  padding: 16px 20px;
+}
+.grad-warning-message {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; margin: 0;
+}
+.grad-warning-icon { flex: 0 0 auto; color: #d97706; }
 .grad-gaps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .grad-gap-card { text-align: center; padding: 20px; }
 .grad-gap-label { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 6px; }

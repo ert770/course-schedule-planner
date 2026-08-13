@@ -537,7 +537,6 @@ function mapUserProfileRow(row) {
     // `class_name` 欄位還不存在時 row 沒有這個鍵，值為 null，
     // 由 applyClassNameOverride() 從後備來源補上。
     className: normalizeClassName(row.class_name),
-    completedCredits: 0,
     // 校規下限 12、上限 25（見 docs/COURSE_SELECTION_RULES.md）。
     targetCreditsMin: 12,
     targetCreditsMax: normalizeNumber(row.max_credits, 25) || 25,

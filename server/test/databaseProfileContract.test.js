@@ -16,13 +16,24 @@ const databaseSource = fs.readFileSync(
   'utf8'
 );
 
-describe('A5 MySQL completed_courses 停止讀寫', () => {
+describe('A1/A5 profile 衍生欄位與 completed_courses 停止讀寫', () => {
   test('database.js 不再讀取或寫入 completed_courses', () => {
     assert.doesNotMatch(databaseSource, /completed_courses/);
   });
 
   test('database.js 不再產生或接受舊的 completed course profile 欄位', () => {
-    assert.doesNotMatch(databaseSource, /completedCourseIds/);
-    assert.doesNotMatch(databaseSource, /completedCourses/);
+    for (const field of [
+      'completedCourseCodes',
+      'completedCourseNames',
+      'completedCourseIds',
+      'completedCourses',
+      'completedCredits',
+      'earnedCredits',
+    ]) {
+      assert.ok(
+        !databaseSource.includes(field),
+        `${field} 必須由 courseHistory 當場計算，不得出現在 profile 資料層`
+      );
+    }
   });
 });
