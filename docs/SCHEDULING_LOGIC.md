@@ -78,13 +78,13 @@
 
 一門課可能由不同老師開在不同班次（例如計算機演算法在資訊三甲、三乙、三丙、三丁各有一班），**學生只能選其中一個**。
 
-判定同一門課必須用 `Courses.subid3`（真正的課號），不能用 `course_id`——後者是「班級 + 課程」的組合，同一門課在不同班級的值並不相同。詳見 `docs/DATA_SCHEMA.md`。
+判定同一門課必須用 `course.catalogCourseCode`（由 MySQL `Courses.subid3` 映射的真正課號），不能用 `course_id`——後者是「班級 + 課程」的組合，同一門課在不同班級的值並不相同。詳見 `docs/DATA_SCHEMA.md`。
 
 規則：
 
 - 同一課號的其他班次，即使時段不衝突也不得再排入，理由記為「已排入同一門課的其他班次」。
 - 第一個班次若違反硬性限制或衝堂，仍可改排同一門課的其他班次。
-- `subid3` 缺漏時以課程名稱作為後備判定。
+- `catalogCourseCode` 缺漏時以課程名稱作為後備判定。
 - 實習與正課是不同課號（`MATH1005P` 對 `MATH1005`），不受此規則限制。
 - `POST /api/schedule/validate` 對重複班次回報 `duplicates` 並將 `valid` 判為 `false`。
 - 關注課程不受此限制，學生可同時關注多個班次以比較時段。
@@ -191,7 +191,7 @@
 通識分類資料尚未建立，目前不得推測或回傳假通識結果。
 
 核心選修與修課路徑資料來自 `server/src/data/csCurriculum.js`（114 必選修科目表 + 113 課程地圖），
-比對條件為**課號 `subid3` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的
+比對條件為**課程物件的 `catalogCourseCode` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的
 `網路程式設計 COME3016`、機電系的 `電子學 MCAE3103` 誤判為資工系核心選修。
 
 目前只有資訊工程學系有這份對照，其他系所維持原本的類別。
@@ -247,10 +247,10 @@
 ## 已修課程排除
 
 已通過的課不得再出現在候選池，判定依據是**課號**（`courseHistory[].courseCode`
-比對 `course.subid3`），不是當學期的 section id——section id 每學期、每個班次
+比對 `course.catalogCourseCode`），不是當學期的 section id——section id 每學期、每個班次
 都會改變，用它排除已修課從一開始就不會生效。
 
-- 候選課程的 `course.subid3` 落在使用者 `courseHistory` 已通過（`passed: true`）
+- 候選課程的 `course.catalogCourseCode` 落在使用者 `courseHistory` 已通過（`passed: true`）
   的課號集合裡，就整批排除（一課多班次時**每一個班次**都要排除，不能只擋到其中
   一個 section）。
 - 被排除的課推入 `excludedCourses`，附上 `已修過並通過（課號 XXX）` 的理由——
@@ -262,7 +262,7 @@
 - `nonGraduation` 分類（體育、國防科技、班級活動等）的課**仍視為已修過**而排除，
   即使它不計入畢業學分——「修沒修過」與「計不計學分」是兩件事，見
   `docs/DATA_SCHEMA.md` 的 `courseHistory` 欄位定義。
-- 沒有 `subid3` 的候選課不會被誤判為已修——比對時自然落在
+- 沒有 `catalogCourseCode` 的候選課不會被誤判為已修——比對時自然落在
   `Set.has(undefined) → false`，不需要額外的課名 fallback（也不應該用課名去猜
   一份課號清單）。
 

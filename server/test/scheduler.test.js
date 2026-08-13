@@ -129,13 +129,13 @@ describe('H4-H8 已修課程依課號排除', () => {
     const sections = [
       makeCourse(101, {
         name: '計算機演算法',
-        subid3: 'IECS3002',
+        catalogCourseCode: 'IECS3002',
         department: '資訊三甲',
         dayOfWeek: 2,
       }),
       makeCourse(202, {
         name: '計算機演算法',
-        subid3: 'IECS3002',
+        catalogCourseCode: 'IECS3002',
         department: '資訊三乙',
         dayOfWeek: 3,
       }),
@@ -160,7 +160,7 @@ describe('H4-H8 已修課程依課號排除', () => {
   test('H5 同一課號換成不同 section id 仍會被排除', () => {
     const currentSection = makeCourse(999, {
       name: '計算機演算法',
-      subid3: 'IECS3002',
+      catalogCourseCode: 'IECS3002',
     });
 
     const result = generateSchedule([currentSection], {
@@ -175,7 +175,7 @@ describe('H4-H8 已修課程依課號排除', () => {
   test('H6 passed: false 不被排除，且可由 retakeCourseIds 排入', () => {
     const retake = makeCourse(303, {
       name: '計算機演算法',
-      subid3: 'IECS3002',
+      catalogCourseCode: 'IECS3002',
     });
 
     const result = generateSchedule([retake], {
@@ -189,10 +189,10 @@ describe('H4-H8 已修課程依課號排除', () => {
     assert.ok(!result.excludedCourses.some(item => item.reason.includes('已修過並通過')));
   });
 
-  test('H7 缺少 subid3 時不以課名 fallback 誤判為已修', () => {
+  test('H7 缺少 catalogCourseCode 時不以課名 fallback 誤判為已修', () => {
     const missingCode = makeCourse(404, {
       name: '計算機演算法',
-      subid3: undefined,
+      catalogCourseCode: undefined,
     });
 
     const result = generateSchedule([missingCode], {
@@ -207,7 +207,7 @@ describe('H4-H8 已修課程依課號排除', () => {
   test('H8 課號精確比對，不做 trim 或大小寫正規化', () => {
     const currentSection = makeCourse(505, {
       name: '計算機演算法',
-      subid3: 'IECS3002',
+      catalogCourseCode: 'IECS3002',
     });
 
     const result = generateSchedule([currentSection], {
@@ -227,7 +227,7 @@ describe('S5-S6 核心選修路徑', () => {
   test('S5 資工系選修依必選修科目表解析成核心選修，並帶出修課路徑', () => {
     const course = makeCourse(1, {
       name: '人工智慧導論',
-      subid3: 'IECS3059',
+      catalogCourseCode: 'IECS3059',
       department: '資訊三合',
       category: '選修',
     });
@@ -246,7 +246,7 @@ describe('S5-S6 核心選修路徑', () => {
     // 且因課名與本系科目表重複而不得認列。
     const course = makeCourse(2, {
       name: '網路程式設計',
-      subid3: 'COME3016',
+      catalogCourseCode: 'COME3016',
       department: '通訊三合',
       category: '選修',
     });
@@ -263,7 +263,7 @@ describe('S5-S6 核心選修路徑', () => {
   test('S5 他系且與本系不重複的選修解析為系外選修', () => {
     const course = makeCourse(3, {
       name: '個體經濟學',
-      subid3: 'ECON2001',
+      catalogCourseCode: 'ECON2001',
       department: '經濟二甲',
       category: '選修',
     });
@@ -514,11 +514,11 @@ describe('U1-U4 尚未排定時間的課程', () => {
 // B1-B5：一門課只能選一個班次。
 //
 // `Courses.course_id` 是「班級 + 課程」的組合（`CE07131-28010` 與 `CE07133-28010`
-// 是同一門課的不同班次），真正的課號在 `subid3`（兩者皆為 `IECS3002`）。
+// 是同一門課的不同班次），真正的課號在 `catalogCourseCode`（兩者皆為 `IECS3002`）。
 // 排課引擎原本把每個 section 當成獨立課程，實測課表出現兩門計算機演算法。
 describe('B1-B5 同一門課只能選一個班次', () => {
   const section = (id, overrides = {}) => makeCourse(id, {
-    subid3: 'IECS3002',
+    catalogCourseCode: 'IECS3002',
     name: '計算機演算法',
     ...overrides,
   });
@@ -549,8 +549,8 @@ describe('B1-B5 同一門課只能選一個班次', () => {
     // `MATH1005P` 實習搭配 `MATH1005` 正課，本來就該一起修（#15）。
     // 實習為 0 學分，不會被貪婪填充主動加入（U1），因此明確指定兩者。
     const result = generateSchedule([
-      makeCourse(1, { subid3: 'MATH1005', name: '微積分(一)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3 }),
-      makeCourse(2, { subid3: 'MATH1005P', name: '微積分(一)實習', credits: 0, dayOfWeek: 4, startPeriod: 5, endPeriod: 5 }),
+      makeCourse(1, { catalogCourseCode: 'MATH1005', name: '微積分(一)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3 }),
+      makeCourse(2, { catalogCourseCode: 'MATH1005P', name: '微積分(一)實習', credits: 0, dayOfWeek: 4, startPeriod: 5, endPeriod: 5 }),
     ], { mustTakeCourseIds: [1, 2], minCredits: 0, maxCredits: 22 });
 
     assert.equal(result.schedule.length, 2);
@@ -571,7 +571,7 @@ describe('B1-B5 同一門課只能選一個班次', () => {
     assert.equal(result.conflicts.length, 0, '時段沒有重疊，不該報成衝堂');
   });
 
-  test('B5 沒有 subid3 時以課程名稱視為同一門課', () => {
+  test('B5 沒有 catalogCourseCode 時以課程名稱視為同一門課', () => {
     const result = generateSchedule([
       makeCourse(1, { name: '體育(二)', dayOfWeek: 2, startPeriod: 3, endPeriod: 3 }),
       makeCourse(2, { name: '體育(二)', dayOfWeek: 4, startPeriod: 3, endPeriod: 3 }),

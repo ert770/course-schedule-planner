@@ -53,13 +53,13 @@ describe('課程搜尋的班級範圍', () => {
 });
 
 const categorizedCourses = [
-  { id: 11, name: '計算機演算法', subid3: 'IECS3002', department: '資訊三乙', category: '必修' },
-  { id: 12, name: '人工智慧導論', subid3: 'IECS3059', department: '資訊三合', category: '選修' },
-  { id: 13, name: '嵌入式系統', subid3: 'IECS3048', department: '資訊三合', category: '選修' },
-  { id: 14, name: '財務報表分析', subid3: 'ACCT3001', department: '會計三甲', category: '選修' },
-  { id: 15, name: '他系必修', subid3: 'ACCT3002', department: '會計三甲', category: '必修' },
-  { id: 16, name: '共同選修', subid3: 'GE001', department: '核心必修綜合班', category: '選修' },
-  { id: 17, name: '碩士選修', subid3: 'ACCT6001', department: '會計碩一', category: '選修' },
+  { id: 11, name: '計算機演算法', catalogCourseCode: 'IECS3002', department: '資訊三乙', category: '必修' },
+  { id: 12, name: '人工智慧導論', catalogCourseCode: 'IECS3059', department: '資訊三合', category: '選修' },
+  { id: 13, name: '嵌入式系統', catalogCourseCode: 'IECS3048', department: '資訊三合', category: '選修' },
+  { id: 14, name: '財務報表分析', catalogCourseCode: 'ACCT3001', department: '會計三甲', category: '選修' },
+  { id: 15, name: '他系必修', catalogCourseCode: 'ACCT3002', department: '會計三甲', category: '必修' },
+  { id: 16, name: '共同選修', catalogCourseCode: 'GE001', department: '核心必修綜合班', category: '選修' },
+  { id: 17, name: '碩士選修', catalogCourseCode: 'ACCT6001', department: '會計碩一', category: '選修' },
 ];
 
 const studentScope = buildCourseQueryScope({

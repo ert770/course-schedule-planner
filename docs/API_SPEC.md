@@ -14,6 +14,8 @@ Course, section, review, and numeric user profile data are read from MySQL datab
 
 - API `course.id` is `Course_Sections.section_id`.
 - API `course.code` and `course.courseId` are `Courses.course_id`.
+- API `course.catalogCourseCode` is MySQL `Courses.subid3`, the stable catalog course code.
+  API course objects no longer expose the database-oriented name `subid3`.
 - Review lookups use `Course_Reviews.selection_code` joined to `Course_Sections.selection_code`; API responses expose the joined `section_id` as `review.courseId`.
 - Demo auth users, chat history, and saved schedules remain backed by `server/data/*.json`.
 
@@ -138,6 +140,7 @@ Response:
       "sectionId": 1,
       "courseId": "CS101",
       "code": "CS101",
+      "catalogCourseCode": "IECS2001",
       "name": "資料結構",
       "instructor": "王小明",
       "department": "資工系",
@@ -313,6 +316,12 @@ Response:
 
 `watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
 
+所有課程物件（課程搜尋與明細、排課結果、`excludedCourses`、`watchedCourses`、
+`unscheduledCourses`、畢業建議及 AI Agent 工具結果）統一使用 `catalogCourseCode` 表示
+正式課號。`subid3` 是 MySQL 欄位名，不再出現在 API 回應。這是欄位改名的 breaking
+change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
+`course.catalogCourseCode`。
+
 `unscheduledCourses` 為已排入但**尚未排定上課時間**的課程（`time_str` 節次為 `00`）。它們計入 `totalCredits` 與 `courseCount`，但不在 `schedule` 內，因此不會出現在課表格上。
 
 ### 兩個學分數
@@ -371,7 +380,7 @@ Response:
 }
 ```
 
-`duplicates` 為同一門課的多個班次（以 `subid3` 課號判定），例如兩門不同老師開的「計算機演算法」。學生只能選一個班次，因此即使時段不衝突也屬不合法，`valid` 為 `false`。`conflicts` 與 `duplicates` 的元素皆為 `{ course1, course2 }`。
+`duplicates` 為同一門課的多個班次（以 `catalogCourseCode` 課號判定），例如兩門不同老師開的「計算機演算法」。學生只能選一個班次，因此即使時段不衝突也屬不合法，`valid` 為 `false`。`conflicts` 與 `duplicates` 的元素皆為 `{ course1, course2 }`。
 
 ### `POST /api/schedule/save`
 

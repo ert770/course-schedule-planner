@@ -26,9 +26,9 @@ const CREDIT_CATEGORIES = ['required', 'elective', 'general', 'external', 'unspe
 // `scheduler.js` 的已修排除與 `retakeCourseIds` 天生互斥，不需要額外的豁免判斷：
 // 被排除的一定是通過的，需要重補修的一定不在排除清單裡。
 //
-// 回傳的課號直接對應 `Courses.subid3`（= `catalogCourseCode`），
+// 回傳的課號直接對應 MySQL `Courses.subid3` 映射後的 `course.catalogCourseCode`，
 // 兩側皆為無空白的大寫字串，**不做正規化**（2026-08-11 實測：
-// `courseHistory.courseCode` 53 筆與 `Courses.subid3` 全表 3086 筆皆無前後空白、
+// `courseHistory.courseCode` 53 筆與 MySQL `Courses.subid3` 全表 3086 筆皆無前後空白、
 // 無非大寫、無空值，BINARY 精確比對與不分大小寫查詢結果相同）。
 export function getPassedCourseCodes(courseHistory = []) {
   return toArray(courseHistory)

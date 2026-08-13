@@ -79,11 +79,11 @@ node --check src/app.js
 | R3 | 未設定系所或年級 | 不把任何課當成必修，並回傳「未設定系所或年級」警告 |
 | R4 | 候選含 `國文綜合班` 等共同科目必修 | 保留為候選，但不享有必修優先度，且回傳「尚無適用對象規則」警告 |
 | R5 | 班級名稱為 `建設英班`、`商學院綜合班`、`商學一(UQ)` 等 | 不得被誤判為系所班級 |
-| B1 | 同一課號（`subid3`）的兩個班次，時段不衝突 | 只排入一個班次，另一個理由為「已排入同一門課的其他班次」 |
+| B1 | 同一課號（`catalogCourseCode`）的兩個班次，時段不衝突 | 只排入一個班次，另一個理由為「已排入同一門課的其他班次」 |
 | B2 | 第一個班次違反硬性限制 | 改排同一門課的另一個班次 |
 | B3 | 正課 `MATH1005` 與實習 `MATH1005P` | 視為不同課號，不受一課一班次限制 |
 | B4 | `POST /api/schedule/validate` 收到同一門課的兩個班次 | `valid` 為 false 並回傳 `duplicates`，不得報成衝堂 |
-| B5 | 課程無 `subid3` | 以課程名稱作為同一門課的後備判定 |
+| B5 | 課程無 `catalogCourseCode` | 以課程名稱作為同一門課的後備判定 |
 | C1 | 未指定學分上限 | 上限為校規的 25 學分（非舊值 22） |
 | C2 | 未指定學分下限且總學分不足 | 警告「低於最低目標 12」（非舊值 15） |
 | C3 | `gradeLevel` 為 4 且排入 9 學分 | 視為已達下限，不發出學分不足警告 |
@@ -139,7 +139,7 @@ node --check src/app.js
 
 ### 已修課程排除與修課歷史派生運算
 
-已修排除的判定依據是課號（`courseHistory[].courseCode` 比對 `course.subid3`），
+已修排除的判定依據是課號（`courseHistory[].courseCode` 比對 `course.catalogCourseCode`），
 不是每學期都會改變的 section id；`data/courseHistory.js` 提供的三支派生函式
 （`getPassedCourseCodes()`／`getEarnedCredits()`／`getTotalEarnedCredits()`）
 是排課、畢業頁共用的唯一來源，取代了先前各自獨立、彼此可能不一致的
@@ -167,7 +167,7 @@ node --check src/app.js
 | H4 | 已修課號有多個候選班次 | **每一個班次**都被排除，各自附上「已修過並通過（課號 XXX）」 |
 | H5 | 同一課號換成不同 section id（模擬跨學期） | 仍被排除——本次改動要修的核心目的 |
 | H6 | 課程 `passed: false` 且被 `retakeCourseIds` 指定 | 不被已修排除擋到，正常排入；已修與重補修依資料設計互斥，不需額外豁免邏輯 |
-| H7 | 候選課程沒有 `subid3` | 不以課名 fallback 誤判為已修 |
+| H7 | 候選課程沒有 `catalogCourseCode` | 不以課名 fallback 誤判為已修 |
 | H8 | 課號比對 | 精確字串比對，不做 trim 或大小寫正規化（已實測兩側格式一致，見 `docs/DATA_SCHEMA.md`） |
 
 `server/test/databaseProfileContract.test.js`（原始碼掃描，防止 A5 回歸）：

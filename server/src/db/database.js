@@ -219,7 +219,7 @@ function mapCourseRow(row) {
     type: row.type,
     description: row.rag_context || '',
     syllabus: row.rag_context || '',
-    subid3: row.subid3,
+    catalogCourseCode: row.subid3,
     year: normalizeNumber(row.year),
     semester: row.semester,
     timeStr: row.time_str,

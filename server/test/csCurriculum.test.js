@@ -60,7 +60,7 @@ describe('必選修科目表資料', () => {
 });
 
 describe('課程分類', () => {
-  const csCourse = (name, subid3) => ({ name, subid3, category: '選修' });
+  const csCourse = (name, catalogCourseCode) => ({ name, catalogCourseCode, category: '選修' });
 
   test('資工系課號 + 科目表課名才算資工系選修', () => {
     assert.equal(classifyCsCourse(csCourse('人工智慧導論', 'IECS3059')).category, '核心選修');
@@ -92,8 +92,8 @@ describe('課程分類', () => {
 
   test('isCsCourse 依課號前綴判定，不看班級名稱', () => {
     // 密碼學 IECS3052 掛在 `資通安全學程` 底下，仍是資工系開的課。
-    assert.equal(isCsCourse({ subid3: 'IECS3052', department: '資通安全學程' }), true);
-    assert.equal(isCsCourse({ subid3: 'MATH3069', department: '應數三合' }), false);
+    assert.equal(isCsCourse({ catalogCourseCode: 'IECS3052', department: '資通安全學程' }), true);
+    assert.equal(isCsCourse({ catalogCourseCode: 'MATH3069', department: '應數三合' }), false);
   });
 });
 

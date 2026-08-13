@@ -130,7 +130,7 @@ router.get('/:studentId', async (req, res) => {
     const departmentCourses = courseHistoryAvailable
       ? (await getAll('courses')).filter(course =>
         parseClassName(course.department).department === department
-        && !passedCourseCodes.has(course.subid3)
+        && !passedCourseCodes.has(course.catalogCourseCode)
       )
       : [];
 

@@ -228,7 +228,7 @@ function conflictsWithSchedule(course, schedule) {
 //
 // `Courses.course_id` **不是**課程識別碼，而是「班級 + 課程」的組合：
 // 計算機演算法在資訊三甲／乙／丙／丁分別是 `CE07131-28010`、`CE07132-28010`、
-// `CE07133-28010`、`CE07134-28010`，四筆各自不同。真正的課號在 `subid3`，
+// `CE07133-28010`、`CE07134-28010`，四筆各自不同。真正的課號在 `catalogCourseCode`，
 // 四筆都是 `IECS3002`。
 //
 // 一門課可能由不同老師開在不同班次，但學生只能選其中一個班次。先前排課引擎
@@ -237,7 +237,7 @@ function conflictsWithSchedule(course, schedule) {
 // 實習與正課是不同課號（`MATH1005P` 對 `MATH1005`），不會被誤判為同一門課
 // ——它們本來就該一起修（見路線圖 #15）。
 function getCourseKey(course) {
-  const code = String(course.subid3 || '').trim();
+  const code = String(course.catalogCourseCode || '').trim();
   if (code) return `code:${code}`;
 
   const name = String(course.name || '').trim();
@@ -748,19 +748,19 @@ function buildPlan(prepared, constraints, variant) {
   }
 
   // 已修排除必須用跨學期穩定的課號，不能用每學期、每班次都會改變的 section id。
-  // 兩側是相同值域，因此刻意不做 trim、大小寫轉換或課名 fallback；沒有 subid3
+  // 兩側是相同值域，因此刻意不做 trim、大小寫轉換或課名 fallback；沒有 catalogCourseCode
   // 的課程會自然得到 Set.has(undefined) === false，不會被誤判為已修。
   for (const course of candidateCourses) {
-    if (completedCodes.has(course.subid3)) {
+    if (completedCodes.has(course.catalogCourseCode)) {
       plan.excludedCourses.push({
         course,
-        reason: `已修過並通過（課號 ${course.subid3}）`,
+        reason: `已修過並通過（課號 ${course.catalogCourseCode}）`,
       });
     }
   }
 
   const eligible = candidateCourses.filter(course => (
-    !completedCodes.has(course.subid3)
+    !completedCodes.has(course.catalogCourseCode)
     && !isWatching(course, constraints)
     && !otherRequiredIds.has(Number(course.id))
   ));

@@ -44,7 +44,7 @@ const COURSE_LEVEL_PATTERN = /^[A-Z]+(\d)/u;
 const FRESHMAN_LEVEL = 1;
 
 function getCourseLevel(course) {
-  const match = String(course?.subid3 || '').trim().toUpperCase().match(COURSE_LEVEL_PATTERN);
+  const match = String(course?.catalogCourseCode || '').trim().toUpperCase().match(COURSE_LEVEL_PATTERN);
   return match ? Number(match[1]) : null;
 }
 

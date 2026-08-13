@@ -26,7 +26,7 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `credits` | decimal(3,1) | `course.credits` |
 | `type` | varchar(45) | `course.category`, `course.type`（見「必修的意義」） |
 | `dept` | varchar(45) | `course.department`，實際存的是**班級名稱**（見 `docs/DEPARTMENT_MAPPING.md`） |
-| `subid3` | varchar(45) | `course.subid3`，**真正的課號**（見下方說明） |
+| `subid3` | varchar(45) | `course.catalogCourseCode`，**真正的課號**（見下方說明） |
 
 #### `course_id` 不是課程識別碼，`subid3` 才是
 
@@ -39,7 +39,10 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `CE07133-28010` | `IECS3002` | 計算機演算法 | 資訊三丙 | 黃秀芬 |
 | `CE07134-28010` | `IECS3002` | 計算機演算法 | 資訊三丁 | 許懷中 |
 
-**判斷「是否為同一門課」必須用 `subid3`。** 一門課可能由不同老師開在不同班次，學生只能選一個；用 `course_id` 或 `section_id` 比對會讓同一門課的多個班次同時排進課表。
+**判斷「是否為同一門課」必須用 `subid3`。** `subid3` 是 MySQL schema 的實體欄位名；
+`database.js` 映射成應用程式與 API 的 `course.catalogCourseCode`，不輸出 `course.subid3`
+alias。一門課可能由不同老師開在不同班次，學生只能選一個；用 `course_id` 或
+`section_id` 比對會讓同一門課的多個班次同時排進課表。
 
 `subid3` 的 `P` 後綴代表實習（`MATH1005P` 對應正課 `MATH1005`），兩者是不同課號、本來就該一起修（路線圖 `#15`）。
 
@@ -182,7 +185,7 @@ store 的邏輯名稱。
 | --- | --- | --- |
 | `academicYear` | number | 學年度，例如 `112` |
 | `semester` | number | 學期，例如 `1`、`2` |
-| `courseCode` | string | 正式課程編碼，例如 `IECS2001`。與 `Courses.subid3` 同一值域、同一格式（已實測：兩側皆無前後空白、無非大寫、無空值），排課引擎比對時不做正規化 |
+| `courseCode` | string | 正式課程編碼，例如 `IECS2001`。與 MySQL `Courses.subid3`／應用程式 `course.catalogCourseCode` 同一值域、同一格式（已實測：兩側皆無前後空白、無非大寫、無空值），排課引擎比對時不做正規化 |
 | `courseName` | string | 科目名稱 |
 | `score` | number | 百分制成績 |
 | `letterGrade` | string | 等第成績 |

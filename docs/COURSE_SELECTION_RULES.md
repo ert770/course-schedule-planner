@@ -169,7 +169,8 @@
 
 資料在 `server/src/data/csCurriculum.js`，分類函式為 `classifyCsCourse()`。
 
-**比對必須同時要求課號（`Courses.subid3`）以 `IECS` 開頭**，不能只比對課名：
+**比對必須同時要求課程物件的 `catalogCourseCode`（由 MySQL `Courses.subid3` 映射）
+以 `IECS` 開頭**，不能只比對課名：
 
 | 課名 | 資料庫中實際存在的 | 只比課名的後果 |
 | --- | --- | --- |
