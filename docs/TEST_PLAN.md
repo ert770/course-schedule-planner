@@ -79,11 +79,11 @@ node --check src/app.js
 | R3 | 未設定系所或年級 | 不把任何課當成必修，並回傳「未設定系所或年級」警告 |
 | R4 | 候選含 `國文綜合班` 等共同科目必修 | 保留為候選，但不享有必修優先度，且回傳「尚無適用對象規則」警告 |
 | R5 | 班級名稱為 `建設英班`、`商學院綜合班`、`商學一(UQ)` 等 | 不得被誤判為系所班級 |
-| B1 | 同一課號（`subid3`）的兩個班次，時段不衝突 | 只排入一個班次，另一個理由為「已排入同一門課的其他班次」 |
+| B1 | 同一課號（`catalogCourseCode`）的兩個班次，時段不衝突 | 只排入一個班次，另一個理由為「已排入同一門課的其他班次」 |
 | B2 | 第一個班次違反硬性限制 | 改排同一門課的另一個班次 |
 | B3 | 正課 `MATH1005` 與實習 `MATH1005P` | 視為不同課號，不受一課一班次限制 |
 | B4 | `POST /api/schedule/validate` 收到同一門課的兩個班次 | `valid` 為 false 並回傳 `duplicates`，不得報成衝堂 |
-| B5 | 課程無 `subid3` | 以課程名稱作為同一門課的後備判定 |
+| B5 | 課程無 `catalogCourseCode` | 以課程名稱作為同一門課的後備判定 |
 | C1 | 未指定學分上限 | 上限為校規的 25 學分（非舊值 22） |
 | C2 | 未指定學分下限且總學分不足 | 警告「低於最低目標 12」（非舊值 15） |
 | C3 | `gradeLevel` 為 4 且排入 9 學分 | 視為已達下限，不發出學分不足警告 |
@@ -130,6 +130,51 @@ node --check src/app.js
 | G2 | 排入的每門課 | 帶 `countsTowardGraduation` 與 `nonGraduationCategory` |
 | G3 | `POST /api/schedule/validate` | 同樣分開回報兩個學分數 |
 | G4 | 軍訓選修（`全民國防`、`國防政策`） | 維持計入（各系採計方式未確認） |
+| G5 | 系所查不到官方對照表（`getGraduationRequirement()` 回傳 `null`） | `required`／`totalRequired`／`gaps` 皆為 `null`，`warnings` 含「此系所不存在，請檢查是否輸入錯誤」 |
+| G6 | 系所查得到官方對照表 | 回傳正確學分拆解，不帶警告；對照現有資訊工程學系資料的迴歸基準 |
+
+`server/test/graduation.test.js`。`routes/graduation.js` 先前零測試覆蓋——本檔是第一份。
+專案沒有 supertest 之類的 HTTP 路由測試設施，因此把判斷抽成純函式
+`resolveRequiredCredits()` 並匯出，不必啟動整個 Express app 就能測。
+
+### 已修課程排除與修課歷史派生運算
+
+已修排除的判定依據是課號（`courseHistory[].courseCode` 比對 `course.catalogCourseCode`），
+不是每學期都會改變的 section id；`data/courseHistory.js` 提供的三支派生函式
+（`getPassedCourseCodes()`／`getEarnedCredits()`／`getTotalEarnedCredits()`）
+是排課、畢業頁共用的唯一來源，取代了先前各自獨立、彼此可能不一致的
+`completedCourseIds`／`completedCourseCodes`／`completedCredits`／`earnedCredits`。
+
+`server/test/courseHistory.test.js`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| H1 | 課程 `passed: false` | 不列入 `getPassedCourseCodes()` 的已修課號 |
+| H1 | 課程 `graduationCategory: nonGraduation`（如體育） | 仍列入已修課號——「修過」與「計不計學分」是兩件事 |
+| H1 | `courseHistory` 為空、未帶或 `null` | 回傳空陣列，不噴例外 |
+| H2 | 課程未通過 | `getEarnedCredits()` 不計其學分 |
+| H2 | 課程分類為 `nonGraduation` | 不計入任何分類，也不進總學分 |
+| H2 | `graduationCategory` 缺漏或不在已知清單 | 歸入 `unspecified`，不靜默丟棄學分 |
+| H2 | `courseHistory` 為空 | 回傳全 0 物件而非 `undefined` |
+| H3 | demo 使用者（`D1249697`）真實 53 筆資料 | 分類學分 `61/22/24/11`、總學分 `118`——與整併前的既有值逐項相符 |
+| H3 | 同一批真實資料 | 53 個已修課號皆不重複 |
+| H3 | 整併後的 `users.json` | `completedCourseCodes`／`completedCourseNames`／`completedCourseIds`／`completedCredits`／`earnedCredits` 五個欄位皆不存在 |
+
+`server/test/scheduler.test.js`（`generateSchedule()` 端到端，不是只測合併函式）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| H4 | 已修課號有多個候選班次 | **每一個班次**都被排除，各自附上「已修過並通過（課號 XXX）」 |
+| H5 | 同一課號換成不同 section id（模擬跨學期） | 仍被排除——本次改動要修的核心目的 |
+| H6 | 課程 `passed: false` 且被 `retakeCourseIds` 指定 | 不被已修排除擋到，正常排入；已修與重補修依資料設計互斥，不需額外豁免邏輯 |
+| H7 | 候選課程沒有 `catalogCourseCode` | 不以課名 fallback 誤判為已修 |
+| H8 | 課號比對 | 精確字串比對，不做 trim 或大小寫正規化（已實測兩側格式一致，見 `docs/DATA_SCHEMA.md`） |
+
+`server/test/databaseProfileContract.test.js`（原始碼掃描，防止 A5 回歸）：
+
+| 編號 | 斷言 |
+| --- | --- |
+| A1/A5 | `database.js` 原始碼不再出現 `completed_courses`，也不再產生或接受 `completedCourseCodes`、`completedCourseNames`、`completedCourseIds`、`completedCourses`、`completedCredits`、`earnedCredits` 等修課歷史衍生欄位 |
 
 ## 資料庫契約測試
 

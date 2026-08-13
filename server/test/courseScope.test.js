@@ -368,7 +368,7 @@ describe('必修不得換班：班別收斂', () => {
 });
 
 describe('班別的儲存位置優先順序', () => {
-  // 目標狀態是 `User_Profiles.class_name`；欄位還沒新增前才走本機後備。
+  // 目標狀態是 `User_Profiles.class_name`；欄位還沒新增前退回 `users.json`。
   test('欄位存在時一律寫進 User_Profiles', () => {
     assert.equal(
       pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: true, hasUsersJsonRow: true }),
@@ -387,20 +387,30 @@ describe('班別的儲存位置優先順序', () => {
     );
   });
 
-  test('MySQL 使用者、無欄位、也沒有 users.json 對應列時寫進本機 profile', () => {
-    // 這是關鍵情境：先前這種使用者的班別會「儲存成功」地消失——
-    // SQL 沒有欄位可寫卻仍回傳成功的 profile，本機寫入又被提早 return 跳過，
-    // 下一次排課直接退回系所 + 年級。
+  test('MySQL 使用者、無欄位、也沒有 users.json 對應列時回傳 null（無處可存）', () => {
+    // 這是關鍵情境。先前的答案是 `localProfile`，把班別寫進
+    // `server/data/user_preferences.json`；該檔已於 2026-08-11 刪除
+    // （同一份 profile 存兩處必然漂移），因此現在真的無處可存。
+    //
+    // 回 `null` 是為了讓 `upsertByField()` 拋錯。**不得回報儲存成功**——
+    // 最早的 bug 正是班別「儲存成功」地消失，下一次排課直接退回系所 + 年級。
     assert.equal(
       pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: false, hasUsersJsonRow: false }),
-      'localProfile'
+      null
     );
   });
 
-  test('非 MySQL 寫入路徑不會寫進欄位', () => {
+  test('非 MySQL 寫入路徑且沒有 users.json 對應列時同樣無處可存', () => {
     assert.equal(
       pickClassNameTarget({ isMysqlProfileWrite: false, hasColumn: true, hasUsersJsonRow: false }),
-      'localProfile'
+      null
+    );
+  });
+
+  test('非 MySQL 寫入路徑但有 users.json 對應列時仍寫進 users.json', () => {
+    assert.equal(
+      pickClassNameTarget({ isMysqlProfileWrite: false, hasColumn: true, hasUsersJsonRow: true }),
+      'usersJson'
     );
   });
 });

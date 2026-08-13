@@ -47,7 +47,14 @@ export default function SearchPage() {
   useEffect(() => {
     let cancelled = false;
 
-    profileAPI.get(user?.studentId || 'default')
+    // 未登入時不退回 `default` 使用者。
+    if (!user?.studentId) {
+      setSearchError('尚未登入，請重新登入後再操作。');
+      setScopeLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    profileAPI.get(user.studentId)
       .then(profile => {
         if (cancelled) return;
         const scope = profile?.courseSearchScope || null;

@@ -102,6 +102,32 @@
 .setup-course-item input[type="checkbox"] {
   width: 18px; height: 18px; accent-color: var(--accent-blue); cursor: pointer;
 }
+/* 避開時段選擇器（對應 User_Profiles.avoid_time）。
+   決策 C：第 1 節由「#不排早八」控制，這裡停用該列。 */
+.avoid-time-picker { font-size: 0.82rem; }
+.avoid-time-hint { color: var(--text-secondary); margin: 0 0 10px; line-height: 1.5; }
+.avoid-time-scroll { overflow-x: auto; }
+.avoid-time-table { border-collapse: collapse; width: 100%; min-width: 420px; }
+.avoid-time-table th {
+  font-weight: 500; font-size: 0.75rem; color: var(--text-secondary);
+  padding: 4px; text-align: center; white-space: nowrap;
+}
+.avoid-time-period-head { display: table-cell; }
+.avoid-time-period-num { font-weight: 600; color: var(--text-primary); }
+.avoid-time-period-clock { display: block; font-size: 0.68rem; opacity: 0.7; }
+.avoid-time-table td { padding: 2px; }
+.avoid-time-cell {
+  width: 100%; min-width: 34px; height: 26px; border-radius: 5px;
+  background: var(--bg-card); border: 1.5px solid var(--border-color);
+  color: var(--accent-blue); font-size: 0.75rem; cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.avoid-time-cell:hover { border-color: var(--accent-blue); }
+.avoid-time-cell.selected {
+  border-color: var(--accent-blue); background: rgba(74, 124, 247, 0.16);
+}
+.avoid-time-summary { color: var(--text-secondary); margin: 10px 0 0; }
+
 .setup-pref-group { margin-bottom: 20px; }
 .setup-pref-category { font-size: 0.95rem; font-weight: 600; margin-bottom: 10px; }
 .setup-pref-tags { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -651,6 +677,16 @@
 .grad-history-missing-message {
   color: var(--text-secondary); font-size: 0.88rem; line-height: 1.6; margin: 0;
 }
+.grad-warnings {
+  display: flex; flex-direction: column; gap: 8px;
+  background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.35);
+  padding: 16px 20px;
+}
+.grad-warning-message {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; margin: 0;
+}
+.grad-warning-icon { flex: 0 0 auto; color: #d97706; }
 .grad-gaps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .grad-gap-card { text-align: center; padding: 20px; }
 .grad-gap-label { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 6px; }

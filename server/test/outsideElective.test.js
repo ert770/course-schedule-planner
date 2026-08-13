@@ -19,7 +19,7 @@ const elective = (overrides) => ({
   name: '課程',
   category: '選修',
   department: '經濟二甲',
-  subid3: 'ECON2001',
+  catalogCourseCode: 'ECON2001',
   ...overrides,
 });
 
@@ -32,7 +32,7 @@ describe('系外選修範圍', () => {
   test('本系課號的課即使開在他系班級底下也不是系外選修', () => {
     // 密碼學 IECS3052 掛在 `資通安全學程`。
     assert.equal(
-      isOutsideElective(elective({ subid3: 'IECS3052', department: '應數三合' }), csScope),
+      isOutsideElective(elective({ catalogCourseCode: 'IECS3052', department: '應數三合' }), csScope),
       false
     );
   });
@@ -56,7 +56,7 @@ describe('系外選修範圍', () => {
 describe('系外選修認列條件', () => {
   test('進修部開設課程不認列', () => {
     const result = evaluateOutsideElective(
-      elective({ department: '商學進修二學位學程甲班', subid3: 'BADM2001' }),
+      elective({ department: '商學進修二學位學程甲班', catalogCourseCode: 'BADM2001' }),
       csScope
     );
 
@@ -66,7 +66,7 @@ describe('系外選修認列條件', () => {
 
   test('課程內容與本系重複不認列', () => {
     const result = evaluateOutsideElective(
-      elective({ name: '密碼學', department: '應數三合', subid3: 'MATH3069' }),
+      elective({ name: '密碼學', department: '應數三合', catalogCourseCode: 'MATH3069' }),
       csScope
     );
 
@@ -76,7 +76,7 @@ describe('系外選修認列條件', () => {
 
   test('大一概論性課程不認列', () => {
     const result = evaluateOutsideElective(
-      elective({ name: '經濟學概論', department: '經濟一甲', subid3: 'ECON1001' }),
+      elective({ name: '經濟學概論', department: '經濟一甲', catalogCourseCode: 'ECON1001' }),
       csScope
     );
 
@@ -87,7 +87,7 @@ describe('系外選修認列條件', () => {
   test('非大一的導論課不因課名被誤殺', () => {
     // 「導論」在資工系是三年級選修的常見課名，單看課名會誤判。
     const result = evaluateOutsideElective(
-      elective({ name: '地質學導論', department: '土木三甲', subid3: 'CIVE3001' }),
+      elective({ name: '地質學導論', department: '土木三甲', catalogCourseCode: 'CIVE3001' }),
       csScope
     );
 
@@ -96,7 +96,7 @@ describe('系外選修認列條件', () => {
 
   test('難度無法機械判定，大一層級課程只警告不排除', () => {
     const result = evaluateOutsideElective(
-      elective({ name: '會計學', department: '會計一甲', subid3: 'ACCT1001' }),
+      elective({ name: '會計學', department: '會計一甲', catalogCourseCode: 'ACCT1001' }),
       csScope
     );
 
@@ -108,7 +108,7 @@ describe('系外選修認列條件', () => {
     const courses = Array.from({ length: 12 }, (_, index) => makeCourse(index + 1, {
       name: `他系課程${index + 1}`,
       department: '會計一甲',
-      subid3: `ACCT100${index}`,
+      catalogCourseCode: `ACCT100${index}`,
       dayOfWeek: (index % 7) + 1,
     }));
 
@@ -145,8 +145,8 @@ describe('系外選修條件在排課中生效', () => {
 
   test('不認列的系外選修不進課表，並附上原因', () => {
     const courses = [
-      makeCourse(1, { name: '密碼學', department: '應數三合', subid3: 'MATH3069', dayOfWeek: 1 }),
-      makeCourse(2, { name: '個體經濟學', department: '經濟二甲', subid3: 'ECON2001', dayOfWeek: 2 }),
+      makeCourse(1, { name: '密碼學', department: '應數三合', catalogCourseCode: 'MATH3069', dayOfWeek: 1 }),
+      makeCourse(2, { name: '個體經濟學', department: '經濟二甲', catalogCourseCode: 'ECON2001', dayOfWeek: 2 }),
     ];
 
     const result = generateSchedule(courses, base);
@@ -160,8 +160,8 @@ describe('系外選修條件在排課中生效', () => {
     // 這條規則講的是「能不能計入畢業學分」，不是「能不能修」。
     // 把使用者親手勾的課刪掉，畫面上只會少一門課，沒有任何線索。
     const courses = [
-      makeCourse(1, { name: '密碼學', department: '應數三合', subid3: 'MATH3069', dayOfWeek: 1, credits: 3 }),
-      makeCourse(2, { name: '個體經濟學', department: '經濟二甲', subid3: 'ECON2001', dayOfWeek: 2, credits: 3 }),
+      makeCourse(1, { name: '密碼學', department: '應數三合', catalogCourseCode: 'MATH3069', dayOfWeek: 1, credits: 3 }),
+      makeCourse(2, { name: '個體經濟學', department: '經濟二甲', catalogCourseCode: 'ECON2001', dayOfWeek: 2, credits: 3 }),
     ];
 
     const result = generateSchedule(courses, { ...base, explicitCourseIds: [1, 2] });
@@ -187,7 +187,7 @@ describe('系外選修條件在排課中生效', () => {
 
   test('A/B：同一門課，系統自撿時剔除、使用者指定時保留', () => {
     const courses = [
-      makeCourse(1, { name: '密碼學', department: '應數三合', subid3: 'MATH3069', dayOfWeek: 1, credits: 3 }),
+      makeCourse(1, { name: '密碼學', department: '應數三合', catalogCourseCode: 'MATH3069', dayOfWeek: 1, credits: 3 }),
     ];
 
     const auto = generateSchedule(courses, base);
@@ -201,7 +201,7 @@ describe('系外選修條件在排課中生效', () => {
 
   test('selectedCourseIds 與 mustTakeCourseIds 同樣算明確指定', () => {
     const courses = [
-      makeCourse(1, { name: '密碼學', department: '應數三合', subid3: 'MATH3069', dayOfWeek: 1 }),
+      makeCourse(1, { name: '密碼學', department: '應數三合', catalogCourseCode: 'MATH3069', dayOfWeek: 1 }),
     ];
 
     for (const key of ['selectedCourseIds', 'mustTakeCourseIds', 'retakeCourseIds']) {
@@ -212,7 +212,7 @@ describe('系外選修條件在排課中生效', () => {
 
   test('A/B：同一批課程換成他系學生就不會被過濾', () => {
     const courses = [
-      makeCourse(1, { name: '密碼學', department: '應數三合', subid3: 'MATH3069', dayOfWeek: 1 }),
+      makeCourse(1, { name: '密碼學', department: '應數三合', catalogCourseCode: 'MATH3069', dayOfWeek: 1 }),
     ];
 
     const asCs = generateSchedule(courses, base);

@@ -200,7 +200,7 @@ const CS_COURSE_NAMES = new Set([
 // 這門課是否為資工系開設。判定依課號前綴，不看班級名稱——
 // 資工系的課也會開在 `資通安全學程` 這類非系所班級底下（例如密碼學 `IECS3052`）。
 export function isCsCourse(course) {
-  return String(course?.subid3 || '').trim().toUpperCase().startsWith(CS_COURSE_CODE_PREFIX);
+  return String(course?.catalogCourseCode || '').trim().toUpperCase().startsWith(CS_COURSE_CODE_PREFIX);
 }
 
 // 依 114 必選修科目表分類一門資工系課程。

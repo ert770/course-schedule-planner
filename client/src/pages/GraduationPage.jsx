@@ -117,6 +117,19 @@ export default function GraduationPage() {
       <div className="graduation-content">
         {/* Left - Credit cards */}
         <div className="graduation-left">
+          {/* 後端的 warnings 陣列先前完全沒有渲染——查不到系所、資料待複核這類
+              提醒送到前端後直接消失，使用者從未看過。與 courseHistoryAvailable
+              是否為 false 無關，兩種情況要能同時顯示（例如有修課歷史但系所打錯字）。 */}
+          {Array.isArray(data?.warnings) && data.warnings.length > 0 && (
+            <div className="grad-card grad-warnings" role="alert">
+              {data.warnings.map((warning, i) => (
+                <p key={i} className="grad-warning-message">
+                  <AlertTriangle size={16} className="grad-warning-icon" /> {warning}
+                </p>
+              ))}
+            </div>
+          )}
+
           {data?.courseHistoryAvailable === false ? (
             <div className="grad-card grad-history-missing" role="alert">
               <AlertTriangle size={24} className="grad-history-missing-icon" />
@@ -135,7 +148,9 @@ export default function GraduationPage() {
                 <div className="grad-card-big-number">
                   <span className="grad-number-main">{data?.totalEarned || 0}</span>
                   <span className="grad-number-divider"> / </span>
-                  <span className="grad-number-total">{data?.totalRequired || 128}</span>
+                  {/* 系所查不到官方對照表時 totalRequired 是 null——不得用 128
+                      這個假數字頂替，那正是這批捏造數字先前混進畫面的方式。 */}
+                  <span className="grad-number-total">{data?.totalRequired ?? '—'}</span>
                 </div>
                 <div className="grad-progress-bar">
                   <div className="grad-progress-fill" style={{ width: `${progressPercent}%` }} />

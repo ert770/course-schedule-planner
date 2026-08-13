@@ -78,13 +78,13 @@
 
 一門課可能由不同老師開在不同班次（例如計算機演算法在資訊三甲、三乙、三丙、三丁各有一班），**學生只能選其中一個**。
 
-判定同一門課必須用 `Courses.subid3`（真正的課號），不能用 `course_id`——後者是「班級 + 課程」的組合，同一門課在不同班級的值並不相同。詳見 `docs/DATA_SCHEMA.md`。
+判定同一門課必須用 `course.catalogCourseCode`（由 MySQL `Courses.subid3` 映射的真正課號），不能用 `course_id`——後者是「班級 + 課程」的組合，同一門課在不同班級的值並不相同。詳見 `docs/DATA_SCHEMA.md`。
 
 規則：
 
 - 同一課號的其他班次，即使時段不衝突也不得再排入，理由記為「已排入同一門課的其他班次」。
 - 第一個班次若違反硬性限制或衝堂，仍可改排同一門課的其他班次。
-- `subid3` 缺漏時以課程名稱作為後備判定。
+- `catalogCourseCode` 缺漏時以課程名稱作為後備判定。
 - 實習與正課是不同課號（`MATH1005P` 對 `MATH1005`），不受此規則限制。
 - `POST /api/schedule/validate` 對重複班次回報 `duplicates` 並將 `valid` 判為 `false`。
 - 關注課程不受此限制，學生可同時關注多個班次以比較時段。
@@ -104,8 +104,8 @@
 資工系選課公告明文**不接受必修課程換班級的要求**（見 `docs/COURSE_SELECTION_RULES.md` 第八節）。
 資訊三甲～三丁各開一班計算機演算法，學生只能選自己班的那一班，因此必修範圍必須收斂到**班別**。
 
-班別的真相來源是 `User_Profiles.class_name`；該欄位尚未新增，因此目前走本機後備
-（`user_preferences.json` > `users.json`）。儲存位置與遷移方式見
+班別的真相來源是 `User_Profiles.class_name`；該欄位尚未新增，因此目前退回
+`users.json`。儲存位置與遷移方式見
 `docs/COURSE_SELECTION_RULES.md` 第八節與 `docs/DATA_SCHEMA.md`。
 讀取由 `database.js` 合併進 profile，再經 `constraintService.js` 帶入排課限制。
 
@@ -191,7 +191,7 @@
 通識分類資料尚未建立，目前不得推測或回傳假通識結果。
 
 核心選修與修課路徑資料來自 `server/src/data/csCurriculum.js`（114 必選修科目表 + 113 課程地圖），
-比對條件為**課號 `subid3` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的
+比對條件為**課程物件的 `catalogCourseCode` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的
 `網路程式設計 COME3016`、機電系的 `電子學 MCAE3103` 誤判為資工系核心選修。
 
 目前只有資訊工程學系有這份對照，其他系所維持原本的類別。
@@ -236,13 +236,40 @@
 
 ## 大二以上排課流程
 
-1. 讀取學生過去修習紀錄與歷史成績。
+1. 讀取學生過去修習紀錄與歷史成績（見下方「已修課程排除」）。
 2. 推估當學期應補足的課程類別與學分。
 3. 優先安排必修課（限本系所、本年級——見上方「必修範圍」）。
 4. 若學生曾有必修課不及格，檢查當學期是否開授重補修課程，並優先排入。
 5. 必修確定後，依序安排核心選修、一般選修、通識、系外選修。
 6. 依照偏好產生多個課表方案。
 7. 回傳課表、學分、衝堂資訊、推薦理由與備選課程。
+
+## 已修課程排除
+
+已通過的課不得再出現在候選池，判定依據是**課號**（`courseHistory[].courseCode`
+比對 `course.catalogCourseCode`），不是當學期的 section id——section id 每學期、每個班次
+都會改變，用它排除已修課從一開始就不會生效。
+
+- 候選課程的 `course.catalogCourseCode` 落在使用者 `courseHistory` 已通過（`passed: true`）
+  的課號集合裡，就整批排除（一課多班次時**每一個班次**都要排除，不能只擋到其中
+  一個 section）。
+- 被排除的課推入 `excludedCourses`，附上 `已修過並通過（課號 XXX）` 的理由——
+  已修課程若靜默從候選池消失、畫面上沒有任何線索，使用者會誤以為候選池本來
+  就只有這麼少門課。
+- **未通過（`passed: false`）的課不在排除清單裡**，可以正常作為 `retakeCourseIds`
+  指定的重補修課程排入。已修排除與重補修依資料設計天生互斥，不需要額外的
+  豁免判斷。
+- `nonGraduation` 分類（體育、國防科技、班級活動等）的課**仍視為已修過**而排除，
+  即使它不計入畢業學分——「修沒修過」與「計不計學分」是兩件事，見
+  `docs/DATA_SCHEMA.md` 的 `courseHistory` 欄位定義。
+- 沒有 `catalogCourseCode` 的候選課不會被誤判為已修——比對時自然落在
+  `Set.has(undefined) → false`，不需要額外的課名 fallback（也不應該用課名去猜
+  一份課號清單）。
+
+實作於 `server/src/skills/scheduler.js` 的 `buildPlan()`，比對函式來自
+`server/src/data/courseHistory.js` 的 `getPassedCourseCodes()`。
+`server/src/routes/graduation.js` 的「建議補足系上課程」推薦邏輯呼叫同一支函式，
+與排課共用同一套已修判定，兩處不會對「這位學生修過什麼」給出不同答案。
 
 ## 核心選修與選修路徑
 

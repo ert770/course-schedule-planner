@@ -1,25 +1,13 @@
 import { useMemo, Fragment } from 'react';
+import { DAYS as DAY_DEFS, PERIODS } from '../../constants/periods';
 
 // 資料庫含週六與週日課程，只畫五天會讓那些課程在畫面上消失，
 // 造成學分數與課表格內容對不起來。
-const DAYS = ['', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
-const DAY_NUMBERS = [1, 2, 3, 4, 5, 6, 7];
-const PERIODS = [
-  { num: 1, start: '08:10', end: '09:00' },
-  { num: 2, start: '09:10', end: '10:00' },
-  { num: 3, start: '10:10', end: '11:00' },
-  { num: 4, start: '11:10', end: '12:00' },
-  { num: 5, start: '12:10', end: '13:00' },
-  { num: 6, start: '13:10', end: '14:00' },
-  { num: 7, start: '14:10', end: '15:00' },
-  { num: 8, start: '15:10', end: '16:00' },
-  { num: 9, start: '16:10', end: '17:00' },
-  { num: 10, start: '17:10', end: '18:00' },
-  { num: 11, start: '18:30', end: '19:20' },
-  { num: 12, start: '19:25', end: '20:15' },
-  { num: 13, start: '20:25', end: '21:15' },
-  { num: 14, start: '21:20', end: '22:10' },
-];
+//
+// 節次與星期的對照改由 `constants/periods.js` 提供——這份原本在這裡、
+// 時段選擇器與後端各有一份，三份各自維護必然有一天對不上。
+const DAYS = ['', ...DAY_DEFS.map(day => day.label)];
+const DAY_NUMBERS = DAY_DEFS.map(day => day.value);
 
 const COURSE_COLORS = [
   '#4a7cf7', '#6b93f7', '#5b8af5', '#7ba3f9',

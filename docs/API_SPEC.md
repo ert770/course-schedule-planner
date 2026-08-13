@@ -14,6 +14,8 @@ Course, section, review, and numeric user profile data are read from MySQL datab
 
 - API `course.id` is `Course_Sections.section_id`.
 - API `course.code` and `course.courseId` are `Courses.course_id`.
+- API `course.catalogCourseCode` is MySQL `Courses.subid3`, the stable catalog course code.
+  API course objects no longer expose the database-oriented name `subid3`.
 - Review lookups use `Course_Reviews.selection_code` joined to `Course_Sections.selection_code`; API responses expose the joined `section_id` as `review.courseId`.
 - Demo auth users, chat history, and saved schedules remain backed by `server/data/*.json`.
 
@@ -138,6 +140,7 @@ Response:
       "sectionId": 1,
       "courseId": "CS101",
       "code": "CS101",
+      "catalogCourseCode": "IECS2001",
       "name": "資料結構",
       "instructor": "王小明",
       "department": "資工系",
@@ -251,7 +254,12 @@ Request:
 schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再呼叫
 `searchCoursesForSchedule()`。
 
-`courseIds`, `selectedCourseIds`, `watchingCourseIds`, `completedCourseIds`, and `retakeCourseIds` should use section ids.
+`courseIds`, `selectedCourseIds`, `watchingCourseIds`, and `retakeCourseIds` should use section ids.
+
+`completedCourseIds` 已於 2026-08-13 移除——已修排除改用穩定的 `courseHistory`
+課號比對（`skills/scheduler.js` 呼叫 `data/courseHistory.js` 的
+`getPassedCourseCodes()`），不接受 request 傳入任何形式的已修課清單，
+一律以使用者已儲存的 `courseHistory` 為準。詳見「限制條件合併語意」。
 
 `courseIds` 決定候選池，同時代表「使用者明確指定的課」。route 會把它併入
 `explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds`、
@@ -273,10 +281,16 @@ schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再
 
 request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
 
-- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`completedCourseIds`、`retakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`retakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 `prefs.courseHistory`。修課歷史沒有任何呼叫端會在 request 裡送（REST 不送，AI Agent 的 `run_csp_scheduler` 工具參數也不含它），寫成雙來源合併只會暗示一個不存在的覆蓋能力，還可能讓模型塞入捏造的修課紀錄。
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
 - **`selectedCourseIds`、`watchingCourseIds`、`courseStates`**：屬於本次操作的當下狀態，不從已儲存偏好回填。
 - **`mondayFree`**：會展開成週一第 1~14 節的 `blockedPeriods`，並與既有封鎖時段合併。
+- **`blockedPeriods` 與 `noMorningClasses`**：兩者獨立判定、取聯集。`blockedPeriods`
+  接受第 1～14 節（逐格指定星期），`noMorningClasses` 只影響第 1 節但涵蓋每一天。
+  兩者可重疊，不互相推導：`blockedPeriods` 含第 1 節**不會**讓 `noMorningClasses`
+  變成 `true`。（2026-08-11 前 `POST /api/profile` 會對含第 1 節的 `blockedPeriods`
+  回 `400`，該限制已移除。）
 
 Response:
 
@@ -301,6 +315,12 @@ Response:
 ```
 
 `watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
+
+所有課程物件（課程搜尋與明細、排課結果、`excludedCourses`、`watchedCourses`、
+`unscheduledCourses`、畢業建議及 AI Agent 工具結果）統一使用 `catalogCourseCode` 表示
+正式課號。`subid3` 是 MySQL 欄位名，不再出現在 API 回應。這是欄位改名的 breaking
+change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
+`course.catalogCourseCode`。
 
 `unscheduledCourses` 為已排入但**尚未排定上課時間**的課程（`time_str` 節次為 `00`）。它們計入 `totalCredits` 與 `courseCount`，但不在 `schedule` 內，因此不會出現在課表格上。
 
@@ -360,7 +380,7 @@ Response:
 }
 ```
 
-`duplicates` 為同一門課的多個班次（以 `subid3` 課號判定），例如兩門不同老師開的「計算機演算法」。學生只能選一個班次，因此即使時段不衝突也屬不合法，`valid` 為 `false`。`conflicts` 與 `duplicates` 的元素皆為 `{ course1, course2 }`。
+`duplicates` 為同一門課的多個班次（以 `catalogCourseCode` 課號判定），例如兩門不同老師開的「計算機演算法」。學生只能選一個班次，因此即使時段不衝突也屬不合法，`valid` 為 `false`。`conflicts` 與 `duplicates` 的元素皆為 `{ course1, course2 }`。
 
 ### `POST /api/schedule/save`
 
@@ -499,7 +519,13 @@ Response:
 | `gaps` | 每類的缺口，不會小於 0 |
 | `warnings` | 查不到系所對照、或該系資料標記為待人工複核時的說明。**查無對照時不會用臆測的數字填補** |
 
-`totalRequired` 在查不到系所對照且使用者資料也沒有時為 `null`。
+**查不到系所對照表**（`getGraduationRequirement()` 回傳 `null`）時，`required`、
+`totalRequired`、`gaps` 皆為 `null`，`warnings` 固定含 `此系所不存在，請檢查是否輸入錯誤`。
+2026-08-13 前這裡會退回 `users.json` 上使用者自帶的 `requiredCredits`／`totalRequired`
+（那正是必修60／選修40／通識20／系外8這批沒有出處的捏造數字混進畫面的路徑），
+該後備已移除——查不到就是查不到，不再猜。此情境與 `courseHistoryAvailable`
+互相獨立：即使已修學分正常顯示，系所對照查不到時 `required`／`totalRequired`／`gaps`
+仍為 `null`。
 
 當 `courseHistoryAvailable` 為 `false` 時，`totalEarned`、`earned` 與 `gaps` 均為 `null`，前端不得將缺少資料解讀為已修 0 學分或據此顯示學分缺口與補課建議。
 

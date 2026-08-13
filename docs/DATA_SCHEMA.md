@@ -26,7 +26,7 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `credits` | decimal(3,1) | `course.credits` |
 | `type` | varchar(45) | `course.category`, `course.type`（見「必修的意義」） |
 | `dept` | varchar(45) | `course.department`，實際存的是**班級名稱**（見 `docs/DEPARTMENT_MAPPING.md`） |
-| `subid3` | varchar(45) | `course.subid3`，**真正的課號**（見下方說明） |
+| `subid3` | varchar(45) | `course.catalogCourseCode`，**真正的課號**（見下方說明） |
 
 #### `course_id` 不是課程識別碼，`subid3` 才是
 
@@ -39,7 +39,10 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `CE07133-28010` | `IECS3002` | 計算機演算法 | 資訊三丙 | 黃秀芬 |
 | `CE07134-28010` | `IECS3002` | 計算機演算法 | 資訊三丁 | 許懷中 |
 
-**判斷「是否為同一門課」必須用 `subid3`。** 一門課可能由不同老師開在不同班次，學生只能選一個；用 `course_id` 或 `section_id` 比對會讓同一門課的多個班次同時排進課表。
+**判斷「是否為同一門課」必須用 `subid3`。** `subid3` 是 MySQL schema 的實體欄位名；
+`database.js` 映射成應用程式與 API 的 `course.catalogCourseCode`，不輸出 `course.subid3`
+alias。一門課可能由不同老師開在不同班次，學生只能選一個；用 `course_id` 或
+`section_id` 比對會讓同一門課的多個班次同時排進課表。
 
 `subid3` 的 `P` 後綴代表實習（`MATH1005P` 對應正課 `MATH1005`），兩者是不同課號、本來就該一起修（路線圖 `#15`）。
 
@@ -98,7 +101,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `grade_level` | int | `profile.gradeLevel` |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
-| `completed_courses` | json | `profile.completedCourseIds` |
+| `completed_courses` | json | **已停用**（2026-08-13）。本專案不再讀寫此欄位——已修排除改用 `users.json` 的 `courseHistory`，理由與遷移細節見 `docs/CHANGE_REPORTS/2026-08-13-part-a-course-history-scheduling-data.md`。欄位本身仍存在於共用表，本專案不自行 `ALTER TABLE`，清理需與組員協調 |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
 **`class_name` 欄位尚未新增**（待組員加上）。見下方「`className`（班別）」。
@@ -136,16 +139,17 @@ ALTER TABLE `User_Profiles` ADD COLUMN `class_name` varchar(45) NULL;
 | 順位 | 位置 | 適用 |
 | ---: | --- | --- |
 | 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
-| 2 | `user_preferences.json` 的 `className` | MySQL 使用者，但 `users.json` 沒有對應列 |
-| 3 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
+| 2 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
 
 `users.json` 的對照方式：`studentId`（demo 登入用，例如 `D1249697`）與 `id`
 （對應 `User_Profiles.user_id`）都建索引，兩者都能對到同一筆 profile。
 
-**第 2 順位不可省略**：只寫 `users.json` 的話，存在於 `User_Profiles` 但沒有 `users.json`
-對應列的使用者，班別會被「儲存成功」地丟掉——`updateMysqlUserPreference()` 沒有欄位可寫、
-卻仍回傳成功的 profile，本機寫入又被提早 `return` 跳過，下一次排課直接退回系所 + 年級。
-`upsertByField()` 因此在這個情況下不提早返回，先把班別寫進本機 profile 再回傳。
+**兩者都沒有時班別無處可存。** `pickClassNameTarget()` 回傳 `null`，
+`upsertByField()` 據此拋錯。這是刻意的：先前的第 3 順位是
+`user_preferences.json`，該檔已於 2026-08-11 刪除（同一份 profile 存兩處必然漂移）。
+寧可讓寫入失敗，也不能像最早那個 bug 一樣「儲存成功」地把班別丟掉——
+`updateMysqlUserPreference()` 沒有欄位可寫卻仍回傳成功的 profile，
+下一次排課就無聲地退回系所 + 年級。
 
 ## Local JSON Collections
 
@@ -154,23 +158,26 @@ The following collections remain file-backed in `server/data/*.json` because the
 - `users`
 - `chat_history`
 - `saved_schedules`
-- non-numeric or demo `user_preferences`
+
+`user_preferences` **不在此列**。`server/data/user_preferences.json` 已於 2026-08-11
+刪除，profile 的唯一儲存體是 `User_Profiles`；未設定資料庫連線時
+`getAll('user_preferences')` 與 `upsertByField()` 都會拋出明確錯誤，
+不再靜默回空陣列或把檔案長回來。集合名稱 `user_preferences` 保留為這個
+store 的邏輯名稱。
 
 ### `users.json` 的職責
 
 `users.json` **只負責登入身分與 demo 展示資料**（`studentId`、`password`、`name`、
-`completedCredits`、`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
+`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
 
-歷史修課 demo 資料使用以下欄位：
-
-| 欄位 | 型別 | 說明 |
-| --- | --- | --- |
-| `completedCredits` | number | 計入畢業的已修總學分，不包含體育、國防科技等不計畢業學分課程 |
-| `completedCourseIds` | array | section id 清單；無法由歷史資料可靠對應當期 section 時必須留空，不得填入模擬 ID |
-| `completedCourseCodes` | string[] | 歷史修課的正式課程編碼 |
-| `completedCourseNames` | string[] | 歷史修課科目名稱，順序與 `completedCourseCodes` 相同 |
-| `earnedCredits` | object | 畢業分類學分彙總：`required`、`elective`、`general`、`external` |
-| `courseHistory` | object[] | 完整歷年修課與成績明細，欄位定義如下 |
+**歷史修課只有 `courseHistory` 一個欄位。** 2026-08-11 前這裡另外存了
+`completedCredits`、`completedCourseIds`、`completedCourseCodes`、
+`completedCourseNames`、`earnedCredits` 五個衍生欄位——全部是 `courseHistory`
+逐門加總／篩選就能算出來的東西，同一份資料存六份必然漂移。已修課號、
+已修學分、分類學分彙總一律呼叫 `server/src/data/courseHistory.js` 的
+`getPassedCourseCodes()`／`getEarnedCredits()`／`getTotalEarnedCredits()`
+當場算，**不得**在 `users.json` 或任何 profile 物件上重新造出這幾個名字的
+派生欄位（`server/test/courseHistory.test.js` 的 H3 有回歸測試釘住這件事）。
 
 `courseHistory` 項目：
 
@@ -178,14 +185,15 @@ The following collections remain file-backed in `server/data/*.json` because the
 | --- | --- | --- |
 | `academicYear` | number | 學年度，例如 `112` |
 | `semester` | number | 學期，例如 `1`、`2` |
-| `courseCode` | string | 正式課程編碼，例如 `IECS2001` |
+| `courseCode` | string | 正式課程編碼，例如 `IECS2001`。與 MySQL `Courses.subid3`／應用程式 `course.catalogCourseCode` 同一值域、同一格式（已實測：兩側皆無前後空白、無非大寫、無空值），排課引擎比對時不做正規化 |
 | `courseName` | string | 科目名稱 |
 | `score` | number | 百分制成績 |
 | `letterGrade` | string | 等第成績 |
 | `credits` | number | 修習學分 |
+| `passed` | boolean | 是否通過（`score >= 60`），於資料匯入時一次寫入，不由消費端各自用 `score` 現算——及格門檻是校規，未來可能有例外（抵免、停修等），收斂成單一欄位比讓每個呼叫端各自判斷不容易漂移 |
 | `requirementType` | string | 成績資料中的修習別：`必修` 或 `選修` |
 | `generalEducationCategory` | string \| null | 原始通識類別，例如 `(M)`、`(N)`；未標示時為 `null` |
-| `graduationCategory` | string | 畢業分類：`required`、`elective`、`general`、`external` 或 `nonGraduation` |
+| `graduationCategory` | string | 畢業分類：`required`、`elective`、`general`、`external` 或 `nonGraduation`。`nonGraduation`（體育、國防科技、班級活動等）不計入畢業學分，但**仍視為已修過**——`getPassedCourseCodes()` 不排除它，`getEarnedCredits()` 才排除其學分，兩者是不同的判定 |
 
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——
@@ -238,6 +246,25 @@ The following collections remain file-backed in `server/data/*.json` because the
 排課引擎只認 `{ day, period }`。`server/src/utils/periods.js` 的 `normalizeBlockedPeriods()` 負責統一轉換，`database.js`（讀取已儲存偏好）與 `constraintService.js`（合併 request）兩處共用。
 
 時間字串沒有星期資訊，視為**每天的該節次都要避開**，展開為 7 筆。時間對應節次採「第一個尚未結束的節次」，例如 `08:00` 對應第 1 節、`13:05` 對應第 6 節。
+
+#### `avoid_time` 與 `#不排早八` 的分工
+
+`avoid_time` 保存**第 1～14 節**，讀寫兩端都不篩掉任何節次。它與 `#不排早八`
+標籤**不是同一件事，可以重疊，排課時取聯集**：
+
+| 設定 | 涵蓋範圍 | 語意 |
+| --- | --- | --- |
+| `avoid_time` | 第 1～14 節，逐格指定星期 | 「星期三第 1 節我不要」 |
+| `#不排早八` | 只有第 1 節，但跨整週 | 「每天第一節我都不要」 |
+
+聯集是現成行為：`scheduler.js` 的 `hardConstraintReason()` 分別判定
+`noMorningClasses`（`startPeriod <= 1`）與 `blockedPeriods`，互不干涉。
+
+2026-08-11 前曾規定「第 1 節只能用標籤設定，`avoid_time` 只管第 2～14 節」，
+讀寫時都把第 1 節剝掉，`POST /api/profile` 還會對含第 1 節的寫入回 `400`。
+那是錯的：使用者可能只想避開某一天的早八，剝除等於讓他無法表達這個需求。
+讀取時把 `avoid_time` 的第 1 節反推成 `#不排早八` 標籤同樣有害——那會把
+「星期三第 1 節」放大成「每天第一節」，而且偏好面板上會出現使用者沒勾過的標籤。
 
 ### `department` 的引號正規化
 
