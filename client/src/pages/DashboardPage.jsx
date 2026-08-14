@@ -38,7 +38,7 @@ function buildScheduleNotice(data) {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  
   
   const { schedule, setSchedule } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
@@ -201,7 +201,7 @@ export default function DashboardPage() {
         setChatHistory(prev => [...prev, { role: 'bot', text: res.reply }]);
       }
     } catch (err) {
-      setChatHistory(prev => [...prev, { role: 'bot', text: '抱歉，處理您的請求時發生錯誤。' }]);
+      console.error(err);
     } finally {
       setChatLoading(false);
     }
