@@ -10,9 +10,9 @@
 
 ## 最後更新
 
-2026-08-09（#13 拆成 #13A～#13D；依程式碼盤點補上 #4、#18、#19、#20、#21、#23、#26、#28、#31、#35、#36 的既有進度）
+2026-08-14（完成 #18、#19 後重新核對程式碼與測試；整合 #12 課程分類優先度及 #28 authenticated context／per-user 狀態的實際進度）
 
-前次更新：2026-08-08（保留既有完成紀錄；新增 #18～#38、任務相依與階段 Gate）
+前次更新：2026-08-09（#13 拆成 #13A～#13D；依程式碼盤點補上 #4、#18、#19、#20、#21、#23、#26、#28、#31、#35、#36 的既有進度）
 
 > **2026-08-09 盤點方式**：狀態不是依印象或文件推定，而是逐一讀取 `server/src`、`client/src` 與 `server/test` 的實際程式碼後判定。凡標成「已完成」者，本文件均指出其實作位置或釘住它的測試；凡標成「尚未完成」者，均指出缺少的具體欄位、模組或測試。多項任務因此由「⬜ 未開始」改為「🟡 部分完成」——原本的標示低估了已完成的前置工作。
 
@@ -74,7 +74,7 @@
 | 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ⬜ 未開始 | #20、#21、#24 |
 | 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成 | #4、#5、#21、#22 |
 | 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ 未開始 | #10、#26 |
-| 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成 | #18 |
+| 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成 | 無（#18 已完成；雙帳號完整驗收待補） |
 | 29 | 定義 interaction event schema 與回饋原因 | ⬜ 未開始 | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ⬜ 未開始 | #2、#5、#29 |
 | 31 | 建立冷啟動、偏好重設、時間衰減與資料不足策略 | 🟡 部分完成 | #18、#30 |
@@ -484,36 +484,30 @@ generateSchedule([課程5, 課程6], { watchingCourseIds: [5, 6], minCredits: 0 
 - 可由目前正式資料與資工課程表支持的必修、核心選修、一般選修、系外選修已統一。
 - 課程回應保留 `sourceCategory` 與 `classificationSource`，可追查原始分類及推導來源。
 - 系外選修另外回傳認列條件判斷，不把「可能可選」直接宣稱為可計入畢業學分。
+- 排課優先度已使用解析後的 `一般選修` 類別；非本人班級的必修也會降為一般選修優先度。`server/test/scheduler.test.js` 的 P1／P2 已固定這兩項行為。
 
 **尚未完成（#12B）**
 
 - 尚無正式通識課程分類表、領域及適用學年度規則。
 - 通識搜尋目前明確回傳未支援，不根據課號前綴自行猜測。
 
-接上 MySQL 後發現。`Courses.type` 只有兩種值：`必修`（1760）、`選修`（1326）。資料庫**沒有** `通識`、`核心選修`、`系外選修`。
+### 目前資料契約（2026-08-14 重新核對）
 
-**與規格的落差**
+`Courses.type` 原始值仍只有 `必修`（1760）與 `選修`（1326），但「排課器實際只有兩階優先度」已不再成立。`courseCategory.js` 會在排課前依學生 scope 與正式資工科目表衍生類別：
 
-| 來源 | 類別定義 |
+| 來源 | 目前實際行為 |
 | --- | --- |
-| 資料庫 `Courses.type` | 必修 / 選修（僅兩類） |
-| `scheduler.js` 的 `CATEGORY_PRIORITY` | 必修 0 / 核心選修 1 / 選修 2 / 通識 3 / 系外選修 4（五階，後三者永不出現） |
-| `docs/REQUIREMENTS.md:49-55` | 必修 63 / 核心選修 12 / 選修 16 / 通識基礎 16 / 通識選修 12 / 系外選修 9（六類） |
-| `server/src/routes/graduation.js` | required / elective / general / external（四類英文 key） |
+| MySQL `Courses.type` | 保留 `必修`／`選修` 作為 `sourceCategory` |
+| 資工必選修科目表 | 將選修解析為 `核心選修` 或 `一般選修`，並帶出 `track` |
+| 他系課程與學生 scope | 符合規則時解析為 `系外選修`，並另做認列條件判斷 |
+| `scheduler.js` | 必修 0／核心選修 1／一般選修與未細分選修 2／通識 3／系外選修 4 |
+| 通識 | 尚無正式分類表，查詢明確回報未支援，不以 `subid3` 前綴猜測 |
 
-四份定義互不一致，且都無法由課程資料支撐。
-
-**後果**
-
-- 五階類別優先序實際只有兩階在運作。
-- 六類畢業學分要求、核心選修三條路徑、系外選修門檻皆無法正確計算。
-- `docs/SCHEDULING_LOGIC.md:58-72` 的核心選修路徑另需 `track` 欄位，資料庫同樣沒有。
-
-**可能線索**
-
-`Courses.subid3` 的前綴看似編碼了科目類別，例如 `GEID`（169 筆）、`GEH1`（86 筆）開頭者可能為通識。需向校方或課程資料來源確認編碼規則，**不應自行臆測**。
+因此 #12A 的核心選修、一般選修及系外選修分類與排序已有程式和回歸測試；真正剩餘缺口是 #12B 的正式通識分類、領域與適用學年度規則。畢業頁的英文分類 key 屬 #8／#23 的呈現與逐門認列問題，不再當成「排課器只有兩類」的證據。
 
 **相關**：`#8`（分類別畢業進度向量）、稽核報告的 `F13`（畢業學分分類渲染出英文 key）。
+
+**追蹤結論（2026-08-14，已確認）**：`CATEGORY_PRIORITY['一般選修'] = 2` 是必要修正，因為 `annotateCourseCategory()` 的正式輸出就是 `一般選修`；缺少此鍵時會錯誤落到未知類別優先度 5。P1 測試證明一般選修不再落到未知類別，P2 測試證明非本人班級的必修會降到同一優先度。此項已納入 #12A 完成範圍，不再列為待確認改動。
 
 ---
 
@@ -1231,11 +1225,11 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #28 統一 Dashboard、Schedule、Chat 的登入使用者 context
 
-**狀態**：⬜ 未開始（卡 #18）
+**狀態**：🟡 部分完成（2026-08-14）——authenticated context、API 身分與 per-user setup 狀態已完成；雙帳號完整資料隔離驗收尚未完成
 
 **相依**：#18
 
-**開始前必須具備**：canonical user ID 與 authenticated context 已完成；盤點前端所有 `default` user、student ID fallback 及 localStorage setup flag。
+**開始前必須具備**：canonical user ID 與 authenticated context 已由 #18 完成；前端 `default` user、student ID fallback 及 localStorage setup flag 已完成盤點與修正。
 
 ### 問題與目的
 
@@ -1255,32 +1249,24 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - 未登入時所有 user-scoped routes 被拒絕，而非落到 default user。
 - 瀏覽器測試覆蓋登入、切換、登出與重新載入。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-14 重新核對）
 
 **已完成**
 
 - `client/src/contexts/AuthContext.jsx` 已是**唯一的登入狀態來源**，搭配 `useAuth.js` 供各頁面取用。
 - DashboardPage、SchedulePage、SearchPage、SetupPage **都已改成從 `useAuth()` 取得 `user`**，不再各自從 localStorage 或 props 推定身分。
-- Dashboard 與 SchedulePage 的 Chat 都以 `user?.studentId` 呼叫 `chatAPI.send()`，兩處來源一致。
+- Dashboard 與 SchedulePage 的 Chat 共用不帶 user ID 的 `chatAPI.send()`；實際身分只由 HttpOnly session 決定。
 - SetupPage 的年級預設值已改為登入使用者的實際年級（原本固定大一，會把三年級學生存成大一）。
+- `services/api.js` 已移除 user-scoped API 的 `default` 與 client user ID，並全面使用 `credentials: 'include'`；未登入回 401、改送不同 ID 回 403。
+- onboarding／setup key 已改為 `fcu:<studentId>:onboarded` 與 `fcu:<studentId>:setupDone`；登出只移除目前帳號的 key 與目前登入快取，不再使用 `localStorage.clear()`。
+- GraduationPage 已移除硬編碼學號 fallback；未登入時不發送個人資料請求。
+- #18 的 route／session 測試已固定 401、403、cookie 簽名與 `/auth/me` canonical student ID。
 
-**尚未完成：`default` fallback 仍在**
+**尚未完成**
 
-`|| 'default'` 共 5 處，這正是「盤點前端所有 `default` user」要處理的對象：
-
-| 檔案 | 位置 |
-| --- | --- |
-| `client/src/pages/DashboardPage.jsx` | `userId: user?.studentId \|\| 'default'`、`chatAPI.send(msg, user?.studentId \|\| 'default')` |
-| `client/src/pages/SchedulePage.jsx` | `profileAPI.get(...)`、`userId:` 兩處 |
-| `client/src/pages/SearchPage.jsx` | `profileAPI.get(...)` |
-| `client/src/pages/SetupPage.jsx` | `profileAPI.get(...)`、`profileAPI.update(...)` |
-| `client/src/services/api.js` | `chat.send`、`schedule.save`、`schedule.getSaved`、`profile.get`、`profile.update` 的 `userId = 'default'` 預設參數 |
-
-後果：
-
-- **未登入時 user-scoped routes 不會被拒絕**，而是落到 `default` user——第三條驗收標準明確未達成。
-- 後端 `server/src/routes/profile.js` 同樣有 `req.query.userId || 'default'`，因此不是只改前端就能修好。
-- 尚未做兩個測試帳號輪流登入的交叉污染測試，也沒有登入／切換／登出／重新載入的瀏覽器測試。
+- 尚未建立兩個可登入測試帳號，在同一瀏覽器依序完成登入、Profile 更新、Chat、儲存課表、登出、切換及重新載入，證明所有資料均不交叉。
+- 現有瀏覽器 A/B fixture 驗證的是「失敗必修／通過／未開課」排課差異，不等同雙帳號切換驗收，不能拿來宣稱 #28 完成。
+- interaction event schema 尚未實作（#29），因此「互動事件不交叉」這條驗收目前無法執行；完成 #29 後須補回 #28 的跨帳號驗證。
 
 ---
 

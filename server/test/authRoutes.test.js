@@ -9,11 +9,16 @@ import { closePool } from '../src/db/mysql.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const users = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'data', 'users.json'), 'utf8'));
 const demo = users[0];
+const DB_ENV_KEYS = ['DB_HOST', 'DB_USER', 'DB_NAME', 'DB_PASSWORD', 'DB_SSL_CA_PATH'];
+const originalDbEnv = Object.fromEntries(DB_ENV_KEYS.map(key => [key, process.env[key]]));
 
 let server;
 let baseUrl;
 
 before(async () => {
+  // 這組測試只驗證 session identity 邊界，必須在 GitHub Actions 沒有 MySQL
+  // secrets 的環境也能重現。成功讀取 Profile 的 MySQL 整合另由具 DB 的驗收負責。
+  for (const key of DB_ENV_KEYS) delete process.env[key];
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}/api`;
@@ -22,6 +27,10 @@ before(async () => {
 after(async () => {
   await new Promise((resolve, reject) => server.close(err => (err ? reject(err) : resolve())));
   await closePool();
+  for (const key of DB_ENV_KEYS) {
+    if (originalDbEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = originalDbEnv[key];
+  }
 });
 
 describe('#18 authenticated identity routes', () => {
@@ -30,7 +39,7 @@ describe('#18 authenticated identity routes', () => {
     assert.equal(response.status, 401);
   });
 
-  test('登入 cookie 可讀取 /auth/me，但冒用另一身分會被拒絕', async () => {
+  test('登入 cookie 可讀取 /auth/me，冒用另一身分會在資料存取前被拒絕', async () => {
     const login = await fetch(`${baseUrl}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -42,10 +51,6 @@ describe('#18 authenticated identity routes', () => {
     const me = await fetch(`${baseUrl}/auth/me`, { headers: { Cookie: cookie } });
     assert.equal(me.status, 200);
     assert.equal((await me.json()).studentId, demo.studentId);
-
-    const profile = await fetch(`${baseUrl}/profile`, { headers: { Cookie: cookie } });
-    assert.equal(profile.status, 200);
-    assert.equal((await profile.json()).schemaVersion, 1);
 
     const spoofed = await fetch(`${baseUrl}/profile?userId=NOT_THE_SESSION_USER`, {
       headers: { Cookie: cookie },

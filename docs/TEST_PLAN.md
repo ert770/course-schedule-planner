@@ -222,7 +222,7 @@ node --check src/app.js
 | `/api/courses` | keyword、department、category、period 查詢 |
 | `/api/schedule/generate` | 無 courseIds、指定 courseIds、偏好限制 |
 | `/api/schedule/validate` | 有衝堂、無衝堂 |
-| `/api/profile` | 未登入 401；讀取與更新 session 使用者偏好；改送另一個有效 ID 時 403 |
+| `/api/profile` | DB-less CI 驗證未登入 401、改送另一個 ID 時在資料存取前回 403；成功讀取／更新 session 使用者偏好須在已設定 MySQL 的整合環境驗證，schema v1 另由純函式測試固定契約 |
 | `/api/reviews/easy` | limit 正常運作 |
 | `/api/graduation/me` | 學分缺口與推薦 |
 | `/api/chat` | 無 message、正常 message、無 API key |
