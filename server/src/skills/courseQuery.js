@@ -29,10 +29,6 @@ export async function searchCourses(filters = {}) {
     courses = courses.filter(course => course.category === filters.category || course.type === filters.category);
   }
 
-  if (filters.dayOfWeek) {
-    courses = courses.filter(course => course.dayOfWeek === Number(filters.dayOfWeek));
-  }
-
   if (filters.credits) {
     courses = courses.filter(course => Number(course.credits) === Number(filters.credits));
   }
@@ -55,11 +51,27 @@ export async function searchCourses(filters = {}) {
     courses = courses.filter(course => String(course.code || '').toLowerCase() === codeSearch);
   }
 
-  if (filters.period) {
-    const period = Number(filters.period);
-    courses = courses.filter(course =>
-      Number(course.startPeriod) <= period && period <= Number(course.endPeriod)
-    );
+  // 🌟 修改核心：將原本分開的 dayOfWeek 與 period 判斷刪除，
+  // 統一收斂至此，並改為掃描 timeBlocks 陣列，完美支援「多時段課程」
+  if (filters.dayOfWeek || filters.period) {
+    const targetDay = filters.dayOfWeek ? Number(filters.dayOfWeek) : null;
+    const targetPeriod = filters.period ? Number(filters.period) : null;
+
+    courses = courses.filter(course => {
+      // 確保課程有完整時段資料
+      const blocks = course.timeBlocks || [];
+      if (blocks.length === 0) return false;
+
+      // 掃描所有時段，只要有任何一個時段區塊符合條件，即保留該課程
+      return blocks.some(block => {
+        const matchDay = targetDay ? Number(block.dayOfWeek) === targetDay : true;
+        const matchPeriod = targetPeriod 
+          ? (Number(block.startPeriod) <= targetPeriod && targetPeriod <= Number(block.endPeriod)) 
+          : true;
+        
+        return matchDay && matchPeriod;
+      });
+    });
   }
 
   if (filters.language && filters.language !== 'All' && filters.language !== '全部') {

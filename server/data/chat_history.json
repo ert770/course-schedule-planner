@@ -698,33 +698,5 @@
     "role": "assistant",
     "content": "很抱歉，處理您的請求時發生錯誤。請確認後端金鑰是否設定正確，或稍後再試。",
     "createdAt": "2026-05-11T11:16:05.915Z"
-  },
-  {
-    "id": 101,
-    "userId": "D1249697",
-    "role": "user",
-    "content": "我要線上上課",
-    "createdAt": "2026-08-02T06:16:18.716Z"
-  },
-  {
-    "id": 102,
-    "userId": "D1249697",
-    "role": "assistant",
-    "content": "系統發生錯誤：伺服器未設定 GEMINI_API_KEY。",
-    "createdAt": "2026-08-02T06:16:18.721Z"
-  },
-  {
-    "id": 103,
-    "userId": "D1249697",
-    "role": "user",
-    "content": "可以嗎",
-    "createdAt": "2026-08-02T06:16:46.875Z"
-  },
-  {
-    "id": 104,
-    "userId": "D1249697",
-    "role": "assistant",
-    "content": "系統發生錯誤：伺服器未設定 GEMINI_API_KEY。",
-    "createdAt": "2026-08-02T06:16:46.877Z"
   }
 ]

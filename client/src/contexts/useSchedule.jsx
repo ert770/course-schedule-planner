@@ -6,16 +6,29 @@ export function ScheduleProvider({ children }) {
   const [schedule, setSchedule] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
 
-  const checkConflict = (newCourse) => {
-    return schedule.find(course => {
-      if (course.dayOfWeek !== newCourse.dayOfWeek) return false;
-      const isOverlapping = !(
-        newCourse.endPeriod < course.startPeriod || 
-        newCourse.startPeriod > course.endPeriod
-      );
-      return isOverlapping;
+  const checkConflict = async (courseToAdd) => {
+  try {
+    const proposedSchedule = [...schedule, courseToAdd];
+
+    const response = await fetch('/api/schedule/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schedule: proposedSchedule })
     });
-  };
+
+    const data = await response.json();
+
+    if (data.conflicts?.length > 0 || data.duplicates?.length > 0) {
+      console.warn("衝堂或重複選課警告:", data);
+      return true; // 告知有衝突
+    }
+
+    return false; // 安全過關
+  } catch (error) {
+    console.error("驗證課表失敗:", error);
+    return false; 
+  }
+};
 
   const addCourse = (newCourse) => {
     if (schedule.some(c => c.id === newCourse.id)) {

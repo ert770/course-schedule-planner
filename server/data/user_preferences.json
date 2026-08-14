@@ -37,35 +37,5 @@
     "weightDaily": false,
     "englishTaught": false,
     "learnMore": false
-  },
-  {
-    "id": 3,
-    "userId": "D1249697",
-    "department": "資訊工程學系",
-    "grade": "3",
-    "noMorningClasses": false,
-    "preferCompact": false,
-    "mondayFree": true,
-    "lunchBreakFree": false,
-    "noMidterm": false,
-    "practicalExam": false,
-    "finalReport": false,
-    "weightDaily": false,
-    "noGroupReport": true,
-    "preferDiscussion": false,
-    "englishTaught": false,
-    "learnMore": false,
-    "completedCourseIds": [
-      9,
-      14,
-      15,
-      16,
-      17
-    ],
-    "selectedTags": [
-      "#星期一排空",
-      "#無分組報告"
-    ],
-    "updatedAt": "2026-08-02T06:39:42.111Z"
   }
 ]
