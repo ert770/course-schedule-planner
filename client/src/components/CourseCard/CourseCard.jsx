@@ -34,6 +34,11 @@ export default function CourseCard({ course, onSelect, selected }) {
             🧭 {course.generalEducationDomain || '不分領域'}
           </span>
         )}
+        {course.eligibility === 'unknown' && (
+          <span className="course-card-meta-item error-text">
+            ⚠️ 資格待確認：{course.eligibilityReason}
+          </span>
+        )}
         <span className="course-card-meta-item">
           ⏰ {formatCourseTime(course)}
         </span>

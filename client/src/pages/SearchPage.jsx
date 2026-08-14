@@ -363,6 +363,11 @@ export default function SearchPage() {
                         {course.generalEducationDomain || '不分領域'}
                       </span>
                     )}
+                    {course.eligibility === 'unknown' && (
+                      <span className="tag error-text">
+                        資格待確認：{course.eligibilityReason}
+                      </span>
+                    )}
                     {course.category === '系外選修' && course.outsideElective && (
                       <span className={`tag ${course.outsideElective.eligible ? '' : 'error-text'}`}>
                         {course.outsideElective.eligible

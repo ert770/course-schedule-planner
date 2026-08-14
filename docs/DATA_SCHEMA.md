@@ -31,6 +31,21 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 `Courses.type` 仍只有 `必修`／`選修`；`course.category` 是分類流程的衍生值，不等同
 資料庫原始欄位。通識衍生欄位如下：
 
+`Courses.dept` 的 562 個現行相異值由 `courseScope.parseClassName()` 解析。一般系所班級
+為 A 類；71 個非系所班級由 `server/src/data/classKindCatalog.js` 明確列為 B～F 類；
+另有 8 個不符合一般語法的 A 類專班／學位學程使用同檔案的明確對照。這些都是
+應用程式衍生資料，未修改 MySQL schema。
+
+| 應用程式欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `classGroup` | `A`～`F` \| null | 班級分組；未收錄的新名稱為 `null` |
+| `classKind` | string | 結構化班級種類；未收錄時為 `unclassified` |
+| `eligibility` | `eligible` \| `ineligible` \| `unknown` | 對目前學生的班級適用資格 |
+| `eligibilityReason` | string | 判定或未知的可讀原因 |
+
+`eligibility` 不代表學分是否可計入畢業。B～F 類正式適用規則仍待 roadmap #13C，
+目前一律為 `unknown`；系外選修畢業認列仍由 `outsideElective` 獨立判定。
+
 | 應用程式欄位 | 型別 | 說明 |
 | --- | --- | --- |
 | `generalEducationDomain` | string \| null | 111 以前的舊領域、112～114 的四領域；115 起因不分領域而為 `null` |
@@ -266,6 +281,10 @@ store 的邏輯名稱。
   "endPeriod": 4,
   "location": "B101",
   "category": "必修",
+  "classGroup": "A",
+  "classKind": "department",
+  "eligibility": "eligible",
+  "eligibilityReason": "班級系所、學制、年級及班別符合目前學生資料。",
   "timeStr": "(一)02-04",
   "timeBlocks": [
     { "dayOfWeek": 1, "startPeriod": 2, "endPeriod": 4 }

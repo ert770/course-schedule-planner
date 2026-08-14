@@ -10,7 +10,7 @@
 
 ## 最後更新
 
-2026-08-14（完成 #18、#19 後重新核對程式碼與測試；整合 #12 課程分類優先度及 #28 authenticated context／per-user 狀態的實際進度）
+2026-08-14（完成 #12、#13B、#18、#19 的進度回填；#13B 以現行 562 個班級名稱重新核對並完成 unknown eligibility）
 
 前次更新：2026-08-09（#13 拆成 #13A～#13D；依程式碼盤點補上 #4、#18、#19、#20、#21、#23、#26、#28、#31、#35、#36 的既有進度）
 
@@ -57,7 +57,7 @@
 | 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ✅ 已完成 | 無 |
 | 12 | 課程類別不完整：資料庫只有必修／選修，缺通識、核心選修、系外選修 | ✅ 已完成 | 無（歷史畢業認列另屬 #23） |
 | 13A | 資工系一般班級必修 scope | ✅ 已完成 | 無 |
-| 13B | B～F 類班級分類與 unknown eligibility | ⬜ 未開始（**現在可做**） | #13A |
+| 13B | B～F 類班級分類與 unknown eligibility | ✅ 已完成（2026-08-14） | #13A |
 | 13C | B～F 類的正式適用規則 | ⛔ 等待外部資料 | #13B；**另需系辦／校方正式規則** |
 | 13D | 學制、學程與特殊身分 | ⛔ 等待 #18 | #13B、#18 |
 | 14 | 無時間課程永不衝堂，可被無限排入 | ✅ 已完成 | 無 |
@@ -524,7 +524,7 @@ generateSchedule([課程5, 課程6], { watchingCourseIds: [5, 6], minCredits: 0 
 | 子項 | 範圍 | 狀態 | 阻塞原因 |
 | --- | --- | --- | --- |
 | #13A | 資工系一般班級（A 表）必修 scope | ✅ 已完成 | 無 |
-| #13B | B～F 類班級分類與 unknown eligibility | ⬜ 未開始 | 無，**現在可做** |
+| #13B | B～F 類班級分類與 unknown eligibility | ✅ 已完成（2026-08-14） | 無 |
 | #13C | B～F 類的正式適用規則 | ⛔ 阻塞 | 需系辦／校方正式規則 |
 | #13D | 學制、學程與特殊身分 | ⛔ 阻塞 | 需 #18 Profile schema |
 
@@ -604,13 +604,15 @@ eligible.filter(course => requiredIds.has(Number(course.id)) || course.category 
 - 實測（資訊工程學系）：必修 section 由 2094 收斂為大一 33、大二 19、大三 12、大四 0；大三課表排除 1576 門他人必修。
 - regression：`server/test/courseScope.test.js` 涵蓋班級名稱解析與必修判定。
 
-**限制**：只涵蓋 A 表班級。A 表以外的 51 個班級名稱（含 **506 筆必修**）落入 #13B～#13D。
+**限制**：一般語法涵蓋 483 個 A 類名稱。2026-08-14 重新核對 MySQL 後，另發現 79 個
+非一般格式名稱；其中 8 個實為特殊格式 A 類，已用明確對照補齊，另外 71 個才是 B～F 類。
+正式適用規則仍落入 #13C～#13D。
 
 ---
 
 ## #13B B～F 類班級分類與 unknown eligibility
 
-**狀態**：⬜ 未開始（**現在可做，不需外部資料**）
+**狀態**：✅ 已完成（2026-08-14）
 
 **相依**：#13A
 
@@ -618,13 +620,13 @@ eligible.filter(course => requiredIds.has(Number(course.id)) || course.category 
 
 ### 問題與目的
 
-目前 A 表以外的 51 個班級名稱一律**靜默**退回「一般候選課程」。系統既沒有把它們標成任何人的必修，也沒有記錄「我不知道這門課適不適用於這位學生」。結果是：`會計四合｜企業實習(二)` 這種修不到的課會被當成正常候選排入，而畫面上看不出任何疑慮。
+原先 A 表以外的班級名稱會**靜默**退回「一般候選課程」。系統既沒有把它們標成任何人的必修，也沒有記錄「我不知道這門課適不適用於這位學生」。重新核對資料庫後確認原「51 個」為過期盤點：現行 562 個名稱中，483 個由一般 A 類語法解析，8 個是特殊格式 A 類，71 個為 B～F 類。
 
 **本任務不判定「誰可以修」——那是 #13C。本任務只要求「知道自己不知道」，並把不確定性顯性化。**
 
 ### 實作範圍
 
-- 把 51 個班級名稱依 B～F 分類，寫成可測試的資料表（B 全校共同與通識、C 學院綜合班、D 英語授課班與國際學程、E 學分學程、F 其他）。
+- 把 71 個班級名稱依 B～F 分類，寫成可測試的資料表（B 全校共同與通識、C 學院綜合班、D 英語授課班與國際學程、E 學分學程、F 其他）。
 - `parseClassName()` 對這些名稱回傳結構化的 `classKind`，而不是 `null`。
 - 引入 `eligibility: 'eligible' | 'ineligible' | 'unknown'` 與 `eligibilityReason`，B～F 類在規則確認前一律為 `unknown`。
 - 排課與搜尋回應保留 `unknown` 標記，前端需能顯示「資格待確認」而不是當成一般候選。
@@ -636,6 +638,19 @@ eligible.filter(course => requiredIds.has(Number(course.id)) || course.category 
 - B～F 類課程在排課結果中帶 `eligibility: 'unknown'` 與可讀原因。
 - 系統不再把 `unknown` 課程當成確定可修的候選靜默排入。
 - 測試涵蓋每一類至少一個代表性班級名稱。
+
+### 實際完成內容
+
+- 新增 `server/src/data/classKindCatalog.js`：71 個 B～F 名稱逐筆分類；另列 8 個特殊格式 A 類，避免誤落入非系所類別。
+- `parseClassName()` 統一回傳 `classGroup`／`classKind`；未收錄的新名稱明確回傳 `unclassified`，不再用模糊樣態猜測。
+- `annotateCourseCategory()` 與所有課程回應加入 `eligibility`／`eligibilityReason`。
+- 搜尋保留 unknown；排課器未明確指定時保守排除，明確指定時保留並警告。
+- `CourseCard` 與搜尋頁顯示「資格待確認」；Agent prompt 禁止把 unknown 說成確定可修。
+- MySQL 契約測試確認現行 562 個名稱全部分類，且資料庫非系所名稱與 71 筆目錄完全一致。
+
+### 邊界
+
+#13B 只完成分類與 unknown 傳遞。B～F 的正式適用對象、學院歸屬、學程身分及校方加選規則仍屬 #13C／#13D，不得因本項完成而宣稱已知誰可以修。
 
 ---
 
@@ -901,7 +916,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #20 建立 active term 與完整 candidate eligibility 規則
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——資格判定已有分層雛形，但 active term 與 `unknown` 完全未做
+**狀態**：🟡 部分完成（2026-08-14 盤點）——`unknown` 已由 #13B 完成，active term 與正式可加選規則未做
 
 **相依**：#12、#13A、#13B、#18、#19
 
@@ -926,7 +941,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - 使用者明確指定 scope 外課程時，系統保留並提出資格警告，不靜默刪除或宣稱可修。
 - 不同科系、年級、班級與無法確認資格的測試案例均有預期結果。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-14 盤點）
 
 **已完成：四種判定中的三種已有雛形**
 
@@ -935,20 +950,20 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 | 可搜尋 | ✅ 有 | `buildCourseSearchScope()`、`buildCourseQueryScope()`、`COURSE_SEARCH_CATEGORIES` |
 | 本人必修 | ✅ 有（限 A 表班級） | `isRequiredForStudent()`、`isOtherStudentsRequiredCourse()` |
 | 可計入畢業學分 | 🟡 部分（限系外選修） | `evaluateOutsideElective()` 回傳認列條件與 `reasons` |
-| 可加選 | ❌ 無 | — |
+| 可加選 | 🟡 unknown 邊界已建立 | `resolveCourseEligibility()`；B～F 正式規則仍待 #13C |
 
 - 搜尋、排課與 AI Agent 共用同一套「先分類後篩選」流程（`searchCoursesForStudent` / `ForSchedule` / `ForAgent` 三個入口共用 `filterCategorizedCourses`），避免三條路徑各自漂移。
 - `annotateCourseCategory()` 已在課程回應保留 `sourceCategory` 與 `classificationSource`，**可追查分類的原始值與推導來源**——這正是 `eligibilitySource` 想要的性質，只是目前只涵蓋「分類」而非「資格」。
 - 系外選修不把「可能可選」直接宣稱為可計入畢業學分，會另外回傳判斷理由。
 - 排課時系外選修的認列條件**不會**靜默剔除使用者手動勾選的課（`explicitCourseIds`）——那條規則講的是能不能計入畢業學分，不是能不能修。
+- #13B 已加入 `classGroup`、`classKind`、`eligibility`、`eligibilityReason`；搜尋保留 unknown，排課自動候選保守排除，明確指定保留並警告。
 
 **尚未完成**
 
 - **完全沒有 active term 概念。** 全專案搜不到 `activeTerm` / `academicYear` 之類的設定；`server/src/db/database.js` 的課程查詢只是 `ORDER BY cs.year DESC, cs.semester`，沒有任何 API 以學年學期為必要條件。跨學期資料一旦同時存在，候選集就會混入非當學期的 sections。
-- **沒有 `eligibility` 欄位，也沒有 `unknown`。** 目前只有「有沒有被篩掉」兩種結果，資料不足時一律當成可修（見 #13B）。
 - candidate 沒有 `eligibilitySource`、`scopeReason`、`term` 三個欄位。
-- 「可加選」與「可搜尋」尚未分開；搜尋得到的課等同被視為可排入。
-- 跨班、同系他年級選修、學院綜合班、通識與學程的資格缺口仍在（#13B～#13D）。
+- 「可加選」與「可搜尋」尚未形成完整獨立規則；#13B 僅先對 unknown 建立「搜尋保留、排課自動候選排除」的保守邊界。
+- 跨班、同系他年級選修、學院綜合班、通識與學程的**正式適用規則**仍有缺口（#13C～#13D）；unknown 已不再被靜默當成可修。
 
 ---
 

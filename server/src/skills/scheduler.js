@@ -7,7 +7,6 @@ import {
   buildStudentScope,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
-  parseClassName,
 } from './courseScope.js';
 import { annotateCourseCategory } from './courseCategory.js';
 import { evaluateOutsideElective } from './outsideElective.js';
@@ -506,23 +505,7 @@ function defaultMaxCredits(constraints) {
   return constraints.allowCreditOverload ? OVERLOAD_MAX_CREDITS : DEFAULT_MAX_CREDITS;
 }
 
-// 非系所班級（通識、共同科目、學院綜合班、英語授課班、學分學程）的適用對象
-// 尚未確認，因此不當成這位學生的必修，但也不排除——`國文綜合班`、`體育選修`、
-// `軍訓` 這類全校共同科目若整批排除，學生會漏掉真正該修的課。
-// 待確認問題整理於路線圖 #13 與 `docs/DEPARTMENT_MAPPING.md`。
-function countDemotedRequiredByCategory(eligible, scope) {
-  const counts = new Map();
-
-  for (const course of eligible) {
-    if (course.category !== '必修' || isRequiredForStudent(course, scope)) continue;
-    const { category } = parseClassName(course.department);
-    counts.set(category, (counts.get(category) || 0) + 1);
-  }
-
-  return counts;
-}
-
-function addScopeWarnings(plan, eligible, otherRequired, scope) {
+function addScopeWarnings(plan, otherRequired, scope) {
   if (!scope.resolved) {
     // 「沒填」與「填了但對不到系所對照表」是兩種問題：前者要使用者去補，
     // 後者是資料錯誤（系所名稱打錯，或 A 表少了一個單位）。合併成同一句
@@ -574,14 +557,6 @@ function addScopeWarnings(plan, eligible, otherRequired, scope) {
     );
   }
 
-  const demoted = countDemotedRequiredByCategory(eligible, scope);
-  const demotedTotal = [...demoted.values()].reduce((sum, count) => sum + count, 0);
-  if (demotedTotal > 0) {
-    plan.warnings.push(
-      `另有 ${demotedTotal} 門通識、共同科目或跨系班級的必修尚無適用對象規則，`
-      + '已視為一般候選課程而非必修。'
-    );
-  }
 }
 
 // 使用者明確指定的課程 id。
@@ -612,9 +587,27 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
   const officeConfirmationNames = new Set();
   const difficultyNames = new Set();
   const unrecognizedExplicit = [];
+  const unknownEligibilityNames = new Set();
+  const unknownEligibilityExplicit = [];
+  let outsideExclusionCount = 0;
 
   for (const raw of candidateCourses) {
     const course = annotateCourseCategory(raw, scope);
+
+    if (course.eligibility === 'unknown') {
+      const label = `${course.name}（${course.department}）`;
+
+      // unknown 不是確定不可修，但也不能讓自動排課把它當成確定可修。
+      // 使用者明確指定時保留並警告；否則保守排除。
+      if (!explicitIds.has(Number(course.id))) {
+        unknownEligibilityNames.add(label);
+        exclusions.push({ course, reason: course.eligibilityReason });
+        continue;
+      }
+
+      unknownEligibilityExplicit.push(course);
+    }
+
     const outside = evaluateOutsideElective(course, scope);
 
     if (!outside.checked) {
@@ -626,6 +619,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
       // 系統自己撿的候選：不推薦不能認列的課，整個剔除。
       if (!explicitIds.has(Number(course.id))) {
         exclusions.push({ course, reason: outside.reasons[0] });
+        outsideExclusionCount += 1;
         continue;
       }
 
@@ -651,9 +645,9 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
     courses.push(course);
   }
 
-  if (exclusions.length > 0) {
+  if (outsideExclusionCount > 0) {
     warnings.push(
-      `已排除 ${exclusions.length} 門不符合系外選修認列條件的課程`
+      `已排除 ${outsideExclusionCount} 門不符合系外選修認列條件的課程`
       + '（進修部、與本系課程重複、大一概論性課程）。'
     );
   }
@@ -685,6 +679,28 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
     warnings.push(
       `候選課程中有 ${officeConfirmationNames.size} 門系外選修，依系上規定須先向系辦公室`
       + '確認是否計入畢業學分。'
+    );
+  }
+
+  if (unknownEligibilityNames.size > 0) {
+    warnings.push(
+      `已保守排除 ${unknownEligibilityNames.size} 門資格待確認的 B～F 類課程`
+      + `（${summarizeNames([...unknownEligibilityNames])}）。`
+      + '系統尚無正式適用對象規則，不會自動把它們排入課表。'
+    );
+  }
+
+  if (unknownEligibilityExplicit.length > 0) {
+    const detail = unknownEligibilityExplicit
+      .slice(0, UNSCHEDULED_NAMES_IN_WARNING)
+      .map(course => `${course.name}（${course.eligibilityReason}）`)
+      .join('；');
+    const rest = unknownEligibilityExplicit.length > UNSCHEDULED_NAMES_IN_WARNING
+      ? ` 等 ${unknownEligibilityExplicit.length} 門`
+      : '';
+    warnings.push(
+      `你指定的課程中有 ${unknownEligibilityExplicit.length} 門資格待確認：${detail}${rest}。`
+      + '本方案保留這些課程，但請先向開課單位確認能否修習。'
     );
   }
 
@@ -868,7 +884,7 @@ function buildPlan(prepared, constraints, variant) {
     return a.startPeriod - b.startPeriod;
   });
 
-  addScopeWarnings(plan, eligible, otherRequired, scope);
+  addScopeWarnings(plan, otherRequired, scope);
   plan.warnings.push(...prepared.warnings);
 
   // 學期學分與畢業學分不同時，必須明講。畫面只顯示一個數字的話，

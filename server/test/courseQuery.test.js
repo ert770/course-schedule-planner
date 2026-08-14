@@ -131,6 +131,11 @@ describe('#12A 先分類再搜尋', () => {
     assert.equal(result[0].classificationSource, 'general_education_department');
     assert.equal(result[1].generalEducationDomain, '世界格局與歷史地理視野');
     assert.equal(result[1].classificationSource, 'general_education_recognition');
+    assert.equal(result[0].eligibility, 'unknown');
+    assert.equal(result[0].classKind, 'commonCurriculum');
+    assert.match(result[0].eligibilityReason, /正式適用對象規則尚未確認/);
+    assert.equal(result[1].eligibility, 'unknown');
+    assert.equal(result[1].classKind, 'creditProgram');
   });
 
   test('排課候選可在本人班級課程之外納入通識，普通搜尋仍維持 F7', () => {

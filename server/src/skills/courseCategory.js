@@ -19,6 +19,7 @@
 
 import { classifyCsCourse } from '../data/csCurriculum.js';
 import { classifyGeneralEducationCourse } from '../data/generalEducationCatalog.js';
+import { resolveCourseEligibility } from './courseScope.js';
 import { isOutsideElective } from './outsideElective.js';
 
 const CS_DEPARTMENT = '資訊工程學系';
@@ -88,6 +89,7 @@ export function resolveCourseCategory(course, scope) {
 export function annotateCourseCategory(course, scope) {
   const sourceCategory = course?.sourceCategory ?? course?.category ?? course?.type ?? null;
   const resolved = resolveCourseCategory(course, scope);
+  const eligibility = resolveCourseEligibility({ ...course, sourceCategory }, scope);
 
   return {
     ...course,
@@ -95,6 +97,7 @@ export function annotateCourseCategory(course, scope) {
     sourceCategory,
     classificationSource: resolved.classificationSource,
     track: resolved.track ?? course.track ?? null,
+    ...eligibility,
     ...(resolved.generalEducationRuleVersion ? {
       generalEducationDomain: resolved.generalEducationDomain,
       generalEducationRuleVersion: resolved.generalEducationRuleVersion,

@@ -43,13 +43,16 @@ System prompt 必須讓 Agent：
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
+| `final_answer` | 輸出最終回答 |
 
 `query_course_db` 由後端依目前 `userId` 的 profile 建立班級範圍，Agent 不傳入或猜測
 `department`、`grade`、`className`。可用 `category` 為 `必修`、`核心選修`、
 `一般選修`、`通識`、`系外選修`。通識領域必須使用工具回傳的
 `generalEducationDomain`；115 學年度起該欄位為 `null`（不分領域），不得由課號前綴
 或課名自行猜測。
-| `final_answer` | 輸出最終回答 |
+若工具回傳 `eligibility: "unknown"`，Agent 只能說「資格待確認」並附上
+`eligibilityReason`，不得宣稱使用者確定可修。搜尋結果可呈現；排課時除非使用者明確
+指定，否則後端會保守排除。
 
 ## `run_csp_scheduler` 參數
 

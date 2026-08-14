@@ -69,7 +69,13 @@ describe('S3-S4 必修與重補修優先', () => {
     const required = makeCourse(1, { category: '必修' });
     const elective = makeCourse(2, { category: '選修' });
 
-    const result = generateSchedule([elective, required], { minCredits: 0, maxCredits: 9 });
+    const result = generateSchedule([elective, required], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      minCredits: 0,
+      maxCredits: 9,
+    });
 
     assert.ok(result.schedule.some(course => course.id === 1));
     assert.ok(!result.schedule.some(course => course.id === 2));
@@ -99,6 +105,44 @@ describe('S3-S4 必修與重補修優先', () => {
 
     assert.equal(result.schedule.length, 1);
     assert.equal(result.schedule[0].id, 1);
+  });
+});
+
+describe('#13B 資格待確認課程', () => {
+  const pendingCourse = makeCourse(901, {
+    name: '共同國文',
+    department: '國文綜合班',
+    category: '選修',
+  });
+  const student = {
+    department: '資訊工程學系',
+    gradeLevel: 3,
+    className: '資訊三甲',
+    minCredits: 0,
+    maxCredits: 9,
+  };
+
+  test('未明確指定時保守排除並附上原因', () => {
+    const result = generateSchedule([pendingCourse], student);
+
+    assert.equal(result.schedule.length, 0);
+    assert.ok(result.excludedCourses.some(item => (
+      item.course.id === pendingCourse.id
+      && item.reason.includes('正式適用對象規則尚未確認')
+    )));
+    assert.ok(result.warnings.some(warning => warning.includes('資格待確認')));
+  });
+
+  test('使用者明確指定時保留課程，但仍顯示資格待確認', () => {
+    const result = generateSchedule([pendingCourse], {
+      ...student,
+      mustTakeCourseIds: [pendingCourse.id],
+    });
+
+    assert.ok(result.schedule.some(course => course.id === pendingCourse.id));
+    assert.ok(result.warnings.some(warning => (
+      warning.includes('資格待確認') && warning.includes('共同國文')
+    )));
   });
 });
 

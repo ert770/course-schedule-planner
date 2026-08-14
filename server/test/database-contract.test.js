@@ -30,6 +30,7 @@ import {
   GENERAL_EDUCATION_DOMAINS_112_TO_114,
   RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2,
 } from '../src/data/generalEducationCatalog.js';
+import { NON_DEPARTMENT_CLASS_CATALOG } from '../src/data/classKindCatalog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -145,6 +146,28 @@ describe('資料庫契約：Courses.dept 是班級名稱', () => {
       atLeast(names.length, BASELINE.distinctDepartments, COUNT_TOLERANCE),
       `相異 dept 值 ${names.length} 遠低於基準 ${BASELINE.distinctDepartments}`
     );
+  });
+
+  test('#13B 現行 562 個班級名稱全部有 classKind', { skip }, async () => {
+    assert.equal(
+      names.length,
+      BASELINE.distinctDepartments,
+      '班級名稱集合已變動，需重新稽核並更新 A～F 分類表'
+    );
+
+    const unclassified = names.filter(name => parseClassName(name).classKind === 'unclassified');
+    assert.deepEqual(unclassified, [], '這些班級名稱尚未納入 A～F 分類');
+  });
+
+  test('#13B 資料庫的非系所班級與 71 筆 B～F 目錄完全一致', { skip }, async () => {
+    const actual = names
+      .filter(name => !parseClassName(name).isDepartmentClass)
+      .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+    const expected = NON_DEPARTMENT_CLASS_CATALOG
+      .map(entry => entry.className)
+      .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+
+    assert.deepEqual(actual, expected, 'B～F 目錄與 MySQL 現行班級名稱不一致');
   });
 
   test('可解析為系所班級的比例不得低於基準', { skip }, async () => {

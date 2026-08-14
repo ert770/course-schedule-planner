@@ -126,6 +126,10 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 才會跨出本人班級範圍。通識課以正式學年度規則、MySQL `Courses.dept` 的官方領域
 名稱及官方跨院認抵表分類，不以 `catalogCourseCode` 前綴猜測。
 
+課程搜尋會保留班級資格資訊。B～F 類（共同／通識、學院綜合班、英語與國際班、
+學分學程及其他特殊班級）的正式適用對象尚未由校方確認，因此仍可被明確搜尋，
+但回應為 `eligibility: "unknown"`，前端顯示「資格待確認」，不得解讀成確定可修。
+
 Response:
 
 ```json
@@ -159,6 +163,10 @@ Response:
       "category": "核心選修",
       "sourceCategory": "選修",
       "classificationSource": "cs_curriculum",
+      "classGroup": "A",
+      "classKind": "department",
+      "eligibility": "eligible",
+      "eligibilityReason": "已辨識為 A 類系所班級；其他選修限制仍依既有候選規則判定。",
       "track": "技術應用類"
     }
   ],
@@ -175,6 +183,10 @@ Response:
 | `classificationSource` | `mysql`、`cs_curriculum` 或 `outside_department` |
 | `track` | 資工科目表對應的修課路徑，沒有資料時為 `null` |
 | `outsideElective` | 系外選修的認列檢查、原因、警告及系辦確認狀態 |
+| `classGroup` | 班級分類 `A`～`F`；尚未收錄的名稱為 `null` |
+| `classKind` | `department`、`commonCurriculum`、`collegeWide`、`englishProgram`、`internationalProgram`、`creditProgram`、`other` 或 `unclassified` |
+| `eligibility` | `eligible`、`ineligible` 或 `unknown`；是班級適用資格，不等同畢業學分認列 |
+| `eligibilityReason` | 可供 UI 與 Agent 直接呈現的資格判定理由 |
 
 通識課另有下列欄位：
 
@@ -295,6 +307,7 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 | --- | --- | --- |
 | 系外選修不符認列條件 | 剔除，原因記入 `excludedCourses` | 排入，標記不計入畢業學分 |
 | 他班／他系的必修 | 剔除，不進候選 | 排入，警告需自行向系辦確認 |
+| B～F 類或未分類、`eligibility=unknown` | 保守排除，原因記入 `excludedCourses` | 保留並排入，警告「資格待確認」 |
 
 理由：這兩條都是「依系所、年級、班別**推論**」，不是校方的選課權限。
 見 `docs/SCHEDULING_LOGIC.md` 的「明確指定的課程豁免整批排除」。
@@ -365,6 +378,8 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `category` | **對這位學生解析後**的類別（`必修`／`核心選修`／`選修`／`通識`／`系外選修`） |
 | `sourceCategory` | 資料庫原始的 `Courses.type`，僅在解析結果不同時出現 |
 | `track` | 修課路徑（`嵌入式系統類`／`技術應用類`／`網路與安全類`），無歸類時為 `null` |
+| `classGroup`／`classKind` | 班級 A～F 分組及結構化種類 |
+| `eligibility`／`eligibilityReason` | 班級適用資格及可讀原因；`unknown` 不得宣稱確定可修 |
 
 `category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」。
 

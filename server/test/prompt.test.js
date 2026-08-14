@@ -86,4 +86,12 @@ describe('P3 排課結果欄位有告知模型', () => {
     assert.ok(prompt.includes('preferenceScore'));
     assert.ok(prompt.includes('hasExpressedPreference'));
   });
+
+  test('資格 unknown 必須說成資格待確認，不能宣稱可修', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('eligibility'));
+    assert.ok(prompt.includes('資格待確認'));
+    assert.ok(prompt.includes('不得宣稱使用者確定可修'));
+  });
 });

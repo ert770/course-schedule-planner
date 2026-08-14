@@ -13,6 +13,11 @@ import {
   getDepartmentByAbbreviation,
   getAbbreviations,
 } from '../data/departmentMapping.js';
+import {
+  CLASS_KIND_LABELS,
+  getNonDepartmentClassEntry,
+  getSpecialDepartmentClassEntry,
+} from '../data/classKindCatalog.js';
 import { normalizeDepartment } from '../utils/text.js';
 
 const GRADE_BY_CHAR = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5 };
@@ -27,31 +32,6 @@ const DEGREE_MARKERS = [
 ];
 
 const DEFAULT_DEGREE = 'bachelor';
-
-// 非系所班級的粗分類，對應 `docs/DEPARTMENT_MAPPING.md` 的 B～F 表。
-// 目前排課不依這個分類做不同處理（B～F 的適用對象尚未確認，見路線圖 #13），
-// 它的用途是讓警告訊息與後續調查能說出「被降級的是哪一類」。
-
-// 即使開頭剛好是某個系所簡稱，也一定不是系所班級的名稱樣態。
-// 必須在系所解析**之前**判定：`商學一(UQ)` 會被 `商學` + 年級 `一` 誤判成系所班級，
-// 但它其實是 UQ 國際學程；`資電學院綜合班` 同理。
-const NON_DEPARTMENT_PATTERNS = [
-  // D. 英語授課班與國際學程
-  [/英[A-Z]?班/, 'englishProgram'],
-  [/\((SFSU|Monash|UQ|SJSU|RMIT|UNSW)\)/, 'internationalProgram'],
-  [/^國際生/, 'internationalProgram'],
-  // C. 學院綜合班
-  [/學院.*綜合班/, 'collegeWide'],
-  // F. 其他
-  [/^未完成課程/, 'unknownPurpose'],
-];
-
-// 系所解析失敗後才套用。`學程$` 不能放進上面那組：`建築二學位學程`、
-// `國企一學位學程`、`智能工程碩專一學位學程` 都是 A 表中的系所班級。
-const FALLBACK_PATTERNS = [
-  // E. 學分學程
-  [/學程$/, 'creditProgram'],
-];
 
 // B. 全校共同與通識中，班級名稱本身就寫明適用年級者。
 // 其餘共同科目（國文綜合班、體育選修、核心必修綜合班…）的適用對象尚未確認，
@@ -70,17 +50,15 @@ function parseDegree(rest) {
   return { degree: DEFAULT_DEGREE, rest };
 }
 
-function matchPattern(className, patterns) {
-  for (const [pattern, category] of patterns) {
-    if (pattern.test(className)) return category;
-  }
-  return null;
-}
-
 function findGradeInName(className) {
   for (const [pattern, grade] of GRADE_IN_NAME_PATTERNS) {
     if (pattern.test(className)) return grade;
   }
+  if (/不分系一年級/u.test(className)) return 1;
+
+  const internationalGrade = className.match(/([一二三四五])\((?:SFSU|Monash|UQ|SJSU|RMIT|UNSW)\)$/u);
+  if (internationalGrade) return GRADE_BY_CHAR[internationalGrade[1]] ?? null;
+
   return null;
 }
 
@@ -106,39 +84,83 @@ export function parseClassName(className) {
 
 function parseClassNameUncached(name) {
   if (!name) {
-    return { className: name, isDepartmentClass: false, category: 'unknown', department: null, abbreviation: null, degree: null, grade: null, classSuffix: null };
+    return {
+      className: name,
+      isDepartmentClass: false,
+      classGroup: null,
+      classKind: 'unclassified',
+      category: 'unknown',
+      department: null,
+      abbreviation: null,
+      degree: null,
+      grade: null,
+      classSuffix: null,
+    };
   }
 
-  const nonDepartment = matchPattern(name, NON_DEPARTMENT_PATTERNS);
+  const specialDepartment = getSpecialDepartmentClassEntry(name);
+  if (specialDepartment) {
+    return {
+      className: name,
+      isDepartmentClass: true,
+      classGroup: 'A',
+      classKind: 'department',
+      category: 'department',
+      department: getDepartmentByAbbreviation(specialDepartment.abbreviation),
+      abbreviation: specialDepartment.abbreviation,
+      degree: specialDepartment.degree,
+      grade: specialDepartment.grade,
+      classSuffix: null,
+    };
+  }
 
-  if (!nonDepartment) {
-    const abbreviation = findLongestAbbreviationPrefix(name);
-    if (abbreviation) {
-      const { degree, rest } = parseDegree(name.slice(abbreviation.length));
-      const grade = GRADE_BY_CHAR[rest[0]] ?? null;
+  // B～F 使用明確目錄，不使用樣態推測。這個判定必須在 A 類前面：
+  // `商學一(UQ)`、`資電學院綜合班` 都會命中 A 表簡稱，但不是一般系所班級。
+  const nonDepartment = getNonDepartmentClassEntry(name);
+  if (nonDepartment) {
+    return {
+      className: name,
+      isDepartmentClass: false,
+      classGroup: nonDepartment.classGroup,
+      classKind: nonDepartment.classKind,
+      category: nonDepartment.classKind,
+      department: null,
+      abbreviation: null,
+      degree: null,
+      grade: findGradeInName(name),
+      classSuffix: null,
+    };
+  }
 
-      if (grade !== null) {
-        return {
-          className: name,
-          isDepartmentClass: true,
-          category: 'department',
-          department: getDepartmentByAbbreviation(abbreviation),
-          abbreviation,
-          degree,
-          grade,
-          // 年級字之後的部分即班別，例如 `資訊三甲` 的 `甲`、`資訊三合` 的 `合`。
-          // 空字串代表該班級名稱沒有分班（例如 `合經一`）。
-          classSuffix: rest.slice(1),
-        };
-      }
+  const abbreviation = findLongestAbbreviationPrefix(name);
+  if (abbreviation) {
+    const { degree, rest } = parseDegree(name.slice(abbreviation.length));
+    const grade = GRADE_BY_CHAR[rest[0]] ?? null;
+
+    if (grade !== null) {
+      return {
+        className: name,
+        isDepartmentClass: true,
+        classGroup: 'A',
+        classKind: 'department',
+        category: 'department',
+        department: getDepartmentByAbbreviation(abbreviation),
+        abbreviation,
+        degree,
+        grade,
+        // 年級字之後的部分即班別，例如 `資訊三甲` 的 `甲`、`資訊三合` 的 `合`。
+        // 空字串代表該班級名稱沒有分班（例如 `合經一`）。
+        classSuffix: rest.slice(1),
+      };
     }
   }
 
   return {
     className: name,
     isDepartmentClass: false,
-    // 其餘視為 B 類全校共同與通識（國文綜合班、體育選修、軍訓、核心必修綜合班…）。
-    category: nonDepartment || matchPattern(name, FALLBACK_PATTERNS) || 'commonCurriculum',
+    classGroup: null,
+    classKind: 'unclassified',
+    category: 'unknown',
     department: null,
     abbreviation: null,
     degree: null,
@@ -314,6 +336,61 @@ export function isOwnDepartmentClass(course, scope) {
   return scope.abbreviations.includes(parsed.abbreviation);
 }
 
+// #13B 只把「是否知道適用對象」顯性化，不猜 B～F 的正式修課規則。
+// `eligibility` 是班級範圍判定；系外選修是否計入畢業學分仍由 outsideElective
+// 的獨立規則處理，兩者不可混為同一欄位。
+export function resolveCourseEligibility(course, scope) {
+  const parsed = parseClassName(course?.department);
+
+  if (!parsed.isDepartmentClass) {
+    if (!parsed.classGroup) {
+      return {
+        classGroup: null,
+        classKind: parsed.classKind,
+        eligibility: 'unknown',
+        eligibilityReason: `班級「${parsed.className || '未提供'}」尚未納入班級分類表，無法確認修課資格。`,
+      };
+    }
+
+    const label = CLASS_KIND_LABELS[parsed.classKind] || parsed.classKind;
+    return {
+      classGroup: parsed.classGroup,
+      classKind: parsed.classKind,
+      eligibility: 'unknown',
+      eligibilityReason: `${label}（${parsed.classGroup} 類）的正式適用對象規則尚未確認。`,
+    };
+  }
+
+  const sourceCategory = course?.sourceCategory ?? course?.type ?? course?.category;
+  if (sourceCategory === '必修') {
+    if (!scope?.resolved) {
+      return {
+        classGroup: 'A',
+        classKind: 'department',
+        eligibility: 'unknown',
+        eligibilityReason: '學生系所或年級資料不足，無法確認這門 A 類必修是否適用。',
+      };
+    }
+
+    const eligible = isRequiredForStudent(course, scope);
+    return {
+      classGroup: 'A',
+      classKind: 'department',
+      eligibility: eligible ? 'eligible' : 'ineligible',
+      eligibilityReason: eligible
+        ? '班級系所、學制、年級及班別符合目前學生資料。'
+        : '此為其他系所、學制、年級或班別的必修。',
+    };
+  }
+
+  return {
+    classGroup: 'A',
+    classKind: 'department',
+    eligibility: 'eligible',
+    eligibilityReason: '已辨識為 A 類系所班級；其他選修限制仍依既有候選規則判定。',
+  };
+}
+
 export { classSuffixCovers };
 
 export default {
@@ -324,5 +401,6 @@ export default {
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
   isOwnDepartmentClass,
+  resolveCourseEligibility,
   classSuffixCovers,
 };
