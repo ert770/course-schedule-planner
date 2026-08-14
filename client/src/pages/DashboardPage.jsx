@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
-import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule'; 
 import { scheduleAPI, chatAPI, profileAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
