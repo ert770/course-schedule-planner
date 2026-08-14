@@ -54,7 +54,7 @@ export default function SearchPage() {
       return () => { cancelled = true; };
     }
 
-    profileAPI.get(user.studentId)
+    profileAPI.get()
       .then(profile => {
         if (cancelled) return;
         const scope = profile?.courseSearchScope || null;

@@ -1,25 +1,18 @@
 import { Router } from 'express';
 import { handleChat } from '../services/agentService.js';
-import { resolveIdentity, identityErrorResponse } from '../services/identityService.js';
+import { requireIdentity } from '../middleware/requireIdentity.js';
 
 const router = Router();
 
 // POST /api/chat — 處理對話
-router.post('/', async (req, res) => {
+router.post('/', requireIdentity, async (req, res) => {
   try {
     const { userId, message } = req.body;
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({ error: '請輸入訊息' });
     }
 
-    // 聊天記憶與偏好更新都會寫進這位使用者，身分不可 fallback。
-    const identity = await resolveIdentity(userId);
-    if (!identity.found) {
-      const { status, error } = identityErrorResponse(identity);
-      return res.status(status).json({ error });
-    }
-
-    const result = await handleChat(identity, message.trim());
+    const result = await handleChat(req.identity, message.trim());
     res.json(result);
   } catch (err) {
     console.error('Chat error:', err);

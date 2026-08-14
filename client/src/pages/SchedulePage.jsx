@@ -37,7 +37,7 @@ export default function SchedulePage() {
       return () => { cancelled = true; };
     }
 
-    profileAPI.get(user.studentId)
+    profileAPI.get()
       .then(profile => {
         if (cancelled) return;
         const scope = profile?.courseSearchScope || null;
@@ -92,7 +92,6 @@ export default function SchedulePage() {
     setLoading(true);
     try {
       const data = await scheduleAPI.generate({
-        userId: user.studentId,
         courseIds: selectedCourses.map(c => c.id),
         constraints: {},
       });

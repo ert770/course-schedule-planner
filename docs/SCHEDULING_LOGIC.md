@@ -135,7 +135,7 @@
 畫面上只會少一門課而沒有任何線索——與系外選修的處理一致（見下方「系外選修認列條件」）。
 
 「明確指定」= `POST /api/schedule/generate` 的 `courseIds`、`selectedCourseIds`、
-`mustTakeCourseIds`、`retakeCourseIds`。
+`mustTakeCourseIds`。
 
 ### 無法判定時
 
@@ -222,7 +222,7 @@
 
 「明確指定」= `POST /api/schedule/generate` 的 `courseIds`（課程瀏覽器勾選的課，
 它決定候選池但**不會**進入 `selectedCourseIds`，因此另以 `explicitCourseIds` 傳入）、
-`selectedCourseIds`、`mustTakeCourseIds`、`retakeCourseIds`。
+`selectedCourseIds`、`mustTakeCourseIds`。
 
 把使用者親手勾的課靜默刪掉，畫面上只會少一門課、沒有任何線索，而學生其實修得到
 那門課——去留必須交還給使用者。
@@ -256,9 +256,12 @@
 - 被排除的課推入 `excludedCourses`，附上 `已修過並通過（課號 XXX）` 的理由——
   已修課程若靜默從候選池消失、畫面上沒有任何線索，使用者會誤以為候選池本來
   就只有這麼少門課。
-- **未通過（`passed: false`）的課不在排除清單裡**，可以正常作為 `retakeCourseIds`
-  指定的重補修課程排入。已修排除與重補修依資料設計天生互斥，不需要額外的
-  豁免判斷。
+- 每個 `courseCode` 先依 `academicYear + semester` 取最新一次紀錄。最新紀錄
+  `passed: true` 時視為完成；最新紀錄 `passed: false` 且 `requirementType: 必修` 時，
+  自動映射到本學期相同 `catalogCourseCode` 的所有 sections，優先序排在本學期必修之後。
+- 不接受 `retakeCourseIds`／`failedRequiredCourseIds`。舊 client 即使送入也不生效。
+- 不及格必修若本學期沒有對應 section，回傳「本學期沒有開課，請下學期記得重修」warning；
+  若有開課但因本學期必修衝堂或其他硬限制無法排入，也回傳可操作的 warning。
 - `nonGraduation` 分類（體育、國防科技、班級活動等）的課**仍視為已修過**而排除，
   即使它不計入畢業學分——「修沒修過」與「計不計學分」是兩件事，見
   `docs/DATA_SCHEMA.md` 的 `courseHistory` 欄位定義。
@@ -267,7 +270,8 @@
   一份課號清單）。
 
 實作於 `server/src/skills/scheduler.js` 的 `buildPlan()`，比對函式來自
-`server/src/data/courseHistory.js` 的 `getPassedCourseCodes()`。
+`server/src/data/courseHistory.js` 的 `getPassedCourseCodes()`、
+`getLatestAttemptsByCourseCode()` 與 `getFailedRequiredCourses()`。
 `server/src/routes/graduation.js` 的「建議補足系上課程」推薦邏輯呼叫同一支函式，
 與排課共用同一套已修判定，兩處不會對「這位學生修過什麼」給出不同答案。
 

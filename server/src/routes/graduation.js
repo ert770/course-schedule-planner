@@ -3,8 +3,8 @@ import { getAll } from '../db/database.js';
 import { getGraduationRequirement } from '../data/graduationRequirements.js';
 import { normalizeDepartment } from '../utils/text.js';
 import { parseClassName } from '../skills/courseScope.js';
-import { resolveIdentity, identityErrorResponse } from '../services/identityService.js';
 import { getUserPreferences } from '../services/memoryService.js';
+import { requireIdentity } from '../middleware/requireIdentity.js';
 import {
   getPassedCourseCodes,
   getEarnedCredits,
@@ -54,16 +54,9 @@ function hasCourseHistory(user) {
   return Array.isArray(user.courseHistory) && user.courseHistory.length > 0;
 }
 
-router.get('/:studentId', async (req, res) => {
+async function handleGraduation(req, res) {
   try {
-    const { studentId } = req.params;
-
-    // canonical identity 解析，學號與 numeric id 都認得。
-    const identity = await resolveIdentity(studentId);
-    if (!identity.found) {
-      const { status, error } = identityErrorResponse(identity);
-      return res.status(status).json({ error });
-    }
+    const identity = req.identity;
 
     const users = await getAll('users');
     const user = users.find(item => String(item.studentId) === String(identity.canonicalId)) || {};
@@ -162,6 +155,9 @@ router.get('/:studentId', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+}
+
+router.get('/me', requireIdentity, handleGraduation);
+router.get('/:studentId', requireIdentity, handleGraduation);
 
 export default router;

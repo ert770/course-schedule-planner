@@ -8,6 +8,16 @@ http://localhost:3001/api
 
 All request and response bodies are JSON.
 
+## Authenticated identity
+
+登入成功後，後端以簽名的 `fcu_session` cookie 保存 canonical student ID（學號）。
+cookie 設為 `HttpOnly`、`SameSite=Lax`，前端所有 API request 都使用
+`credentials: include`。Profile、Schedule、Chat、Graduation、watchlist 與 saved schedules
+一律從 session 取得實際操作身分，不接受 client 指定其他使用者。
+
+相容期間若 request 仍帶 `userId`／`studentId`，其值只能是 session 中的同一個學號；
+不一致回傳 `403`。未登入或 session 失效回傳 `401`。
+
 ## Data Source
 
 Course, section, review, and numeric user profile data are read from MySQL database `defaultdb`.
@@ -56,9 +66,13 @@ Response:
 }
 ```
 
-### `GET /api/auth/me?studentId={studentId}`
+### `GET /api/auth/me`
 
-Returns the local demo user profile without password.
+從 session 回傳目前登入的 local demo user profile（不含密碼），不接受 query student ID。
+
+### `POST /api/auth/logout`
+
+清除 session cookie。
 
 ### `POST /api/auth/update-watchlist`
 
@@ -66,7 +80,6 @@ Request:
 
 ```json
 {
-  "studentId": "D1249196",
   "watchlist": [1, 2, 3]
 }
 ```
@@ -225,7 +238,6 @@ Request:
 
 ```json
 {
-  "userId": "1",
   "courseIds": [1, 2, 3],
   "filters": {},
   "constraints": {
@@ -251,10 +263,10 @@ Request:
 系上不接受必修換班，未提供時必修只收斂到系所與年級，並在 `warnings` 提醒。
 三者未提供時會從使用者已儲存的 profile 帶入。系統自動建立候選池時，若 profile
 缺少可解析班級，不會退回全校課程，而是回傳 `CLASS_NAME_REQUIRED`。前端不需要在
-schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再呼叫
+schedule request 重複傳班級；route 會先依 session identity 讀取 profile，再呼叫
 `searchCoursesForSchedule()`。
 
-`courseIds`, `selectedCourseIds`, `watchingCourseIds`, and `retakeCourseIds` should use section ids.
+`courseIds`、`selectedCourseIds`、`watchingCourseIds` 與 `mustTakeCourseIds` 使用 section id。
 
 `completedCourseIds` 已於 2026-08-13 移除——已修排除改用穩定的 `courseHistory`
 課號比對（`skills/scheduler.js` 呼叫 `data/courseHistory.js` 的
@@ -262,8 +274,14 @@ schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再
 一律以使用者已儲存的 `courseHistory` 為準。詳見「限制條件合併語意」。
 
 `courseIds` 決定候選池，同時代表「使用者明確指定的課」。route 會把它併入
-`explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds`、
-`retakeCourseIds` 同樣視為明確指定。
+`explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds` 同樣視為明確指定。
+
+`retakeCourseIds` 與 `failedRequiredCourseIds` 已移除。重補修不得由 client 或 Agent
+手動指定；後端只依 Profile 的 `courseHistory`，對每個 `courseCode` 取最新
+`academicYear + semester` 紀錄，自動找出 `passed: false` 且
+`requirementType: "必修"` 的課，再映射到本學期相同 `catalogCourseCode` 的所有 sections。
+優先序固定為「本學期必修 → 不及格必修重補修 → 其他課程」。本學期未開課時，
+`warnings` 會提醒使用者下學期重修。
 
 明確指定的課程**不會被系統的推論規則剔除**，一律排入並附警告：
 
@@ -281,7 +299,7 @@ schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再
 
 request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
 
-- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`retakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
 - **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 `prefs.courseHistory`。修課歷史沒有任何呼叫端會在 request 裡送（REST 不送，AI Agent 的 `run_csp_scheduler` 工具參數也不含它），寫成雙來源合併只會暗示一個不存在的覆蓋能力，還可能讓模型塞入捏造的修課紀錄。
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
 - **`selectedCourseIds`、`watchingCourseIds`、`courseStates`**：屬於本次操作的當下狀態，不從已儲存偏好回填。
@@ -388,7 +406,6 @@ Request:
 
 ```json
 {
-  "userId": "1",
   "name": "我的課表",
   "schedule": [],
   "totalCredits": 18
@@ -397,9 +414,9 @@ Request:
 
 Saved schedules remain local JSON data.
 
-### `GET /api/schedule/saved?userId={userId}`
+### `GET /api/schedule/saved`
 
-Returns locally saved schedules for the user.
+Returns locally saved schedules for the session user.
 
 ## Chat
 
@@ -409,7 +426,6 @@ Request:
 
 ```json
 {
-  "userId": "1",
   "message": "幫我排課"
 }
 ```
@@ -426,14 +442,17 @@ Response:
 
 ## Profile
 
-### `GET /api/profile?userId={userId}`
+### `GET /api/profile`
 
-For numeric `userId`, reads `User_Profiles.user_id` from MySQL when present.
+從 session 的 canonical student ID 讀取 `User_Profiles`。Response 固定包含
+`schemaVersion: 1`；資料庫 migration 尚未套用時，後端會把既有 v0 row 正規化成 v1 response。
 
 回應保留完整 `className`，並由後端共用 `parseClassName()` 產生課程搜尋範圍：
 
 ```json
 {
+  "schemaVersion": 1,
+  "studentId": "D1249697",
   "className": "資訊三甲",
   "courseSearchScope": {
     "department": "資訊工程學系",
@@ -447,7 +466,7 @@ For numeric `userId`, reads `User_Profiles.user_id` from MySQL when present.
 
 ### `POST /api/profile`
 
-For numeric `userId`, updates supported `User_Profiles` fields when the row exists. Demo or non-numeric users are saved to local JSON.
+只更新 session 使用者的 `User_Profiles` 支援欄位。request 不需也不應傳 `userId`。
 
 `department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
 
@@ -484,9 +503,10 @@ Response:
 
 ## Graduation
 
-### `GET /api/graduation/:studentId`
+### `GET /api/graduation/me`
 
-Uses local demo users when available, otherwise uses numeric MySQL `User_Profiles.user_id` for basic profile data.
+Uses the authenticated session identity. Legacy `/api/graduation/:studentId` 暫時保留，
+但 path student ID 必須與 session 相同，否則回傳 `403`。
 
 畢業學分要求**依學生系所查 `server/src/data/graduationRequirements.js`**，沒有全校通用的預設值（總學分有 128／130／131／134／156 五種）。
 

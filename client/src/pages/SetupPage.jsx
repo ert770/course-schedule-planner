@@ -14,7 +14,7 @@ import AvoidTimePicker from '../components/Setup/AvoidTimePicker';
 
 export default function SetupPage() {
   const navigate = useNavigate();
-  const { user, markSetupDone } = useAuth();
+  const { user, markSetupDone, logout } = useAuth();
   
   // Basic info
   //
@@ -66,7 +66,7 @@ export default function SetupPage() {
       return () => { cancelled = true; };
     }
 
-    profileAPI.get(user.studentId)
+    profileAPI.get()
       .then(profile => {
         if (cancelled || !profile) return;
         if (profile.department) setDepartment(profile.department);
@@ -141,7 +141,7 @@ export default function SetupPage() {
         // 第 1～14 節皆可。後端不再篩掉第 1 節。
         blockedPeriods: avoidPeriods,
       };
-      await profileAPI.update(prefData, user.studentId);
+      await profileAPI.update(prefData);
 
       markSetupDone();
 
@@ -272,7 +272,7 @@ export default function SetupPage() {
             
             <button 
               onClick={() => {
-                localStorage.clear();
+                logout();
                 window.location.href = '/login';
               }}
               style={{

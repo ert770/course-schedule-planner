@@ -96,15 +96,42 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 
 | Column | Type | API mapping |
 | --- | --- | --- |
-| `user_id` | int | `profile.userId` |
+| `user_id` | int | 既有 MySQL 內部鍵；migration 前的資料庫邊界相容欄位，不是 API canonical ID |
+| `student_id` | varchar(32), UNIQUE | `profile.userId`、`profile.studentId`；canonical ID（migration 目標欄位） |
 | `department` | varchar(45) | `profile.department`（見下方說明） |
 | `grade_level` | int | `profile.gradeLevel` |
+| `class_name` | varchar(45) | `profile.className`（migration 目標欄位） |
+| `profile_schema_version` | int | `profile.schemaVersion`；目前版本 `1`（migration 目標欄位） |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
 | `completed_courses` | json | **已停用**（2026-08-13）。本專案不再讀寫此欄位——已修排除改用 `users.json` 的 `courseHistory`，理由與遷移細節見 `docs/CHANGE_REPORTS/2026-08-13-part-a-course-history-scheduling-data.md`。欄位本身仍存在於共用表，本專案不自行 `ALTER TABLE`，清理需與組員協調 |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
-**`class_name` 欄位尚未新增**（待組員加上）。見下方「`className`（班別）」。
+`student_id`、`class_name`、`profile_schema_version` 的 DDL 與安全 migration 已備妥，
+但 shared MySQL 尚未套用；必須先取得組員協調確認。程式會偵測欄位是否存在，
+因此 rollout 前可讀既有 v0 row，rollout 後改以 `student_id` 查詢。
+
+### Profile schema v1 與 migration
+
+API Profile 的 canonical shape 固定回傳 `schemaVersion: 1`。缺少版本的既有資料視為 v0，
+由 `server/src/data/profileSchema.js` 的集中式 normalizer 轉為 v1；欄位型別由 validator
+檢查。資料庫 migration 位於 `server/migrations/001_profile_schema_v1.*.sql`，執行器為
+`server/scripts/profileSchemaMigration.js`。
+
+```text
+# 預設只做 dry-run，不修改資料庫
+npm run migrate:profile --prefix server
+
+# 取得 shared MySQL 協調確認後才可執行
+npm run migrate:profile --prefix server -- --apply --confirm-shared-mysql
+
+# 以 apply 前產生的備份檔進行 rollback
+npm run migrate:profile --prefix server -- --rollback --confirm-shared-mysql --backup=<path>
+```
+
+執行前會備份 `User_Profiles` 到被 `.gitignore` 排除的 `server/backups/profile-schema/`。
+migration 先檢查欄位，全部存在時不重複新增；偵測到部分套用狀態會停止並要求人工檢查，
+避免半套 schema。rollback 移除這次新增的 unique index 與三個欄位；原始 row 備份保留供核對。
 
 ### `className`（班別）
 
@@ -117,7 +144,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 ALTER TABLE `User_Profiles` ADD COLUMN `class_name` varchar(45) NULL;
 ```
 
-本專案**不自行執行**這道 DDL——該表與組員共用。程式已具備此欄位的完整讀寫：
+本專案不會在未協調時直接執行這道 DDL——該表與組員共用。程式已具備此欄位的完整讀寫：
 
 | 路徑 | 位置 |
 | --- | --- |
@@ -194,6 +221,12 @@ store 的邏輯名稱。
 | `requirementType` | string | 成績資料中的修習別：`必修` 或 `選修` |
 | `generalEducationCategory` | string \| null | 原始通識類別，例如 `(M)`、`(N)`；未標示時為 `null` |
 | `graduationCategory` | string | 畢業分類：`required`、`elective`、`general`、`external` 或 `nonGraduation`。`nonGraduation`（體育、國防科技、班級活動等）不計入畢業學分，但**仍視為已修過**——`getPassedCourseCodes()` 不排除它，`getEarnedCredits()` 才排除其學分，兩者是不同的判定 |
+
+以上 11 個欄位都是 `courseHistory` v1 的必要欄位。若同一 `courseCode` 有多筆紀錄，
+以 `academicYear`、再以 `semester` 取最新一筆；最新 `passed: true` 視為完成，最新
+`passed: false` 且 `requirementType: 必修` 才成為自動重補修來源。`withdrawn`、
+`transferred`、`exempted` 等多狀態模型不屬於 #19，本次不新增欄位，改由 roadmap #23
+在畢業認列規則與來源可追溯性一併設計。
 
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——

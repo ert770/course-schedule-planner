@@ -20,6 +20,7 @@ import { getUserPreferences } from './memoryService.js';
 import { buildScheduleConstraints } from './constraintService.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 import { getAll } from '../db/database.js';
+import { getFailedRequiredCourseCodes } from '../data/courseHistory.js';
 
 const NO_CANDIDATES_RESULT = {
   success: false,
@@ -54,13 +55,27 @@ export async function generateForUser(identity, input = {}, options = {}) {
 
   const studentScope = buildStudentScope(mergedConstraints);
 
+  const failedRequiredCodes = new Set(getFailedRequiredCourseCodes(prefs.courseHistory));
   let candidates;
   if (courseIds.length > 0) {
     const courseIdSet = new Set(courseIds.map(String));
     const allCourses = await getAll('courses');
-    candidates = allCourses.filter(course => courseIdSet.has(String(course.id)));
+    candidates = allCourses.filter(course => (
+      courseIdSet.has(String(course.id))
+      || failedRequiredCodes.has(course.catalogCourseCode)
+    ));
   } else {
     candidates = await searchCoursesForSchedule(filters, studentScope);
+    if (failedRequiredCodes.size > 0) {
+      const seen = new Set(candidates.map(course => String(course.id)));
+      const allCourses = await getAll('courses');
+      for (const course of allCourses) {
+        if (failedRequiredCodes.has(course.catalogCourseCode) && !seen.has(String(course.id))) {
+          candidates.push(course);
+          seen.add(String(course.id));
+        }
+      }
+    }
   }
 
   if (candidates.length === 0) {

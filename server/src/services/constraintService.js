@@ -90,10 +90,6 @@ export function buildScheduleConstraints(input = {}, prefs = {}) {
     // 兩邊恆為 `undefined` 與 `[]`，結果永遠是空陣列——這正是已修排除從未生效的原因之一。
     // 已修課號改由 `skills/scheduler.js` 呼叫 `data/courseHistory.js` 當場推導。
     courseHistory: prefs.courseHistory ?? [],
-    retakeCourseIds: pickList(
-      input.retakeCourseIds || input.failedRequiredCourseIds,
-      prefs.retakeCourseIds || prefs.failedRequiredCourseIds
-    ),
 
     selectedCourseIds: pickRequestList(input.selectedCourseIds),
     watchingCourseIds: pickRequestList(input.watchingCourseIds),

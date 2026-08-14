@@ -298,8 +298,8 @@
 可以修那門課，只是不計入畢業學分。這個決定必須交還給使用者。
 
 「明確指定」的來源包含 `POST /api/schedule/generate` 的 `courseIds`（課程瀏覽器勾選的課，
-它決定候選池但不會進入 `selectedCourseIds`）、`selectedCourseIds`、`mustTakeCourseIds`
-與 `retakeCourseIds`。
+它決定候選池但不會進入 `selectedCourseIds`）、`selectedCourseIds` 與
+`mustTakeCourseIds`。不及格必修不屬於手動指定，必須由 `courseHistory` 自動推導。
 
 「難度不低於本系課程」沒有任何可機械比較的欄位。把猜測當成硬性規則會靜默刪掉學生其實
 可以修的課，比漏警告更糟，因此只發警告。

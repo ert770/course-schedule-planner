@@ -16,7 +16,10 @@ import {
   getNonGraduationCategory,
   UNRECOGNIZED_OUTSIDE_ELECTIVE,
 } from '../data/generalEducation.js';
-import { getPassedCourseCodes } from '../data/courseHistory.js';
+import {
+  getFailedRequiredCourses,
+  getPassedCourseCodes,
+} from '../data/courseHistory.js';
 
 // 校規：每學期上限 25 學分、下限 12 學分（四年級 9），超修申請後至多 30。
 // 見 `docs/COURSE_SELECTION_RULES.md`。先前寫死的 15／22 沒有出處。
@@ -351,13 +354,11 @@ function evaluatePreference(plan, constraints, profile) {
   return { score, breakdown };
 }
 
-function scoreCourse(course, schedule, constraints, variant, requiredIds, retakeIds, scope) {
+function scoreCourse(course, schedule, constraints, variant, requiredIds, scope) {
   let score = 1000;
   const id = Number(course.id);
 
   if (requiredIds.has(id)) score += 10000;
-  if (retakeIds.has(id)) score += 9000;
-
   score -= getEffectiveCategoryPriority(course, scope) * 120;
   score += (course.credits || 0) * 12;
 
@@ -594,8 +595,6 @@ function collectExplicitCourseIds(constraints) {
     ...toArray(constraints.selectedCourseIds),
     ...toArray(constraints.mustTakeCourseIds),
     ...toArray(constraints.mustTakeCourses),
-    ...toArray(constraints.retakeCourseIds),
-    ...toArray(constraints.failedRequiredCourseIds),
   ]);
 }
 
@@ -703,12 +702,10 @@ function buildPlan(prepared, constraints, variant) {
     ...toArray(constraints.mustTakeCourseIds),
     ...toArray(constraints.mustTakeCourses),
   ]);
-  const retakeIds = toIdSet([
-    ...toArray(constraints.retakeCourseIds),
-    ...toArray(constraints.failedRequiredCourseIds),
-  ]);
+  const failedRequired = getFailedRequiredCourses(constraints.courseHistory);
+  const failedRequiredCodes = new Set(failedRequired.map(entry => entry.courseCode));
   const completedCodes = new Set(getPassedCourseCodes(constraints.courseHistory));
-  const requiredIds = new Set([...selectedIds, ...mustTakeIds, ...retakeIds]);
+  const requiredIds = new Set([...selectedIds, ...mustTakeIds]);
 
   // #13：`Courses.type = '必修'` 是「某系所某年級的必修」，不是「這位學生的必修」。
   // 未依系所與年級收斂時，全校 2094 筆必修都會被當成這位學生的必修。
@@ -734,7 +731,10 @@ function buildPlan(prepared, constraints, variant) {
     course => prepared.explicitIds.has(Number(course.id))
   );
   const otherRequired = allOtherRequired.filter(
-    course => !prepared.explicitIds.has(Number(course.id))
+    course => (
+      !prepared.explicitIds.has(Number(course.id))
+      && !failedRequiredCodes.has(course.catalogCourseCode)
+    )
   );
   const otherRequiredIds = new Set(otherRequired.map(course => Number(course.id)));
 
@@ -764,7 +764,7 @@ function buildPlan(prepared, constraints, variant) {
     && !isWatching(course, constraints)
     && !otherRequiredIds.has(Number(course.id))
   ));
-  const requiredCourses = eligible
+  const currentRequiredCourses = eligible
     .filter(course => requiredIds.has(Number(course.id)) || isRequiredForStudent(course, scope))
     .sort((a, b) => {
       const aRequired = requiredIds.has(Number(a.id)) ? 0 : 1;
@@ -773,35 +773,81 @@ function buildPlan(prepared, constraints, variant) {
       return getCategoryPriority(a) - getCategoryPriority(b);
     });
 
-  const requiredCourseIdsInData = new Set(requiredCourses.map(course => Number(course.id)));
-  for (const requiredId of requiredIds) {
-    if (!requiredCourseIdsInData.has(requiredId)) {
-      plan.warnings.push(`指定或重補修課程 ID:${requiredId} 不在候選課程資料中`);
+  const currentRequiredIds = new Set(currentRequiredCourses.map(course => Number(course.id)));
+  const currentRequiredCodes = new Set(
+    currentRequiredCourses.map(course => course.catalogCourseCode).filter(Boolean)
+  );
+  const retakeCourses = eligible
+    .filter(course => (
+      failedRequiredCodes.has(course.catalogCourseCode)
+      && !currentRequiredCodes.has(course.catalogCourseCode)
+      && !currentRequiredIds.has(Number(course.id))
+    ))
+    .sort((a, b) => getCategoryPriority(a) - getCategoryPriority(b));
+
+  const offeredRetakeCodes = new Set(
+    eligible
+      .filter(course => failedRequiredCodes.has(course.catalogCourseCode))
+      .map(course => course.catalogCourseCode)
+  );
+  for (const entry of failedRequired) {
+    if (!offeredRetakeCodes.has(entry.courseCode)) {
+      plan.warnings.push(
+        `${entry.courseCode} ${entry.courseName || '未命名課程'}本學期沒有開課，請下學期記得重修。`
+      );
     }
   }
 
-  for (const course of requiredCourses) {
-    addCourseToPlan(plan, course, constraints, isRequiredForStudent(course, scope) ? '必修優先' : '指定或重補修優先', {
+  const requiredCourseIdsInData = new Set(currentRequiredCourses.map(course => Number(course.id)));
+  for (const requiredId of requiredIds) {
+    if (!requiredCourseIdsInData.has(requiredId)) {
+      plan.warnings.push(`指定課程 ID:${requiredId} 不在候選課程資料中`);
+    }
+  }
+
+  for (const course of currentRequiredCourses) {
+    addCourseToPlan(plan, course, constraints, isRequiredForStudent(course, scope) ? '本學期必修優先' : '指定課程優先', {
       required: requiredIds.has(Number(course.id)),
     });
+  }
+
+  // 不及格必修只由 courseHistory 自動推導，且固定排在本學期必修之後。
+  for (const failedCourse of failedRequired) {
+    if (currentRequiredCodes.has(failedCourse.courseCode)) continue;
+    const sections = retakeCourses.filter(
+      course => course.catalogCourseCode === failedCourse.courseCode
+    );
+    if (sections.length === 0) continue;
+
+    const placed = sections.some(course => (
+      addCourseToPlan(plan, course, constraints, '不及格必修重補修優先')
+    ));
+    if (!placed) {
+      plan.warnings.push(
+        `${failedCourse.courseCode} ${failedCourse.courseName}雖於本學期開課，但因衝堂或排課限制未能排入，請優先調整課表。`
+      );
+    }
   }
 
   const placedIds = new Set([
     ...plan.schedule.map(c => Number(c.id)),
     ...plan.unscheduledCourses.map(c => Number(c.id)),
   ]);
-  const optional = eligible.filter(course => !placedIds.has(Number(course.id)));
+  const autoRetakeSectionIds = new Set(retakeCourses.map(course => Number(course.id)));
+  const optional = eligible.filter(course => (
+    !placedIds.has(Number(course.id)) && !autoRetakeSectionIds.has(Number(course.id))
+  ));
 
   // 貪婪填充只考慮有排定時間的課程。無時間課程不佔時段、不衝堂也不受任何限制，
   // 讓它們參與填充會被無限塞入；它們只有在被明確指定為必要課程時才會排入。
   const remaining = optional.filter(course => (
-    !requiredCourses.some(c => c.id === course.id) && hasScheduledTime(course)
+    !currentRequiredCourses.some(c => c.id === course.id) && hasScheduledTime(course)
   ));
 
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
     remaining.sort((a, b) => (
-      scoreCourse(b, plan.schedule, constraints, variant, requiredIds, retakeIds, scope)
-      - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, retakeIds, scope)
+      scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope)
+      - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope)
     ));
 
     const course = remaining.shift();

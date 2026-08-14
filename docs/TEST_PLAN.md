@@ -166,7 +166,10 @@ node --check src/app.js
 | --- | --- | --- |
 | H4 | 已修課號有多個候選班次 | **每一個班次**都被排除，各自附上「已修過並通過（課號 XXX）」 |
 | H5 | 同一課號換成不同 section id（模擬跨學期） | 仍被排除——本次改動要修的核心目的 |
-| H6 | 課程 `passed: false` 且被 `retakeCourseIds` 指定 | 不被已修排除擋到，正常排入；已修與重補修依資料設計互斥，不需額外豁免邏輯 |
+| H6 | 最新紀錄為 `passed: false` 的必修 | 由 `courseHistory` 自動映射本學期同課號 section 並排入，不接受手動 `retakeCourseIds` |
+| H6 | 舊學期不及格、較新學期通過 | 只視為完成，不再成為重補修候選 |
+| H6 | 本學期必修與重補修衝堂 | 保留本學期必修，並提示重補修未排入 |
+| H6 | 不及格必修本學期沒有開課 | 回傳提醒下學期重修的明確 warning |
 | H7 | 候選課程沒有 `catalogCourseCode` | 不以課名 fallback 誤判為已修 |
 | H8 | 課號比對 | 精確字串比對，不做 trim 或大小寫正規化（已實測兩側格式一致，見 `docs/DATA_SCHEMA.md`） |
 
@@ -214,13 +217,14 @@ node --check src/app.js
 | API | 測試項目 |
 | --- | --- |
 | `/api/health` | 回傳 `status: ok` |
-| `/api/auth/login` | 正確登入、錯誤密碼、缺少欄位 |
+| `/api/auth/login` | 正確登入、錯誤密碼、缺少欄位；成功時設定簽名 HttpOnly session cookie |
+| `/api/auth/me` | 未登入 401；登入後由 session 回傳 canonical student ID |
 | `/api/courses` | keyword、department、category、period 查詢 |
 | `/api/schedule/generate` | 無 courseIds、指定 courseIds、偏好限制 |
 | `/api/schedule/validate` | 有衝堂、無衝堂 |
-| `/api/profile` | 讀取與更新偏好 |
+| `/api/profile` | 未登入 401；讀取與更新 session 使用者偏好；改送另一個有效 ID 時 403 |
 | `/api/reviews/easy` | limit 正常運作 |
-| `/api/graduation/:studentId` | 學分缺口與推薦 |
+| `/api/graduation/me` | 學分缺口與推薦 |
 | `/api/chat` | 無 message、正常 message、無 API key |
 
 ## 前端操作測試
@@ -232,6 +236,12 @@ node --check src/app.js
 - 課表格可顯示不同星期與節次。
 - 畢業學分頁可顯示缺口。
 - AI 聊天輸入後可顯示回覆。
+- 自動重補修瀏覽器 A/B 使用 `server/test/fixtures/browser-with-failed` 與
+  `browser-without-failed`，由 `DATA_DIR` 指向隔離資料，不修改正式
+  `server/data/users.json`。兩組只改 `IECS3059` 的 `passed`，其餘登入與 Profile 條件相同。
+  `browser-not-offered` 另驗證本學期沒有對應 section 時的使用者 warning。
+  測試 client 可在 DEV 設定 `VITE_E2E_BYPASS_SETUP=true`；此開關只接受 `BROWSER*`
+  fixture 帳號，避免為了進 Dashboard 寫入 shared MySQL Profile。
 
 ## AI Agent 測試
 

@@ -58,7 +58,7 @@ System prompt 必須讓 Agent：
 | 學分 | `minCredits`, `maxCredits`, `allowCreditOverload`, `maxCoursesPerDay` |
 | 學籍 | `department`, `gradeLevel` |
 | 時間 | `blockedPeriods`, `mondayFree`, `noMorningClasses`, `noEveningClasses`, `lunchBreakFree` |
-| 課程指定 | `mustTakeCourseIds`, `retakeCourseIds` |
+| 課程指定 | `mustTakeCourseIds` |
 | 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
 | 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
 | 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
@@ -74,7 +74,9 @@ System prompt 必須讓 Agent：
 `buildScheduleConstraints()` 只取 `prefs.courseHistory`。因此已修排除會自動生效，
 即使模型自行在參數中加入 `courseHistory` 也會被忽略。
 
-`retakeCourseIds` 維持為工具參數，因為重補修是使用者在當次對話中可以明確表達的需求。
+`retakeCourseIds` 與 `failedRequiredCourseIds` 也不得成為工具參數。重補修只由後端讀取
+Profile 的 `courseHistory`，依最新一次修習結果自動推導，避免模型或 client 指定不存在的
+失敗紀錄。
 
 ### 學分上下限與超修
 

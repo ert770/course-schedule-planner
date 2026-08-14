@@ -64,8 +64,8 @@
 | 15 | 實習課程需與同名正課一併排入 | ⬜ 未開始 | #13A、#13B、#19、#20、#21 |
 | 16 | 多時段課程支援 | ✅ 已完成 | 無 |
 | 17 | 週六與週日課程支援 | ✅ 已完成 | 無 |
-| 18 | 統一 user identity、Profile、歷史修課與偏好資料來源 | 🟡 部分完成 | 無（新增任務的資料基礎） |
-| 19 | 以穩定 course code 建立歷史修課、重修與跨學期對應 | 🟡 部分完成 | #18 |
+| 18 | 統一 user identity、Profile、歷史修課與偏好資料來源 | ✅ 已完成（shared MySQL rollout 另列 D 類） | 無（新增任務的資料基礎） |
+| 19 | 以穩定 course code 建立歷史修課、重修與跨學期對應 | ✅ 已完成 | #18 |
 | 20 | 建立 active term 與完整 candidate eligibility 規則 | 🟡 部分完成 | #12、#13A、#13B、#18、#19 |
 | 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | 🟡 部分完成 | #3、#19、#20 |
 | 22 | 為 greedy 排課加入 repair／backtracking 或 constraint solver | ⬜ 未開始 | #21 |
@@ -788,7 +788,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #18 統一 user identity、Profile、歷史修課與偏好資料來源
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——Profile 寫入的優先序已定義且可測試，但 canonical ID 與 versioned schema 未做
+**狀態**：✅ 已完成（2026-08-14）——canonical identity、signed session、Profile schema v1、per-user 前端狀態與安全 migration 均已實作；shared MySQL DDL rollout 另列 D 類協調事項
 
 **相依**：無；這是 #18～#38 的資料基礎。
 
@@ -813,29 +813,37 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - API 不再接受 client 任意指定另一位使用者作為實際操作身分。
 - migration 前後的示範帳號資料筆數與必要欄位可核對，沒有靜默遺失。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-14 盤點，取代 2026-08-08 版本）
 
-**已完成**
+**已完成（2026-08-08 當時記錄的）**
 
-- **班別（`className`）的真相來源與寫入優先序已正式定義**，見 `server/src/db/database.js` 的說明區塊與 `pickClassNameTarget()`：`User_Profiles.class_name` 欄位 > `user_preferences.json` > `users.json`。
+- **班別（`className`）的真相來源與寫入優先序已正式定義**，見 `server/src/db/database.js` 的說明區塊與 `pickClassNameTarget()`。
 - `hasUserProfileClassNameColumn()` 以 `SHOW COLUMNS` 偵測欄位是否存在並快取，組員新增欄位後不需改程式即自動改走 SQL。
 - `pickClassNameTarget()` 是**與 I/O 分離的純函式**，因此「存在於 `User_Profiles` 但沒有 `users.json` 對應列的使用者，班別被靜默丟掉」這個 bug 有 regression 測試釘住。
 - `sameId()` 已統一 `studentId` 與 numeric `id` 的比對，讀寫兩邊都用同一個判斷。
 - `POST /api/profile` 已在邊界擋下型別錯誤的 `department`（物件／陣列／數字經字串化後會變成看似正常的值），不靠正規化「救回來」。
-- demo 使用者 `D1249697` 的 Profile 已含 `className`、`completedCourseCodes`、`courseHistory`，不再只有 numeric section id。
+- demo 使用者 `D1249697` 的 Profile 已含 `className`、`courseHistory`，不再只有 numeric section id。
 
-**尚未完成**
+**新完成（2026-08-11 commit `ad306a5` bundle，之前未回填進本文件）**
 
-- **沒有 canonical user ID**。`studentId`（`D1249697`）與 numeric `id`（`1`）仍並存，各 route 自行決定用哪一個比對。
-- **沒有 versioned Profile schema，也沒有 migration**。欄位是隨需求逐次長出來的，無版本號可判斷相容性。
-- **`'default'` fallback 仍然存在**：`server/src/routes/profile.js` 的 `req.query.userId || 'default'`，以及 `client/src/services/api.js` 與四個前端頁面的 `user?.studentId || 'default'`（詳見 #28）。這代表 API 仍接受 client 任意指定身分。
-- Profile source of truth 只在 `className` 這一個欄位上定義清楚，其餘欄位（偏好、系所、年級）在 MySQL `User_Profiles` 與 `user_preferences.json` 之間仍可能各自更新。
+- **Canonical user ID 已定案為 `studentId`**：新增 `server/src/services/identityService.js`，`resolveIdentity()`/`resolveIdentityFrom()` 為純函式（與 I/O 分離），對不到 `users.json` 同一列一律回傳 `found: false`，不做 ID 猜測。`profile.js`、`schedule.js`、`graduation.js`、`chat.js` 四條 route 已統一改用它取得身分，不再各自比對。
+- **`'default'` fallback 已全面移除**，非只有部分：後端 `profile.js:24` 明文擋下（`resolveIdentityFrom()` 把 `'default'` 視為 `default-user-not-allowed`，回 401）；前端 `client/src/services/api.js:54` 明確擋下 `userId === 'default'`。2026-08-14 盤點時對 `server/src`、`client/src` 全域 grep `|| 'default'`：**0 處殘留**（2026-08-08 記錄的 5 處前端 + 1 處後端已全部清除）。
+- **`server/data/user_preferences.json` 已刪除**（見 [2026-08-11 change report](./2026-08-11-drop-local-profile-store-and-restore-period-one.md)），`User_Profiles` 成為偏好資料唯一儲存體。2026-08-08 記錄的「Profile source of truth 其餘欄位在 MySQL 與 user_preferences.json 之間仍可能各自更新」這個問題，因為第二個來源已物理消失，**不再成立**。
+
+**本次完成（2026-08-14）**
+
+- 登入建立簽名 `HttpOnly`、`SameSite=Lax` session cookie，內容只保存 canonical `studentId`；`requireIdentity` 已套用 Profile、Schedule、Chat、Graduation、watchlist 與 saved schedules。未登入回 401，request 改送其他學號回 403。
+- `/api/auth/me` 改由 session 取得使用者，前端所有 API 開啟 credentials，不再傳 user ID。
+- 新增 `PROFILE_SCHEMA_VERSION = 1`、集中式 normalizer／validator 與 v0→v1 migration；Profile response 固定包含 `schemaVersion: 1`。
+- migration 已規劃 `student_id UNIQUE`、`class_name`、`profile_schema_version`，具 dry-run、執行前備份、重複執行不重複變更與 rollback。shared MySQL 的實際 `ALTER TABLE` **尚未執行**，必須另取得協調確認；此 rollout 歸入 D 類資料模型工作，不阻擋 #18 程式契約完成。
+- 前端 onboarding／setup 狀態改用 `fcu:<studentId>:...`，登出不再 `localStorage.clear()`；畢業頁移除硬編碼學號 fallback。
+- API canonical ID 文件已改成學號/session 契約；MySQL `user_id` 改存學號的後續資料模型工作由 `student_id` migration 取代並列入 D 類 rollout。
 
 ---
 
 ## #19 以穩定 course code 建立歷史修課、重修與跨學期對應
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——歷史修課已用穩定課程代碼保存，但排課器還沒讀到
+**狀態**：✅ 已完成（2026-08-14）——穩定課號、latest-attempt、自動重補修、跨學期 mapping 與 warning 均已完成；多狀態畢業認列移至 #23
 
 **相依**：#18
 
@@ -860,24 +868,34 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - 同一正式課程的不同 sections 不會同時排入。
 - 建立至少兩學期、同課不同 section ID 的 regression fixture。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-14 盤點，取代 2026-08-08 版本）
 
 **已完成：歷史資料層**（2026-08-06，詳見 [個人歷年修課成績資料匯入](./2026-08-06-personal-course-history-import.md)）
 
-- demo 使用者 `D1249697` 的 53 門歷史課程已用**穩定課程代碼**保存於 `completedCourseCodes`（`IECS2001`、`MATH1005`…），不是當學期 section id。
+- demo 使用者 `D1249697` 的 53 門歷史課程已用**穩定課程代碼**保存於 `courseHistory`（`IECS2001`、`MATH1005`…），不是當學期 section id。
 - `courseHistory` 保存 112-1 至 114-2 的學年度、學期、課程編碼、科目、百分制成績、等第、學分、修習別及通識類別——**跨學期比對所需的欄位已經齊備**。
-- **`completedCourseIds` 已被清空**，正是為了避免把歷史課程誤連到當期 section。這是刻意的，不是遺漏。
 - 「同一正式課程的不同 sections 不會同時排入」已達成，由 `getCourseKey()` 與 `server/test/scheduler.test.js` B1／B4 釘住；B3 另外確保正課與實習不被誤判為同一門課的兩個班次。
 - 缺少歷史資料時，`GET /api/graduation/:studentId` 回傳 `courseHistoryAvailable: false` 與說明訊息，前端顯示提示而非捏造進度。
 
-**尚未完成：排課器仍看不到歷史修課**
+**新完成：排課器已接上歷史修課**（Step 2 課號統一 Part A，A1-A9，2026-08-13，詳見 [consolidated change report](./2026-08-13-part-a-course-history-scheduling-data.md)，之前未回填進本文件）
 
-- **`completedCourseCodes` 與 `courseHistory` 目前只有 `server/src/routes/graduation.js` 在讀。** `server/src/skills/scheduler.js` 與 `server/src/services/constraintService.js` 仍只認 `completedCourseIds`——而那個欄位現在是空的。
-- 結果是 roadmap 開頭與專題進度報告都記錄過的現象：**demo 使用者有 53 筆歷史修課，排課器取得的 `completedCourseIds` 卻是空陣列，已修課程無法被排除。**
-- 欄位命名尚未統一為 `catalogCourseCode` / `sectionId` / `selectionCode`，`course.id`、`subid3`、`section_id` 的語意在不同模組間仍靠慣例維繫。
-- 歷史課程到當期 sections 的 mapping 不存在。
-- 未保存「未通過／停修／重修中／抵免」狀態，`retakeCourseIds` 需由使用者自行指定，無法從 `courseHistory` 的等第推導。
-- 沒有跨兩學期、同課不同 section ID 的 regression fixture。
+- 2026-08-08 記錄的核心缺口——「`server/src/skills/scheduler.js` 仍只認 `completedCourseIds`，那個欄位現在是空的，demo 使用者 53 筆歷史修課排課器完全看不到」——**已修好**：新增 `server/src/data/courseHistory.js` 的純函式 `getPassedCourseCodes()`，`scheduler.js` 用它比對 `course.subid3`（穩定課號，不是 section id），REST 與 AI Agent 兩條路徑經 `constraintService.js` 共用同一份邏輯，courseHistory 逐一傳遞（不是 shadow 欄位）。
+- **實測驗證**：demo 學生候選池 16 門中 6 門已修過並通過（`IECS3003`、`IECS3002`、`IECS4926` 等必修 + `IECS3059` 3 個班次）正確被排除，並附排除理由「已修過並通過（課號 XXX）」。
+- `completedCourseIds`／`completedCourseCodes`／`completedCourseNames`／`completedCredits`／`earnedCredits` 五個 shadow 欄位已從 `users.json`、`memoryService.js`、`SetupPage.jsx`、`database.js`（MySQL 映射的讀寫兩側）全部移除；`courseHistory` 是唯一資料來源，不再有「兩份資料互不同步」的空間。
+- `courseHistory` 每筆新增 `passed: boolean`（`score >= 60`），一次算好不重複推導。
+- `server/src/routes/graduation.js` 改用 `getPassedCourseCodes`/`getEarnedCredits`/`getTotalEarnedCredits`（同一份 `server/src/data/courseHistory.js`），查無系所對照表時回傳明確 warning，不再退回 `user.requiredCredits` 之類的假造預設值。
+
+**本次完成（2026-08-14）**
+
+- MySQL `subid3` 已只映射為 API `catalogCourseCode`；section identity 保持為 `id`／`sectionId`。
+- `courseHistory` 每筆必要欄位固定為 `academicYear`、`semester`、`courseCode`、`courseName`、`score`、`letterGrade`、`credits`、`passed`、`requirementType`、`generalEducationCategory`、`graduationCategory`，demo 53 筆皆通過契約測試。
+- 同一 `courseCode` 依 `academicYear + semester` 取最新一筆。先不及格後通過時視為完成；最新一筆仍是不及格必修時才成為重補修來源。
+- 排課前自動把不及格必修課號映射到本學期所有相同 `catalogCourseCode` sections，多班次仍最多排一班。優先序固定為「本學期必修 → 不及格必修重補修 → 其他課程」。
+- `retakeCourseIds`／`failedRequiredCourseIds` 已從 REST、Agent prompt 與 constraint contract 移除；舊 client 傳入時不生效。
+- 本學期無對應 section 時回傳「請下學期記得重修」warning；有開課但因本學期必修衝堂或硬限制未排入時回傳調整課表提醒。
+- 跨學期不同 section ID、先失敗後通過、不及格選修、多班次與未開課等 regression tests 已補齊。
+
+`withdrawn`、`transferred`、`exempted` 等狀態不在 #19 實作，已整併至 #23 的逐門畢業認列與規則來源工作。
 
 ---
 
@@ -1031,6 +1049,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 ### 實作範圍
 
 - 建立 `program + degree + admissionYear + ruleVersion` 的規則模型。
+- 定義修課／認列狀態模型，至少涵蓋 `withdrawn`、`transferred`、`exempted`，並明確規範是否視為完成、是否計學分及是否需要重修。
 - 逐門歷史課程分類並計算 required／core／elective／general／external gaps。
 - 保存每筆認列的規則來源與人工待確認狀態。
 - 推薦補學分課程前，先驗證課程能補足指定 gap。

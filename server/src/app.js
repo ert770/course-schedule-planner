@@ -16,11 +16,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env'), quiet: true });
 
-const app = express();
+export const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  credentials: true,
+}));
 app.use(express.json());
 
 // API Routes
@@ -37,11 +40,16 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`\n🚀 課表規劃推薦系統後端已啟動`);
-  console.log(`   http://localhost:${PORT}`);
-  console.log(`   API: http://localhost:${PORT}/api\n`);
-});
+export function startServer(port = PORT) {
+  return app.listen(port, () => {
+    console.log(`\n🚀 課表規劃推薦系統後端已啟動`);
+    console.log(`   http://localhost:${port}`);
+    console.log(`   API: http://localhost:${port}/api\n`);
+  });
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  startServer();
+}
 
 export default app;

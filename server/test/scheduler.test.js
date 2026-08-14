@@ -76,11 +76,23 @@ describe('S3-S4 必修與重補修優先', () => {
   });
 
   test('S4 重補修課程優先排入', () => {
-    const retake = makeCourse(1, { dayOfWeek: 2 });
-    const other = makeCourse(2, { dayOfWeek: 2 });
+    const retake = makeCourse(1, {
+      name: '計算機結構學',
+      catalogCourseCode: 'IECS3003',
+      category: '選修',
+      dayOfWeek: 2,
+    });
+    const other = makeCourse(2, { category: '選修', dayOfWeek: 2 });
 
     const result = generateSchedule([other, retake], {
-      retakeCourseIds: [1],
+      courseHistory: [{
+        academicYear: 113,
+        semester: 2,
+        courseCode: 'IECS3003',
+        courseName: '計算機結構學',
+        passed: false,
+        requirementType: '必修',
+      }],
       minCredits: 0,
       maxCredits: 3,
     });
@@ -172,21 +184,103 @@ describe('H4-H8 已修課程依課號排除', () => {
     assert.ok(result.excludedCourses.some(item => item.course.id === 999));
   });
 
-  test('H6 passed: false 不被排除，且可由 retakeCourseIds 排入', () => {
+  test('H6 passed: false 的必修不被排除，且由 courseHistory 自動排入', () => {
     const retake = makeCourse(303, {
       name: '計算機演算法',
       catalogCourseCode: 'IECS3002',
     });
 
     const result = generateSchedule([retake], {
-      courseHistory: [{ courseCode: 'IECS3002', passed: false }],
-      retakeCourseIds: [303],
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'IECS3002',
+        courseName: '計算機演算法',
+        passed: false,
+        requirementType: '必修',
+      }],
       minCredits: 0,
       maxCredits: 3,
     });
 
     assert.ok(result.schedule.some(course => course.id === 303));
     assert.ok(!result.excludedCourses.some(item => item.reason.includes('已修過並通過')));
+  });
+
+  test('H6 同一重補修課有多個班次時最多排一班，任一班排入後不發失敗 warning', () => {
+    const sections = [
+      makeCourse(303, { name: '人工智慧導論', catalogCourseCode: 'IECS3059', dayOfWeek: 2 }),
+      makeCourse(304, { name: '人工智慧導論', catalogCourseCode: 'IECS3059', dayOfWeek: 3 }),
+      makeCourse(305, { name: '人工智慧導論', catalogCourseCode: 'IECS3059', dayOfWeek: 4 }),
+    ];
+    const result = generateSchedule(sections, {
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'IECS3059',
+        courseName: '人工智慧導論',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 3,
+    });
+
+    assert.equal(result.schedule.filter(course => course.catalogCourseCode === 'IECS3059').length, 1);
+    assert.ok(!result.warnings.some(warning => warning.includes('未能排入')));
+  });
+
+  test('H6 本學期沒有開不及格必修時提醒下學期重修', () => {
+    const result = generateSchedule([makeCourse(1)], {
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'IECS3999',
+        courseName: '高等演算法',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+    });
+
+    assert.ok(result.warnings.some(warning => (
+      warning === 'IECS3999 高等演算法本學期沒有開課，請下學期記得重修。'
+    )));
+  });
+
+  test('H6 本學期必修優先於不及格必修重修', () => {
+    const currentRequired = makeCourse(1, {
+      name: '本學期必修',
+      catalogCourseCode: 'IECS4001',
+      category: '必修',
+      department: '資訊三甲',
+      dayOfWeek: 2,
+    });
+    const retake = makeCourse(2, {
+      name: '舊必修重修',
+      catalogCourseCode: 'IECS2001',
+      category: '選修',
+      department: '資訊二甲',
+      dayOfWeek: 2,
+    });
+
+    const result = generateSchedule([retake, currentRequired], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      courseHistory: [{
+        academicYear: 112,
+        semester: 1,
+        courseCode: 'IECS2001',
+        courseName: '舊必修重修',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 3,
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [1]);
   });
 
   test('H7 缺少 catalogCourseCode 時不以課名 fallback 誤判為已修', () => {
