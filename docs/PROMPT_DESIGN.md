@@ -46,7 +46,9 @@ System prompt 必須讓 Agent：
 
 `query_course_db` 由後端依目前 `userId` 的 profile 建立班級範圍，Agent 不傳入或猜測
 `department`、`grade`、`className`。可用 `category` 為 `必修`、`核心選修`、
-`一般選修`、`系外選修`；通識分類資料尚未建立，不得要求工具假造結果。
+`一般選修`、`通識`、`系外選修`。通識領域必須使用工具回傳的
+`generalEducationDomain`；115 學年度起該欄位為 `null`（不分領域），不得由課號前綴
+或課名自行猜測。
 | `final_answer` | 輸出最終回答 |
 
 ## `run_csp_scheduler` 參數

@@ -255,7 +255,7 @@ export default function SchedulePage() {
                   <option value="核心選修">核心選修</option>
                   <option value="一般選修">一般選修</option>
                   <option value="系外選修">系外選修</option>
-                  <option value="通識" disabled>通識（分類資料尚未建立）</option>
+                  <option value="通識">通識</option>
                 </select>
                 <button className="action-btn primary" onClick={searchCourses} id="search-btn">搜尋</button>
               </div>

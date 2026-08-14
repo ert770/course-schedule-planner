@@ -26,6 +26,10 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  GENERAL_EDUCATION_DOMAINS_112_TO_114,
+  RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2,
+} from '../src/data/generalEducationCatalog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -184,6 +188,41 @@ describe('資料庫契約：Courses.dept 是班級名稱', () => {
       .map(parsed => parsed.className);
 
     assert.deepEqual(unmapped, [], 'A 表缺少這些班級的系所簡稱，必修判定會漏掉整個系所');
+  });
+});
+
+describe('資料庫契約：#12B 114-2 通識分類', () => {
+  test('四領域課程都有正式課號，資料量不低於已核對基準', { skip }, async () => {
+    const placeholders = GENERAL_EDUCATION_DOMAINS_112_TO_114.map(() => '?').join(',');
+    const [row] = await queryRows(
+      'SELECT COUNT(*) AS sections, COUNT(DISTINCT c.`subid3`) AS courseCodes,'
+      + ' SUM(CASE WHEN c.`subid3` IS NULL OR TRIM(c.`subid3`) = \'\' THEN 1 ELSE 0 END) AS blanks'
+      + ' FROM `Courses` c INNER JOIN `Course_Sections` cs'
+      + ' ON BINARY c.`course_id` = BINARY cs.`course_id`'
+      + ` WHERE cs.\`year\` = 114 AND cs.\`semester\` = '下學期'`
+      + ` AND c.\`dept\` IN (${placeholders})`,
+      GENERAL_EDUCATION_DOMAINS_112_TO_114
+    );
+
+    assert.equal(Number(row.blanks), 0, '四領域課程不得缺 catalogCourseCode');
+    assert.ok(Number(row.courseCodes) >= 167, `通識正式課號只有 ${row.courseCodes} 筆`);
+    assert.ok(Number(row.sections) >= 208, `通識班次只有 ${row.sections} 筆`);
+  });
+
+  test('114-2 三門跨院認抵課均可用正式課號對到唯一課程', { skip }, async () => {
+    for (const expected of RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2) {
+      const rows = await queryRows(
+        'SELECT c.`subid3`, c.`name`, c.`credits`, cs.`year`, cs.`semester`'
+        + ' FROM `Courses` c INNER JOIN `Course_Sections` cs'
+        + ' ON BINARY c.`course_id` = BINARY cs.`course_id`'
+        + ' WHERE c.`subid3` = ? AND cs.`year` = ? AND cs.`semester` = ?',
+        [expected.catalogCourseCode, expected.academicYear, expected.semester]
+      );
+
+      assert.equal(rows.length, 1, `${expected.catalogCourseCode} 應唯一對到 114-2 認抵課`);
+      assert.equal(rows[0].name, expected.name);
+      assert.equal(Number(rows[0].credits), expected.credits);
+    }
   });
 });
 

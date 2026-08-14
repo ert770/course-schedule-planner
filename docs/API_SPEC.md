@@ -96,7 +96,7 @@ Query params:
 - `grade`（必填；由使用者完整班級解析出的年級，例如 `3`）
 - `className`（必填；由完整班級解析出的班別尾碼，例如 `甲`）
 - `keyword`
-- `category`（選填：`必修`、`核心選修`、`一般選修`、`系外選修`）
+- `category`（選填：`必修`、`核心選修`、`一般選修`、`通識`、`系外選修`）
 - `dayOfWeek`
 - `credits`
 - `instructor`
@@ -122,15 +122,9 @@ GET /api/courses?department=資訊工程學系&grade=3&className=甲
 ```
 
 後端會先以學生 scope 解析每門課的分類，再套用 category 與其他搜尋條件。未指定
-category 時維持 F7，只回傳本人班級及同年級合班；只有明確指定 `系外選修` 時才會
-查詢其他系所班級。通識分類資料尚未建立，傳入 `category=通識` 回傳 `422`：
-
-```json
-{
-  "error": "通識課程分類資料尚未建立，目前無法依通識分類搜尋。",
-  "code": "GENERAL_EDUCATION_CATEGORY_UNAVAILABLE"
-}
-```
+category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `系外選修` 或 `通識`
+才會跨出本人班級範圍。通識課以正式學年度規則、MySQL `Courses.dept` 的官方領域
+名稱及官方跨院認抵表分類，不以 `catalogCourseCode` 前綴猜測。
 
 Response:
 
@@ -181,6 +175,18 @@ Response:
 | `classificationSource` | `mysql`、`cs_curriculum` 或 `outside_department` |
 | `track` | 資工科目表對應的修課路徑，沒有資料時為 `null` |
 | `outsideElective` | 系外選修的認列檢查、原因、警告及系辦確認狀態 |
+
+通識課另有下列欄位：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `generalEducationDomain` | 111 以前的舊領域、112～114 的四領域；115 起固定為 `null`（不分領域） |
+| `generalEducationRuleVersion` | `through-111`、`112-114` 或 `from-115` |
+| `generalEducationRecognitionType` | 通識中心直接開課為 `direct`；官方跨院認抵為 `cross_college` |
+| `classificationReference` | 支撐該分類的逢甲大學官方來源網址 |
+
+通識的 `classificationSource` 為 `general_education_department` 或
+`general_education_recognition`。
 
 ### `GET /api/courses/departments`
 
@@ -356,7 +362,7 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `nonGraduationCategory` | 不計入時的類別（`軍訓國防`／`體育`／`班級活動`／`系外選修未認列`），計入時為 `null` |
 | `outsideElectiveRecognized` | 僅在使用者指定、但不符合系外選修認列條件時出現，值為 `false` |
 | `outsideElectiveReasons` | 同上，不認列的原因清單 |
-| `category` | **對這位學生解析後**的類別（`必修`／`核心選修`／`選修`／`系外選修`） |
+| `category` | **對這位學生解析後**的類別（`必修`／`核心選修`／`選修`／`通識`／`系外選修`） |
 | `sourceCategory` | 資料庫原始的 `Courses.type`，僅在解析結果不同時出現 |
 | `track` | 修課路徑（`嵌入式系統類`／`技術應用類`／`網路與安全類`），無歸類時為 `null` |
 

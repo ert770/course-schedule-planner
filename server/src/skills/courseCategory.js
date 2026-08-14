@@ -18,6 +18,7 @@
 // 與 113 課程地圖）。目前只有資訊工程學系有這份對照，其他系所維持原本的類別。
 
 import { classifyCsCourse } from '../data/csCurriculum.js';
+import { classifyGeneralEducationCourse } from '../data/generalEducationCatalog.js';
 import { isOutsideElective } from './outsideElective.js';
 
 const CS_DEPARTMENT = '資訊工程學系';
@@ -32,7 +33,24 @@ export const CATEGORY_GENERAL_EDUCATION = '通識';
 export function resolveCourseCategory(course, scope) {
   const original = course?.category ?? course?.type ?? null;
 
-  if (!course || original === CATEGORY_REQUIRED) {
+  if (!course) {
+    return { category: original, track: null, classificationSource: 'mysql' };
+  }
+
+  const generalEducation = classifyGeneralEducationCourse(course);
+  if (generalEducation) {
+    return {
+      category: CATEGORY_GENERAL_EDUCATION,
+      track: null,
+      classificationSource: generalEducation.classificationSource,
+      generalEducationDomain: generalEducation.domain,
+      generalEducationRuleVersion: generalEducation.ruleVersion,
+      generalEducationRecognitionType: generalEducation.recognitionType,
+      classificationReference: generalEducation.sourceUrl,
+    };
+  }
+
+  if (original === CATEGORY_REQUIRED) {
     return { category: original, track: null, classificationSource: 'mysql' };
   }
 
@@ -69,14 +87,20 @@ export function resolveCourseCategory(course, scope) {
 // 「系統判定為核心選修」的差別。
 export function annotateCourseCategory(course, scope) {
   const sourceCategory = course?.sourceCategory ?? course?.category ?? course?.type ?? null;
-  const { category, track, classificationSource } = resolveCourseCategory(course, scope);
+  const resolved = resolveCourseCategory(course, scope);
 
   return {
     ...course,
-    category,
+    category: resolved.category,
     sourceCategory,
-    classificationSource,
-    track: track ?? course.track ?? null,
+    classificationSource: resolved.classificationSource,
+    track: resolved.track ?? course.track ?? null,
+    ...(resolved.generalEducationRuleVersion ? {
+      generalEducationDomain: resolved.generalEducationDomain,
+      generalEducationRuleVersion: resolved.generalEducationRuleVersion,
+      generalEducationRecognitionType: resolved.generalEducationRecognitionType,
+      classificationReference: resolved.classificationReference,
+    } : {}),
   };
 }
 

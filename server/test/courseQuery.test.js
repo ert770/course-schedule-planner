@@ -60,6 +60,9 @@ const categorizedCourses = [
   { id: 15, name: '他系必修', catalogCourseCode: 'ACCT3002', department: '會計三甲', category: '必修' },
   { id: 16, name: '共同選修', catalogCourseCode: 'GE001', department: '核心必修綜合班', category: '選修' },
   { id: 17, name: '碩士選修', catalogCourseCode: 'ACCT6001', department: '會計碩一', category: '選修' },
+  { id: 18, name: '幸福水臺灣', catalogCourseCode: 'GEG1037', department: '全球氣候變遷與永續發展', category: '選修', year: 114, semester: '下學期' },
+  { id: 19, name: '台灣考古學與原住民', catalogCourseCode: 'HSS1007', department: '文學與文化創意學分學程', category: '選修', year: 114, semester: '下學期' },
+  { id: 20, name: '看似通識但沒有正式分類', catalogCourseCode: 'GEFAKE1001', department: '核心必修綜合班', category: '選修', year: 114, semester: '下學期' },
 ];
 
 const studentScope = buildCourseQueryScope({
@@ -116,10 +119,33 @@ describe('#12A 先分類再搜尋', () => {
     assert.equal(result.some(course => course.id === 17), false);
   });
 
-  test('通識分類保留不處理並回傳明確錯誤', () => {
-    assert.throws(
-      () => filterCategorizedCourses(categorizedCourses, { category: '通識' }, studentScope),
-      error => error.code === 'GENERAL_EDUCATION_CATEGORY_UNAVAILABLE' && error.status === 422
+  test('通識搜尋會跨班級回傳直接領域課與官方認抵課', () => {
+    const result = filterCategorizedCourses(
+      categorizedCourses,
+      { category: '通識' },
+      studentScope
+    );
+
+    assert.deepEqual(result.map(course => course.id), [18, 19]);
+    assert.equal(result[0].generalEducationDomain, '全球氣候變遷與永續發展');
+    assert.equal(result[0].classificationSource, 'general_education_department');
+    assert.equal(result[1].generalEducationDomain, '世界格局與歷史地理視野');
+    assert.equal(result[1].classificationSource, 'general_education_recognition');
+  });
+
+  test('排課候選可在本人班級課程之外納入通識，普通搜尋仍維持 F7', () => {
+    const ordinary = filterCategorizedCourses(categorizedCourses, {}, studentScope);
+    const scheduling = filterCategorizedCourses(
+      categorizedCourses,
+      {},
+      studentScope,
+      { includeGeneralEducation: true }
+    );
+
+    assert.equal(ordinary.some(course => course.category === '通識'), false);
+    assert.deepEqual(
+      scheduling.filter(course => course.category === '通識').map(course => course.id),
+      [18, 19]
     );
   });
 

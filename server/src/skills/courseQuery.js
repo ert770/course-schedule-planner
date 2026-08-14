@@ -18,6 +18,7 @@ export const COURSE_SEARCH_CATEGORIES = new Set([
   CATEGORY_CORE_ELECTIVE,
   CATEGORY_ELECTIVE,
   CATEGORY_OUTSIDE_ELECTIVE,
+  CATEGORY_GENERAL_EDUCATION,
 ]);
 
 function courseSearchError(message, code, status = 400) {
@@ -108,14 +109,6 @@ function validateCategorizedSearch(filters, scope) {
     );
   }
 
-  if (filters.category === CATEGORY_GENERAL_EDUCATION) {
-    throw courseSearchError(
-      '通識課程分類資料尚未建立，目前無法依通識分類搜尋。',
-      'GENERAL_EDUCATION_CATEGORY_UNAVAILABLE',
-      422
-    );
-  }
-
   if (filters.category && !COURSE_SEARCH_CATEGORIES.has(filters.category)) {
     throw courseSearchError('不支援的課程分類。', 'INVALID_COURSE_CATEGORY');
   }
@@ -133,7 +126,12 @@ function categorizeCourses(courseList, scope) {
   });
 }
 
-export function filterCategorizedCourses(courseList = [], filters = {}, scope) {
+export function filterCategorizedCourses(
+  courseList = [],
+  filters = {},
+  scope,
+  { includeGeneralEducation = false } = {}
+) {
   validateCategorizedSearch(filters, scope);
 
   let courses = categorizeCourses(courseList, scope);
@@ -143,8 +141,13 @@ export function filterCategorizedCourses(courseList = [], filters = {}, scope) {
       const parsed = parseClassName(course.department);
       return parsed.isDepartmentClass && parsed.degree === scope.degree;
     });
+  } else if (filters.category === CATEGORY_GENERAL_EDUCATION) {
+    courses = courses.filter(course => course.category === CATEGORY_GENERAL_EDUCATION);
   } else {
-    courses = courses.filter(course => isInStudentClass(course, scope));
+    courses = courses.filter(course => (
+      isInStudentClass(course, scope)
+      || (includeGeneralEducation && course.category === CATEGORY_GENERAL_EDUCATION)
+    ));
     if (filters.category) {
       courses = courses.filter(course => course.category === filters.category);
     }
@@ -176,8 +179,8 @@ export function filterCourses(courseList = [], filters = {}) {
   return applyCommonFilters(courses, filters);
 }
 
-async function runCategorizedSearch(filters, scope) {
-  return filterCategorizedCourses(await getAll('courses'), filters, scope);
+async function runCategorizedSearch(filters, scope, options) {
+  return filterCategorizedCourses(await getAll('courses'), filters, scope, options);
 }
 
 export async function searchCoursesForStudent(filters, scope) {
@@ -185,7 +188,7 @@ export async function searchCoursesForStudent(filters, scope) {
 }
 
 export async function searchCoursesForSchedule(filters, scope) {
-  return runCategorizedSearch(filters, scope);
+  return runCategorizedSearch(filters, scope, { includeGeneralEducation: true });
 }
 
 export async function searchCoursesForAgent(filters, scope) {

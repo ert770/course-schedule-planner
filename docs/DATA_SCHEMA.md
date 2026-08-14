@@ -28,6 +28,20 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `dept` | varchar(45) | `course.department`，實際存的是**班級名稱**（見 `docs/DEPARTMENT_MAPPING.md`） |
 | `subid3` | varchar(45) | `course.catalogCourseCode`，**真正的課號**（見下方說明） |
 
+`Courses.type` 仍只有 `必修`／`選修`；`course.category` 是分類流程的衍生值，不等同
+資料庫原始欄位。通識衍生欄位如下：
+
+| 應用程式欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `generalEducationDomain` | string \| null | 111 以前的舊領域、112～114 的四領域；115 起因不分領域而為 `null` |
+| `generalEducationRuleVersion` | string | `through-111`、`112-114` 或 `from-115` |
+| `generalEducationRecognitionType` | string | `direct` 或 `cross_college` |
+| `classificationReference` | string | 逢甲大學官方分類或認抵來源網址 |
+
+114-2 直接通識課以 `Courses.dept` 的四個官方領域名稱分類；三門跨院認抵課以
+`catalogCourseCode` 的正式對照表分類。不得只看 `GE*` 課號前綴。完整歷史畢業認列、
+入學年度與認抵學分上限屬 roadmap #23，不由課程物件自行推導。
+
 #### `course_id` 不是課程識別碼，`subid3` 才是
 
 `course_id` 是「班級 + 課程」的組合，同一門課在不同班級有不同的 `course_id`：
