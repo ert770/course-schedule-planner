@@ -1,8 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send } from 'lucide-react';
 import { chatAPI } from '../../services/api';
+import { useAuth } from '../../contexts/useAuth';
 
 export default function ChatPanel({ onScheduleGenerated }) {
+  // 聊天記憶與偏好更新都會寫進這位使用者，身分必須從 AuthContext 取得。
+  // 先前這裡沒有帶 userId，後端以 `default` 假使用者接收，
+  // 所有從 `/schedule` 發出的對話都寫到同一份共用資料上。
+  const { user } = useAuth();
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -22,12 +27,20 @@ export default function ChatPanel({ onScheduleGenerated }) {
     const msg = input.trim();
     if (!msg || loading) return;
 
+    if (!user?.studentId) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: '尚未登入，無法使用課表助手。請重新登入後再試。',
+      }]);
+      return;
+    }
+
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: msg }]);
     setLoading(true);
 
     try {
-      const res = await chatAPI.send(msg);
+      const res = await chatAPI.send(msg, user.studentId);
       setMessages(prev => [...prev, { role: 'assistant', content: res.reply }]);
 
       // intent 為後端 agentService 的 tool 名稱，須與 run_csp_scheduler 完全一致

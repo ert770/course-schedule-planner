@@ -1,50 +1,83 @@
 import { Router } from 'express';
-import { searchCourses, getCourseDetail, getDepartments, getInstructors } from '../skills/courseQuery.js';
+import {
+  searchCoursesForStudent,
+  getCourseDetail,
+  getDepartments,
+  getInstructors,
+  getClassNames,
+} from '../skills/courseQuery.js';
+import { buildCourseQueryScope } from '../skills/courseScope.js';
 
 const router = Router();
 
 router.get('/', async (req, res) => {
   try {
+    const { department, grade, className } = req.query;
+    const gradeNumber = Number(grade);
+    if (
+      typeof department !== 'string'
+      || !department.trim()
+      || !Number.isInteger(gradeNumber)
+      || gradeNumber <= 0
+      || typeof className !== 'string'
+      || !className.trim()
+    ) {
+      return res.status(400).json({
+        error: '缺少班級資料，請先匯入學生班級再搜尋課程。',
+        code: 'CLASS_NAME_REQUIRED',
+      });
+    }
+
     const filters = {};
     if (req.query.keyword) filters.keyword = req.query.keyword;
-    if (req.query.department) filters.department = req.query.department;
+    filters.department = department.trim();
+    filters.grade = gradeNumber;
+    filters.className = className.trim();
     if (req.query.category) filters.category = req.query.category;
     if (req.query.credits) filters.credits = Number(req.query.credits);
     if (req.query.instructor) filters.instructor = req.query.instructor;
     if (req.query.code) filters.code = req.query.code;
     if (req.query.language) filters.language = req.query.language;
+    
+    // 🌟 補上這兩行：接住前端傳來的星期與節次條件
+    if (req.query.dayOfWeek) filters.dayOfWeek = req.query.dayOfWeek;
+    if (req.query.period) filters.period = req.query.period;
 
-    // 💡 刻意把 dayOfWeek 和 period 從 filters 拿掉！
-    // 讓底層先把符合其他條件的課全部找出來，我們再來手動精準過濾。
-    let courses = await searchCourses(filters);
-
-    // 🌟 手動過濾 1：星期 (確保型別一致)
-    if (req.query.dayOfWeek) {
-      const targetDay = Number(req.query.dayOfWeek);
-      courses = courses.filter(c => Number(c.dayOfWeek) === targetDay);
-    }
-
-    // 🌟 手動過濾 2：節次區間 (確保字串不會干擾比對)
-    if (req.query.period) {
-      const targetPeriod = Number(req.query.period);
-      courses = courses.filter(course => {
-        const start = Number(course.startPeriod);
-        const end = Number(course.endPeriod);
-        // 判斷是否落在區間內
-        return targetPeriod >= start && targetPeriod <= end;
-      });
-    }
-
-    res.json({ courses, total: courses.length });
+    const scope = buildCourseQueryScope(filters);
+    const courses = await searchCoursesForStudent(filters, scope);
+    res.json({
+      scope: {
+        department: scope.department,
+        grade: scope.grade,
+        className: scope.classSuffix,
+      },
+      appliedFilters: filters,
+      courses,
+      total: courses.length,
+    });
   } catch (err) {
-    console.error('Courses error:', err);
-    res.status(500).json({ error: err.message });
+    if (!err.status) console.error('Courses error:', err);
+    res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 });
 
 router.get('/departments', async (req, res) => {
   try {
     res.json({ departments: await getDepartments() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 某系所某年級的班別清單（必修不得換班，學生需指定自己的班別）。
+// 必須放在 `/:id` 之前，否則會被當成課程 id。
+router.get('/classes', async (req, res) => {
+  try {
+    const { department, grade } = req.query;
+    if (!department) {
+      return res.status(400).json({ error: 'department 為必填' });
+    }
+    res.json({ classes: await getClassNames(department, grade) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

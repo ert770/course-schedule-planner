@@ -27,11 +27,7 @@ C:/Users/yamat/Agent_project
 npm run install:all
 ```
 
-初始化資料：
-
-```bash
-npm run seed
-```
+課程與評價資料一律來自後端 MySQL 資料庫（`server/.env` 的 `DB_*` 設定），不再有種子資料指令。原本的 `npm run seed` 與 `server/src/db/seed.js` 產生的是模擬課程，已於 2026-08-02 移除。
 
 同時啟動前後端：
 
@@ -187,7 +183,7 @@ origin
 push 目標應為：
 
 ```text
-origin main
+origin backend
 ```
 
 ### 每次 commit / push 前必須檢查
@@ -205,7 +201,7 @@ git branch
 ```text
 目前路徑：C:/Users/yamat/Agent_project
 remote：origin https://github.com/ert770/course-schedule-planner.git
-branch：main
+branch：backend
 ```
 
 若 remote 不是上述 repository，必須停止操作，不得 commit 或 push。
@@ -257,10 +253,10 @@ pnpm-debug.log*
 
 ### 第一次 push 指令
 
-若本機尚未與遠端 `main` 建立追蹤關係，第一次 push 使用：
+若本機尚未與遠端 `backend` 建立追蹤關係，第一次 push 使用：
 
 ```bash
-git push -u origin main
+git push -u origin backend
 ```
 
 第一次 push 成功後，後續可使用：
@@ -291,7 +287,7 @@ git branch
 git add .
 git status
 git commit -m "chore: initialize project repository"
-git push -u origin main
+git push -u origin backend
 ```
 
 ## 專案修改確認與報告規範
@@ -363,7 +359,7 @@ Push 完成：3a69e8e
 - 測試：lint、build、node --check、browser 測試通過。
 
 Push 目標：
-- origin main
+- origin backend
 ```
 
 若本次修改只涉及文件，回報中必須明確寫出「未修改程式邏輯」與「未執行不必要的前後端測試」。

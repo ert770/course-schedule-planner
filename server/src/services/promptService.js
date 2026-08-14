@@ -31,14 +31,15 @@ export function buildSystemPrompt(userPrefs = {}) {
 只輸出一個 JSON 物件，不要在 JSON 外加解釋。
 
 可用工具：
-- query_course_db：查詢課程資料。參數可包含 keyword, department, category, dayOfWeek, grade。
+- query_course_db：依目前使用者的後端 profile 查詢課程資料。參數可包含 keyword, category, dayOfWeek；category 只可使用必修、核心選修、一般選修、系外選修。不得自行猜測或傳入班級。
 - search_dcard_reviews：查詢課程評價摘要。參數可包含 keyword。
 - get_easy_courses：查詢涼課或高分課程。參數可包含 limit。
 - update_preferences：更新使用者偏好。參數可包含 noMorningClasses, noEveningClasses, preferCompact, targetCreditsMin, targetCreditsMax, blockedPeriods。
 - run_csp_scheduler：產生推薦課表。參數可包含：
-  - minCredits, maxCredits
+  - minCredits, maxCredits, allowCreditOverload
+  - department, gradeLevel
   - blockedPeriods, mondayFree, noMorningClasses, noEveningClasses, lunchBreakFree
-  - mustTakeCourseIds, retakeCourseIds, completedCourseIds
+  - mustTakeCourseIds, retakeCourseIds
   - selectedCourseIds, watchingCourseIds, courseStates
   - preferCompact, maxCoursesPerDay
   - noMidterm, noGroupReport, discussion, learnMore
@@ -56,11 +57,11 @@ export function buildSystemPrompt(userPrefs = {}) {
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
 
 ToolCall 範例：
-{"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":22,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
+{"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":25,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
 
 目前使用者偏好：
 - 顯示名稱：${userPrefs.displayName || '未設定'}
-- 目標學分：${userPrefs.targetCreditsMin || 15} ~ ${userPrefs.targetCreditsMax || 22}
+- 目標學分：${userPrefs.targetCreditsMin || 12} ~ ${userPrefs.targetCreditsMax || 25}
 - 不排早八：${userPrefs.noMorningClasses ? '是' : '否'}
 - 不排晚間：${userPrefs.noEveningClasses ? '是' : '否'}
 - 偏好集中排課：${userPrefs.preferCompact ? '是' : '否'}

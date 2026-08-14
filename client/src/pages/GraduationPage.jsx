@@ -5,6 +5,17 @@ import { useTheme } from '../contexts/useTheme';
 import { graduationAPI } from '../services/api';
 import { X, Plus, Search, AlertTriangle, Lightbulb, Calendar, LayoutDashboard, Settings, Moon, Sun } from 'lucide-react';
 
+// `GET /api/graduation/:studentId` 的學分類別 key 對應中文標題。
+// API 依 `server/src/data/graduationRequirements.js` 的欄位回傳英文 key，
+// 直接當標題渲染會在畫面上出現「尚缺 required」。
+const CREDIT_CATEGORY_LABELS = {
+  required: '本系必修',
+  elective: '本系選修',
+  general: '通識',
+  external: '外系選修',
+  unspecified: '自由選修',
+};
+
 export default function GraduationPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -23,7 +34,7 @@ export default function GraduationPage() {
       setData({
         totalRequired: 128,
         totalEarned: 107,
-        gaps: { '必修': 10, '系內選修': 9, '通識': 4, '系外選修': 0 },
+        gaps: { required: 10, elective: 9, general: 4, external: 0 },
         recommendations: [
           {
             type: 'warning',
@@ -63,7 +74,9 @@ export default function GraduationPage() {
     );
   }
 
-  const progressPercent = data ? Math.round((data.totalEarned / data.totalRequired) * 100) : 0;
+  const progressPercent = data?.courseHistoryAvailable && data.totalRequired
+    ? Math.round((data.totalEarned / data.totalRequired) * 100)
+    : 0;
 
   return (
     <div className="layout-container" id="graduation-page">
@@ -104,30 +117,59 @@ export default function GraduationPage() {
       <div className="graduation-content">
         {/* Left - Credit cards */}
         <div className="graduation-left">
-          {/* Total progress */}
-          <div className="grad-card grad-total">
-            <div className="grad-card-label">已修學分</div>
-            <div className="grad-card-big-number">
-              <span className="grad-number-main">{data?.totalEarned || 0}</span>
-              <span className="grad-number-divider"> / </span>
-              <span className="grad-number-total">{data?.totalRequired || 128}</span>
+          {/* 後端的 warnings 陣列先前完全沒有渲染——查不到系所、資料待複核這類
+              提醒送到前端後直接消失，使用者從未看過。與 courseHistoryAvailable
+              是否為 false 無關，兩種情況要能同時顯示（例如有修課歷史但系所打錯字）。 */}
+          {Array.isArray(data?.warnings) && data.warnings.length > 0 && (
+            <div className="grad-card grad-warnings" role="alert">
+              {data.warnings.map((warning, i) => (
+                <p key={i} className="grad-warning-message">
+                  <AlertTriangle size={16} className="grad-warning-icon" /> {warning}
+                </p>
+              ))}
             </div>
-            <div className="grad-progress-bar">
-              <div className="grad-progress-fill" style={{ width: `${progressPercent}%` }} />
-            </div>
-          </div>
+          )}
 
-          {/* Gap cards */}
-          <div className="grad-gaps-grid">
-            {Object.entries(data?.gaps || {}).map(([category, gap]) => (
-              <div key={category} className="grad-card grad-gap-card">
-                <div className="grad-gap-label">尚缺{category}</div>
-                <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
-                  {gap} <span className="grad-gap-unit">學分</span>
+          {data?.courseHistoryAvailable === false ? (
+            <div className="grad-card grad-history-missing" role="alert">
+              <AlertTriangle size={24} className="grad-history-missing-icon" />
+              <div>
+                <div className="grad-history-missing-title">無法顯示修課進度</div>
+                <p className="grad-history-missing-message">
+                  {data.courseHistoryMessage || '缺少歷史修課資料，請至 MyFCU 擷取歷史修課資料並匯入。'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Total progress */}
+              <div className="grad-card grad-total">
+                <div className="grad-card-label">已修學分</div>
+                <div className="grad-card-big-number">
+                  <span className="grad-number-main">{data?.totalEarned || 0}</span>
+                  <span className="grad-number-divider"> / </span>
+                  {/* 系所查不到官方對照表時 totalRequired 是 null——不得用 128
+                      這個假數字頂替，那正是這批捏造數字先前混進畫面的方式。 */}
+                  <span className="grad-number-total">{data?.totalRequired ?? '—'}</span>
+                </div>
+                <div className="grad-progress-bar">
+                  <div className="grad-progress-fill" style={{ width: `${progressPercent}%` }} />
                 </div>
               </div>
-            ))}
-          </div>
+
+              {/* Gap cards */}
+              <div className="grad-gaps-grid">
+                {Object.entries(data?.gaps || {}).map(([category, gap]) => (
+                  <div key={category} className="grad-card grad-gap-card">
+                    <div className="grad-gap-label">尚缺{CREDIT_CATEGORY_LABELS[category] || category}</div>
+                    <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
+                      {gap} <span className="grad-gap-unit">學分</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Watchlist */}
           <div className="grad-watchlist">

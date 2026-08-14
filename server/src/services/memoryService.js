@@ -23,46 +23,114 @@ export async function clearChatHistory(userId) {
   }
 }
 
-export async function getUserPreferences(userId = 'default') {
-  const prefs = (await getAll('user_preferences'))
-    .find(profile => String(profile.userId) === String(userId));
-
-  if (!prefs) {
-    return {
-      userId,
-      displayName: '使用者',
-      completedCredits: 0,
-      completedCourseIds: [],
-      targetCreditsMin: 15,
-      targetCreditsMax: 22,
-      blockedPeriods: [],
-      preferredCategories: [],
-      mustTakeCourses: [],
-      avoidInstructors: [],
-      preferCompact: false,
-      noMorningClasses: false,
-      noEveningClasses: false,
-      preferencesJson: {},
-    };
-  }
-
-  return prefs;
+// 沒有 profile 時的骨架。
+//
+// **不含任何偏好旗標。** 偏好一律由 `preference_tags` 推導，缺席即代表未勾選；
+// 在這裡補 `noMorningClasses: false` 之類的合成值，會在與其他來源合併時
+// 把使用者真正存的 true 蓋掉——那正是偏好靜默消失的成因。
+//
+// 同理**不含任何修課歷史的派生欄位**（`completedCourseCodes`、`completedCredits`
+// 之類）。修課歷史只有 `courseHistory` 一個代表，課號與學分一律由
+// `data/courseHistory.js` 的函式當場算。
+function emptyProfile(identity) {
+  return {
+    userId: String(identity.canonicalId),
+    studentId: identity.studentId ?? null,
+    displayName: identity.displayName || '使用者',
+    courseHistory: [],
+    targetCreditsMin: 12,
+    targetCreditsMax: 25,
+    blockedPeriods: [],
+    preferredCategories: [],
+    preferenceTags: [],
+    selectedTags: [],
+    mustTakeCourses: [],
+    avoidInstructors: [],
+    preferencesJson: {},
+  };
 }
 
-export async function updateUserPreferences(userId = 'default', updates) {
-  return upsertByField('user_preferences', 'userId', userId, {
-    userId,
+// 歷史修課存在 `users.json`（2026-08-06 匯入），偏好存在 `User_Profiles`。
+// 排課只讀後者，因此在 profile 層合併——否則排課器永遠看不到修課歷史。
+//
+// **只回傳 `courseHistory` 本身，不派生任何欄位。** 先前這裡另外回傳
+// `completedCourseCodes` 與 `completedCredits`，那是把同一份資料從檔案搬到
+// 記憶體再存一次；需要課號或學分的呼叫端改為自行呼叫
+// `data/courseHistory.js` 的 `getPassedCourseCodes()` / `getEarnedCredits()` /
+// `getTotalEarnedCredits()`。
+async function readCourseHistory(identity) {
+  const users = await getAll('users');
+  const user = users.find(item =>
+    String(item.studentId) === String(identity.studentId)
+    || String(item.id) === String(identity.canonicalId)
+  );
+
+  if (!user) return {};
+
+  return { courseHistory: user.courseHistory ?? [] };
+}
+
+// Profile 的欄位擁有權契約。
+//
+// **源頭是 MySQL**，兩個 JSON 檔是解析後的物件資料，都要使用；但同一個欄位
+// 只能有一個擁有者，否則就是先前那種「MySQL 說避開早八、JSON 說不避」的狀態。
+//
+// | 欄位 | 擁有者 | 理由 |
+// | --- | --- | --- |
+// | `department`、`gradeLevel` | `User_Profiles` | 有對應欄位，排課直接讀 |
+// | 偏好標籤與其推導出的旗標 | `User_Profiles.preference_tags` | 有對應欄位；標籤是儲存格式 |
+// | `blockedPeriods`（第 1～14 節） | `User_Profiles.avoid_time` | 有對應欄位 |
+// | `targetCreditsMax` | `User_Profiles.max_credits` | 有對應欄位 |
+// | `studentId`、`name`、`className` | `users.json` | `User_Profiles` 沒有這些欄位 |
+// | `courseHistory` | `users.json` | 同上；2026-08-06 由成績單匯入 |
+//
+// **修課歷史只有 `courseHistory` 一個代表。** `completedCourseCodes`、
+// `completedCourseNames`、`completedCourseIds`、`completedCredits`、`earnedCredits`
+// 五個欄位都是它算得出來的東西，已於 2026-08-11 從 `users.json` 移除；
+// 課號與學分請呼叫 `data/courseHistory.js` 的派生函式，不要在 profile 上
+// 重新長出同名欄位。
+//
+// **`User_Profiles` 是 profile 的唯一儲存體。** 曾經有第三個位置
+// `server/data/user_preferences.json`，用來接住「MySQL 沒有這個人」的情況。
+// 該檔已於 2026-08-11 刪除，理由是同一個欄位存兩份必然漂移——實測就出現過
+// MySQL 說「避開早八」而 JSON 說「不避」，而且沒有任何東西能判斷誰對。
+//
+// 因此 `getAll('user_preferences')` 現在只會回傳 `User_Profiles` 的內容
+// （集合名稱維持不變，是這個 store 的邏輯名稱）。寫不進 MySQL 時
+// `upsertByField()` 會拋錯，不再有靜默落到本機檔案的後路。
+export async function getUserPreferences(identity) {
+  const prefs = (await getAll('user_preferences'))
+    .find(profile => String(profile.userId) === String(identity.canonicalId));
+
+  const history = await readCourseHistory(identity);
+
+  return {
+    ...emptyProfile(identity),
+    ...(prefs || {}),
+    // 歷史修課的真相來源是 users.json，偏好列不得覆蓋它。
+    ...history,
+  };
+}
+
+// 寫入走 canonical ID（學號），由 `db/database.js` 在 MySQL 邊界換成
+// `User_Profiles.user_id`。先前對非數字 userId 直接 return null 再靜默落到
+// 本機 JSON，前端送學號時每一次寫入都被跳過而毫無跡象；現在寫不進去會拋錯。
+export async function updateUserPreferences(identity, updates) {
+  const canonicalId = String(identity.canonicalId);
+
+  return upsertByField('user_preferences', 'userId', canonicalId, {
+    userId: canonicalId,
     ...updates,
     updatedAt: new Date().toISOString(),
   });
 }
 
-export async function getSavedSchedules(userId = 'default') {
+export async function getSavedSchedules(userId) {
   return (await getAll('saved_schedules'))
     .filter(schedule => String(schedule.userId) === String(userId));
 }
 
-export async function saveSchedule(userId = 'default', name, scheduleData, totalCredits) {
+export async function saveSchedule(userId, name, scheduleData, totalCredits) {
   return insert('saved_schedules', {
     userId,
     name,

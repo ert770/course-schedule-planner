@@ -43,6 +43,10 @@ System prompt 必須讓 Agent：
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
+
+`query_course_db` 由後端依目前 `userId` 的 profile 建立班級範圍，Agent 不傳入或猜測
+`department`、`grade`、`className`。可用 `category` 為 `必修`、`核心選修`、
+`一般選修`、`系外選修`；通識分類資料尚未建立，不得要求工具假造結果。
 | `final_answer` | 輸出最終回答 |
 
 ## `run_csp_scheduler` 參數
@@ -51,13 +55,34 @@ System prompt 必須讓 Agent：
 
 | 類別 | 參數 |
 | --- | --- |
-| 學分 | `minCredits`, `maxCredits`, `maxCoursesPerDay` |
+| 學分 | `minCredits`, `maxCredits`, `allowCreditOverload`, `maxCoursesPerDay` |
+| 學籍 | `department`, `gradeLevel` |
 | 時間 | `blockedPeriods`, `mondayFree`, `noMorningClasses`, `noEveningClasses`, `lunchBreakFree` |
-| 課程指定 | `mustTakeCourseIds`, `retakeCourseIds`, `completedCourseIds` |
+| 課程指定 | `mustTakeCourseIds`, `retakeCourseIds` |
 | 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
 | 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
 | 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
 | 畢業門檻 | `digitalCreditsNeeded` |
+
+### 修課歷史不屬於工具參數
+
+`completedCourseIds` 與 `courseHistory` 都不得出現在 `run_csp_scheduler` 的參數中。
+模型無法可靠得知使用者實際修過哪些課，讓模型提供這些值只會誘導它編造資料。
+
+同一次對話開始時，後端已把 profile（含 `courseHistory`）載入 `prefs`；
+`agentService.js` 呼叫 `generateForUser(identity, { constraints: args }, { prefs })`，再由
+`buildScheduleConstraints()` 只取 `prefs.courseHistory`。因此已修排除會自動生效，
+即使模型自行在參數中加入 `courseHistory` 也會被忽略。
+
+`retakeCourseIds` 維持為工具參數，因為重補修是使用者在當次對話中可以明確表達的需求。
+
+### 學分上下限與超修
+
+未指定 `minCredits` / `maxCredits` 時，排課引擎依校規給預設值：上限 **25**、下限 **12**（`gradeLevel` 為 4 時下限 **9**）。
+
+**`allowCreditOverload` 必須由使用者明確表達才可帶入**——超修至 30 學分需另行申請，Agent 不得自行開啟。使用者若說「我想多修一點」「可以超修」，才帶 `allowCreditOverload: true`。
+
+`department` 與 `gradeLevel` 決定必修範圍（見 `docs/SCHEDULING_LOGIC.md`）。兩者通常來自已儲存的使用者資料，Agent 僅在使用者明確更正時才需帶入。
 
 ### 個人化偏好的必要性
 

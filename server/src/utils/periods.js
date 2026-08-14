@@ -99,10 +99,28 @@ export function normalizeBlockedPeriods(value, onInvalid) {
   return blocked;
 }
 
+// 第 1 節（早八）與 `avoid_time` 的關係。
+//
+// 兩者**不是同一件事，可以重疊，排課時取聯集**：
+//
+// | 設定 | 涵蓋範圍 | 語意 |
+// | --- | --- | --- |
+// | `avoid_time` | 第 1～14 節，逐格指定星期 | 「星期三第 1 節我不要」 |
+// | `#不排早八` | 只有第 1 節，但跨整週 | 「每天第一節我都不要」 |
+//
+// 曾經一度規定「第 1 節只能用標籤設定，`avoid_time` 只管第 2～14 節」
+// （舊決策 C），讀寫時都會把第 1 節剝掉。那是錯的：使用者可能只想避開
+// 某一天的早八，剝除等於讓他無法表達這個需求。
+//
+// 排課引擎本來就分別判定 `noMorningClasses`（`scheduler.js` 的
+// `startPeriod <= 1`）與 `blockedPeriods`，聯集是現成行為，不需要額外處理。
+export const MORNING_PERIOD = 1;
+
 export default {
   PERIODS_PER_DAY,
   DAYS_PER_WEEK,
   PERIOD_TIMES,
+  MORNING_PERIOD,
   toMinutes,
   findPeriodByTime,
   normalizeBlockedPeriods,

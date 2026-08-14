@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
@@ -6,8 +6,10 @@ import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, 
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
-import { coursesAPI, scheduleAPI } from '../services/api';
+import { coursesAPI, profileAPI, scheduleAPI } from '../services/api';
 import { formatCourseTime } from '../utils/courseTime';
+
+const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
 export default function SchedulePage() {
   const navigate = useNavigate();
@@ -19,29 +21,50 @@ export default function SchedulePage() {
   const [selectedCourses, setSelectedCourses] = useState([]);
   const [showCourses, setShowCourses] = useState(false);
   const [filters, setFilters] = useState({ keyword: '', category: '', department: '' });
-  const [departments, setDepartments] = useState([]);
+  const [courseSearchScope, setCourseSearchScope] = useState(null);
   const [loading, setLoading] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
   const [notice, setNotice] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  const loadDepartments = useCallback(async () => {
-    try {
-      const data = await coursesAPI.getDepartments();
-      setDepartments(data.departments || []);
-    } catch (err) {
-      console.error('Failed to load departments:', err);
-    }
-  }, []);
-
   useEffect(() => {
-    loadDepartments();
-  }, [loadDepartments]);
+    let cancelled = false;
+
+    // 未登入時不呼叫，也不退回 `default` 使用者——那會讀到共用假帳號的 scope，
+    // 畫面看起來正常但資料是別人的。
+    if (!user?.studentId) {
+      setNotice({ level: 'error', text: '尚未登入，請重新登入後再操作。' });
+      return () => { cancelled = true; };
+    }
+
+    profileAPI.get(user.studentId)
+      .then(profile => {
+        if (cancelled) return;
+        const scope = profile?.courseSearchScope || null;
+        setCourseSearchScope(scope);
+        setFilters(prev => ({ ...prev, department: scope?.department || '' }));
+        if (!scope?.className) {
+          setNotice({ level: 'error', text: CLASS_REQUIRED_MESSAGE });
+        }
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setNotice({ level: 'error', text: err.message || CLASS_REQUIRED_MESSAGE });
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [user?.studentId]);
 
   const searchCourses = async () => {
+    if (!courseSearchScope?.className) {
+      setNotice({ level: 'error', text: CLASS_REQUIRED_MESSAGE });
+      return;
+    }
+
     setLoading(true);
     try {
-      const data = await coursesAPI.search(filters);
+      const data = await coursesAPI.search({ ...filters, ...courseSearchScope });
       setCourses(data.courses || []);
       setShowCourses(true);
     } catch (err) {
@@ -61,10 +84,15 @@ export default function SchedulePage() {
   };
 
   const generateSchedule = async () => {
+    if (!user?.studentId) {
+      setNotice({ level: 'error', text: '尚未登入，無法產生個人化課表。' });
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await scheduleAPI.generate({
-        userId: user?.studentId || 'default',
+        userId: user.studentId,
         courseIds: selectedCourses.map(c => c.id),
         constraints: {},
       });
@@ -72,9 +100,10 @@ export default function SchedulePage() {
       if (data.success) {
         setSchedule(data.schedule);
         setShowCourses(false);
+        const warnings = data.warnings || [];
         setNotice(
-          (data.warnings || []).length > 0
-            ? { level: 'warning', text: data.message }
+          warnings.length > 0
+            ? { level: 'warning', text: data.message, details: warnings }
             : null
         );
       } else {
@@ -94,6 +123,13 @@ export default function SchedulePage() {
   };
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
+  // 軍訓國防科技、體育、班級活動要排進課表但不計入畢業學分（校規）。
+  // 後端在每門課上標記 countsTowardGraduation；未標記者一律視為計入。
+  const graduationCredits = schedule.reduce(
+    (sum, course) => (course.countsTowardGraduation === false ? sum : sum + (course.credits || 0)),
+    0
+  );
+  const hasNonGraduationCredits = graduationCredits !== totalCredits;
 
   return (
     <div className="layout-container" id="schedule-page">
@@ -137,6 +173,14 @@ export default function SchedulePage() {
             <div className="schedule-stats">
               <span className="stat-badge course-badge">📚 {schedule.length} 門課</span>
               <span className="stat-badge credit-badge">🎓 {totalCredits} 學分</span>
+              {hasNonGraduationCredits && (
+                <span
+                  className="stat-badge credit-badge"
+                  title="軍訓國防科技、體育、班級活動依校規不計入畢業學分"
+                >
+                  🧮 計入畢業 {graduationCredits} 學分
+                </span>
+              )}
             </div>
             <div className="schedule-actions">
               <button
@@ -171,6 +215,13 @@ export default function SchedulePage() {
                   ✕
                 </button>
               </div>
+              {/* 只顯示 message 的話，使用者看得到「計入畢業 0 學分」卻不知道原因，
+                  也就無從決定要不要移除那門課。 */}
+              {notice.details?.length > 0 && (
+                <ul className="schedule-notice-list">
+                  {notice.details.map(detail => <li key={detail}>{detail}</li>)}
+                </ul>
+              )}
             </div>
           )}
 
@@ -184,17 +235,16 @@ export default function SchedulePage() {
                   onChange={(e) => setFilters(f => ({ ...f, keyword: e.target.value }))}
                   id="course-search-input"
                 />
-                <select
+                <input
                   className="input-field"
-                  value={filters.department}
-                  onChange={(e) => setFilters(f => ({ ...f, department: e.target.value }))}
+                  value={courseSearchScope
+                    ? `${courseSearchScope.department}／大${courseSearchScope.grade}／${courseSearchScope.className}班`
+                    : ''}
+                  readOnly
+                  disabled
+                  placeholder="尚未匯入班級"
                   id="department-select"
-                >
-                  <option value="">所有系所</option>
-                  {departments.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                />
                 <select
                   className="input-field"
                   value={filters.category}
@@ -203,8 +253,10 @@ export default function SchedulePage() {
                 >
                   <option value="">所有類別</option>
                   <option value="必修">必修</option>
-                  <option value="選修">選修</option>
-                  <option value="通識">通識</option>
+                  <option value="核心選修">核心選修</option>
+                  <option value="一般選修">一般選修</option>
+                  <option value="系外選修">系外選修</option>
+                  <option value="通識" disabled>通識（分類資料尚未建立）</option>
                 </select>
                 <button className="action-btn primary" onClick={searchCourses} id="search-btn">搜尋</button>
               </div>

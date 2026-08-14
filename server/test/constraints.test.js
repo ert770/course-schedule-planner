@@ -9,7 +9,6 @@ describe('S11-S12 陣列型偏好的合併語意', () => {
   const saved = {
     preferredKeywords: ['網路', '資安'],
     blockedPeriods: [{ day: 3, period: 5 }],
-    completedCourseIds: [11, 22],
     mustTakeCourses: [7],
   };
 
@@ -19,13 +18,11 @@ describe('S11-S12 陣列型偏好的合併語意', () => {
     const merged = buildScheduleConstraints({
       preferredKeywords: [],
       blockedPeriods: [],
-      completedCourseIds: [],
       mustTakeCourseIds: [],
     }, saved);
 
     assert.deepEqual(merged.preferredKeywords, ['網路', '資安']);
     assert.equal(merged.blockedPeriods.length, 1);
-    assert.deepEqual(merged.completedCourseIds, [11, 22]);
     assert.deepEqual(merged.mustTakeCourseIds, [7]);
   });
 
@@ -40,6 +37,33 @@ describe('S11-S12 陣列型偏好的合併語意', () => {
 
     assert.deepEqual(merged.preferredKeywords, []);
     assert.deepEqual(merged.blockedPeriods, []);
+  });
+});
+
+describe('修課歷史只由 profile 直通', () => {
+  test('courseHistory 直接取自 prefs，不接受 request 覆蓋', () => {
+    const savedHistory = [
+      { courseCode: 'IECS3002', passed: true },
+      { courseCode: 'IECS3003', passed: false },
+    ];
+    const requestHistory = [{ courseCode: 'FAKE0001', passed: true }];
+
+    const merged = buildScheduleConstraints(
+      { courseHistory: requestHistory },
+      { courseHistory: savedHistory }
+    );
+
+    assert.strictEqual(merged.courseHistory, savedHistory);
+    assert.notStrictEqual(merged.courseHistory, requestHistory);
+  });
+
+  test('prefs 未提供 courseHistory 時回傳空陣列', () => {
+    const merged = buildScheduleConstraints(
+      { courseHistory: [{ courseCode: 'FAKE0001', passed: true }] },
+      {}
+    );
+
+    assert.deepEqual(merged.courseHistory, []);
   });
 });
 

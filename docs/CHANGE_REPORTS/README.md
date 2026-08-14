@@ -2,10 +2,29 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-07
+
+1. [任務進度追蹤同步](./2026-08-07-progress-tracking-update.md)
+2. [#12A 課程分類與搜尋一致性](./2026-08-07-course-category-consistency.md)
+
+## 2026-08-06
+
+1. [F7 課程搜尋班級契約修正](./2026-08-06-course-search-grade-class-contract.md)
+2. [個人歷年修課成績資料匯入](./2026-08-06-personal-course-history-import.md)
+3. [F13 畢業進度缺少歷史修課資料提示](./2026-08-06-graduation-history-data-warning.md)
+
+## 2026-08-04
+
+1. [班別收斂、核心選修分類、系外選修條件與畢業學分分離](./2026-08-04-class-scope-core-electives-and-credit-split.md)
+2. [以官方選課規則取代寫死的學分數字](./2026-08-04-official-course-selection-rules.md)
+3. [department 寫入型別檢查與髒值警告去重修正（D3 後續）](./2026-08-04-department-write-validation.md)
+
 ## 2026-08-02
 
-1. [修復 department 含字面單引號（D3）](./2026-08-02-department-quote-d3.md)
-2. [修復 avoid_time 格式不符導致封鎖時段靜默失效（D2）](./2026-08-02-avoid-time-format.md)
+1. [修復同一門課的多個班次被同時排入](./2026-08-02-one-section-per-course.md)
+2. [依系所與年級收斂必修範圍（#13）](./2026-08-02-required-course-scope.md)
+3. [修復 department 含字面單引號（D3）](./2026-08-02-department-quote-d3.md)
+4. [修復 avoid_time 格式不符導致封鎖時段靜默失效（D2）](./2026-08-02-avoid-time-format.md)
 
 ## 2026-08-01
 
