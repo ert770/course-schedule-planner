@@ -155,6 +155,52 @@
 `selectedCourseIds` 或 `mustTakeCourseIds` 明確指定時，課程仍保留並排入，但 warning
 必須顯示「資格待確認」。
 
+### Active Term（Roadmap #20）
+
+所有查課、排課與 Agent API 共用同一個「目前學期」設定：`server/src/data/activeTerm.js`
+的 `ACTIVE_TERM`（預設 114 學年下學期，可用 `ACTIVE_ACADEMIC_YEAR`／`ACTIVE_SEMESTER`
+環境變數覆寫）。這是**系統常數，不接受 per-request 覆寫**——所有使用者共用同一個
+學期範圍，不開放個別切換。
+
+- **搜尋**（`filterCategorizedCourses()`）：非本學期的候選課程一律過濾，沒有例外。
+  涵蓋 `GET /api/courses`、Agent 的課程查詢、以及排課的主要候選來源
+  （`searchCoursesForSchedule()`）。
+- **排課的例外處理**：使用者明確指定 `courseIds`，以及 #19 的重補修候選查找，是
+  直接查資料庫、繞過上述搜尋過濾，因此 `scheduler.js` 的 `prepareCandidates()`
+  另外做一次過濾——沿用「系統自撿排除＋原因、使用者明確指定保留＋警告」的既有
+  模式（與 B～F unknown eligibility 相同精神，且排在其之前，因為 term 是更外層
+  的閘門）。
+- 候選課程缺少學年學期資料時**視為本學期**（不新增排除），因為那是資料缺口，
+  不是「已知不符合」——既有測試 fixture 從未標註學年學期，若把缺資料當成不符合，
+  會讓所有既有候選被排除。
+
+換學期時只需更新 `ACTIVE_ACADEMIC_YEAR`／`ACTIVE_SEMESTER` 兩個環境變數（或
+`activeTerm.js` 的預設值），**並同步更新** `server/src/data/generalEducationCatalog.js`
+的 `RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2`——兩處目前都寫死 114 學年下學期，
+沒有互相引用，忘記其中一處會讓通識認列與排課候選各自套用不同學期。
+
+### 候選課程的可追溯 metadata（Roadmap #20）
+
+每門候選課除了既有的 `eligibility`／`eligibilityReason`，另外附加三個欄位：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `eligibilitySource` | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`（例如 `department-required-table`、`class-catalog:unconfirmed-rules`），供 UI／Agent／未來的 evidence-based reason（#26）追查來源 |
+| `term` | `{ academicYear, semester, isActiveTerm }`，這門課**自己的**開課學期與是否為 active term |
+| `scopeReason` | 給人看的完整白話說明，融合 term／類別／eligibility／系外選修認列結果；優先序為：非本學期 → `eligibility=unknown` → 必修判定（本人／他人）→ 通識 → 系外選修 → 一般選修 |
+
+### 四種候選判定的正式對照（Roadmap #20）
+
+| 判定 | 依據 | 程式位置 |
+| --- | --- | --- |
+| 可搜尋 | `term.isActiveTerm`（硬性過濾）＋ 班級範圍過濾／通識／系外選修分支 | `courseQuery.js` |
+| 本人必修 | `category==='必修' && eligibility==='eligible'`（`eligibilitySource: REQUIRED_TABLE`） | `courseScope.js` → `courseCategory.js` |
+| 可加選 | `eligibility !== 'ineligible'` 且 `term.isActiveTerm`；`scopeReason` 講明是哪個閘門在擋 | `courseCategory.js`（term 與 eligibility 融合） |
+| 可計入畢業學分 | 本人必修／本系選修／通識預設可計；系外選修委由 `evaluateOutsideElective().eligible` | `outsideElective.js`（不動）；文字併入 `scopeReason` |
+
+B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決，`eligibility` 與
+`scopeReason` 在那些情境下維持 `unknown`／保守排除，不因本項完成而宣稱已知誰可以修。
+
 ### 無法判定時
 
 系所或年級缺漏時，**不得退回「全校必修都算」**——那正是 `#13` 的缺陷本身。此時不把任何課
@@ -256,6 +302,12 @@
 ### 尚未定義的部分
 
 通識與共同科目（`國文綜合班`、`大二英文綜合班`、`核心必修綜合班`、`軍訓(一年級)`）、學院綜合班、英語授課班與國際學程、學分學程的**班級種類已於 #13B 完成分類**；正式適用對象仍未確認，整理於路線圖 `#13C` 與 `docs/DEPARTMENT_MAPPING.md`。目前搜尋保留並標示 `unknown`，排課不會自動納入。
+
+**#20 本輪已完成**：active term 過濾、`eligibilitySource`／`scopeReason`／`term` 三個
+可追溯欄位、四種候選判定的正式對照（見上方兩節）。**仍未解決**：B～F 的正式適用對象
+（卡 `#13C`，需系辦／校方書面規則）、學制與學程欄位（卡 `#13D`，需 Profile schema
+擴充學制／雙聯學程／英語班／已報名學分學程等欄位，目前 `User_Profiles` 沒有這些欄位）。
+這兩項在取得前維持 `unknown`，不得用猜測填入判定邏輯。
 
 ## 大二以上排課流程
 

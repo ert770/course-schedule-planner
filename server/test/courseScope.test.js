@@ -13,6 +13,7 @@ import {
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
   resolveCourseEligibility,
+  ELIGIBILITY_SOURCE,
 } from '../src/skills/courseScope.js';
 import { getAbbreviations, getDepartmentByAbbreviation } from '../src/data/departmentMapping.js';
 import {
@@ -227,6 +228,63 @@ describe('#13B 班級種類與修課資格', () => {
     assert.equal(parsed.classGroup, null);
     assert.equal(eligibility.eligibility, 'unknown');
     assert.match(eligibility.eligibilityReason, /尚未納入班級分類表/);
+  });
+});
+
+describe('#20 eligibilitySource：eligibility 結論的可追溯來源', () => {
+  const resolvedScope = buildCourseQueryScope({
+    department: '資訊工程學系',
+    grade: 3,
+    className: '乙',
+  });
+
+  test('目錄查無班級名稱 → UNCLASSIFIED', () => {
+    const result = resolveCourseEligibility({ department: '尚未建檔的新型班級' }, resolvedScope);
+    assert.equal(result.eligibility, 'unknown');
+    assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.UNCLASSIFIED);
+  });
+
+  test('B～F 已分類但規則未確認 → UNCONFIRMED_RULES', () => {
+    const result = resolveCourseEligibility(
+      { department: '國文綜合班', category: '選修' },
+      resolvedScope
+    );
+    assert.equal(result.eligibility, 'unknown');
+    assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.UNCONFIRMED_RULES);
+  });
+
+  test('A 表必修但學生範圍未 resolved → REQUIRED_SCOPE_UNRESOLVED', () => {
+    const result = resolveCourseEligibility(
+      { department: '資訊三乙', category: '必修' },
+      buildCourseQueryScope({})
+    );
+    assert.equal(result.eligibility, 'unknown');
+    assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.REQUIRED_SCOPE_UNRESOLVED);
+  });
+
+  test('A 表必修且範圍已 resolved → REQUIRED_TABLE（eligible／ineligible 皆同一來源）', () => {
+    const ownClass = resolveCourseEligibility(
+      { department: '資訊三乙', category: '必修' },
+      resolvedScope
+    );
+    assert.equal(ownClass.eligibility, 'eligible');
+    assert.equal(ownClass.eligibilitySource, ELIGIBILITY_SOURCE.REQUIRED_TABLE);
+
+    const otherClass = resolveCourseEligibility(
+      { department: '會計三甲', category: '必修' },
+      resolvedScope
+    );
+    assert.equal(otherClass.eligibility, 'ineligible');
+    assert.equal(otherClass.eligibilitySource, ELIGIBILITY_SOURCE.REQUIRED_TABLE);
+  });
+
+  test('A 表非必修選修 → ELECTIVE_DEFAULT', () => {
+    const result = resolveCourseEligibility(
+      { department: '資訊三乙', category: '選修' },
+      resolvedScope
+    );
+    assert.equal(result.eligibility, 'eligible');
+    assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.ELECTIVE_DEFAULT);
   });
 });
 

@@ -916,7 +916,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #20 建立 active term 與完整 candidate eligibility 規則
 
-**狀態**：🟡 部分完成（2026-08-14 盤點）——`unknown` 已由 #13B 完成，active term 與正式可加選規則未做
+**狀態**：🟡 部分完成（2026-08-15 盤點）——active term 過濾、`eligibilitySource`／`scopeReason`／`term` 三欄位、四種判定的正式對照均已完成；B～F 正式可加選規則仍卡 #13C／#13D，維持部分完成
 
 **相依**：#12、#13A、#13B、#18、#19
 
@@ -958,12 +958,35 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - 排課時系外選修的認列條件**不會**靜默剔除使用者手動勾選的課（`explicitCourseIds`）——那條規則講的是能不能計入畢業學分，不是能不能修。
 - #13B 已加入 `classGroup`、`classKind`、`eligibility`、`eligibilityReason`；搜尋保留 unknown，排課自動候選保守排除，明確指定保留並警告。
 
-**尚未完成**
+**尚未完成（2026-08-14 當時）**
 
 - **完全沒有 active term 概念。** 全專案搜不到 `activeTerm` / `academicYear` 之類的設定；`server/src/db/database.js` 的課程查詢只是 `ORDER BY cs.year DESC, cs.semester`，沒有任何 API 以學年學期為必要條件。跨學期資料一旦同時存在，候選集就會混入非當學期的 sections。
 - candidate 沒有 `eligibilitySource`、`scopeReason`、`term` 三個欄位。
 - 「可加選」與「可搜尋」尚未形成完整獨立規則；#13B 僅先對 unknown 建立「搜尋保留、排課自動候選排除」的保守邊界。
 - 跨班、同系他年級選修、學院綜合班、通識與學程的**正式適用規則**仍有缺口（#13C～#13D）；unknown 已不再被靜默當成可修。
+
+### 本次進度（2026-08-15 盤點）
+
+**新完成：active term 與三個 metadata 欄位**
+
+- 新增 `server/src/data/activeTerm.js`：`ACTIVE_TERM` 常數（預設 114 學年下學期，可用 `ACTIVE_ACADEMIC_YEAR`／`ACTIVE_SEMESTER` 環境變數覆寫，換學期不需改程式碼），與 `isActiveTermCourse()`／`annotateTerm()` 兩個 pure function。學年學期皆缺的候選視為本學期（相容既有無 term 資料的測試與資料，不新增排除）。
+- `courseScope.js` 的 `resolveCourseEligibility()` 新增 `ELIGIBILITY_SOURCE` 5 個固定代號（`UNCLASSIFIED`、`UNCONFIRMED_RULES`、`REQUIRED_SCOPE_UNRESOLVED`、`REQUIRED_TABLE`、`ELECTIVE_DEFAULT`），5 個分支各自附上 `eligibilitySource`。
+- `courseCategory.js` 的 `annotateCourseCategory()` 新增 `term`（呼叫 `annotateTerm()`）與 `scopeReason`（`buildScopeReason()`，融合 term／類別／eligibility 結論成一句白話說明，優先序：非本學期 → `eligibility=unknown` → 必修判定 → 通識 → 系外選修 → 一般選修）。系外選修算出認列結果後，由 `refineOutsideElectiveScopeReason()` 在既有兩個呼叫點（`courseQuery.js`、`scheduler.js`）事後覆寫精修文字——刻意不搬動 `evaluateOutsideElective()` 的呼叫方式，降低風險。
+- **Active term 過濾已上線，兩層**：`courseQuery.js` 的 `filterCategorizedCourses()` 無條件過濾非本學期候選（涵蓋搜尋、Agent 查詢、排課主要候選來源）；`scheduler.js` 的 `prepareCandidates()` 對繞過搜尋、直接查 `getAll('courses')` 的兩條路徑（明確 `courseIds`、#19 重補修查找）另做一次過濾，沿用「系統自撿排除＋原因、明確指定保留＋警告」的既有模式，且排在 unknown-eligibility 檢查之前（term 是更外層閘門）。
+- 驗證了一個容易忽略的副作用：#19 重補修查找若唯一對到的 section 是舊學期資料，先前會被誤當成本學期已開課而靜默滿足重補修、壓下「本學期沒有開課，請下學期記得重修」警告；active term 過濾後該 section 被排除，原本該出現的警告正確觸發。已新增 regression test 釘住這個互動。
+- 四種判定（可搜尋／本人必修／可加選／可計入畢業學分）整理成文件化對照表，寫入 `docs/SCHEDULING_LOGIC.md`；刻意不新增第四個頂層欄位（會與 `eligibility`／`outsideElective.eligible` 重複）。
+
+**測試與驗證**
+
+- 新增 `server/test/activeTerm.test.js`（16 tests）、`server/test/courseCategory.test.js`（15 tests）；`courseScope.test.js`、`courseQuery.test.js`、`scheduler.test.js`、`database-contract.test.js` 各自擴充。
+- `npm test`：從本輪開始前的 322 tests / 73 suites 成長為 365 tests / 86 suites，全數通過，零回歸。
+- `database-contract.test.js` 新增的 `ACTIVE_TERM` 對真實本機 MySQL 資料的契約測試通過，確認預設值（114/下學期）與現行資料相符。
+
+**仍未完成**
+
+- B～F 正式適用對象規則仍卡 `#13C`（等系辦／校方書面規則）。
+- 學制、學程與特殊身分欄位仍卡 `#13D`（`User_Profiles`／Profile schema v1 目前沒有這些欄位）。
+- 跨班、同系他年級選修、學院綜合班、通識與學程的完整正式規則因此仍未解鎖；`eligibility`／`scopeReason` 在這些情境下維持 `unknown`，不得因本輪完成而宣稱已知。
 
 ---
 

@@ -146,6 +146,86 @@ describe('#13B 資格待確認課程', () => {
   });
 });
 
+describe('#20 active term 過濾（繞過 courseQuery、直接查詢的候選）', () => {
+  test('系統自撿的非本學期候選被排除，並附上開課學期原因', () => {
+    const offTerm = makeCourse(601, {
+      name: '舊學期選修',
+      department: '資訊三甲',
+      category: '選修',
+      year: 113,
+      semester: '上學期',
+    });
+    const onTerm = makeCourse(602, {
+      name: '本學期選修',
+      department: '資訊三甲',
+      category: '選修',
+      year: 114,
+      semester: '下學期',
+      dayOfWeek: 2,
+    });
+
+    const result = generateSchedule([offTerm, onTerm], { minCredits: 0, maxCredits: 9 });
+
+    assert.ok(!result.schedule.some(course => course.id === 601));
+    assert.ok(result.excludedCourses.some(item => (
+      item.course.id === 601 && item.reason.includes('113學年上學期開課')
+    )));
+    assert.ok(result.warnings.some(warning => warning.includes('非本學期')));
+  });
+
+  test('使用者明確指定非本學期課程時保留並警告，不靜默排除', () => {
+    const offTerm = makeCourse(603, {
+      name: '舊學期選修',
+      department: '資訊三甲',
+      category: '選修',
+      year: 113,
+      semester: '上學期',
+      dayOfWeek: 2,
+    });
+
+    const result = generateSchedule([offTerm], {
+      minCredits: 0,
+      maxCredits: 9,
+      mustTakeCourseIds: [offTerm.id],
+    });
+
+    assert.ok(result.schedule.some(course => course.id === 603));
+    assert.ok(result.warnings.some(warning => (
+      warning.includes('你指定的課程中有') && warning.includes('非本學期開課')
+    )));
+  });
+
+  test('#19 重補修 union 遇到非本學期 section 時，仍正確提醒下學期重修，不被靜默滿足', () => {
+    // 唯一對得上這個不及格必修課號的 section 是舊學期資料。若不做 active term
+    // 過濾，這門課會被誤當成「本學期已開課」而靜默滿足重補修，
+    // 壓下原本該出現的「本學期沒有開課」警告——這正是本測試要釘住的行為。
+    const offTermRetake = makeCourse(604, {
+      name: '高等演算法',
+      catalogCourseCode: 'IECS3999',
+      category: '選修',
+      year: 113,
+      semester: '上學期',
+    });
+
+    const result = generateSchedule([offTermRetake], {
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'IECS3999',
+        courseName: '高等演算法',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+    });
+
+    assert.ok(!result.schedule.some(course => course.id === 604));
+    assert.ok(result.warnings.some(warning => (
+      warning === 'IECS3999 高等演算法本學期沒有開課，請下學期記得重修。'
+    )));
+  });
+});
+
 describe('P1-P2 課程類別優先度', () => {
   test('P1 一般選修使用選修優先度，不會落到未知類別的預設值', () => {
     const generalElective = makeCourse(1, { category: '一般選修' });

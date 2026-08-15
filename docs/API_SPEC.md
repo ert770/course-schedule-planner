@@ -167,6 +167,9 @@ Response:
       "classKind": "department",
       "eligibility": "eligible",
       "eligibilityReason": "已辨識為 A 類系所班級；其他選修限制仍依既有候選規則判定。",
+      "eligibilitySource": "department-required-table:elective-default",
+      "term": { "academicYear": 114, "semester": "下學期", "isActiveTerm": true },
+      "scopeReason": "一般選修，可搜尋與加選。",
       "track": "技術應用類"
     }
   ],
@@ -187,6 +190,15 @@ Response:
 | `classKind` | `department`、`commonCurriculum`、`collegeWide`、`englishProgram`、`internationalProgram`、`creditProgram`、`other` 或 `unclassified` |
 | `eligibility` | `eligible`、`ineligible` 或 `unknown`；是班級適用資格，不等同畢業學分認列 |
 | `eligibilityReason` | 可供 UI 與 Agent 直接呈現的資格判定理由 |
+| `eligibilitySource`（Roadmap #20） | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`，供追查來源用，不是給人看的文字 |
+| `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學年學期，以及是否為系統目前的 active term |
+| `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明，可直接呈現給使用者 |
+
+**Active term（Roadmap #20）**：所有課程搜尋、排課與 Agent 查詢只回傳
+`server/src/data/activeTerm.js` 定義的 `ACTIVE_TERM`（預設 114 學年下學期）內的
+sections，非本學期候選不會出現在搜尋結果中；換學期時更新 `ACTIVE_ACADEMIC_YEAR`／
+`ACTIVE_SEMESTER` 兩個環境變數即可，不需改程式碼（見 `docs/SCHEDULING_LOGIC.md`
+「Active Term」一節）。
 
 通識課另有下列欄位：
 
@@ -308,9 +320,15 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 | 系外選修不符認列條件 | 剔除，原因記入 `excludedCourses` | 排入，標記不計入畢業學分 |
 | 他班／他系的必修 | 剔除，不進候選 | 排入，警告需自行向系辦確認 |
 | B～F 類或未分類、`eligibility=unknown` | 保守排除，原因記入 `excludedCourses` | 保留並排入，警告「資格待確認」 |
+| 非本學期開課（`term.isActiveTerm=false`，Roadmap #20） | 保守排除，原因記入 `excludedCourses` | 保留並排入，警告「非本學期開課」 |
 
-理由：這兩條都是「依系所、年級、班別**推論**」，不是校方的選課權限。
-見 `docs/SCHEDULING_LOGIC.md` 的「明確指定的課程豁免整批排除」。
+理由：前三條都是「依系所、年級、班別**推論**」，不是校方的選課權限；非本學期一項
+同樣可能因轉系、輔系、雙主修或加簽而修得到，處理原則一致。
+見 `docs/SCHEDULING_LOGIC.md` 的「明確指定的課程豁免整批排除」與「Active Term」。
+
+**注意**：`GET /api/courses` 課程搜尋沒有「明確指定」的概念（那是排課階段才有的
+語意），非本學期候選一律直接過濾，不出現在搜尋結果中——見 `docs/SCHEDULING_LOGIC.md`
+「Active Term」一節。
 
 `preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供任何一項時，主推方案改以總學分決定。
 
@@ -380,8 +398,13 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `track` | 修課路徑（`嵌入式系統類`／`技術應用類`／`網路與安全類`），無歸類時為 `null` |
 | `classGroup`／`classKind` | 班級 A～F 分組及結構化種類 |
 | `eligibility`／`eligibilityReason` | 班級適用資格及可讀原因；`unknown` 不得宣稱確定可修 |
+| `eligibilitySource`（Roadmap #20） | `eligibility` 結論套用的規則代號，供追查來源 |
+| `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學期 |
+| `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明 |
 
-`category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」。
+`category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」；`term`／
+`eligibilitySource`／`scopeReason` 見同檔案的「Active Term」與「候選課程的可追溯
+metadata」兩節。
 
 `watchOnly` 為 `true` 時表示沒有任何正式加選課程排入，課表上只有關注課程。此情境的 `success` 仍為 `true`，因為關注課程本身是合法且可顯示的結果。
 

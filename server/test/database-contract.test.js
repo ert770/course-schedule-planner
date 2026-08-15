@@ -31,6 +31,7 @@ import {
   RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2,
 } from '../src/data/generalEducationCatalog.js';
 import { NON_DEPARTMENT_CLASS_CATALOG } from '../src/data/classKindCatalog.js';
+import { ACTIVE_TERM } from '../src/data/activeTerm.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -315,6 +316,25 @@ describe('資料庫契約：Courses.type 與時間欄位', () => {
     assert.deepEqual(
       [...new Set(unexplained)], [],
       '出現無法解釋的 time_str 格式，parseTimeBlocks() 需補上對應規則'
+    );
+  });
+});
+
+describe('資料庫契約：#20 ACTIVE_TERM 與現行資料相符', () => {
+  test('Course_Sections 存在符合 ACTIVE_TERM 的資料列', { skip }, async () => {
+    // 防呆：若忘記在換學期時更新 `ACTIVE_ACADEMIC_YEAR`／`ACTIVE_SEMESTER`
+    // 環境變數（或 `server/src/data/activeTerm.js` 的預設值），候選池會被
+    // active-term 過濾整批清空，排課與搜尋會回傳空結果——這則測試先炸掉，
+    // 不必等到使用者回報排不出課表。
+    const [row] = await queryRows(
+      'SELECT COUNT(*) AS total FROM `Course_Sections` WHERE `year` = ? AND `semester` = ?',
+      [ACTIVE_TERM.academicYear, ACTIVE_TERM.semester]
+    );
+
+    assert.ok(
+      Number(row.total) > 0,
+      `Course_Sections 找不到符合 ACTIVE_TERM（${ACTIVE_TERM.academicYear}學年${ACTIVE_TERM.semester}）`
+      + '的資料列，請確認是否忘記換學期，或資料庫尚未匯入本學期課程。'
     );
   });
 });

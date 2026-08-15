@@ -3,6 +3,7 @@ import { summarizeReviews } from './reviewStats.js';
 import { classSuffixCovers, parseClassName } from './courseScope.js';
 import {
   annotateCourseCategory,
+  refineOutsideElectiveScopeReason,
   CATEGORY_CORE_ELECTIVE,
   CATEGORY_ELECTIVE,
   CATEGORY_GENERAL_EDUCATION,
@@ -119,9 +120,13 @@ function categorizeCourses(courseList, scope) {
     const course = annotateCourseCategory(rawCourse, scope);
     if (course.category !== CATEGORY_OUTSIDE_ELECTIVE) return course;
 
+    const outsideElective = evaluateOutsideElective(course, scope);
+    const refinedScopeReason = refineOutsideElectiveScopeReason(outsideElective);
+
     return {
       ...course,
-      outsideElective: evaluateOutsideElective(course, scope),
+      outsideElective,
+      ...(refinedScopeReason ? { scopeReason: refinedScopeReason } : {}),
     };
   });
 }
@@ -135,6 +140,11 @@ export function filterCategorizedCourses(
   validateCategorizedSearch(filters, scope);
 
   let courses = categorizeCourses(courseList, scope);
+  // Roadmap #20：candidate 只能是 active term 的 sections，這是結構性過濾
+  // （與下面的班級範圍過濾同一層級），不是可豁免的判斷——「明確指定仍保留」
+  // 的例外只在排課階段（scheduler.js 的 prepareCandidates）適用，因為只有
+  // 那裡才知道哪些課是使用者明確指定的。單純搜尋沒有這個概念，一律過濾掉。
+  courses = courses.filter(course => course.term.isActiveTerm);
   if (filters.category === CATEGORY_OUTSIDE_ELECTIVE) {
     courses = courses.filter(course => {
       if (course.category !== CATEGORY_OUTSIDE_ELECTIVE) return false;

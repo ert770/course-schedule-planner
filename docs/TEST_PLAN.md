@@ -81,6 +81,13 @@ node --check src/app.js
 | R5 | 班級名稱為 `建設英班`、`商學院綜合班`、`商學一(UQ)` 等 | 不得被誤判為系所班級 |
 | R6 | 使用者明確指定 B～F 類 `eligibility=unknown` 課程 | 保留並排入，但警告課名與資格待確認原因 |
 | R7 | MySQL 現行 562 個相異班級名稱 | 全部具有 `classKind`；非系所名稱與 71 筆 B～F 目錄完全一致 |
+| T1 | 候選課程學年或學期與 `ACTIVE_TERM` 不符 | `term.isActiveTerm` 為 false；`GET /api/courses` 搜尋直接過濾掉，不出現在結果中 |
+| T2 | 候選課程未標註學年學期 | `term.isActiveTerm` 視為 true，不受過濾影響（相容既有無 term 資料的測試與資料） |
+| T3 | 排課時系統自撿到非本學期候選（明確 `courseIds` 或 #19 重補修查找繞過搜尋直接查資料庫） | 排除並附開課學期原因，彙整成一則警告 |
+| T4 | 使用者以 `courseIds`／`selectedCourseIds`／`mustTakeCourseIds` 明確指定非本學期課程 | 保留並排入，警告「非本學期開課」，不靜默排除 |
+| T5 | 不及格必修課號唯一對應的 section 是舊學期資料 | 該 section 被 T3 排除，`本學期沒有開課，請下學期記得重修` 警告仍正確觸發，不被靜默滿足 |
+| T6 | 每門候選課的回應內容 | 附帶 `eligibilitySource`（`eligibility` 結論的規則代號）、`term`（`{academicYear, semester, isActiveTerm}`）、`scopeReason`（融合 term／類別／eligibility／系外選修認列結果的白話說明） |
+| T7 | 系外選修算出認列結果後 | `scopeReason` 由 `annotateCourseCategory()` 給的預設文字，覆寫為認列結果的精修文字（不計入畢業學分／須系辦確認／符合認列條件） |
 | B1 | 同一課號（`catalogCourseCode`）的兩個班次，時段不衝突 | 只排入一個班次，另一個理由為「已排入同一門課的其他班次」 |
 | B2 | 第一個班次違反硬性限制 | 改排同一門課的另一個班次 |
 | B3 | 正課 `MATH1005` 與實習 `MATH1005P` | 視為不同課號，不受一課一班次限制 |

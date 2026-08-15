@@ -336,6 +336,23 @@ export function isOwnDepartmentClass(course, scope) {
   return scope.abbreviations.includes(parsed.abbreviation);
 }
 
+// Roadmap #20：`eligibility` 只講「eligible/ineligible/unknown」這個結論，
+// `eligibilitySource` 講「這個結論是套用哪一條規則算出來的」——讓 UI、Agent
+// 與之後的 evidence-based reason（#26）能追查來源，而不只是看一句可能改版
+// 的中文說明文字。5 個分支對應 5 個固定代號，不得用裸字串。
+export const ELIGIBILITY_SOURCE = Object.freeze({
+  // B～F 目錄裡完全查無這個班級名稱。
+  UNCLASSIFIED: 'class-catalog:unclassified',
+  // B～F 目錄裡查得到，但正式適用對象規則仍待 #13C 確認。
+  UNCONFIRMED_RULES: 'class-catalog:unconfirmed-rules',
+  // A 表系所班級的必修，但學生系所／年級資料不足，無法比對。
+  REQUIRED_SCOPE_UNRESOLVED: 'department-required-table:scope-unresolved',
+  // A 表系所班級的必修，且學生範圍已可比對（eligible 或 ineligible 皆同一來源）。
+  REQUIRED_TABLE: 'department-required-table',
+  // A 表系所班級的非必修選修，套用「已知系所即可加選」的預設規則。
+  ELECTIVE_DEFAULT: 'department-required-table:elective-default',
+});
+
 // #13B 只把「是否知道適用對象」顯性化，不猜 B～F 的正式修課規則。
 // `eligibility` 是班級範圍判定；系外選修是否計入畢業學分仍由 outsideElective
 // 的獨立規則處理，兩者不可混為同一欄位。
@@ -349,6 +366,7 @@ export function resolveCourseEligibility(course, scope) {
         classKind: parsed.classKind,
         eligibility: 'unknown',
         eligibilityReason: `班級「${parsed.className || '未提供'}」尚未納入班級分類表，無法確認修課資格。`,
+        eligibilitySource: ELIGIBILITY_SOURCE.UNCLASSIFIED,
       };
     }
 
@@ -358,6 +376,7 @@ export function resolveCourseEligibility(course, scope) {
       classKind: parsed.classKind,
       eligibility: 'unknown',
       eligibilityReason: `${label}（${parsed.classGroup} 類）的正式適用對象規則尚未確認。`,
+      eligibilitySource: ELIGIBILITY_SOURCE.UNCONFIRMED_RULES,
     };
   }
 
@@ -369,6 +388,7 @@ export function resolveCourseEligibility(course, scope) {
         classKind: 'department',
         eligibility: 'unknown',
         eligibilityReason: '學生系所或年級資料不足，無法確認這門 A 類必修是否適用。',
+        eligibilitySource: ELIGIBILITY_SOURCE.REQUIRED_SCOPE_UNRESOLVED,
       };
     }
 
@@ -380,6 +400,7 @@ export function resolveCourseEligibility(course, scope) {
       eligibilityReason: eligible
         ? '班級系所、學制、年級及班別符合目前學生資料。'
         : '此為其他系所、學制、年級或班別的必修。',
+      eligibilitySource: ELIGIBILITY_SOURCE.REQUIRED_TABLE,
     };
   }
 
@@ -388,6 +409,7 @@ export function resolveCourseEligibility(course, scope) {
     classKind: 'department',
     eligibility: 'eligible',
     eligibilityReason: '已辨識為 A 類系所班級；其他選修限制仍依既有候選規則判定。',
+    eligibilitySource: ELIGIBILITY_SOURCE.ELECTIVE_DEFAULT,
   };
 }
 
@@ -403,4 +425,5 @@ export default {
   isOwnDepartmentClass,
   resolveCourseEligibility,
   classSuffixCovers,
+  ELIGIBILITY_SOURCE,
 };

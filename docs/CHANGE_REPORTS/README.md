@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-15
+
+1. [#20 Active Term 過濾與候選課程可追溯 metadata](./2026-08-15-active-term-and-eligibility-metadata.md)
+
 ## 2026-08-07
 
 1. [任務進度追蹤同步](./2026-08-07-progress-tracking-update.md)

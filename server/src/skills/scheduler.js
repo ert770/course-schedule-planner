@@ -8,8 +8,9 @@ import {
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
 } from './courseScope.js';
-import { annotateCourseCategory } from './courseCategory.js';
+import { annotateCourseCategory, refineOutsideElectiveScopeReason } from './courseCategory.js';
 import { evaluateOutsideElective } from './outsideElective.js';
+import { ACTIVE_TERM } from '../data/activeTerm.js';
 import {
   countsTowardGraduation,
   getNonGraduationCategory,
@@ -589,10 +590,30 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
   const unrecognizedExplicit = [];
   const unknownEligibilityNames = new Set();
   const unknownEligibilityExplicit = [];
+  const offTermNames = new Set();
+  const offTermExplicit = [];
   let outsideExclusionCount = 0;
 
   for (const raw of candidateCourses) {
     const course = annotateCourseCategory(raw, scope);
+
+    // Roadmap #20：term 是比 eligibility 更外層的閘門——這門課這學期根本沒開，
+    // 不管系所年級班別是否符合都不該被排入。這一段只處理繞過
+    // `courseQuery.js`（已在那邊統一過濾掉非本學期候選）、直接查
+    // `getAll('courses')` 的兩條路徑：`scheduleService.js` 的明確 courseIds
+    // 與 #19 重補修 union，因此沿用與 eligibility=unknown 相同的
+    // 「系統自撿排除＋原因、使用者明確指定保留＋警告」模式。
+    if (!course.term.isActiveTerm) {
+      const label = `${course.name}（${course.department}）`;
+
+      if (!explicitIds.has(Number(course.id))) {
+        offTermNames.add(label);
+        exclusions.push({ course, reason: course.scopeReason });
+        continue;
+      }
+
+      offTermExplicit.push(course);
+    }
 
     if (course.eligibility === 'unknown') {
       const label = `${course.name}（${course.department}）`;
@@ -609,6 +630,8 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
     }
 
     const outside = evaluateOutsideElective(course, scope);
+    const refinedScopeReason = refineOutsideElectiveScopeReason(outside);
+    if (refinedScopeReason) course.scopeReason = refinedScopeReason;
 
     if (!outside.checked) {
       courses.push(course);
@@ -701,6 +724,27 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
     warnings.push(
       `你指定的課程中有 ${unknownEligibilityExplicit.length} 門資格待確認：${detail}${rest}。`
       + '本方案保留這些課程，但請先向開課單位確認能否修習。'
+    );
+  }
+
+  if (offTermNames.size > 0) {
+    warnings.push(
+      `已排除 ${offTermNames.size} 門非本學期（${ACTIVE_TERM.academicYear}學年${ACTIVE_TERM.semester}）`
+      + `開課的候選課程（${summarizeNames([...offTermNames])}）。`
+    );
+  }
+
+  if (offTermExplicit.length > 0) {
+    const detail = offTermExplicit
+      .slice(0, UNSCHEDULED_NAMES_IN_WARNING)
+      .map(course => `${course.name}（${course.scopeReason}）`)
+      .join('；');
+    const rest = offTermExplicit.length > UNSCHEDULED_NAMES_IN_WARNING
+      ? ` 等 ${offTermExplicit.length} 門`
+      : '';
+    warnings.push(
+      `你指定的課程中有 ${offTermExplicit.length} 門非本學期開課：${detail}${rest}。`
+      + '本方案仍保留這些課程，請自行確認是否可加選。'
     );
   }
 
