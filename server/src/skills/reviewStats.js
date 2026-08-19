@@ -67,6 +67,26 @@ export function calculateEasinessFromAverages({ avgCoolness, avgSweetness, avgWo
   return components.reduce((sum, value) => sum + value, 0) / components.length;
 }
 
+// m-estimate 收縮權重。實測 `Course_Reviews.review_count` 落在 4–8，取中位 5：
+// 評論數等於典型值時，課程自己的資料與母體先驗各佔約一半。
+export const SHRINKAGE_PRIOR_WEIGHT = 5;
+
+// 把單一課程的原始 easiness（可能只有 4-8 則評論撐起來）往母體先驗收縮，
+// 避免小樣本極端值（例如剛好 4 則全 5 分）壓過樣本數更多、更可信的課程。
+//
+// n=0（完全沒有評論）時代入公式就是 prior 本身，不需要另外處理「沒有證據」
+// 的特例——這正是呼叫端拿它當「無證據課程的中性分數」的原因。
+export function shrinkEasiness(rawEasiness, reviewCount, priorEasiness, m = SHRINKAGE_PRIOR_WEIGHT) {
+  if (!Number.isFinite(rawEasiness)) {
+    return null;
+  }
+  if (!Number.isFinite(priorEasiness) || m <= 0) {
+    return rawEasiness;
+  }
+  const n = Number.isFinite(reviewCount) && reviewCount > 0 ? reviewCount : 0;
+  return (n * rawEasiness + m * priorEasiness) / (n + m);
+}
+
 // 供 /api/courses/:id 與 /api/reviews/:courseId 共用，確保兩者數字一致。
 export function summarizeReviews(reviews = []) {
   const reviewCount = getTotalReviewCount(reviews);
@@ -93,4 +113,6 @@ export default {
   countBySentiment,
   calculateEasinessFromAverages,
   summarizeReviews,
+  SHRINKAGE_PRIOR_WEIGHT,
+  shrinkEasiness,
 };

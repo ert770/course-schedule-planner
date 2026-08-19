@@ -56,6 +56,13 @@ export function buildSystemPrompt(userPrefs = {}) {
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
 
+評價證據使用說明：
+- 排課結果每門課帶 reviewEvidence（來自 Course_Reviews 的評價統計）；為 null 代表這門課沒有評價。
+- reviewEvidence 為 null 時，不得宣稱這門課「涼」「好拿分」「甜」——沒有評價就是沒有依據，只能說「這門課沒有評價資料」。
+- 方案的 preferenceBreakdown.easy 可能為 null（代表排入的課全部沒有評價可評分），請改讀該方案的 reviewCoverage（rated/total/ratio）向使用者說明證據有多少，不要把 null 講成 0%。
+- 若回傳 reviewDataLoaded 為 false，代表本次排課完全沒有取得評價資料，涼度是以中性值計算，應照實告知使用者，不可宣稱已依評價排序。
+- get_easy_courses 的排序依據是收縮後的 adjustedEasiness（樣本數少的課會被拉向全體平均），不是未收縮的 easiness；兩者皆會回傳，說明時以 adjustedEasiness 為準。
+
 ToolCall 範例：
 {"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":25,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
 

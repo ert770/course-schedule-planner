@@ -20,6 +20,13 @@ import {
   getFailedRequiredCourses,
   getPassedCourseCodes,
 } from '../data/courseHistory.js';
+import {
+  buildReviewIndex,
+  buildReviewPrior,
+  deriveReviewEvidence,
+  getNeutralEasyScore,
+  EASY_SCORE_MAX,
+} from './courseReviewStats.js';
 
 // 校規：每學期上限 25 學分、下限 12 學分（四年級 9），超修申請後至多 30。
 // 見 `docs/COURSE_SELECTION_RULES.md`。先前寫死的 15／22 沒有出處。
@@ -34,6 +41,9 @@ const INTEREST_KEYWORD_SCORE = 40;
 const MAX_EASY_COURSE_SCORE = 100;
 const PREFERENCE_SCORE_EPSILON = 0.001;
 const UNSCHEDULED_NAMES_IN_WARNING = 3;
+// 涼度覆蓋率低於此比例時，主推方案要提醒使用者「涼度只由少數幾門課推得」，
+// 不能讓使用者把它當成整份課表的涼度。
+const LOW_REVIEW_COVERAGE_RATIO = 0.5;
 
 const CATEGORY_PRIORITY = {
   '必修': 0,
@@ -249,13 +259,16 @@ function getCourseKey(course) {
   return `id:${course.id}`;
 }
 
+// 涼度分數 0-100，來自課程評價（見 `courseReviewStats.deriveReviewEvidence`）。
+//
+// **回傳 null 代表「沒有評價可判斷」，不是「不涼」。** 呼叫端自己決定要用
+// 中性值（排序時每門課都得有名次）還是排除（聚合統計不必也不該猜）。
+//
+// 先前這裡靠課程描述的「涼／容易／輕鬆／高分／甜」關鍵字計分。實測 3560 筆
+// 只有 26 筆命中（0.7%），且「教室很涼」這類敘述會被判成涼課——關鍵字法在
+// 真實資料上既幾乎不動作，動作時還是錯的。
 function getEasyCourseScore(course) {
-  const desc = course.description || '';
-  let score = 0;
-  if (textIncludesAny(desc, ['涼', '容易', '輕鬆', '高分', '甜'])) score += 60;
-  if (textIncludesAny(desc, ['報告', '期末報告', '免考'])) score += 30;
-  if (textIncludesAny(desc, ['實作', '專題'])) score += 10;
-  return score;
+  return course.reviewEvidence?.easyScore ?? null;
 }
 
 function collectInterestKeywords(constraints) {
@@ -328,12 +341,22 @@ function getCompactness(plan) {
   return clamp01((maxDays - usedDays) / (maxDays - 1));
 }
 
+// 方案層的涼度：**只在有評價證據的課上平均**，回傳 null 代表整個方案沒有
+// 任何一門課帶評價。
+//
+// 這裡刻意與 `scoreCourse()`／`getEasyCourseScore()` 的「無證據給中性分」不
+// 同調——兩者回答的是不同問題：排序需要對每門候選課給名次，所以無證據時
+// 要有分數；這裡是**對使用者的宣稱**（「這個方案涼度 68%」），用非證據支撐
+// 宣稱是不誠實的，因此只採有證據的課，覆蓋率另外由 `plan.reviewCoverage` 回報。
+// 與 `weightedAverageScore()` 丟棄缺值而不當成 0 是同一個原則。
 function getEasiness(plan) {
-  if (plan.schedule.length === 0) return 0;
+  const scores = plan.schedule
+    .map(course => getEasyCourseScore(course))
+    .filter(score => score !== null);
 
-  const average = plan.schedule
-    .reduce((sum, course) => sum + getEasyCourseScore(course), 0) / plan.schedule.length;
+  if (scores.length === 0) return null;
 
+  const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
   return clamp01(average / MAX_EASY_COURSE_SCORE);
 }
 
@@ -341,20 +364,28 @@ function evaluatePreference(plan, constraints, profile) {
   const breakdown = {
     interest: getInterestCoverage(plan, constraints),
     compact: getCompactness(plan),
+    // number|null；null = 排入的課全部沒有評價證據，見 getEasiness() 的說明。
     easy: getEasiness(plan),
   };
 
-  const weightSum = profile.interest + profile.compact + profile.easy;
+  // 無證據的軸連同它的權重一起排除，不是以 0 分參與加權。以 0 參與會讓
+  // 「查不到涼度」直接扣掉使用者的偏好符合度，連帶稀釋其他有證據的軸——
+  // 那是用資料缺口懲罰使用者，不是誠實回報「這個維度無法評分」。
+  const axes = [
+    { value: breakdown.interest, weight: profile.interest },
+    { value: breakdown.compact, weight: profile.compact },
+    { value: breakdown.easy, weight: profile.easy },
+  ].filter(axis => axis.weight > 0 && axis.value !== null);
+
+  const weightSum = axes.reduce((sum, axis) => sum + axis.weight, 0);
   const score = weightSum === 0
     ? 0
-    : (breakdown.interest * profile.interest
-      + breakdown.compact * profile.compact
-      + breakdown.easy * profile.easy) / weightSum;
+    : axes.reduce((sum, axis) => sum + axis.value * axis.weight, 0) / weightSum;
 
   return { score, breakdown };
 }
 
-function scoreCourse(course, schedule, constraints, variant, requiredIds, scope) {
+function scoreCourse(course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore = EASY_SCORE_MAX / 2) {
   let score = 1000;
   const id = Number(course.id);
 
@@ -370,7 +401,10 @@ function scoreCourse(course, schedule, constraints, variant, requiredIds, scope)
   }
 
   if (variant.id === 'easy_score') {
-    score += getEasyCourseScore(course);
+    // 沒有評價的課給母體先驗換算的中性分，不給 0。給 0 會讓 95% 沒有評價的課
+    // 全部沉底，等於用「查不到」冒充「很硬」。完全沒有評價資料時
+    // `neutralEasyScore` 對每門課相同，是常數偏移，排序與改動前逐項一致。
+    score += getEasyCourseScore(course) ?? neutralEasyScore;
   }
 
   if (variant.id === 'interest') {
@@ -581,7 +615,11 @@ function collectExplicitCourseIds(constraints) {
 //   courses     解析過類別（核心選修／系外選修）與修課路徑的候選課程
 //   exclusions  依系外選修認列條件排除的課程與原因
 //   warnings    需提醒但不排除的事項
-function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
+function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), reviewContext = {}) {
+  const reviewIndex = reviewContext.index ?? new Map();
+  const reviewPrior = reviewContext.prior ?? { easiness: null, courseCount: 0, reviewCount: 0 };
+  const neutralEasyScore = getNeutralEasyScore(reviewPrior);
+
   const courses = [];
   const exclusions = [];
   const warnings = [];
@@ -593,9 +631,17 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
   const offTermNames = new Set();
   const offTermExplicit = [];
   let outsideExclusionCount = 0;
+  // 有評價卻因資格待確認（#13C）而被排除的課程要單獨統計。使用者看到
+  // 「涼課方案沒有通識」時，必須分得出來是「沒抓到評價」還是「抓到了但規則擋住」。
+  let unknownEligibilityWithReviews = 0;
+  let unknownEligibilityReviewCount = 0;
 
   for (const raw of candidateCourses) {
     const course = annotateCourseCategory(raw, scope);
+    // 評價證據在候選前處理階段附上，五個 variant 共用同一份結果。刻意放在
+    // term gate 與 eligibility gate **之前**——被排除的課也要帶著它，
+    // 才能統計「有評價但因資格待確認而未納入」的門數。
+    course.reviewEvidence = deriveReviewEvidence(reviewIndex, reviewPrior, course);
 
     // Roadmap #20：term 是比 eligibility 更外層的閘門——這門課這學期根本沒開，
     // 不管系所年級班別是否符合都不該被排入。這一段只處理繞過
@@ -623,6 +669,10 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
       if (!explicitIds.has(Number(course.id))) {
         unknownEligibilityNames.add(label);
         exclusions.push({ course, reason: course.eligibilityReason });
+        if (course.reviewEvidence) {
+          unknownEligibilityWithReviews += 1;
+          unknownEligibilityReviewCount += course.reviewEvidence.reviewCount;
+        }
         continue;
       }
 
@@ -727,6 +777,14 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
     );
   }
 
+  if (unknownEligibilityWithReviews > 0) {
+    warnings.push(
+      `已保守排除的資格待確認課程中有 ${unknownEligibilityWithReviews} 門有課程評價`
+      + `（共 ${unknownEligibilityReviewCount} 則），因適用對象規則尚未確認`
+      + '（roadmap #13C）而未納入涼度評分。'
+    );
+  }
+
   if (offTermNames.size > 0) {
     warnings.push(
       `已排除 ${offTermNames.size} 門非本學期（${ACTIVE_TERM.academicYear}學年${ACTIVE_TERM.semester}）`
@@ -748,7 +806,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set()) {
     );
   }
 
-  return { courses, exclusions, warnings, scope, explicitIds };
+  return { courses, exclusions, warnings, scope, explicitIds, neutralEasyScore };
 }
 
 function buildPlan(prepared, constraints, variant) {
@@ -769,7 +827,7 @@ function buildPlan(prepared, constraints, variant) {
 
   // #13：`Courses.type = '必修'` 是「某系所某年級的必修」，不是「這位學生的必修」。
   // 未依系所與年級收斂時，全校 2094 筆必修都會被當成這位學生的必修。
-  const { scope } = prepared;
+  const { scope, neutralEasyScore } = prepared;
 
   for (const course of candidateCourses) {
     if (isWatching(course, constraints)) {
@@ -906,8 +964,8 @@ function buildPlan(prepared, constraints, variant) {
 
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
     remaining.sort((a, b) => (
-      scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope)
-      - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope)
+      scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
+      - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
     ));
 
     const course = remaining.shift();
@@ -999,6 +1057,14 @@ function buildPlan(prepared, constraints, variant) {
   return plan;
 }
 
+// 「7 門課涼度 85%」與「7 門裡 1 門有評價、那門 85%」是完全不同的兩件事，
+// 只給一個百分比會讓使用者把後者當成前者。
+function buildReviewCoverage(plan) {
+  const total = plan.schedule.length;
+  const rated = plan.schedule.filter(course => Boolean(course.reviewEvidence)).length;
+  return { rated, total, ratio: total === 0 ? 0 : rated / total };
+}
+
 function uniquePlans(plans) {
   const seen = new Set();
   return plans.filter(plan => {
@@ -1019,6 +1085,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
     blockedPeriods: normalizeBlockedPeriods(rawConstraints.blockedPeriods),
   };
 
+  // 接線是否正常的訊號，與是否成功排出課表無關，因此在所有回傳路徑都帶上。
+  const reviewDataLoaded = Array.isArray(constraints.courseReviews) && constraints.courseReviews.length > 0;
+
   if (!Array.isArray(candidateCourses) || candidateCourses.length === 0) {
     return {
       success: false,
@@ -1032,6 +1101,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
       watchedCourses: [],
       unscheduledCourses: [],
       warnings: ['沒有可用的候選課程'],
+      reviewDataLoaded,
       message: '找不到符合條件的候選課程，請調整搜尋條件或偏好設定。',
     };
   }
@@ -1039,12 +1109,19 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
   const preferenceProfile = buildPreferenceProfile(constraints);
   const hasExpressedPreference = Object.values(preferenceProfile).some(weight => weight > 0);
 
+  // 評價索引與母體先驗對五個方案完全相同，在此做一次。母體先驗刻意由
+  // **傳進來的全部評價**計算，不是候選池——否則同一門課在不同搜尋條件下
+  // 會得到不同的收縮後涼度，那就是漂移。
+  const reviewIndex = buildReviewIndex(constraints.courseReviews);
+  const reviewPrior = buildReviewPrior(reviewIndex);
+
   // 類別解析（核心選修／系外選修／修課路徑）與系外選修認列條件對所有方案相同，
   // 在此做一次後共用。
   const prepared = prepareCandidates(
     candidateCourses,
     buildStudentScope(constraints),
-    collectExplicitCourseIds(constraints)
+    collectExplicitCourseIds(constraints),
+    { index: reviewIndex, prior: reviewPrior }
   );
 
   const plans = uniquePlans(
@@ -1054,6 +1131,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
         const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
         plan.preferenceScore = score;
         plan.preferenceBreakdown = breakdown;
+        plan.reviewCoverage = buildReviewCoverage(plan);
         return plan;
       })
       .sort((a, b) => {
@@ -1085,6 +1163,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
       watchedCourses: primary?.watchedCourses || [],
       unscheduledCourses: primary?.unscheduledCourses || [],
       warnings,
+      reviewDataLoaded,
       message: warnings[0] || '無法產生符合限制的課表。',
     };
   }
@@ -1092,6 +1171,29 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
   const allWarnings = [...new Set(plans.flatMap(plan => plan.warnings))];
   if (!hasExpressedPreference) {
     allWarnings.push('未設定興趣關鍵字、集中排課或涼課偏好，主推方案改以總學分決定，個人化程度有限。');
+  }
+
+  // 評價相關的誠實性警告。第一條不受偏好限制——沒有取得評價資料是接線壞掉的
+  // 訊號，必須大聲；專案已被「兩邊恆空、已修排除數月未生效」教訓過
+  // （見 `constraintService.js` 的 courseHistory 註解），同樣的靜默失效不能再發生。
+  if (!reviewDataLoaded) {
+    allWarnings.push(
+      '本次排課沒有取得任何課程評價資料，涼度無法評分；所有課程一律以中性涼度計算。'
+    );
+  } else if (preferenceProfile.easy === 1 && primary.reviewCoverage.rated === 0) {
+    allWarnings.push(
+      `你設定了涼課偏好，但方案「${primary.title}」排入的 ${primary.reviewCoverage.total} 門課`
+      + '全部沒有課程評價，涼度無法評分，主推方案改由其他偏好與總學分決定。'
+    );
+  } else if (
+    preferenceProfile.easy === 1
+    && primary.reviewCoverage.total > 0
+    && primary.reviewCoverage.ratio < LOW_REVIEW_COVERAGE_RATIO
+  ) {
+    allWarnings.push(
+      `方案「${primary.title}」的涼度僅由 ${primary.reviewCoverage.rated}／`
+      + `${primary.reviewCoverage.total} 門有評價的課推得，其餘課程沒有評價、未計入涼度。`
+    );
   }
 
   const selectionReason = hasExpressedPreference
@@ -1127,6 +1229,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
     warnings: allWarnings,
     preferenceProfile,
     hasExpressedPreference,
+    reviewDataLoaded,
     message,
   };
 }

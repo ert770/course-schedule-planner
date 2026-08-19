@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-17
+
+1. [評價驅動的涼度評分（Roadmap #4）](./2026-08-17-review-driven-easiness.md)
+
 ## 2026-08-15
 
 1. [#20 Active Term 過濾與候選課程可追溯 metadata](./2026-08-15-active-term-and-eligibility-metadata.md)

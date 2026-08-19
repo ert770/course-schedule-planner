@@ -83,6 +83,15 @@ System prompt 必須讓 Agent：
 Profile 的 `courseHistory`，依最新一次修習結果自動推導，避免模型或 client 指定不存在的
 失敗紀錄。
 
+### 課程評價不屬於工具參數
+
+`courseReviews` 不得出現在 `run_csp_scheduler` 的參數中，理由與 `courseHistory` 相同：
+沒有任何管道能讓模型可靠得知每門課的真實評價分數，讓模型自行提供只會誘導編造。
+
+`scheduleService.js` 從 `getAll('reviews')` 取得 `Course_Reviews` 全表後，經
+`buildScheduleConstraints()` 的 `context` 參數注入，兩條路徑（REST 與 Chat）共用同一份資料，
+Agent 完全不需要、也不能夠自己提供評價分數。
+
 ### 學分上下限與超修
 
 未指定 `minCredits` / `maxCredits` 時，排課引擎依校規給預設值：上限 **25**、下限 **12**（`gradeLevel` 為 4 時下限 **9**）。
@@ -98,6 +107,20 @@ Profile 的 `courseHistory`，依最新一次修習結果自動推導，避免�
 使用者表達興趣、想集中排課或想修涼課時，Agent **必須**把對應參數帶進 `run_csp_scheduler`。未帶入時系統只能改以總學分挑選方案，推薦會失去個人化，且回應的 `hasExpressedPreference` 會是 `false`。
 
 排課結果的每個方案含 `preferenceScore`（0~1 的偏好符合度），Agent 應用它向使用者說明為何主推該方案。
+
+### 評價證據的使用限制
+
+排課結果每門課帶 `reviewEvidence`（來自 `Course_Reviews` 的評價統計），為 `null` 代表這門課沒有
+評價。**`reviewEvidence` 為 `null` 時，Agent 不得宣稱這門課「涼」「好拿分」「甜」**——沒有評價
+就是沒有依據，只能明說「這門課沒有評價資料」。這是 `AGENTS.md` 「不得編造課程、教師、時間、
+學分、評價或畢業規則」的直接要求。
+
+方案的 `preferenceBreakdown.easy` 可能為 `null`（代表排入的課全部沒有評價可評分），此時 Agent
+應改讀該方案的 `reviewCoverage`（`{ rated, total, ratio }`）向使用者說明證據有多少，不得把 `null`
+講成 0%。
+
+`get_easy_courses` 的排序依據是收縮後的 `adjustedEasiness`（樣本數少的課會被拉向全體平均），
+不是未收縮的 `easiness`；兩者皆會回傳，Agent 說明時以 `adjustedEasiness` 為準。
 
 ### 陣列參數語意
 

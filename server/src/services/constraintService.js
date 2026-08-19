@@ -44,7 +44,7 @@ function buildBlockedPeriods(input, prefs) {
   return blockedPeriods;
 }
 
-export function buildScheduleConstraints(input = {}, prefs = {}) {
+export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
   return {
     // #13：必修範圍必須依學生的系所與年級收斂，否則全校 2094 筆必修都會被
     // 當成這位學生的必修。這兩個值先前沒有帶進排課限制，排課引擎無從判定。
@@ -90,6 +90,12 @@ export function buildScheduleConstraints(input = {}, prefs = {}) {
     // 兩邊恆為 `undefined` 與 `[]`，結果永遠是空陣列——這正是已修排除從未生效的原因之一。
     // 已修課號改由 `skills/scheduler.js` 呼叫 `data/courseHistory.js` 當場推導。
     courseHistory: prefs.courseHistory ?? [],
+
+    // 課程評價直通，**不做 request／偏好合併**——與 courseHistory 同理：沒有
+    // 呼叫端會在 request 送評價（`promptService.js` 的 tool 契約也不含它）；
+    // 寫成雙來源合併只會暗示一個不存在的覆蓋能力，還讓 Agent 有機會塞造假評分。
+    // 由 `scheduleService.js` 從 `getAll('reviews')` 取得後放進 `context`。
+    courseReviews: context.courseReviews ?? [],
 
     selectedCourseIds: pickRequestList(input.selectedCourseIds),
     watchingCourseIds: pickRequestList(input.watchingCourseIds),

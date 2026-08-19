@@ -99,6 +99,15 @@ node --check src/app.js
 | C4 | `allowCreditOverload` 為 true | 上限放寬至 30 學分；未開啟時維持 25 |
 | C5 | 同一天 6 門不衝堂的課 | 全部可排入，無「每日 N 門」限制 |
 | C6 | 呼叫端指定 `maxCoursesPerDay: 3` | 該日只排入 3 門 |
+| V20 | 同批候選，A 帶 `courseReviews`、B 不帶 | 有評價時 `easy_score` 方案選涼課；無評價時中性分相同、`breakdown.easy` 為 `null` |
+| V21 | 「有評價且很硬」vs「完全沒評價」 | 優先排入沒評價那門，證明無評價未被當成 0 |
+| V22 | 描述含「涼」字但無評價 vs 真正有涼課評價 | 後者勝出，前者不因關鍵字取得涼課加分（釘住關鍵字誤判的修復） |
+| V23 | `preferEasyCourses: true` 且候選全無評價 | `breakdown.easy` 為 `null`、`reviewCoverage.ratio` 為 0、發出警告 |
+| V24 | 同 V23 併設 `preferCompact: true` | `preferenceScore` 只由 compact 軸決定，不被 null 的 easy 軸拖累成 0 |
+| V25 | 完全不帶 `courseReviews`（呼叫端漏接） | `reviewDataLoaded` 為 `false` 並發出警告；不影響既有排序邏輯 |
+| V26 | 4 則全高分 vs 8 則中高分 | 收縮後差距小於未收縮差距的一半 |
+| V27 | `schedule[]` 每門課 | 都有 `reviewEvidence` 鍵；無評價時為 `null` 而非 `undefined` |
+| V28 | 有評價的課因 `eligibility === 'unknown'` 被排除 | 警告統計「有課程評價但因資格待確認未納入」的門數與則數 |
 
 ### 班別收斂（必修不得換班）
 
@@ -187,6 +196,54 @@ node --check src/app.js
 | 編號 | 斷言 |
 | --- | --- |
 | A1/A5 | `database.js` 原始碼不再出現 `completed_courses`，也不再產生或接受 `completedCourseCodes`、`completedCourseNames`、`completedCourseIds`、`completedCourses`、`completedCredits`、`earnedCredits` 等修課歷史衍生欄位 |
+
+### 課程評價派生與涼課排行一致性
+
+`Course_Reviews` 一列代表彙總後的多則評價（見 `docs/DATA_SCHEMA.md`）。涼度評分改用結構化評分
+（`sweetness`／`coolness`／`workload`／`overall`）取代課程描述關鍵字，並以 m-estimate 收縮
+（`(n×raw + m×prior)/(n+m)`，`m=5`）避免小樣本極端值支配排序。編號比照 `courseHistory.test.js`
+（H1–H3）→ `scheduler.test.js`（H4–H8）的既有慣例：純函式測試在前，端到端測試接續其後，
+同一序列橫跨多個檔案。
+
+`server/test/reviewStats.test.js` 的 `shrinkEasiness()` 測試（V1–V5）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| V1 | 人工算好的 m-estimate 值 | 精確符合公式計算 |
+| V2 | `n` 增大（4 → 50） | 結果單調趨近 `rawEasiness` |
+| V3 | `priorEasiness` 為 `null` 或非有限數 | 原樣回傳 `rawEasiness`，不噴例外 |
+| V4 | `rawEasiness` 為 `null` | 回傳 `null`，缺證據不可能收縮出分數 |
+| V5 | `m <= 0` | 原樣回傳 `rawEasiness`（收縮關閉） |
+
+`server/test/courseReviewStats.test.js`（課程 ↔ 評價對應，V6–V15）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| V6 | `review.courseId` 與 `course.id` 型別不一致 | index 仍對得上（統一用 `String()`） |
+| V7 | 評價列 `courseId` 為 `null`（section join 失敗） | 該列丟棄，不會全聚成同一鍵 |
+| V8 | 課程沒有任何評價 | 回 `null`，不是 0 也不是空物件 |
+| V9 | 評價列存在但四個涼度維度全缺 | 仍回 `null`（有列 ≠ 有證據） |
+| V10 | `easinessToScore`：1／3／5／0.5／6 | 0／50／100／0／100（超界 clamp） |
+| V11 | 一列 `reviewCount:8` vs 八列 `reviewCount:1` | 結果相同，證明重用 `weightedAverageScore`，沒有自己重寫一份未加權版 |
+| V12 | `buildReviewPrior` | 只由有評價的課算，每門貢獻一次；與之後查詢哪門課無關 |
+| V13 | `getNeutralEasyScore(prior)` | 等於先驗換算後的分數；先驗缺失時退回 50 |
+| V14 | `deriveReviewEvidence` 完整組裝 | 同時含未收縮 `easiness` 與收縮後 `adjustedEasiness`、`easyScore`（0–100） |
+| V15 | `deriveReviewEvidence` 對沒有評價的課 | 回傳 `null` |
+
+`server/test/reviewSearch.test.js`（`rankEasyCourses()` 純函式，V16–V19）——這是「涼課排行榜與排課
+引擎不一致」的直接迴歸測試：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| V16 | 課 A（4 則、原始分較高）vs 課 B（8 則、原始分較低） | 收縮後排序不再機械地把 A 排第一 |
+| V17 | 排行結果中任一課程 | 同時帶 `easiness`（未收縮）與 `adjustedEasiness`（收縮後），對低樣本課不相等 |
+| V18 | 課程 `reviewCount === 0` | 被排除，不出現在結果中 |
+| V19 | 對同一組 `reviews` 分別呼叫 `buildReviewPrior()` 與 `rankEasyCourses()` 內部算出的先驗 | 兩者相等，證明排行榜與排課引擎共用同一個母體先驗 |
+
+`server/test/scheduler.test.js`（`generateSchedule()` 端到端，V20–V28）見上方主表。
+
+`server/test/database-contract.test.js`（連真實 MySQL）：釘住 `Course_Reviews` 覆蓋率、五個評分
+欄位值域、`review.courseId` 可對回實際 section、母體 easiness 落在合理範圍，資料漂移時測試會響。
 
 ## #12B 通識分類測試
 

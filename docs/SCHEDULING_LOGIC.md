@@ -383,10 +383,7 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 選修推薦需考慮：
 
 - 學生興趣。
-- 教授容易度。
-- 課程難易度。
-- 給分甜度。
-- 評價推薦分數。
+- 教授容易度、課程難易度、給分甜度、評價推薦分數：來源是 `Course_Reviews` 的結構化評分（`sweetness`／`coolness`／`workload`／`overall`），**不是**課程描述關鍵字。詳見下方「涼度評分與評價覆蓋率」。
 - 是否可集中排課。
 - 是否能空出休息日。
 
@@ -394,8 +391,27 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 
 - 是否符合興趣。
 - 是否容易取得高分，例如 95 分以上。
-- 是否為涼課。
+- 是否為涼課：同樣來自 `Course_Reviews`，不是描述關鍵字。
 - 是否免考試，只需報告。
+
+## 涼度評分與評價覆蓋率
+
+`server/src/skills/courseReviewStats.js`（課程層派生）與 `server/src/skills/reviewStats.js`（統計數學）共同實作，`scheduler.js` 的「涼課與高分優先」方案與 `GET /api/reviews/easy` 排行榜共用同一套邏輯。
+
+**為什麼不用課程描述關鍵字**：舊版靠「涼／容易／輕鬆／高分／甜」等字樣計分，真實資料庫 3560 筆課程只有 26 筆（0.7%）命中，且會誤判——評價標籤裡的「教室很涼」（形容冷氣強）會被判成涼課。改用結構化評分後不再有這個問題。
+
+**涼度計算公式**：
+
+1. `easiness = mean([coolness, sweetness, 6-workload, overall])`（`reviewStats.calculateEasinessFromAverages`），四個維度皆缺值時回傳 `null`（未收縮，1–5 尺度）。
+2. **m-estimate 收縮**（`reviewStats.shrinkEasiness`）：`adjustedEasiness = (n×easiness + m×prior) / (n+m)`，`n` 為該課評論數、`prior` 為母體平均、`m=5`（實測 `review_count` 落在 4–8，取中位數）。樣本數少的課會被拉向母體平均，避免「剛好 4 則全 5 分」穩定壓過「8 則平均 4.5 分」的課。
+3. **母體先驗**（`courseReviewStats.buildReviewPrior`）由呼叫端傳入的**全部**評價計算，不是候選池，否則同一門課在不同搜尋條件下會得到不同的收縮後涼度。
+4. **1–5 → 0–100 尺度映射**（`courseReviewStats.easinessToScore`），供 `scoreCourse()` 與其他計分項目（`類別優先度 × 120`、`學分 × 12`）疊加，維持原有相對權重。
+
+**沒有評價的課不是 0 分**：`getEasyCourseScore(course)` 對沒有評價的課回傳 `null`，`scoreCourse()` 的排序邏輯改用「中性分」（母體先驗換算後的分數，即 m-estimate 在 `n=0` 時的極限）而不是 0。給 0 分等於斷言「查不到評價 = 這門課很硬」，而 3560 個班次只有 181 個（5.1%）有評價，這樣的預設會讓 95% 的課全部沉底。整批都沒有評價資料時，中性分退回尺度正中央（50 分）。
+
+**方案層涼度（`preferenceBreakdown.easy`）與課程層不同調，是刻意設計**：課程層排序需要每門課都有分數，因此無證據給中性分；方案層是「這個方案涼度 68%」這種對使用者的宣稱，只在**有評價證據的課**上取平均，無證據的課不參與，且可能回傳 `null`（代表整個方案沒有任何一門課帶評價）。覆蓋率另外由 `plan.reviewCoverage`（`{ rated, total, ratio }`）回報，讓使用者分得清楚「涼度 68%」是由幾門課推出來的。
+
+**已知限制**：181 筆評價中最大一塊（68 筆通識）因 #13C（B～F 類正式適用對象規則尚未確認）被保守排除，不會進入自動排課，因此不影響涼度評分。實際會生效的評價依候選池而定，warnings 會列出「有課程評價但因資格待確認未納入」的統計。
 
 ## 硬性限制
 
@@ -502,11 +518,13 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 - 核心選修與修課路徑解析。
 - 系外選修認列條件。
 - 學期學分與畢業學分分離。
+- 涼課評分改用結構化評價（`Course_Reviews`），取代課程描述關鍵字（見「涼度評分與評價覆蓋率」）。
 
 仍需補強：
 
 - 數位課程畢業門檻。
-- 推薦分數算法。
+- 評價分數的 per-user 個人化加權（同一難度數值對不同使用者相反符號）；目前是母體共用的涼度，屬 roadmap #5。
+- `has_midterm`／`has_group_project`／`grading_scheme`／`language` 課程欄位；`noMidterm`／`noGroupReport`／`englishTaught` 三個偏好仍用描述關鍵字判定，因欄位需要對共用 MySQL 做 `ALTER TABLE`，屬需與組員協調的 D 類 rollout。
 - 通識基礎 16 學分的完整對照（目前只實作「不計畢業學分」的那 3 學分）。
 - 核心選修 12 學分的達成度追蹤（目前只做到分類與優先度，未累計缺口）。
 

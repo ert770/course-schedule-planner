@@ -338,6 +338,7 @@ request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/co
 
 - **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
 - **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 `prefs.courseHistory`。修課歷史沒有任何呼叫端會在 request 裡送（REST 不送，AI Agent 的 `run_csp_scheduler` 工具參數也不含它），寫成雙來源合併只會暗示一個不存在的覆蓋能力，還可能讓模型塞入捏造的修課紀錄。
+- **`courseReviews`**（Roadmap #4）：與 `courseHistory` 同理，**純伺服器端注入、不接受 request 覆蓋**。`scheduleService.js` 從 `getAll('reviews')` 取得 `Course_Reviews` 全表後放進 `context`，request body 與 AI Agent 的 tool 參數都不含這個欄位——沒有任何管道能讓客戶端塞入捏造的評價分數。
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
 - **`selectedCourseIds`、`watchingCourseIds`、`courseStates`**：屬於本次操作的當下狀態，不從已儲存偏好回填。
 - **`mondayFree`**：會展開成週一第 1~14 節的 `blockedPeriods`，並與既有封鎖時段合併。
@@ -365,9 +366,14 @@ Response:
   "unscheduledCourses": [],
   "watchOnly": false,
   "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
-  "hasExpressedPreference": true
+  "hasExpressedPreference": true,
+  "reviewDataLoaded": true
 }
 ```
+
+`reviewDataLoaded`（Roadmap #4）表示這次排課是否取得了任何 `Course_Reviews` 資料。為 `false`
+代表接線異常（呼叫端沒帶 `courseReviews` 或資料庫回空），不是「沒有評價可用所以正常忽略」——
+此時所有課程的涼度一律以中性值計算，`warnings` 會明確告知。與成功與否無關，成功與失敗回應都會帶上。
 
 `watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
 
@@ -401,6 +407,7 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `eligibilitySource`（Roadmap #20） | `eligibility` 結論套用的規則代號，供追查來源 |
 | `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學期 |
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明 |
+| `reviewEvidence`（Roadmap #4） | 課程評價證據物件，`null` 代表這門課沒有評價，**不是** 0 分。有值時包含 `reviewCount`、`avgSweetness`／`avgCoolness`／`avgWorkload`／`avgOverall`／`avgDifficulty`／`avgRecommend`、`positiveCount`／`negativeCount`／`neutralCount`、`easiness`（1–5，未收縮）、`adjustedEasiness`（1–5，m-estimate 收縮後）、`easyScore`（0–100，排課實際採用）、`priorEasiness`、`shrinkagePriorWeight`、`source`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」 |
 
 `category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」；`term`／
 `eligibilitySource`／`scopeReason` 見同檔案的「Active Term」與「候選課程的可追溯
@@ -413,11 +420,21 @@ metadata」兩節。
 ```json
 {
   "preferenceScore": 0.214,
-  "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0 }
+  "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0.68 },
+  "reviewCoverage": { "rated": 5, "total": 8, "ratio": 0.625 }
 }
 ```
 
 `plans` 依 `success` → 是否達最低學分 → `preferenceScore` → `totalCredits` 排序，`plans[0]` 即為主推方案，其內容會複製到頂層 `schedule`。
+
+`preferenceBreakdown.easy`（Roadmap #4）改為由已排入且**有評價**課程的 `adjustedEasiness` 平均而得，
+不再是課程描述關鍵字命中率。**可能為 `null`**——代表這個方案排入的課全部沒有評價，無法評分，
+此時該軸連同權重一起從 `preferenceScore` 的加權平均中排除，不會以 0 分拉低分數。
+
+`reviewCoverage`（Roadmap #4）說明 `preferenceBreakdown.easy` 是由幾門課推出來的：`rated` 為方案中帶
+`reviewEvidence` 的課程數、`total` 為方案總課程數、`ratio` 為兩者比值。「涼度 68%」與「涼度 68%但只
+由 1／8 門課推得」是完全不同的兩件事，只讀 `preferenceBreakdown.easy` 而不看 `reviewCoverage` 會誤判
+可信度。
 
 ### `POST /api/schedule/validate`
 
@@ -527,6 +544,20 @@ Response:
 ### `GET /api/reviews/easy?limit=10`
 
 Returns courses ranked by derived easiness score from `Course_Reviews`.
+
+排序依據（Roadmap #4）是 **`adjustedEasiness`**（m-estimate 收縮後的分數），**不是**
+`easiness`（未收縮的原始加權平均）。兩者皆會回傳：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `easiness` | 未收縮，1–5 尺度。單一課程自己的評價原始算出來的分數，不管評論數多寡 |
+| `adjustedEasiness` | 收縮後，1–5 尺度。排序實際採用；評論數少的課會被拉向母體平均 |
+| `reviewCount` | 該課評論數（加權後，非資料列數） |
+
+**這是一次行為變更**：舊版直接用 `easiness` 排序，樣本數少的課（例如剛好 4 則評論全 5 分）
+會穩定壓過樣本數更多、更可信的課（例如 8 則評論平均 4.5 分）。改用 `adjustedEasiness` 後，
+這份排行榜與排課引擎「涼課與高分優先」方案採用同一套邏輯（`courseReviewStats.js`），不會再
+出現「涼課排行榜第一名沒被排進涼課方案」的不一致。
 
 ### `GET /api/reviews/:courseId`
 

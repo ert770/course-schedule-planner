@@ -10,9 +10,11 @@
 
 ## 最後更新
 
-2026-08-14（完成 #12、#13B、#18、#19 的進度回填；#13B 以現行 562 個班級名稱重新核對並完成 unknown eligibility）
+2026-08-17（完成 #4：評價聚合層接進排課引擎與 `/api/reviews/easy` 排行榜，取代課程描述關鍵字；#5、#10、#26 隨之回填進度）
 
-前次更新：2026-08-09（#13 拆成 #13A～#13D；依程式碼盤點補上 #4、#18、#19、#20、#21、#23、#26、#28、#31、#35、#36 的既有進度）
+前次更新：2026-08-14（完成 #12、#13B、#18、#19 的進度回填；#13B 以現行 562 個班級名稱重新核對並完成 unknown eligibility）
+
+再前次：2026-08-09（#13 拆成 #13A～#13D；依程式碼盤點補上 #4、#18、#19、#20、#21、#23、#26、#28、#31、#35、#36 的既有進度）
 
 > **2026-08-09 盤點方式**：狀態不是依印象或文件推定，而是逐一讀取 `server/src`、`client/src` 與 `server/test` 的實際程式碼後判定。凡標成「已完成」者，本文件均指出其實作位置或釘住它的測試；凡標成「尚未完成」者，均指出缺少的具體欄位、模組或測試。多項任務因此由「⬜ 未開始」改為「🟡 部分完成」——原本的標示低估了已完成的前置工作。
 
@@ -47,13 +49,13 @@
 | 1 | 修掉方案排序的自相矛盾：用偏好符合度決定 `plans[0]` | ✅ 已完成 | 無 |
 | 2 | 埋互動 log：記錄推薦清單、最終選擇、加選後退選 | ⬜ 未開始 | #18、#29、#33 |
 | 3 | 偏好從硬過濾改成軟懲罰 | ⬜ 未開始 | 無 |
-| 4 | 把評分方式結構化：新增課程欄位並從 reviews 聚合難度甜度 | 🟡 部分完成 | 無 |
-| 5 | 把 reviews 分數接進 `scoreCourse`，加權方向依使用者而異 | ⬜ 未開始 | #4 |
+| 4 | 把評分方式結構化：新增課程欄位並從 reviews 聚合難度甜度 | ✅ 已完成（2026-08-17） | 無（DDL 欄位另列 D 類） |
+| 5 | 把 reviews 分數接進 `scoreCourse`，加權方向依使用者而異 | 🟡 部分完成（2026-08-17） | #4 |
 | 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⬜ 未開始 | #2、#29、#31；另需足夠互動樣本 |
 | 7 | 以個人化權重向量取代 5 個固定 variant | ⬜ 未開始 | #2、#5、#30 |
 | 8 | 先修關係與多學期路徑規劃 | ⬜ 未開始 | #19、#20、#21、#23 |
 | 9 | 探索機制：小比例隨機與多樣性重排 | ⬜ 未開始 | #2、#21、#30、#36 |
-| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | ⬜ 未開始 | #4、#21、#22 |
+| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 部分完成（2026-08-17） | #4、#21、#22 |
 | 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ✅ 已完成 | 無 |
 | 12 | 課程類別不完整：資料庫只有必修／選修，缺通識、核心選修、系外選修 | ✅ 已完成 | 無（歷史畢業認列另屬 #23） |
 | 13A | 資工系一般班級必修 scope | ✅ 已完成 | 無 |
@@ -287,37 +289,43 @@ flowchart LR
 
 ## #4 把評分方式結構化
 
-**狀態**：🟡 部分完成（2026-08-08 更新）——**評價聚合的前置工作已完成，但 scheduler scoring 尚未接上**
+**狀態**：✅ 已完成（2026-08-17）——評價聚合層已接進排課引擎；DDL 欄位與 per-user 加權另列後續任務
 
-新增 `has_midterm` / `has_group_project` / `grading_scheme` 等欄位進 courses 表；從 reviews 聚合難度甜度；修正 `schema.sql` 的 category CHECK 與 `CATEGORY_PRIORITY` 不一致；補上 `language` 欄位。
+詳見 [評價驅動的涼度評分變更報告](./2026-08-17-review-driven-easiness.md)。
 
-### 已完成：評價聚合層
+### 已完成
 
-`server/src/skills/reviewStats.js` 已提供結構化的聚合結果，不再需要從 description 撈關鍵字：
+- `server/src/skills/reviewStats.js` 已提供結構化聚合（`weightedAverageScore()`、`summarizeReviews()`、`calculateEasinessFromAverages()`、`countBySentiment()`），現新增 `shrinkEasiness()`（m-estimate 收縮，`m=5`）。
+- 新增 `server/src/skills/courseReviewStats.js`：課程 ↔ 評價對應、母體先驗、1–5→0–100 尺度映射、`deriveReviewEvidence()`。
+- **`scheduler.js` 已 import 並使用評價資料**：`getEasyCourseScore()`、`getEasiness()`、`evaluatePreference()`、`scoreCourse()` 的 `easy_score` 分支全數改用結構化評分，取代原本「涼／容易／輕鬆／高分／甜」關鍵字判斷（真實資料命中率僅 0.7%，且會誤判「教室很涼」為涼課）。
+- 沒有評價的課給母體先驗換算的中性分，不給 0（詳見 `docs/DECISIONS.md` ADR-006）；方案層涼度只在有證據的課上平均，另回傳 `plan.reviewCoverage`（ADR-008）。
+- `GET /api/reviews/easy` 同步改用收縮後分數排序，消除「涼課排行榜第一名沒被排進涼課方案」的不一致（ADR-007）。
+- 評價資料實測：`Course_Reviews` 181 列 / `Course_Sections` 3560（覆蓋率 5.1%），全部 114-下學期、全部選修。對資工三學生，181 筆中只有 75 筆（`eligible`）能真正進入自動排課，最大一塊（68 筆通識）卡在 #13C。
+- 測試：`ttlCache.test.js`（TC1–4）、`reviewStats.test.js` 新增 shrinkEasiness（V1–5）、`courseReviewStats.test.js`（V6–15）、`reviewSearch.test.js`（V16–19）、`scheduler.test.js`（V20–28）、`database-contract.test.js` 新增三則真實 MySQL 契約測試。`npm test` 由 365 增至 407，全數通過，S1–S10 逐項確認無回歸。
 
-- `weightedAverageScore()`：依 `getReviewWeight()` 做加權平均，而非簡單平均。
-- `summarizeReviews()`：回傳 `avgDifficulty`、`avgSweetness`、`avgCoolness`、`avgWorkload`、`avgOverall` 及評價則數。
-- `calculateEasinessFromAverages()`：由涼度、甜度、作業量與整體評分推導「好過程度」，取代原本「課程文字是否出現涼／容易／高分」的關鍵字判斷。
-- `countBySentiment()`：正負面評價則數。
-- regression：`server/test/reviewStats.test.js`。
+### 明確不在本次範圍（移出 #4，不再視為缺口的一部分）
 
-### 尚未完成：接進排課評分
-
-**`server/src/skills/scheduler.js` 目前完全沒有 import `reviewStats`。** `scoreCourse()` 仍以文字關鍵字計分，因此：
-
-- 「涼課高分優先」方案的加分依據仍是課程描述字串，不是 `avgCoolness` / `avgSweetness`。
-- `calculateEasinessFromAverages()` 的結果沒有任何排課路徑會讀到。
-- 這是 #5 的實際內容；#4 的資料面已備妥，卡點在 scheduler 端接線。
-
-課程表欄位（`has_midterm`、`has_group_project`、`grading_scheme`、`language`）仍未新增，`noMidterm`、`noGroupReport`、`englishTaught` 三個偏好因此仍然失效。
+- **`has_midterm` / `has_group_project` / `grading_scheme` / `language` 課程欄位**：需對共用 MySQL 做 `ALTER TABLE`，屬與 #18 `student_id` migration 同性質、需與組員協調的 D 類 rollout。`noMidterm`（真實命中率 0.1%）、`noGroupReport`、`englishTaught` 三個偏好因此仍用描述關鍵字判定；改判定方式會讓候選集歸零，屬 #3（硬過濾改軟懲罰）的範圍，不屬 #4。
+- **`schema.sql` 的 category CHECK 修正**：前提已失效。`server/src/db/schema.sql` 是 legacy SQLite 死檔，其 `reviews` 表連 `sweetness`/`overall` 等欄位都沒有，沒有任何程式讀取它。此項作廢，不再視為待辦。
+- 已實測確認 `Reviews_tags`（314 個相異自由標籤，含「教室很熱」「追星必備」等雜訊）不可用來推導上述課程屬性欄位，見 `docs/DATA_SCHEMA.md`。
 
 ---
 
 ## #5 把 reviews 分數接進 scoreCourse
 
-**狀態**：⬜ 未開始（卡 #4）
+**狀態**：🟡 部分完成（2026-08-17 更新）——母體共用的涼度評分已接上，per-user 個人化加權方向未做
 
-評價分數需個人化加權：同一難度數值對不同使用者要有相反符號。
+### 已完成（本次隨 #4 一併完成的部分）
+
+`scoreCourse()` 已讀取 `reviewStats`／`courseReviewStats` 的結構化評價，不再是純文字關鍵字。這是「把
+reviews 分數接進 scoreCourse」字面上的內容，因此本項由 ⬜ 改為 🟡。
+
+### 尚未完成：per-user 加權方向
+
+評價分數目前是**母體共用**的：所有使用者看到同一門課的涼度分數相同。roadmap 原始描述的「同一難度數值
+對不同使用者要有相反符號」（例如同一門課，怕死背的學生覺得硬、喜歡背誦的學生覺得涼）需要先有使用者
+偏好強度模型——而 `buildPreferenceProfile()` 目前只有 0/1 二元權重，這部分會連帶拖進 #7（連續權重
+向量）與 #2（互動 log，用於學習權重方向）。維持卡在 #2、#30 之後才能真正做到個人化符號。
 
 ---
 
@@ -371,7 +379,7 @@ flowchart LR
 
 ## #10 修復多方案塌縮
 
-**狀態**：⬜ 未開始（卡 #4、#21、#22）
+**狀態**：🟡 部分完成（2026-08-17）——根因二（涼課評分恆為 0）已緩解，根因一（必修互相衝堂）未動，仍卡 #21、#22
 
 **相依**：#4、#21、#22
 
@@ -399,6 +407,13 @@ flowchart LR
 **根因二：variant 評分函式退化為同一個**
 
 `interest` variant 的 `getInterestScore` 在使用者未提供關鍵字時恆為 0；`easy_score` variant 的 `getEasyCourseScore` 因涼課關鍵字 0 命中而恆為 0。兩者評分函式因此與 `required_first` 完全相同，必然產生同一份課表。`max_credits` 亦常與其他 variant 重合。
+
+**根因二已由 #4（2026-08-17）部分緩解**：`getEasyCourseScore` 改用結構化評價後不再恆為 0。以 75 筆
+「eligible 且有評價」的候選課測試，`easy_score` variant 確實產生與 `required_first` 不同的課表（例如
+「電子商務」被「商用英文會話(二)」取代），去重後方案數由 2 增至 3。**但根因一（必修互相衝堂、低年級
+無填充空間）完全未動**，且評價覆蓋率只有 5.1%，多數學生的實際候選池仍會退回塌縮——demo 帳號
+`D1249697` 實測 8 門候選中只有 1 門有評價（12.5%），去重後仍只剩 1 個方案。#10 因此維持部分解決，
+不宣告完成。
 
 **與 #7 的關係**：本任務是過渡修復，長期由連續權重向量取代固定 variant。
 
@@ -1244,10 +1259,22 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 **尚未完成：reason 還不是 evidence-based**
 
 - 目前的 `reason` 是**產生器自己寫的字串**（例如「必修優先」），不是指向具體證據的結構化物件。沒有 `evidence` 欄位可以指回 Profile 欄位、review 統計或規則來源。
-- **沒有引用任何評價統計**——因為 #4／#5 尚未接線，`reviewStats` 的 `avgDifficulty`、`avgSweetness` 根本沒有進入 scheduler。
 - 沒有「替代課為何落選」的比較資訊，也沒有不確定性標示。
 - 「更改單一偏好後 reason 與分數同步改變」無法驗證，因為 reason 不含分數組成。
 - 沒有 explanation faithfulness 測試（那是 #37）。
+- `selectedBecause`、`matchedPreferences`、`requiredRules`、`alternativesRejected`、`constraintTradeoffs`、`confidence`、`dataSources` 一個都還沒做。
+
+**新完成（2026-08-17，隨 #4 一併提供）**
+
+- **`reviewEvidence` 已提供**：每門排入的課帶完整證據物件（`reviewCount`、四個維度平均分、
+  未收縮 `easiness`、收縮後 `adjustedEasiness`、0–100 的 `easyScore`、`priorEasiness`），無評價時
+  明確為 `null`。這是實作範圍列出的四個欄位（`selectedBecause`、`matchedPreferences`、
+  `requiredRules`、`reviewEvidence`）中唯一完成的一個——其餘三個刻意不在本次做，避免在其餘三
+  個介面還沒設計清楚前搶先發明。
+- 「評價不足或資格未知時明確標示，不產生涼、好拿分等無證據說法」的規則已在 `docs/PROMPT_DESIGN.md`
+  的「評價證據的使用限制」與 `promptService.js` 的 system prompt 明文落實。
+- 已由 #4 補齊「沒有引用任何評價統計」這條舊缺口——`reviewStats` 的聚合結果現在確實進入
+  scheduler，見 [評價驅動的涼度評分變更報告](./2026-08-17-review-driven-easiness.md)。
 
 ---
 

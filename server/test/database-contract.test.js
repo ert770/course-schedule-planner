@@ -75,6 +75,8 @@ let getAll;
 let parseClassName;
 let getAbbreviations;
 let normalizeDepartment;
+let buildReviewIndex;
+let buildReviewPrior;
 
 before(async () => {
   if (!DB_CONFIGURED) return;
@@ -84,6 +86,7 @@ before(async () => {
   ({ parseClassName } = await import('../src/skills/courseScope.js'));
   ({ getAbbreviations } = await import('../src/data/departmentMapping.js'));
   ({ normalizeDepartment } = await import('../src/utils/text.js'));
+  ({ buildReviewIndex, buildReviewPrior } = await import('../src/skills/courseReviewStats.js'));
 });
 
 // 連線池會讓 test runner 的 event loop 一直不結束，`npm test` 因此永遠不會返回。
@@ -335,6 +338,60 @@ describe('資料庫契約：#20 ACTIVE_TERM 與現行資料相符', () => {
       Number(row.total) > 0,
       `Course_Sections 找不到符合 ACTIVE_TERM（${ACTIVE_TERM.academicYear}學年${ACTIVE_TERM.semester}）`
       + '的資料列，請確認是否忘記換學期，或資料庫尚未匯入本學期課程。'
+    );
+  });
+});
+
+describe('資料庫契約：Course_Reviews 供排課引擎涼度評分使用', () => {
+  // 2026-08-17 實測：181 列 / 3560 個 section，全部 114-下學期、全部選修，
+  // review_count 4-8。此區塊釘住 #4「把評價聚合層接進排課引擎」依賴的資料前提，
+  // 資料量成長時只需要調整下限，不必調整判定邏輯。
+  test('Course_Reviews 有資料，且五個評分欄位皆在 1-5 值域內', { skip }, async () => {
+    const rows = await queryRows(
+      'SELECT `sweetness`, `coolness`, `workload`, `overall`, `value` FROM `Course_Reviews`'
+    );
+
+    assert.ok(rows.length > 0, 'Course_Reviews 沒有任何資料，涼度評分會全部退回中性分');
+
+    const outOfRange = rows.filter(row => (
+      ['sweetness', 'coolness', 'workload', 'overall', 'value'].some(field => {
+        const value = row[field];
+        return value !== null && (Number(value) < 1 || Number(value) > 5);
+      })
+    ));
+    assert.deepEqual(
+      outOfRange, [],
+      '評分欄位超出 1-5 值域，reviewStats.js 的 easiness 公式假設會不成立'
+    );
+  });
+
+  test('review.courseId 能對回 Course_Sections 的實際 section_id', { skip }, async () => {
+    const [reviews, courses] = await Promise.all([getAll('reviews'), getAll('courses')]);
+    const sectionIds = new Set(courses.map(course => String(course.id)));
+
+    const withCourseId = reviews.filter(review => (
+      review.courseId !== null && review.courseId !== undefined
+    ));
+    assert.ok(withCourseId.length > 0, '沒有任何評價列能對到 Course_Sections，LEFT JOIN 可能全數落空');
+
+    const unresolved = withCourseId.filter(review => !sectionIds.has(String(review.courseId)));
+    assert.deepEqual(
+      unresolved.map(review => review.selectionCode), [],
+      'review.courseId 對不到任何現行 section，courseReviewStats 的 index 對應前提不成立'
+    );
+  });
+
+  test('母體 easiness 落在合理範圍內，用來偵測資料或公式被改壞', { skip }, async () => {
+    const reviews = await getAll('reviews');
+    const index = buildReviewIndex(reviews);
+    const prior = buildReviewPrior(index);
+
+    assert.ok(prior.courseCount > 0, '母體先驗沒有任何課程貢獻，deriveReviewEvidence 會全部退回中性 50 分');
+    // 2026-08-17 實測 mean ≈ 3.725（1-5 尺度）。留寬鬆區間：這是資料真的長歪時的
+    // 防呆，不是鎖死當前數值——評價資料成長後這個平均值本來就會變動。
+    assert.ok(
+      prior.easiness >= 2 && prior.easiness <= 5,
+      `母體 easiness ${prior.easiness} 超出合理範圍，reviewStats 的公式或資料可能已改變`
     );
   });
 });

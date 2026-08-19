@@ -7,6 +7,7 @@ import { normalizeDepartment, isDepartmentInput } from '../utils/text.js';
 import { getAbbreviations } from '../data/departmentMapping.js';
 import { tagsToFlags, extractTags } from '../data/preferenceTags.js';
 import { logger } from '../utils/logger.js';
+import { createTtlCache } from '../utils/ttlCache.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -630,7 +631,13 @@ async function getMysqlCourses() {
   return rows.map(mapCourseRow);
 }
 
-async function getMysqlReviews() {
+// 預設 60 秒。評價資料由外部爬蟲流程寫入，非本應用程式的寫入路徑，
+// 因此用短 TTL 換取「同一次伺服器啟動期間資料更新後最多 60 秒可見」，
+// 而不是像 `classNameColumnPromise` 那樣永久快取到重啟為止——那種模式
+// 適用於不會無重啟就變動的 schema 欄位，`Course_Reviews` 不是。
+const REVIEWS_CACHE_TTL_MS = Number(process.env.REVIEWS_CACHE_TTL_MS) || 60_000;
+
+async function fetchMysqlReviewsUncached() {
   // 評價資料表為 `Course_Reviews`（單數），以 selection_code 關聯 Course_Sections。
   // 舊程式碼查的 `Courses_Reviews` 並不存在，且欄位結構完全不同。
   const rows = await queryRows(`
@@ -655,6 +662,15 @@ async function getMysqlReviews() {
     ORDER BY r.\`Reviews_id\`
   `);
   return rows.map(mapReviewRow);
+}
+
+// 排課引擎每次排課都會呼叫 `getAll('reviews')`，`reviewSearch.js` 的
+// `getReviewsByCourse()`／`getSentimentSummary()` 也在同一次請求內各撈一次
+// 全表。加 TTL 快取後這些呼叫在到期前共用同一份結果，不必每次都下一次全表查詢。
+const getCachedMysqlReviews = createTtlCache(fetchMysqlReviewsUncached, REVIEWS_CACHE_TTL_MS);
+
+async function getMysqlReviews() {
+  return getCachedMysqlReviews();
 }
 
 async function getMysqlUserPreferences() {

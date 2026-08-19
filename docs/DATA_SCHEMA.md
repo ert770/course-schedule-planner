@@ -121,6 +121,18 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 
 情緒判定由 `overall` 推導：4 分以上為 positive，2 分以下為 negative，其餘為 neutral。
 
+**實測現況（2026-08-17）**：`Course_Reviews` 共 181 列，對應 `Course_Sections` 3560 個 section
+（覆蓋率 5.1%）。五個評分欄位（`sweetness`／`coolness`／`workload`／`overall`／`value`）0 個 null，
+值域皆 1–5。`review_count` 落在 4–8、平均 5.40，總計 977 則評論。181 列**全部**是 114-下學期、
+**全部**是「選修」（0 筆必修）。這批資料供排課引擎的涼度評分使用，見
+`docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」與 `server/src/skills/courseReviewStats.js`。
+
+**`Reviews_tags` 不得用來推導課程屬性欄位**：這是 Dcard 式的自由標籤，314 個相異值、長尾雜訊
+（例如「教室很熱」「追星必備」「不用每次都出現」），不是結構化的課程性質。`has_midterm`、
+`has_group_project` 等欄位不存在於現行 schema，也**不能**從 `Reviews_tags` 猜測填入——曾經考慮
+過這個做法，因標籤雜訊過高而否決。這些欄位若要補齊，需要對共用 MySQL 做 `ALTER TABLE`，屬於
+與 #18 `student_id` migration 同性質、需與組員協調的 D 類 rollout。
+
 ### `User_Profiles`
 
 | Column | Type | API mapping |

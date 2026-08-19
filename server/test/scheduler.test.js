@@ -11,7 +11,14 @@ import {
   checkConflict,
 } from '../src/skills/scheduler.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
-import { makeCourse, makeMultiBlockCourse, makeUnscheduledCourse } from './fixtures.js';
+import {
+  makeCourse,
+  makeMultiBlockCourse,
+  makeUnscheduledCourse,
+  makeReview,
+  makeEasyReview,
+  makeToughReview,
+} from './fixtures.js';
 
 describe('S1-S2 衝堂與關注課程', () => {
   test('S1 兩門加選課同天同時段判定衝堂', () => {
@@ -878,5 +885,254 @@ describe('C1-C6 學分上下限與每日課程數', () => {
     const result = generateSchedule(sameDay, { minCredits: 0, maxCoursesPerDay: 3 });
 
     assert.equal(result.schedule.length, 3);
+  });
+});
+
+describe('V20-V28 評價驅動的涼度評分', () => {
+  // 兩門課同天同時段，只能擇一排入，用來觀察 easy_score 方案的選擇差異。
+  function makeConflictingPair() {
+    return [
+      makeCourse(1, {
+        name: '課X', dayOfWeek: 1, startPeriod: 3, endPeriod: 4, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '課Y', dayOfWeek: 1, startPeriod: 3, endPeriod: 4, credits: 3,
+      }),
+    ];
+  }
+
+  // 三門不進入候選、只用來讓母體先驗落在中間值的背景課評價。
+  // 若只有兩門候選課各帶一則評價，先驗會剛好等於其中一門課，測不出
+  // 「中性分」與「實際分數」的差異。
+  function makeBackgroundReviews() {
+    return [90, 91, 92].map(id => makeReview({
+      id, courseId: id, reviewCount: 5, sweetness: 3, coolness: 3, workload: 3, overall: 3,
+    }));
+  }
+
+  test('V20 A/B：帶評價 vs 不帶評價，easy_score 方案的選擇不同，且不帶評價時 breakdown.easy 為 null', () => {
+    const withReviews = generateSchedule(makeConflictingPair(), {
+      minCredits: 0,
+      maxCredits: 3,
+      courseReviews: [makeToughReview(1), makeEasyReview(2)],
+    });
+    const withoutReviews = generateSchedule(makeConflictingPair(), { minCredits: 0, maxCredits: 3 });
+
+    const easyPlanWith = withReviews.plans.find(plan => plan.id === 'easy_score');
+    assert.ok(easyPlanWith, '評價證據讓 easy_score 方案與其他方案產出不同課表，不會被 uniquePlans 去重掉');
+    assert.equal(easyPlanWith.schedule[0].id, 2, '有評價時應選涼課 Y');
+
+    // 沒有評價時，easy_score 與其他方案對這兩門課的評分完全相同（中性分為常數），
+    // `uniquePlans()` 會把它們去重成同一份課表——這正是 roadmap #10「五方案塌縮」
+    // 的具體例證，本次改動只解除「有評價資料時」的塌縮，不是全部塌縮成因。
+    assert.equal(withoutReviews.plans.length, 1);
+    assert.equal(withoutReviews.plans[0].schedule[0].id, 1, '沒有評價時中性分相同，維持候選原始順序');
+    assert.equal(withoutReviews.plans[0].preferenceBreakdown.easy, null, '沒有評價時 easy 軸應為 null，不是 0');
+  });
+
+  test('V21 有評價且很硬 vs 完全沒評價，優先排入沒評價那門，證明無評價未被當成 0', () => {
+    const courseReviews = [makeToughReview(1), ...makeBackgroundReviews()];
+
+    const result = generateSchedule(makeConflictingPair(), {
+      minCredits: 0,
+      maxCredits: 3,
+      courseReviews,
+    });
+    const easyPlan = result.plans.find(plan => plan.id === 'easy_score');
+
+    assert.equal(easyPlan.schedule[0].id, 2, '沒有評價的課應優先於有評價但很硬的課');
+  });
+
+  test('V22 描述含「涼」字但無評價，不因關鍵字取得涼課加分（釘住關鍵字誤判的修復）', () => {
+    const misleadingCourse = makeCourse(1, {
+      name: '課X',
+      dayOfWeek: 1,
+      startPeriod: 3,
+      endPeriod: 4,
+      credits: 3,
+      description: '教室很涼，冷氣很強',
+    });
+    const genuinelyEasyCourse = makeCourse(2, {
+      name: '課Y', dayOfWeek: 1, startPeriod: 3, endPeriod: 4, credits: 3, description: '',
+    });
+    const courseReviews = [makeEasyReview(2), ...makeBackgroundReviews()];
+
+    const result = generateSchedule([misleadingCourse, genuinelyEasyCourse], {
+      minCredits: 0,
+      maxCredits: 3,
+      courseReviews,
+    });
+    const easyPlan = result.plans.find(plan => plan.id === 'easy_score');
+
+    assert.equal(
+      easyPlan.schedule[0].id,
+      2,
+      '真正有涼課評價的課應勝出，而不是描述含「涼」字但沒有評價的課'
+    );
+  });
+
+  test('V23 涼課偏好但候選全無評價：breakdown.easy 為 null、覆蓋率 0、發出警告', () => {
+    const candidates = [
+      makeCourse(1, {
+        name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '課B', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+    ];
+    // 有評價資料存在，但都不是這兩門候選課——覆蓋率仍應為 0。
+    const courseReviews = makeBackgroundReviews();
+
+    const result = generateSchedule(candidates, {
+      minCredits: 0,
+      maxCredits: 22,
+      preferEasyCourses: true,
+      courseReviews,
+    });
+
+    assert.equal(result.hasExpressedPreference, true);
+    assert.equal(result.plans[0].preferenceBreakdown.easy, null);
+    assert.equal(result.plans[0].reviewCoverage.ratio, 0);
+    assert.ok(result.warnings.some(w => w.includes('涼課偏好') && w.includes('沒有課程評價')));
+  });
+
+  test('V24 涼課偏好搭配集中排課偏好，候選全無評價時 preferenceScore 只由 compact 決定', () => {
+    const candidates = [
+      makeCourse(1, {
+        name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '課B', dayOfWeek: 1, startPeriod: 6, endPeriod: 7, credits: 3,
+      }),
+    ];
+    const courseReviews = makeBackgroundReviews();
+
+    const result = generateSchedule(candidates, {
+      minCredits: 0,
+      maxCredits: 22,
+      preferEasyCourses: true,
+      preferCompact: true,
+      courseReviews,
+    });
+
+    const primary = result.plans[0];
+    assert.equal(primary.preferenceBreakdown.easy, null);
+    assert.ok(primary.preferenceScore > 0, 'compact 軸應仍能貢獻分數，不被 null 的 easy 軸拖累成 0');
+    assert.equal(
+      primary.preferenceScore,
+      primary.preferenceBreakdown.compact,
+      'easy 軸被排除後，分數應完全等於 compact 軸的值'
+    );
+  });
+
+  test('V25 完全不帶 courseReviews：reviewDataLoaded 為 false 且發出警告，不影響既有排序邏輯', () => {
+    const candidates = [
+      makeCourse(1, {
+        name: '網路安全概論', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '網路程式設計', dayOfWeek: 1, startPeriod: 6, endPeriod: 7, credits: 3,
+      }),
+      makeCourse(3, {
+        name: '文學賞析', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+    ];
+
+    const result = generateSchedule(candidates, {
+      preferredKeywords: ['網路'],
+      minCredits: 0,
+      maxCredits: 22,
+    });
+
+    assert.equal(result.reviewDataLoaded, false);
+    assert.ok(result.warnings.some(w => w.includes('沒有取得任何課程評價資料')));
+    // 沒有評價資料不影響既有的興趣偏好排序邏輯：興趣方案仍應成為主推方案，
+    // 與 S13 建立的既有行為一致——這正是「排序結果與改動前逐項相同」的證據。
+    assert.equal(result.hasExpressedPreference, true);
+    assert.ok(result.plans[0].preferenceScore > 0);
+  });
+
+  test('V26 4 則全高分 vs 8 則中高分：收縮後差距小於未收縮差距的一半', () => {
+    const courseA = makeCourse(1, {
+      name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+    });
+    const courseB = makeCourse(2, {
+      name: '課B', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3,
+    });
+    const courseReviews = [
+      // raw easiness = mean([5,5,6-1=5,5]) = 5
+      makeReview({
+        id: 1, courseId: 1, reviewCount: 4, sweetness: 5, coolness: 5, workload: 1, overall: 5,
+      }),
+      // raw easiness = mean([4,5,6-2=4,5]) = 4.5
+      makeReview({
+        id: 2, courseId: 2, reviewCount: 8, sweetness: 4, coolness: 5, workload: 2, overall: 5,
+      }),
+      ...makeBackgroundReviews(),
+    ];
+
+    const result = generateSchedule([courseA, courseB], {
+      minCredits: 0,
+      maxCredits: 22,
+      courseReviews,
+    });
+
+    const a = result.schedule.find(course => course.id === 1);
+    const b = result.schedule.find(course => course.id === 2);
+    const rawGap = a.reviewEvidence.easiness - b.reviewEvidence.easiness;
+    const adjustedGap = a.reviewEvidence.adjustedEasiness - b.reviewEvidence.adjustedEasiness;
+
+    assert.ok(rawGap > 0, '未收縮差距應為正（A 原始分數較高）');
+    assert.ok(Math.abs(adjustedGap) < rawGap / 2, '收縮後差距應小於未收縮差距的一半');
+  });
+
+  test('V27 schedule 內每門課都有 reviewEvidence 鍵，無評價時為 null 而非 undefined', () => {
+    const candidates = [
+      makeCourse(1, {
+        name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '課B', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+    ];
+    const courseReviews = [makeEasyReview(1)];
+
+    const result = generateSchedule(candidates, {
+      minCredits: 0,
+      maxCredits: 22,
+      courseReviews,
+    });
+
+    for (const course of result.schedule) {
+      assert.ok('reviewEvidence' in course);
+    }
+    const withEvidence = result.schedule.find(course => course.id === 1);
+    const withoutEvidence = result.schedule.find(course => course.id === 2);
+    assert.notEqual(withEvidence.reviewEvidence, null);
+    assert.equal(withoutEvidence.reviewEvidence, null);
+    assert.notEqual(withoutEvidence.reviewEvidence, undefined);
+  });
+
+  test('V28 有評價的課因 eligibility 為 unknown 被排除時，警告會統計這種情況', () => {
+    const pendingCourse = makeCourse(901, {
+      name: '共同國文', department: '國文綜合班', category: '選修',
+    });
+    const courseReviews = [makeEasyReview(901)];
+
+    const result = generateSchedule([pendingCourse], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      minCredits: 0,
+      maxCredits: 9,
+      courseReviews,
+    });
+
+    assert.equal(result.schedule.length, 0);
+    assert.ok(result.warnings.some(warning => (
+      warning.includes('有課程評價')
+      && warning.includes('資格待確認')
+      && warning.includes('#13C')
+    )));
   });
 });
