@@ -45,6 +45,16 @@ const UNSCHEDULED_NAMES_IN_WARNING = 3;
 // 不能讓使用者把它當成整份課表的涼度。
 const LOW_REVIEW_COVERAGE_RATIO = 0.5;
 
+// 內容偏好軟性加分的單一量級（roadmap #3）。與 INTEREST_KEYWORD_SCORE 同量級
+// （同屬「使用者陳述的關鍵字類偏好」），小於一個 category priority 級距（120），
+// 大於 3 學分的差距（36）——單一命中應能撼動排序，但不該讓一門課單靠內容偏好
+// 就跳過整個類別優先度（必修 > 核心選修 > 一般選修 > 通識 > 系外選修）。
+const CONTENT_PREFERENCE_SCORE = 40;
+// 候選池中某內容偏好的關鍵字命中率低於此比例：幾乎沒有課符合，加分近乎無效。
+const CONTENT_PREFERENCE_LOW_SIGNAL_RATIO = 0.05;
+// 高於此比例：幾乎每門課都符合，等於不篩選，使用者卻可能以為有效。
+const CONTENT_PREFERENCE_HIGH_SIGNAL_RATIO = 0.95;
+
 const CATEGORY_PRIORITY = {
   '必修': 0,
   '核心選修': 1,
@@ -139,10 +149,96 @@ function textIncludesAny(text, keywords) {
   return keywords.some(keyword => text.includes(keyword));
 }
 
+// 內容偏好設定表（roadmap #3）：8 個以課程描述關鍵字判定的「盡量要／盡量不要」
+// 偏好。這些原本是 hardConstraintReason() 的硬性排除條件，但關鍵字比對對
+// 3560 筆真實課程描述的命中率兩極化——weightDaily 僅 1.7% 命中（未命中即排除
+// 模式下等於候選集幾乎全滅）、learnMore 97.6% 命中（等於幾乎不篩選卻回報
+// 已生效）、noMidterm 僅 0.1% 命中（「免期中考」幾乎從未真正排除任何課，是
+// 靜默假承諾）。關鍵字比對的可靠度不足以支撐「不符合就整批排除」的硬性判定，
+// 因此全部改為軟性加分，見 `getContentPreferenceScore()`。
+//
+// mode: 'avoid'  -> 命中代表課程有這個特徵，使用者想避免 -> 命中扣分
+// mode: 'prefer' -> 命中代表課程有這個特徵，使用者想要   -> 命中加分
+//
+// **這是軟性評分，不是 roadmap #21 的正式 hard/soft schema**——沒有 weight、
+// relaxable、source、confidence 欄位，那是分開的任務。
+const CONTENT_PREFERENCE_RULES = [
+  { flag: 'noMidterm', mode: 'avoid', label: '免期中考', keywords: ['期中', '期中考'] },
+  { flag: 'noGroupReport', mode: 'avoid', label: '免分組報告', keywords: ['分組', '團體報告', '小組'] },
+  { flag: 'discussion', mode: 'prefer', label: '討論課', keywords: ['討論', '互動', '參與'] },
+  { flag: 'weightDaily', mode: 'prefer', label: '重視平時成績', keywords: ['平時', '作業', '出席'] },
+  { flag: 'practicalExam', mode: 'prefer', label: '實作評量', keywords: ['實作', '實驗', '專題'] },
+  { flag: 'finalReport', mode: 'prefer', label: '期末報告', keywords: ['期末報告', '報告', '專題'] },
+  // 與原 hardConstraintReason() 的判定完全一致（只用「英文」一個關鍵字，
+  // language 欄位另用 extra 判定），不擴大既有的比對範圍。language 欄位
+  // 3560/3560 全為 undefined（roadmap #4 已查證），extra 保留判斷式以便
+  // 欄位補齊後自動生效，不必回頭改這裡。
+  {
+    flag: 'englishTaught', mode: 'prefer', label: '英文授課', keywords: ['英文'],
+    extra: course => course.language === 'English',
+  },
+  { flag: 'learnMore', mode: 'prefer', label: '學到較多內容', keywords: ['實作', '專題', '深入', '進階', '應用'] },
+];
+
+function matchesContentPreference(course, rule) {
+  const desc = course.description || '';
+  if (textIncludesAny(desc, rule.keywords)) return true;
+  return typeof rule.extra === 'function' && rule.extra(course);
+}
+
+// 內容偏好的軟性加分，不分 PLAN_VARIANT 一律套用（見 scoreCourse()）。
+//
+// **未命中不給負分，avoid／prefer 兩種 mode 都適用**：關鍵字沒出現在描述裡，
+// 代表「描述沒提到」，不代表「這門課真的沒有這個特徵」——跟 #4 對缺席評價
+// 「不當成 0 分」是同一個誠實原則的延伸（見 docs/DECISIONS.md ADR-010）。
+// 完全沒有設定任何內容偏好時，這個函式對每門課都回傳 0，排序與改動前
+// （8 個旗標全 undefined/false）逐項一致。
+function getContentPreferenceScore(course, constraints) {
+  let score = 0;
+  for (const rule of CONTENT_PREFERENCE_RULES) {
+    if (!constraints[rule.flag]) continue;
+    if (!matchesContentPreference(course, rule)) continue;
+    score += rule.mode === 'avoid' ? -CONTENT_PREFERENCE_SCORE : CONTENT_PREFERENCE_SCORE;
+  }
+  return score;
+}
+
+// 候選池中每個「使用者實際啟用」的內容偏好旗標，其關鍵字命中率。獨立於任何
+// 一個排課方案——5 個 PLAN_VARIANTS 共用同一批候選池，這個訊號對所有方案
+// 完全相同，因此只算一次（見 prepareCandidates()），不必等特定方案選出來。
+function computeContentPreferenceSignal(courses, constraints) {
+  if (courses.length === 0) return [];
+  return CONTENT_PREFERENCE_RULES
+    .filter(rule => constraints[rule.flag])
+    .map(rule => {
+      const hits = courses.filter(course => matchesContentPreference(course, rule)).length;
+      return { flag: rule.flag, label: rule.label, hits, total: courses.length, ratio: hits / courses.length };
+    });
+}
+
+// 命中率過低或過高都代表關鍵字比對其實無法有效區分課程（過低=幾乎排不到
+// 任何課、過高=幾乎每門課都符合），應該讓使用者知道這個偏好的訊號很弱，
+// 結果可能不準——不是靜默失敗，也不是靜默假裝已滿足。
+function buildContentPreferenceWarnings(signals) {
+  return signals
+    .filter(s => s.ratio < CONTENT_PREFERENCE_LOW_SIGNAL_RATIO || s.ratio > CONTENT_PREFERENCE_HIGH_SIGNAL_RATIO)
+    .map(s => {
+      const pct = Math.round(s.ratio * 1000) / 10;
+      return s.ratio < CONTENT_PREFERENCE_LOW_SIGNAL_RATIO
+        ? `偏好「${s.label}」目前以課程描述關鍵字判定，候選課程中僅 ${s.hits}/${s.total} 門`
+          + `（${pct}%）符合這個判定，訊號極弱，這項偏好對排序幾乎不起作用，結果可能不如預期。`
+        : `偏好「${s.label}」目前以課程描述關鍵字判定，候選課程中有 ${s.hits}/${s.total} 門`
+          + `（${pct}%）符合這個判定，幾乎每門課都符合，這項偏好實際上無法有效區分課程，效果接近沒有設定。`;
+    });
+}
+
 function hardConstraintReason(course, constraints) {
   if (isWatching(course, constraints)) return null;
 
   // 時間類限制必須檢查課程的每一個時段，否則多時段課程只會被檢查第一段。
+  // 這 4 項是對課程時段的結構化事實判定，不是對自由文字做關鍵字猜測，
+  // 沒有「命中率」這種失效模式，資料本身可信，維持硬性（roadmap #3 範圍
+  // 只涵蓋內容偏好關鍵字判定，不含這 4 項）。
   const blocks = getTimeBlocks(course);
 
   if (constraints.noMorningClasses && blocks.some(block => block.startPeriod <= 1)) {
@@ -162,34 +258,9 @@ function hardConstraintReason(course, constraints) {
     }
   }
 
-  const desc = course.description || '';
-  if (constraints.noMidterm && textIncludesAny(desc, ['期中', '期中考'])) {
-    return '不符合免期中考偏好';
-  }
-  if (constraints.noGroupReport && textIncludesAny(desc, ['分組', '團體報告', '小組'])) {
-    return '不符合免分組報告偏好';
-  }
-  if (constraints.discussion && !textIncludesAny(desc, ['討論', '互動', '參與'])) {
-    return '不符合討論課偏好';
-  }
-  if (constraints.weightDaily && !textIncludesAny(desc, ['平時', '作業', '出席'])) {
-    return '不符合重視平時成績偏好';
-  }
-  if (constraints.practicalExam && !textIncludesAny(desc, ['實作', '實驗', '專題'])) {
-    return '不符合實作評量偏好';
-  }
-  if (constraints.finalReport && !textIncludesAny(desc, ['期末報告', '報告', '專題'])) {
-    return '不符合期末報告偏好';
-  }
-  if (constraints.englishTaught && !(desc.includes('英文') || course.language === 'English')) {
-    return '不符合英文授課偏好';
-  }
   if (constraints.lunchBreakFree
     && blocks.some(block => block.startPeriod <= 5 && block.endPeriod >= 5)) {
     return '不符合午休保留偏好';
-  }
-  if (constraints.learnMore && !textIncludesAny(desc, ['實作', '專題', '深入', '進階', '應用'])) {
-    return '不符合學到較多內容偏好';
   }
 
   return null;
@@ -392,6 +463,9 @@ function scoreCourse(course, schedule, constraints, variant, requiredIds, scope,
   if (requiredIds.has(id)) score += 10000;
   score -= getEffectiveCategoryPriority(course, scope) * 120;
   score += (course.credits || 0) * 12;
+  // 內容偏好（roadmap #3）不分 variant 一律套用，比照 category/credits 的
+  // 基礎分寫法——這 8 個旗標原本就是候選篩選層級，不是特定 variant 的行為。
+  score += getContentPreferenceScore(course, constraints);
 
   if (variant.id === 'compact' || constraints.preferCompact) {
     const usedDays = new Set(schedule.flatMap(c => [...getUsedDays(c)]));
@@ -615,7 +689,7 @@ function collectExplicitCourseIds(constraints) {
 //   courses     解析過類別（核心選修／系外選修）與修課路徑的候選課程
 //   exclusions  依系外選修認列條件排除的課程與原因
 //   warnings    需提醒但不排除的事項
-function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), reviewContext = {}) {
+function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), reviewContext = {}, constraints = {}) {
   const reviewIndex = reviewContext.index ?? new Map();
   const reviewPrior = reviewContext.prior ?? { easiness: null, courseCount: 0, reviewCount: 0 };
   const neutralEasyScore = getNeutralEasyScore(reviewPrior);
@@ -805,6 +879,11 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
       + '本方案仍保留這些課程，請自行確認是否可加選。'
     );
   }
+
+  // 內容偏好的關鍵字命中率是候選池本身的性質，5 個 PLAN_VARIANTS 共用同一批
+  // 候選池、這個訊號對所有方案完全相同，因此在候選層算一次即可（不必等某個
+  // 方案選出來才算，也不必逐一方案重算五次）。
+  warnings.push(...buildContentPreferenceWarnings(computeContentPreferenceSignal(courses, constraints)));
 
   return { courses, exclusions, warnings, scope, explicitIds, neutralEasyScore };
 }
@@ -1121,7 +1200,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}) {
     candidateCourses,
     buildStudentScope(constraints),
     collectExplicitCourseIds(constraints),
-    { index: reviewIndex, prior: reviewPrior }
+    { index: reviewIndex, prior: reviewPrior },
+    constraints
   );
 
   const plans = uniquePlans(

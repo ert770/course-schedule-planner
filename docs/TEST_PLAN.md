@@ -108,6 +108,21 @@ node --check src/app.js
 | V26 | 4 則全高分 vs 8 則中高分 | 收縮後差距小於未收縮差距的一半 |
 | V27 | `schedule[]` 每門課 | 都有 `reviewEvidence` 鍵；無評價時為 `null` 而非 `undefined` |
 | V28 | 有評價的課因 `eligibility === 'unknown'` 被排除 | 警告統計「有課程評價但因資格待確認未納入」的門數與則數 |
+| N1 | `noMidterm: true`，候選課描述含「期中考」 | 課程仍在候選集／`schedule` 中，不再進入 `excludedCourses` |
+| N2 | `weightDaily: true`，候選池多數不含「平時／作業／出席」（重現 1.7% 命中率情境） | 候選集不再歸零，`plan.success` 可為 `true` |
+| N3 | 對全部 8 個旗標各自設 true，構造一門「未命中」的候選課 | `excludedCourses` 不再因這 8 個旗標出現排除原因 |
+| N4 | `mustTakeCourseIds`／`selectedCourseIds` 指定一門「未命中」內容偏好的課 | `plan.failures` 不再含這門課，`success` 不再被拖成 `false` |
+| N5 | `noMidterm: true`，兩門其餘條件相同的課，一門命中、一門不命中 | 命中的那門分數較低（排序較後），但兩門都在候選集內 |
+| N6 | `practicalExam: true`，兩門其餘條件相同的課，一門命中、一門不命中 | 命中的那門排序較前 |
+| N7 | 通識課命中多個內容偏好 vs 核心選修課全不命中，兩者衝堂 | 核心選修仍勝出（驗證內容偏好加總不蓋過類別優先度 120 級距） |
+| N8 | `noEveningClasses: true`，候選含晚課 | 該課被排除，理由含「晚課」（既有邏輯，先前無測試釘住） |
+| N9 | `lunchBreakFree: true`，候選課時段涵蓋第 5 節 | 該課被排除，理由含「午休」（同上） |
+| N10 | 候選池中 `noMidterm` 命中率 < 5% | `warnings` 含「訊號極弱」字樣 |
+| N11 | 候選池中某旗標命中率 > 95% | `warnings` 含「無法有效區分課程」字樣 |
+| N12 | 候選池中某旗標命中率落在 5%~95% 之間 | 不觸發該警告 |
+| N13 | 訊號可靠度警告觸發時 | `allWarnings`（5 個方案聯集去重後）只出現一次 |
+| N14 | 未設定任何內容偏好旗標 | 不產生相關警告，排序與改動前一致（回歸測試） |
+| N15 | `englishTaught: true`，候選課 `course.language === 'English'` 但描述不含「英文」 | 仍視為命中（驗證 `extra` 判定路徑，不只靠關鍵字） |
 
 ### 班別收斂（必修不得換班）
 
@@ -244,6 +259,20 @@ node --check src/app.js
 
 `server/test/database-contract.test.js`（連真實 MySQL）：釘住 `Course_Reviews` 覆蓋率、五個評分
 欄位值域、`review.courseId` 可對回實際 section、母體 easiness 落在合理範圍，資料漂移時測試會響。
+
+### 內容偏好從硬過濾改成軟懲罰
+
+Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／重視平時成績／實作評量／期末報告／
+英文授課／學到較多內容）原本是 `hardConstraintReason()` 的硬性排除條件，判定依據全部是課程
+描述關鍵字比對。真實資料庫命中率兩極化（0.1%～97.6%），改為 `scoreCourse()` 裡的軟性加分，
+維持硬性的只剩 4 個時段類檢查（早八／晚課／封鎖時段／午休）。`server/test/scheduler.test.js`
+的 N1–N15（見上方主表）為端到端測試；這批純函式（`getContentPreferenceScore()`、
+`computeContentPreferenceSignal()`、`buildContentPreferenceWarnings()`）沒有跨模組共用或連 DB
+的需求，因此比照 `getInterestScore`／`getEasiness` 的既有慣例，只透過 `generateSchedule()`
+端到端測試涵蓋，不另開純函式測試檔案。
+
+真實資料驗證（node 層，連正式 MySQL）：對資工三學生的 227 門候選課，`weightDaily: true` 在
+舊版硬性排除下會把候選集壓縮到 3 門（1.3%），新版軟性加分後排課仍正常成功，候選集不再歸零。
 
 ## #12B 通識分類測試
 

@@ -413,6 +413,37 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 
 **已知限制**：181 筆評價中最大一塊（68 筆通識）因 #13C（B～F 類正式適用對象規則尚未確認）被保守排除，不會進入自動排課，因此不影響涼度評分。實際會生效的評價依候選池而定，warnings 會列出「有課程評價但因資格待確認未納入」的統計。
 
+## 內容偏好評分與訊號可靠度警告
+
+Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／重視平時成績／實作評量／
+期末報告／英文授課／學到較多內容）判定依據是課程描述的關鍵字比對（`course.description`），
+不是結構化欄位——`has_midterm`／`grading_scheme`／`language` 等欄位不存在，見「目前程式差距」。
+
+**為什麼從硬性排除改成軟性加分**：真實資料庫實測命中率差異極大（0.1%～97.6%）。
+未命中即排除的旗標在命中率極低時（`weightDaily` 1.7%）會讓候選集幾乎歸零——實測對一位
+資工三學生，227 門候選課只剩 3 門（1.3%）可排；命中即排除的旗標在命中率極低時
+（`noMidterm` 0.1%）幾乎從不真正排除任何課，等於對使用者的靜默假承諾。兩者都不該用一個
+不可靠的關鍵字判定去整批剔除候選課程。
+
+**評分公式**（`scheduler.js` 的 `getContentPreferenceScore()`，於 `scoreCourse()`
+不分 variant 一律套用，量級與 `INTEREST_KEYWORD_SCORE` 相同）：
+
+- 命中關鍵字：「想避免」類（`noMidterm`／`noGroupReport`）扣 40 分；
+  「想要」類（其餘 6 個）加 40 分。
+- **未命中：一律 0 分，不論哪一類。** 關鍵字沒出現在描述裡，代表「描述沒提到」，
+  不代表「這門課真的沒有這個特徵」——與涼度評分「沒有評價不是 0 分」是同一個
+  誠實原則的延伸，見 `docs/DECISIONS.md` ADR-010。
+
+**訊號可靠度警告**：`prepareCandidates()` 對候選池（5 個方案共用同一批）算出
+每個**已設定**旗標的關鍵字命中率，命中率 <5% 或 >95% 時發出警告，提醒使用者
+這個偏好的關鍵字判定幾乎無法區分課程，結果可能不準。用真實資料驗證：
+`noMidterm`（0.1%）、`weightDaily`（1.7%）、`learnMore`（97.6%）會觸發；
+`noGroupReport`（5.5%）、`discussion`（48.9%）、`practicalExam`（33.4%）、
+`finalReport`（12.2%）、`englishTaught`（8.0%）不會（見 ADR-011）。
+
+**這不是 roadmap #21 的正式 schema**：沒有 `weight`／`relaxable`／`source`／
+`confidence` 欄位，也沒有逐級放寬機制，那是分開的任務（見 #21）。
+
 ## 硬性限制
 
 硬性限制違反時，課表方案不得成立：
@@ -421,24 +452,26 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 - 必修與重補修優先。
 - 總學分不得超過上限。
 - 若指定必修課無法排入，必須回傳失敗原因。
-- 被封鎖時段不得排入正式加選課程。
+- 被封鎖時段不得排入正式加選課程（含週一空堂 `mondayFree` 展開後的封鎖時段）。
+- 不上早八（`noMorningClasses`）。
+- 不上晚課（`noEveningClasses`）。
+- 午休保留（`lunchBreakFree`）。
 
 封鎖時段一律以 `{ day, period }` 表示（`day` 為 1~7、`period` 為 1~14）。使用者偏好可能以時間字串儲存（例如 `["08:00"]`），必須先經 `server/src/utils/periods.js` 的 `normalizeBlockedPeriods()` 轉換；時間字串沒有星期資訊，視為每天的該節次都要避開。未轉換直接送入排課引擎時，`bp.day` 為 `undefined`，比對會靜默跳過而使設定完全失效。
 
+上述時段類的 4 項限制是對課程時段的結構化事實判定（`block.startPeriod` 等），不是對自由文字做關鍵字猜測，因此不像下方「內容偏好」有訊號可靠度的問題，維持硬性排除（roadmap #3）。
+
 ## 軟性偏好
 
-軟性偏好可用於排序不同課表方案：
+軟性偏好可用於排序不同課表方案，不會排除課程：
 
-- 不上早八。
-- 不上晚課。
-- 週一空堂或空出指定整天。
-- 午休保留。
-- 集中排課。
-- 免期中考。
-- 免分組報告。
-- 偏好討論課。
-- 偏好英文授課。
-- 偏好學到較多內容。
+- 集中排課（`preferCompact`）。
+- 涼課／高分優先（`preferEasyCourses`，見「涼度評分與評價覆蓋率」）。
+- 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`）。
+- 8 個內容偏好——免期中考（`noMidterm`）、免分組報告（`noGroupReport`）、討論課
+  （`discussion`）、重視平時成績（`weightDaily`）、實作評量（`practicalExam`）、
+  期末報告（`finalReport`）、英文授課（`englishTaught`）、學到較多內容（`learnMore`），
+  見下方「內容偏好評分與訊號可靠度警告」。
 
 ## 課程時段
 
@@ -519,12 +552,14 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 - 系外選修認列條件。
 - 學期學分與畢業學分分離。
 - 涼課評分改用結構化評價（`Course_Reviews`），取代課程描述關鍵字（見「涼度評分與評價覆蓋率」）。
+- 8 個內容偏好改為軟性加分並附訊號可靠度警告，取代硬性排除（roadmap #3，見「內容偏好評分與訊號可靠度警告」）。
 
 仍需補強：
 
 - 數位課程畢業門檻。
-- 評價分數的 per-user 個人化加權（同一難度數值對不同使用者相反符號）；目前是母體共用的涼度，屬 roadmap #5。
-- `has_midterm`／`has_group_project`／`grading_scheme`／`language` 課程欄位；`noMidterm`／`noGroupReport`／`englishTaught` 三個偏好仍用描述關鍵字判定，因欄位需要對共用 MySQL 做 `ALTER TABLE`，屬需與組員協調的 D 類 rollout。
+- 評價分數的 per-user 個人化加權（同一難度數值對不同使用者相反符號）；目前是母體共用的涼度，屬 roadmap #5B。
+- `has_midterm`／`has_group_project`／`grading_scheme`／`language` 課程欄位仍不存在；8 個內容偏好因此仍以描述關鍵字軟性計分（見「內容偏好評分與訊號可靠度警告」），欄位化需要對共用 MySQL 做 `ALTER TABLE`，屬需與組員協調的 D 類 rollout，不在 roadmap #3 範圍內。
+- roadmap #21 的正式 `hard`／`soft` constraint schema（`weight`／`relaxable`／`source`／`confidence` 欄位、獨立 validator、逐級放寬機制、結構化 conflict set）——#3 只是把 8 個內容偏好從硬性排除改成軟性加分，不是 #21 要的正式分層。
 - 通識基礎 16 學分的完整對照（目前只實作「不計畢業學分」的那 3 學分）。
 - 核心選修 12 學分的達成度追蹤（目前只做到分類與優先度，未累計缺口）。
 

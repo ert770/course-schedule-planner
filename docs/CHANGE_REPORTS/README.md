@@ -2,6 +2,11 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-19
+
+1. [個人化路線圖狀態對齊](./2026-08-19-roadmap-status-alignment.md)
+2. [內容偏好從硬過濾改成軟懲罰（Roadmap #3）](./2026-08-19-content-preference-soft-scoring.md)
+
 ## 2026-08-17
 
 1. [評價驅動的涼度評分（Roadmap #4）](./2026-08-17-review-driven-easiness.md)

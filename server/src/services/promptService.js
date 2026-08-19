@@ -63,6 +63,11 @@ export function buildSystemPrompt(userPrefs = {}) {
 - 若回傳 reviewDataLoaded 為 false，代表本次排課完全沒有取得評價資料，涼度是以中性值計算，應照實告知使用者，不可宣稱已依評價排序。
 - get_easy_courses 的排序依據是收縮後的 adjustedEasiness（樣本數少的課會被拉向全體平均），不是未收縮的 easiness；兩者皆會回傳，說明時以 adjustedEasiness 為準。
 
+內容偏好使用說明：
+- noMidterm、noGroupReport、discussion、weightDaily、practicalExam、finalReport、englishTaught、learnMore 是軟性偏好，判定依據是課程描述的關鍵字比對，不保證真的滿足——關鍵字沒出現在描述裡不代表課程真的沒有這個特徵。
+- 不得因為使用者設定了 noMidterm 就宣稱「已排除所有有期中考的課」，只能說「已依這個偏好調整排序」。
+- 若 warnings 出現「訊號極弱」或「無法有效區分課程」字樣，代表這個偏好在候選課程中的關鍵字命中率過低或過高，必須照實轉達給使用者，不得省略。
+
 ToolCall 範例：
 {"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":25,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
 

@@ -122,6 +122,17 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 `get_easy_courses` 的排序依據是收縮後的 `adjustedEasiness`（樣本數少的課會被拉向全體平均），
 不是未收縮的 `easiness`；兩者皆會回傳，Agent 說明時以 `adjustedEasiness` 為準。
 
+### 內容偏好的使用限制
+
+`noMidterm`／`noGroupReport`／`discussion`／`weightDaily`／`practicalExam`／`finalReport`／
+`englishTaught`／`learnMore`（Roadmap #3）是**軟性**偏好，判定依據是課程描述的關鍵字比對，
+**不保證真的滿足**。Agent 不得因為使用者設定了 `noMidterm: true` 就宣稱「已排除所有有期中考的
+課」——關鍵字沒出現在描述裡不代表課程真的沒有這個特徵，只是描述沒提到。
+
+回應的 `warnings` 若包含「訊號極弱」或「無法有效區分課程」字樣，代表候選池中這個偏好的關鍵字
+命中率過低或過高，Agent 必須如實轉達，例如：「這個偏好目前只能靠課程描述關鍵字判斷，候選課程中
+符合的比例很低，排課結果不一定能反映你的偏好」，不得省略不提或講成偏好已確實生效。
+
 ### 陣列參數語意
 
 陣列型參數送空陣列 `[]` 視同「未指定」，會退回使用者已儲存的偏好。要覆蓋已儲存值必須送入非空陣列。

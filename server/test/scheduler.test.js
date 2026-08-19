@@ -1136,3 +1136,202 @@ describe('V20-V28 評價驅動的涼度評分', () => {
     )));
   });
 });
+
+describe('N1-N15 內容偏好從硬過濾改成軟懲罰', () => {
+  test('N1 noMidterm 命中關鍵字的課不再被硬性排除', () => {
+    const course = makeCourse(1, { description: '本課程有期中考與期末考試' });
+
+    const result = generateSchedule([course], { noMidterm: true, minCredits: 0 });
+
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.excludedCourses.some(item => item.course.id === 1), false);
+    assert.ok(!result.warnings.some(w => w.includes('不符合免期中考偏好')));
+  });
+
+  test('N2 weightDaily（未命中即排除類）候選池全不含關鍵字時仍能排課成功', () => {
+    const candidates = Array.from({ length: 5 }, (_, i) => makeCourse(i + 1, {
+      dayOfWeek: (i % 5) + 1, startPeriod: 2, endPeriod: 3, description: '一般課程介紹',
+    }));
+
+    const result = generateSchedule(candidates, { weightDaily: true, minCredits: 0 });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.length > 0);
+  });
+
+  test('N3 全部 8 個內容偏好旗標開啟，未命中的課不再被排除', () => {
+    const course = makeCourse(1, { description: '一般課程介紹，無特殊字樣' });
+    const constraints = {
+      noMidterm: true,
+      noGroupReport: true,
+      discussion: true,
+      weightDaily: true,
+      practicalExam: true,
+      finalReport: true,
+      englishTaught: true,
+      learnMore: true,
+      minCredits: 0,
+    };
+
+    const result = generateSchedule([course], constraints);
+
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.excludedCourses.length, 0);
+  });
+
+  test('N4 必修或明確指定課程不再因內容偏好被誤判失敗', () => {
+    const course = makeCourse(1, { description: '一般課程介紹' });
+
+    const result = generateSchedule([course], {
+      noMidterm: true, mustTakeCourseIds: [1], minCredits: 0,
+    });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.some(c => c.id === 1));
+  });
+
+  test('N5 noMidterm 命中的課分數較低，同時段衝突時排序較後', () => {
+    const hit = makeCourse(1, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '有期中考' });
+    const clean = makeCourse(2, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '無特殊考試安排' });
+
+    const result = generateSchedule([hit, clean], { noMidterm: true, minCredits: 0, maxCredits: 3 });
+
+    assert.ok(result.schedule.some(c => c.id === 2));
+    assert.equal(result.schedule.some(c => c.id === 1), false);
+  });
+
+  test('N6 practicalExam 命中的課排序較前', () => {
+    const hit = makeCourse(1, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '本課程包含實作練習' });
+    const miss = makeCourse(2, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '純講授課程' });
+
+    const result = generateSchedule([hit, miss], { practicalExam: true, minCredits: 0, maxCredits: 3 });
+
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.schedule.some(c => c.id === 2), false);
+  });
+
+  test('N7 內容偏好加總不蓋過類別優先度：同時段衝突時核心選修優先於命中多個內容偏好的通識課', () => {
+    // 核心選修(1) vs 通識(3)：類別優先度差距 2 級 = 240 分。
+    // 通識課命中 discussion+practicalExam 兩項 = +80 分，遠不足以扭轉 240 分的差距。
+    const generalEd = makeCourse(1, {
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4, category: '通識', description: '本課程採討論與實作方式進行',
+    });
+    const coreElective = makeCourse(2, {
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4, category: '核心選修', description: '一般講授課程',
+    });
+
+    const result = generateSchedule([generalEd, coreElective], {
+      discussion: true, practicalExam: true, minCredits: 0, maxCredits: 3,
+    });
+
+    assert.ok(result.schedule.some(c => c.id === 2));
+    assert.equal(result.schedule.some(c => c.id === 1), false);
+  });
+
+  test('N8 noEveningClasses 維持硬性排除（既有行為的回歸測試，先前無測試釘住）', () => {
+    const evening = makeCourse(1, { startPeriod: 12, endPeriod: 13 });
+
+    const result = generateSchedule([evening], { noEveningClasses: true, minCredits: 0 });
+
+    assert.equal(result.schedule.some(c => c.id === 1), false);
+    assert.ok(result.excludedCourses.some(item => item.reason.includes('晚課')));
+  });
+
+  test('N9 lunchBreakFree 維持硬性排除（既有行為的回歸測試，先前無測試釘住）', () => {
+    const lunch = makeCourse(1, { startPeriod: 4, endPeriod: 6 }); // 涵蓋第 5 節（午休）
+
+    const result = generateSchedule([lunch], { lunchBreakFree: true, minCredits: 0 });
+
+    assert.equal(result.schedule.some(c => c.id === 1), false);
+    assert.ok(result.excludedCourses.some(item => item.reason.includes('午休')));
+  });
+
+  test('N10 訊號可靠度警告：命中率低於 5% 時觸發', () => {
+    const candidates = [
+      makeCourse(1, { dayOfWeek: 1, description: '有期中考評量' }),
+      ...Array.from({ length: 20 }, (_, i) => makeCourse(i + 2, {
+        dayOfWeek: (i % 5) + 1, description: '一般課程',
+      })),
+    ];
+
+    const result = generateSchedule(candidates, { noMidterm: true, minCredits: 0 });
+
+    assert.ok(result.warnings.some(w => w.includes('免期中考') && w.includes('訊號極弱')));
+  });
+
+  test('N11 訊號可靠度警告：命中率高於 95% 時觸發', () => {
+    const candidates = [
+      makeCourse(1, { dayOfWeek: 1, description: '一般課程，無特殊字樣' }),
+      ...Array.from({ length: 20 }, (_, i) => makeCourse(i + 2, {
+        dayOfWeek: (i % 5) + 1, description: '本課程強調實作與應用',
+      })),
+    ];
+
+    const result = generateSchedule(candidates, { learnMore: true, minCredits: 0 });
+
+    assert.ok(result.warnings.some(w => w.includes('學到較多內容') && w.includes('無法有效區分課程')));
+  });
+
+  test('N12 訊號可靠度警告：命中率介於門檻之間時不觸發', () => {
+    const candidates = [
+      ...Array.from({ length: 5 }, (_, i) => makeCourse(i + 1, {
+        dayOfWeek: (i % 5) + 1, description: '課堂討論與互動',
+      })),
+      ...Array.from({ length: 5 }, (_, i) => makeCourse(i + 6, {
+        dayOfWeek: (i % 5) + 1, description: '一般講授課程',
+      })),
+    ];
+
+    const result = generateSchedule(candidates, { discussion: true, minCredits: 0 });
+
+    assert.equal(
+      result.warnings.some(w => w.includes('討論課') && (w.includes('訊號極弱') || w.includes('無法有效區分課程'))),
+      false
+    );
+  });
+
+  test('N13 訊號可靠度警告在多方案聯集後只出現一次', () => {
+    const candidates = [
+      makeCourse(1, { dayOfWeek: 1, description: '有期中考評量' }),
+      ...Array.from({ length: 20 }, (_, i) => makeCourse(i + 2, {
+        dayOfWeek: (i % 5) + 1, description: '一般課程',
+      })),
+    ];
+
+    const result = generateSchedule(candidates, { noMidterm: true, minCredits: 0 });
+
+    const matches = result.warnings.filter(w => w.includes('免期中考') && w.includes('訊號極弱'));
+    assert.equal(matches.length, 1);
+  });
+
+  test('N14 未設定任何內容偏好時，排序與改動前一致（不受課程描述影響）', () => {
+    const hit = makeCourse(1, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '有期中考' });
+    const clean = makeCourse(2, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '無特殊考試安排' });
+
+    const result = generateSchedule([hit, clean], { minCredits: 0, maxCredits: 3 });
+
+    // 沒有設定 noMidterm，兩門課的內容偏好分數皆為 0，維持候選原始順序（穩定排序）。
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.schedule.some(c => c.id === 2), false);
+    assert.equal(
+      result.warnings.some(w => w.includes('訊號極弱') || w.includes('無法有效區分課程')),
+      false
+    );
+  });
+
+  test('N15 englishTaught 的 language 欄位判定路徑（不只靠關鍵字）', () => {
+    const englishCourse = makeCourse(1, {
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '一般課程介紹', language: 'English',
+    });
+    const other = makeCourse(2, {
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '一般課程介紹',
+    });
+
+    const result = generateSchedule([englishCourse, other], {
+      englishTaught: true, minCredits: 0, maxCredits: 3,
+    });
+
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.schedule.some(c => c.id === 2), false);
+  });
+});

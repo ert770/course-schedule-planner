@@ -282,6 +282,14 @@ Request:
     "interests": [],
     "preferredTrack": null,
     "preferEasyCourses": false,
+    "noMidterm": false,
+    "noGroupReport": false,
+    "discussion": false,
+    "weightDaily": false,
+    "practicalExam": false,
+    "finalReport": false,
+    "englishTaught": false,
+    "learnMore": false,
     "department": "資訊工程學系",
     "gradeLevel": 3,
     "className": "資訊三甲"
@@ -331,6 +339,13 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 「Active Term」一節。
 
 `preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供任何一項時，主推方案改以總學分決定。
+
+`noMidterm`／`noGroupReport`／`discussion`／`weightDaily`／`practicalExam`／`finalReport`／
+`englishTaught`／`learnMore` 這 8 個「內容偏好」（Roadmap #3）**同樣是軟性偏好，不會排除課程**：
+判定依據是課程描述的關鍵字比對，命中會調整候選課的排序分數，未命中維持中性（不當成負面證據）。
+候選池中某個已設定旗標的關鍵字命中率過低（<5%）或過高（>95%）時，`warnings` 會附上一條「訊號
+可靠度」警告，說明這個偏好目前幾乎無法有效區分課程；未觸發門檻時不會有額外警告。詳見
+`docs/SCHEDULING_LOGIC.md` 的「內容偏好評分與訊號可靠度警告」。
 
 ### 限制條件合併語意
 

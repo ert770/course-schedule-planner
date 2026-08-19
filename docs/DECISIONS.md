@@ -166,3 +166,118 @@ Consequences:
   judge how trustworthy the percentage is; a bare 68% with 1/8 courses evidenced looks identical to
   68% with 8/8 evidenced unless both fields are shown together. This is documented in
   `docs/API_SPEC.md` and `docs/PROMPT_DESIGN.md`.
+
+## ADR-009: Content-Preference Keywords Are Soft Score Adjustments, Not Hard Filters
+
+Date: 2026-08-19
+
+Context:
+Roadmap #3. `hardConstraintReason()` hard-excluded candidates based on 8 flags
+(`noMidterm`, `noGroupReport`, `discussion`, `weightDaily`, `practicalExam`, `finalReport`,
+`englishTaught`, `learnMore`), each judged by matching a handful of keywords against
+`course.description` — a 161-character-average free-text field, not a structured column. Measured
+against the live 3560-course dataset, hit rates ranged from 0.1% to 97.6%. Two distinct failure
+modes resulted: a "hit excludes" flag with a near-zero hit rate (`noMidterm`, 0.1%) almost never
+excludes anything, so the preference is silently unmet while the system reports success; a "miss
+excludes" flag with a near-zero hit rate (`weightDaily`, 1.7%) excludes nearly the entire candidate
+pool — confirmed against a real student's 227-course pool, where it collapsed to 3 candidates
+(1.3%), almost certainly too few to satisfy required-course placement.
+
+Decision:
+All 8 flags move out of `hardConstraintReason()` into an additive/subtractive score adjustment
+inside `scoreCourse()`, computed by `getContentPreferenceScore()` against a shared
+`CONTENT_PREFERENCE_RULES` table (flag, mode, label, keywords). The adjustment is applied
+unconditionally across all 5 `PLAN_VARIANTS`, at the same point as the existing category-priority
+and credits base score — these 8 flags were never variant-specific to begin with; softening them
+preserves that property. The per-hit magnitude is `CONTENT_PREFERENCE_SCORE = 40`, matching
+`INTEREST_KEYWORD_SCORE` exactly (both are "user-stated keyword preference" signals), well below a
+single category-priority step (120) so no combination of content preferences can override the
+required/core-elective/general-elective/gen-ed/outside-elective ordering.
+
+Consequences:
+
+- Candidate pools no longer collapse to near-zero from an unreliable keyword filter; the worst case
+  is now "this preference barely influences ordering," not "scheduling fails."
+- The 4 genuinely time-based checks in the same function (`noMorningClasses`, `noEveningClasses`,
+  `blockedPeriods`, `lunchBreakFree`) are explicitly out of scope and remain hard — they judge
+  structured `timeBlocks` facts, not free-text keyword matches, so they have no analogous hit-rate
+  failure mode.
+- This is not Roadmap #21's formal hard/soft constraint schema (`weight`, `relaxable`, `source`,
+  `confidence` fields, an independent validator, a relaxation ladder). #21 depends on #3 (its own
+  "開始前必須具備" already named this), not the reverse; #3 only fixes which of the 8 flags were
+  misclassified as hard, it does not deliver #21's schema.
+
+## ADR-010: Content-Preference Non-Matches Score Neutral Zero, Never a Penalty or Reward
+
+Date: 2026-08-19
+
+Context:
+The 8 content-preference flags split into two modes: `avoid` (`noMidterm`, `noGroupReport` — a
+match means the course has an undesired trait) and `prefer` (the other 6 — a match means the course
+has a desired trait). For `prefer`-mode flags, the question of whether a non-match should be
+penalized mirrors an already-settled question: should courses lacking a signal be treated worse
+than courses confirmed to lack the trait? ADR-006 already answered this for review evidence ("no
+data" ≠ "confirmed hard"). For `avoid`-mode flags the same question appears in mirror image: does a
+keyword's *absence* from a 161-character description confirm the course truly lacks that trait, or
+just that the description didn't mention it?
+
+Decision:
+Non-matches score exactly 0 for both modes — never a bonus for `prefer`, never a penalty avoided
+for `avoid`-mode "confirmed clean." `getContentPreferenceScore()` only adds points on `matched &&
+mode === 'prefer'` and only subtracts on `matched && mode === 'avoid'`; the non-matched branch is a
+no-op in both cases.
+
+Rejected alternative — rewarding `avoid`-mode non-matches (e.g. treat "描述沒提到期中考" as
+confirmation of "沒有期中考" and add points): rejected because keyword absence is not evidence of
+absence, and because doing so would produce a near-constant reward for the 99.9% of courses that
+never mention "期中" for `noMidterm` — mechanically identical to the old hard-filter's "silent false
+promise" failure mode, just expressed as a bonus instead of an implicit pass.
+
+Consequences:
+
+- With no content-preference flags set, `getContentPreferenceScore()` returns 0 for every course —
+  a true no-op, so ordering for callers that never set these flags is byte-for-byte unchanged from
+  before this change (confirmed: all 413 pre-existing tests pass unmodified).
+- A course confirmed via keywords to have an undesired trait can still score below a course with no
+  signal either way. This is intentional and mirrors ADR-006's "unknown is more favorable than
+  known-bad, never the reverse."
+
+## ADR-011: Content-Preference Signal Reliability Is Computed Once Per Candidate Pool, Not Per Plan
+
+Date: 2026-08-19
+
+Context:
+ADR-008 computed `reviewCoverage` per plan, after `buildPlan()`, because it is a claim about what a
+*specific* plan actually scheduled. Content-preference keyword hit rate is a different kind of
+quantity: it is a property of the shared candidate pool and the matching mechanism itself, identical
+across all 5 `PLAN_VARIANTS` regardless of which one becomes primary — closer in kind to
+`unknownEligibilityNames`/`offTermNames`, the existing "candidate-layer, computed once" warnings in
+`prepareCandidates()`.
+
+Decision:
+`computeContentPreferenceSignal()` and `buildContentPreferenceWarnings()` run once inside
+`prepareCandidates()`, over the fully-gated candidate list, for every flag the caller actually
+enabled. The resulting warnings flow into `prepared.warnings`, then into every plan's
+`plan.warnings`, and are naturally deduplicated when `generateSchedule()` unions all 5 plans'
+warnings via `[...new Set(...)]` — no extra bookkeeping needed to avoid a warning appearing 5 times.
+Thresholds are `<5%` / `>95%`; validated against the measured hit-rate table, these two cutoffs flag
+exactly `noMidterm` (0.1%), `weightDaily` (1.7%), and `learnMore` (97.6%) — the same three flags the
+roadmap's own background analysis had already identified as broken (反向判定型/正向判定型) — while
+leaving `noGroupReport` (5.5%, only 0.5 points above the low threshold), `discussion` (48.9%),
+`practicalExam` (33.4%), `finalReport` (12.2%), and `englishTaught` (8.0%) untouched, matching the
+same analysis's "已可運作" bucket.
+
+Rejected alternative — computing per-plan like `reviewCoverage`: rejected because it would recompute
+an identical number up to 5 times (wasted work) and because, unlike `reviewCoverage`, there is no
+plan-specific quantity to report — the hit rate does not depend on which courses a particular
+variant happened to schedule, only on which candidates exist at all.
+
+Consequences:
+
+- `prepareCandidates()`'s signature gains a `constraints` parameter (previously not received
+  directly, only indirectly via the caller's own `buildStudentScope(constraints)` call.) Confirmed
+  via grep that `prepareCandidates` is not exported and has exactly one call site, so this is a safe
+  signature change.
+- The 5%/95% thresholds are pinned constants matching the live dataset at the time of writing: if
+  the review or course-description dataset shifts materially, these should be re-validated against
+  a fresh hit-rate table the same way ADR-007's `m=5` should be revisited.
