@@ -441,6 +441,8 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明 |
 | `reviewEvidence`（Roadmap #4） | 課程評價證據物件，`null` 代表這門課沒有評價，**不是** 0 分。有值時包含 `reviewCount`、`avgSweetness`／`avgCoolness`／`avgWorkload`／`avgOverall`／`avgDifficulty`／`avgRecommend`、`positiveCount`／`negativeCount`／`neutralCount`、`easiness`（1–5，未收縮）、`adjustedEasiness`（1–5，m-estimate 收縮後）、`easyScore`（0–100，排課實際採用）、`priorEasiness`、`shrinkagePriorWeight`、`source`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」 |
 | `formallyRequired`（Roadmap #21） | 布林，永遠存在（`true`／`false`）。`true` 代表這門課是這位學生本學期正式必修（`isRequiredForStudent()===true`），且排入時已無條件豁免 3 個時段類舒適偏好（不排早八／午休保留／不排晚課）；不含封鎖時段，也不含使用者手動指定的 `mustTakeCourseIds`。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」 |
+| `corequisiteCode`（Roadmap #15） | 字串或 `null`。有配對時為對應正課／實習的 `catalogCourseCode`；`null` 代表這門課沒有配對（含 P 後綴但候選池中找不到正課的例外情況） |
+| `corequisiteRole`（Roadmap #15） | `'regular'`／`'internship'`／`null`。標示這門課在共同必修配對中的角色；`null` 代表不受共同必修規則影響。`excludedCourses`／`conflictSet` 可能出現 `constraintId: 'COREQUISITE_PAIR_INCOMPLETE'`，代表配對中的一方排不進去、兩者皆不排入。詳見 `docs/SCHEDULING_LOGIC.md` 的「共同必修（Co-requisite，Roadmap #15）」 |
 
 `category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」；`term`／
 `eligibilitySource`／`scopeReason` 見同檔案的「Active Term」與「候選課程的可追溯
@@ -480,10 +482,11 @@ Request:
 }
 ```
 
-`constraints` 為 Roadmap #21 新增的可選欄位。省略或傳空物件 `{}`（目前唯一的實際呼叫
-模式——`client/src` 尚未呼叫這支端點）時，回應與改動前逐欄位相同。
+`constraints` 為 Roadmap #21 新增的可選欄位，省略或傳空物件 `{}`（目前唯一的實際呼叫
+模式——`client/src` 尚未呼叫這支端點）皆可。
 
-Response（不帶 `constraints` 或帶空物件時）：
+Response（`valid`／`conflicts`／`duplicates`／`totalCredits`／`graduationCredits`／
+`nonGraduationCredits` 為既有欄位，語意不變）：
 
 ```json
 {
@@ -492,18 +495,24 @@ Response（不帶 `constraints` 或帶空物件時）：
   "duplicates": [],
   "totalCredits": 18,
   "graduationCredits": 17,
-  "nonGraduationCredits": 1
+  "nonGraduationCredits": 1,
+  "hardConstraintsValid": true,
+  "violations": [],
+  "unchecked": ["PREREQUISITE", "COREQUISITE"]
 }
 ```
 
 `duplicates` 為同一門課的多個班次（以 `catalogCourseCode` 課號判定），例如兩門不同老師開的「計算機演算法」。學生只能選一個班次，因此即使時段不衝突也屬不合法，`valid` 為 `false`。`conflicts` 與 `duplicates` 的元素皆為 `{ course1, course2 }`。
 
-**Roadmap #21**：`constraints` 非空時，額外呼叫 `server/src/skills/scheduleValidator.js` 的
-`validateScheduleAgainstConstraints()`，附加以下欄位（不取代上述既有欄位）：
+**Roadmap #21，2026-08-20 起一律執行**（Codex adversarial review 修正——原本只在
+`constraints` 非空時才額外檢查，導致只送 `{courses}` 的呼叫完全繞過了不需要
+`constraints` 就能檢查的規則，例如共同必修配對完整性）：呼叫
+`server/src/skills/scheduleValidator.js` 的 `validateScheduleAgainstConstraints()`，
+附加 `hardConstraintsValid`／`violations`／`unchecked` 三個欄位（不取代上述既有欄位）：
 
 ```json
 {
-  "hardConstraintsValid": true,
+  "hardConstraintsValid": false,
   "violations": [
     { "constraintId": "CREDIT_CEILING", "severity": "hard", "relaxable": false,
       "source": "user:numeric-limit", "confidence": 1, "courses": [], "reason": "課表共 28 學分，超過上限 25 學分" }
@@ -513,13 +522,23 @@ Response（不帶 `constraints` 或帶空物件時）：
 ```
 
 這個檢查涵蓋衝堂、重複班次、學分上限、資格／學期／系外選修／已修過的 metadata 複查、
-4 個時段類硬性限制、必修涵蓋率，比既有的 `valid`（只查衝堂與重複班次）範圍更完整。
-`unchecked` 永遠包含 `PREREQUISITE`／`COREQUISITE`（先修／共修）——這兩項專案裡完全
-沒有資料來源可查，validator 誠實回報未檢查，不假裝檢查過。此檢查**不套用**正式必修對
-時段偏好的無條件豁免（沒有 scope 可用）；只有課程物件已帶 `formallyRequired: true`
-標記（來自 `generateSchedule()` 自己產出的課表）時才會豁免，外部直接提供的課表一律
-照嚴格規則檢查。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema
-（Roadmap #21）」。
+4 個時段類硬性限制、必修涵蓋率、共同必修配對完整性（Roadmap #15），比既有的 `valid`
+（只查衝堂與重複班次）範圍更完整。
+
+`unchecked` 永遠包含 `PREREQUISITE`／`COREQUISITE`（先修／共修，見 Roadmap #21）——這
+兩項專案裡完全沒有資料來源可查。**`COREQUISITE_PAIR_INCOMPLETE`（Roadmap #15）只在
+送入的課程物件完全沒有任何一門帶 `corequisiteRole` 欄位時才會出現在 `unchecked`
+裡**——這個欄位只由 `generateSchedule()` 產出的課表天生帶著；外部直接組出來、沒有這
+個欄位的原始課程物件無法讓 validator 安全判斷哪些課「應該」有搭檔（`catalogCourseCode`
+的 `P` 後綴規則有真實例外，見 `docs/DATA_SCHEMA.md`），因此**不會**用課號猜測配對關
+係，寧可誠實回報未檢查，也不假裝檢查過而誤判合法課表。只要把 `generateSchedule()`
+產出的課表（或至少保留其 `corequisiteRole`／`corequisiteCode` 欄位）原樣送回
+`/validate`，這項規則就會確實執行。
+
+此檢查**不套用**正式必修對時段偏好的無條件豁免（沒有 scope 可用）；只有課程物件已帶
+`formallyRequired: true` 標記（來自 `generateSchedule()` 自己產出的課表）時才會豁免，
+外部直接提供的課表一律照嚴格規則檢查。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft
+Constraint Schema（Roadmap #21）」與「共同必修（Co-requisite，Roadmap #15）」。
 
 ### `POST /api/schedule/save`
 

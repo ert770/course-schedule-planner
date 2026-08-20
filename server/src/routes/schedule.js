@@ -26,16 +26,19 @@ router.post('/validate', (req, res) => {
     const { courses, constraints = {} } = req.body;
     const result = validateSchedule(courses);
 
-    // roadmap #21：只在請求帶有非空 constraints 時才額外檢查完整硬性限制
-    // 範圍，附加於既有欄位之外，不取代它們。省略 constraints（現行唯一的
-    // 實際呼叫模式——`client/src` 目前完全沒有呼叫這支端點）時回應與改動前
-    // 逐欄位相同。
-    if (constraints && Object.keys(constraints).length > 0) {
-      const extended = validateScheduleAgainstConstraints(courses, constraints);
-      result.violations = extended.violations;
-      result.unchecked = extended.unchecked;
-      result.hardConstraintsValid = extended.valid;
-    }
+    // roadmap #21 + Codex adversarial review 修正（2026-08-20）：原本只在
+    // 請求帶有非空 constraints 時才額外跑完整硬性限制檢查，導致目前唯一
+    // 的實際呼叫模式（`client/src` 尚未呼叫這支端點，但外部呼叫端可能
+    // 只送 `{courses}`）完全繞過了不需要 constraints 就能檢查的規則
+    // （例如 roadmap #15 的共同必修配對完整性）——把生成好的一組配對課表
+    // 拿掉其中一半再送回來驗證，回應仍會是 `valid`。現在一律執行，
+    // 附加於既有欄位之外，不取代它們；沒有 constraints 時傳空物件即可，
+    // `validateScheduleAgainstConstraints()` 已對每一項規則各自處理
+    // constraints 資料不足的情況（回報進 `unchecked`，不是假裝通過）。
+    const extended = validateScheduleAgainstConstraints(courses, constraints);
+    result.violations = extended.violations;
+    result.unchecked = extended.unchecked;
+    result.hardConstraintsValid = extended.valid;
 
     res.json(result);
   } catch (err) {
