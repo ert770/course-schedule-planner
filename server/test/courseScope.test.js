@@ -12,8 +12,14 @@ import {
   buildStudentScope,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
+  resolveCourseEligibility,
+  ELIGIBILITY_SOURCE,
 } from '../src/skills/courseScope.js';
 import { getAbbreviations, getDepartmentByAbbreviation } from '../src/data/departmentMapping.js';
+import {
+  NON_DEPARTMENT_CLASS_CATALOG,
+  SPECIAL_DEPARTMENT_CLASS_CATALOG,
+} from '../src/data/classKindCatalog.js';
 import { pickClassNameTarget } from '../src/db/database.js';
 import { generateSchedule } from '../src/skills/scheduler.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
@@ -151,6 +157,134 @@ describe('班級名稱解析：非系所班級不得被誤判', () => {
       const parsed = parseClassName(value);
       assert.equal(parsed.isDepartmentClass, false);
     }
+  });
+});
+
+describe('#13B 班級種類與修課資格', () => {
+  test('B～F 目錄完整列出目前 71 個非系所班級名稱', () => {
+    assert.equal(NON_DEPARTMENT_CLASS_CATALOG.length, 71);
+    assert.equal(
+      new Set(NON_DEPARTMENT_CLASS_CATALOG.map(entry => entry.className)).size,
+      NON_DEPARTMENT_CLASS_CATALOG.length,
+      '班級分類表不得有重複名稱'
+    );
+    assert.deepEqual(
+      [...new Set(NON_DEPARTMENT_CLASS_CATALOG.map(entry => entry.classGroup))].sort(),
+      ['B', 'C', 'D', 'E', 'F']
+    );
+  });
+
+  test('B～F 代表名稱解析成明確 classKind，不再回傳 null', () => {
+    const samples = [
+      ['國文綜合班', 'B', 'commonCurriculum'],
+      ['資電學院綜合班', 'C', 'collegeWide'],
+      ['建設英班', 'D', 'englishProgram'],
+      ['商學二(UQ)', 'D', 'internationalProgram'],
+      ['資通安全學程', 'E', 'creditProgram'],
+      ['未完成課程(大學)', 'F', 'other'],
+    ];
+
+    for (const [name, classGroup, classKind] of samples) {
+      const parsed = parseClassName(name);
+      assert.equal(parsed.classGroup, classGroup, name);
+      assert.equal(parsed.classKind, classKind, name);
+      assert.equal(parsed.isDepartmentClass, false, name);
+    }
+  });
+
+  test('8 個非標準格式的 A 類名稱仍解析成系所班級', () => {
+    assert.equal(SPECIAL_DEPARTMENT_CLASS_CATALOG.length, 8);
+    for (const entry of SPECIAL_DEPARTMENT_CLASS_CATALOG) {
+      const parsed = parseClassName(entry.className);
+      assert.equal(parsed.classGroup, 'A', entry.className);
+      assert.equal(parsed.classKind, 'department', entry.className);
+      assert.equal(parsed.isDepartmentClass, true, entry.className);
+      assert.equal(parsed.grade, entry.grade, entry.className);
+    }
+  });
+
+  test('名稱包含年級時保留 grade', () => {
+    assert.equal(parseClassName('國際生不分系一年級').grade, 1);
+    assert.equal(parseClassName('商學二(UQ)').grade, 2);
+    assert.equal(parseClassName('大二英文綜合班').grade, 2);
+  });
+
+  test('B～F 只標記資格待確認，不猜測正式適用對象', () => {
+    for (const name of ['國文綜合班', '資電學院綜合班', '建設英班', '資通安全學程']) {
+      const result = resolveCourseEligibility(
+        { department: name, category: '選修' },
+        buildCourseQueryScope({ department: '資訊工程學系', grade: 3, className: '乙' })
+      );
+      assert.equal(result.eligibility, 'unknown', name);
+      assert.match(result.eligibilityReason, /正式適用對象規則尚未確認/, name);
+    }
+  });
+
+  test('不在目錄的新名稱明確標成 unclassified', () => {
+    const parsed = parseClassName('尚未建檔的新型班級');
+    const eligibility = resolveCourseEligibility({ department: parsed.className }, null);
+
+    assert.equal(parsed.classKind, 'unclassified');
+    assert.equal(parsed.classGroup, null);
+    assert.equal(eligibility.eligibility, 'unknown');
+    assert.match(eligibility.eligibilityReason, /尚未納入班級分類表/);
+  });
+});
+
+describe('#20 eligibilitySource：eligibility 結論的可追溯來源', () => {
+  const resolvedScope = buildCourseQueryScope({
+    department: '資訊工程學系',
+    grade: 3,
+    className: '乙',
+  });
+
+  test('目錄查無班級名稱 → UNCLASSIFIED', () => {
+    const result = resolveCourseEligibility({ department: '尚未建檔的新型班級' }, resolvedScope);
+    assert.equal(result.eligibility, 'unknown');
+    assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.UNCLASSIFIED);
+  });
+
+  test('B～F 已分類但規則未確認 → UNCONFIRMED_RULES', () => {
+    const result = resolveCourseEligibility(
+      { department: '國文綜合班', category: '選修' },
+      resolvedScope
+    );
+    assert.equal(result.eligibility, 'unknown');
+    assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.UNCONFIRMED_RULES);
+  });
+
+  test('A 表必修但學生範圍未 resolved → REQUIRED_SCOPE_UNRESOLVED', () => {
+    const result = resolveCourseEligibility(
+      { department: '資訊三乙', category: '必修' },
+      buildCourseQueryScope({})
+    );
+    assert.equal(result.eligibility, 'unknown');
+    assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.REQUIRED_SCOPE_UNRESOLVED);
+  });
+
+  test('A 表必修且範圍已 resolved → REQUIRED_TABLE（eligible／ineligible 皆同一來源）', () => {
+    const ownClass = resolveCourseEligibility(
+      { department: '資訊三乙', category: '必修' },
+      resolvedScope
+    );
+    assert.equal(ownClass.eligibility, 'eligible');
+    assert.equal(ownClass.eligibilitySource, ELIGIBILITY_SOURCE.REQUIRED_TABLE);
+
+    const otherClass = resolveCourseEligibility(
+      { department: '會計三甲', category: '必修' },
+      resolvedScope
+    );
+    assert.equal(otherClass.eligibility, 'ineligible');
+    assert.equal(otherClass.eligibilitySource, ELIGIBILITY_SOURCE.REQUIRED_TABLE);
+  });
+
+  test('A 表非必修選修 → ELECTIVE_DEFAULT', () => {
+    const result = resolveCourseEligibility(
+      { department: '資訊三乙', category: '選修' },
+      resolvedScope
+    );
+    assert.equal(result.eligibility, 'eligible');
+    assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.ELECTIVE_DEFAULT);
   });
 });
 
@@ -559,7 +693,7 @@ describe('#13 端到端：課表不得出現他系或他年級的必修', () => 
     assert.deepEqual(result.schedule.map(course => course.id), [11]);
   });
 
-  test('通識與共同科目不會被系所條件過濾掉', () => {
+  test('通識與共同科目仍可辨識，但資格未確認前不自動排課', () => {
     const withCommon = [
       ...candidates,
       makeCourse(6, { category: '必修', department: '國文綜合班', dayOfWeek: 6, startPeriod: 2, endPeriod: 3 }),
@@ -573,9 +707,13 @@ describe('#13 端到端：課表不得出現他系或他年級的必修', () => 
       maxCoursesPerDay: 99,
     });
 
-    assert.ok(result.schedule.some(course => course.id === 6), '全校共同科目應仍是候選');
+    assert.ok(!result.schedule.some(course => course.id === 6), '資格待確認課程不得自動排入');
     assert.ok(
-      result.warnings.some(w => w.includes('尚無適用對象規則')),
+      result.excludedCourses.some(item => item.course.id === 6 && item.reason.includes('正式適用對象規則尚未確認')),
+      '被保守排除的課程必須保留可讀原因'
+    );
+    assert.ok(
+      result.warnings.some(w => w.includes('資格待確認')),
       result.warnings.join(' | ')
     );
   });

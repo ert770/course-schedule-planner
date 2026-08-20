@@ -4,7 +4,7 @@ import { Bot } from 'lucide-react';
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { markOnboarded } = useAuth();
+  const { markOnboarded, logout } = useAuth();
 
   const handleAgree = () => {
     markOnboarded();
@@ -38,7 +38,7 @@ export default function OnboardingPage() {
 
         <button 
           onClick={() => {
-            localStorage.clear();
+            logout();
             window.location.href = '/login';
           }}
           style={{

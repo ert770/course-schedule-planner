@@ -73,6 +73,14 @@ The MySQL connection pool is configured in `server/src/db/mysql.js` through envi
 - `DB_NAME`
 - `DB_SSL_CA_PATH`
 
+The system-wide active academic term (Roadmap #20) is configured in
+`server/src/data/activeTerm.js` through environment variables, both optional
+(defaults to 114 學年下學期, matching `generalEducationCatalog.js`'s hardcoded
+114-2 recognition table — update both together on rollover):
+
+- `ACTIVE_ACADEMIC_YEAR`
+- `ACTIVE_SEMESTER`
+
 ## Scheduling Flow
 
 ```text

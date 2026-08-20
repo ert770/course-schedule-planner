@@ -204,10 +204,13 @@ describe('系外選修條件在排課中生效', () => {
       makeCourse(1, { name: '密碼學', department: '應數三合', catalogCourseCode: 'MATH3069', dayOfWeek: 1 }),
     ];
 
-    for (const key of ['selectedCourseIds', 'mustTakeCourseIds', 'retakeCourseIds']) {
+    for (const key of ['selectedCourseIds', 'mustTakeCourseIds']) {
       const result = generateSchedule(courses, { ...base, [key]: [1] });
       assert.equal(result.schedule.length, 1, key);
     }
+
+    const ignoredLegacyRetake = generateSchedule(courses, { ...base, retakeCourseIds: [1] });
+    assert.equal(ignoredLegacyRetake.schedule.length, 0);
   });
 
   test('A/B：同一批課程換成他系學生就不會被過濾', () => {

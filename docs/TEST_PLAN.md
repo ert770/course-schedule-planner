@@ -77,8 +77,17 @@ node --check src/app.js
 | R1 | 學生為資訊系一年級，候選含 `資訊一甲`、`資訊三甲`、`會計一甲`、`運輸物流碩二` 的必修 | 只排入 `資訊一甲` 的必修，其餘不進候選 |
 | R2 | 同一批候選改以三年級學生排課 | 改為排入 `資訊三甲` 的必修，不含一年級必修 |
 | R3 | 未設定系所或年級 | 不把任何課當成必修，並回傳「未設定系所或年級」警告 |
-| R4 | 候選含 `國文綜合班` 等共同科目必修 | 保留為候選，但不享有必修優先度，且回傳「尚無適用對象規則」警告 |
+| R4 | 候選含 `國文綜合班` 等 B～F 類課程，且未明確指定 | 搜尋回應保留 `eligibility=unknown`；排課保守排除、保留原因並回傳「資格待確認」警告 |
 | R5 | 班級名稱為 `建設英班`、`商學院綜合班`、`商學一(UQ)` 等 | 不得被誤判為系所班級 |
+| R6 | 使用者明確指定 B～F 類 `eligibility=unknown` 課程 | 保留並排入，但警告課名與資格待確認原因 |
+| R7 | MySQL 現行 562 個相異班級名稱 | 全部具有 `classKind`；非系所名稱與 71 筆 B～F 目錄完全一致 |
+| T1 | 候選課程學年或學期與 `ACTIVE_TERM` 不符 | `term.isActiveTerm` 為 false；`GET /api/courses` 搜尋直接過濾掉，不出現在結果中 |
+| T2 | 候選課程未標註學年學期 | `term.isActiveTerm` 視為 true，不受過濾影響（相容既有無 term 資料的測試與資料） |
+| T3 | 排課時系統自撿到非本學期候選（明確 `courseIds` 或 #19 重補修查找繞過搜尋直接查資料庫） | 排除並附開課學期原因，彙整成一則警告 |
+| T4 | 使用者以 `courseIds`／`selectedCourseIds`／`mustTakeCourseIds` 明確指定非本學期課程 | 保留並排入，警告「非本學期開課」，不靜默排除 |
+| T5 | 不及格必修課號唯一對應的 section 是舊學期資料 | 該 section 被 T3 排除，`本學期沒有開課，請下學期記得重修` 警告仍正確觸發，不被靜默滿足 |
+| T6 | 每門候選課的回應內容 | 附帶 `eligibilitySource`（`eligibility` 結論的規則代號）、`term`（`{academicYear, semester, isActiveTerm}`）、`scopeReason`（融合 term／類別／eligibility／系外選修認列結果的白話說明） |
+| T7 | 系外選修算出認列結果後 | `scopeReason` 由 `annotateCourseCategory()` 給的預設文字，覆寫為認列結果的精修文字（不計入畢業學分／須系辦確認／符合認列條件） |
 | B1 | 同一課號（`catalogCourseCode`）的兩個班次，時段不衝突 | 只排入一個班次，另一個理由為「已排入同一門課的其他班次」 |
 | B2 | 第一個班次違反硬性限制 | 改排同一門課的另一個班次 |
 | B3 | 正課 `MATH1005` 與實習 `MATH1005P` | 視為不同課號，不受一課一班次限制 |
@@ -90,6 +99,44 @@ node --check src/app.js
 | C4 | `allowCreditOverload` 為 true | 上限放寬至 30 學分；未開啟時維持 25 |
 | C5 | 同一天 6 門不衝堂的課 | 全部可排入，無「每日 N 門」限制 |
 | C6 | 呼叫端指定 `maxCoursesPerDay: 3` | 該日只排入 3 門 |
+| V20 | 同批候選，A 帶 `courseReviews`、B 不帶 | 有評價時 `easy_score` 方案選涼課；無評價時中性分相同、`breakdown.easy` 為 `null` |
+| V21 | 「有評價且很硬」vs「完全沒評價」 | 優先排入沒評價那門，證明無評價未被當成 0 |
+| V22 | 描述含「涼」字但無評價 vs 真正有涼課評價 | 後者勝出，前者不因關鍵字取得涼課加分（釘住關鍵字誤判的修復） |
+| V23 | `preferEasyCourses: true` 且候選全無評價 | `breakdown.easy` 為 `null`、`reviewCoverage.ratio` 為 0、發出警告 |
+| V24 | 同 V23 併設 `preferCompact: true` | `preferenceScore` 只由 compact 軸決定，不被 null 的 easy 軸拖累成 0 |
+| V25 | 完全不帶 `courseReviews`（呼叫端漏接） | `reviewDataLoaded` 為 `false` 並發出警告；不影響既有排序邏輯 |
+| V26 | 4 則全高分 vs 8 則中高分 | 收縮後差距小於未收縮差距的一半 |
+| V27 | `schedule[]` 每門課 | 都有 `reviewEvidence` 鍵；無評價時為 `null` 而非 `undefined` |
+| V28 | 有評價的課因 `eligibility === 'unknown'` 被排除 | 警告統計「有課程評價但因資格待確認未納入」的門數與則數 |
+| N1 | `noMidterm: true`，候選課描述含「期中考」 | 課程仍在候選集／`schedule` 中，不再進入 `excludedCourses` |
+| N2 | `weightDaily: true`，候選池多數不含「平時／作業／出席」（重現 1.7% 命中率情境） | 候選集不再歸零，`plan.success` 可為 `true` |
+| N3 | 對全部 8 個旗標各自設 true，構造一門「未命中」的候選課 | `excludedCourses` 不再因這 8 個旗標出現排除原因 |
+| N4 | `mustTakeCourseIds`／`selectedCourseIds` 指定一門「未命中」內容偏好的課 | `plan.failures` 不再含這門課，`success` 不再被拖成 `false` |
+| N5 | `noMidterm: true`，兩門其餘條件相同的課，一門命中、一門不命中 | 命中的那門分數較低（排序較後），但兩門都在候選集內 |
+| N6 | `practicalExam: true`，兩門其餘條件相同的課，一門命中、一門不命中 | 命中的那門排序較前 |
+| N7 | 通識課命中多個內容偏好 vs 核心選修課全不命中，兩者衝堂 | 核心選修仍勝出（驗證內容偏好加總不蓋過類別優先度 120 級距） |
+| N8 | `noEveningClasses: true`，候選含晚課 | 該課被排除，理由含「晚課」（既有邏輯，先前無測試釘住） |
+| N9 | `lunchBreakFree: true`，候選課時段涵蓋第 5 節 | 該課被排除，理由含「午休」（同上） |
+| N10 | 候選池中 `noMidterm` 命中率 < 5% | `warnings` 含「訊號極弱」字樣 |
+| N11 | 候選池中某旗標命中率 > 95% | `warnings` 含「無法有效區分課程」字樣 |
+| N12 | 候選池中某旗標命中率落在 5%~95% 之間 | 不觸發該警告 |
+| N13 | 訊號可靠度警告觸發時 | `allWarnings`（5 個方案聯集去重後）只出現一次 |
+| N14 | 未設定任何內容偏好旗標 | 不產生相關警告，排序與改動前一致（回歸測試） |
+| N15 | `englishTaught: true`，候選課 `course.language === 'English'` 但描述不含「英文」 | 仍視為命中（驗證 `extra` 判定路徑，不只靠關鍵字） |
+| X1 | `allowRelaxation` 未設定（預設），選修因時段偏好排不出課表 | 行為與改動前一致（`success:false`），無 `relaxedConstraints` |
+| X2 | `allowRelaxation:true` 且指定 `timePreferencePriority` | 依使用者順序逐步放寬並成功排課，`relaxedConstraints` 反映該順序 |
+| X3 | `allowRelaxation:true`，但無解原因是 `blockedPeriods` | 放寬階梯不生效，仍然失敗（`BLOCKED_PERIODS` 永不放寬） |
+| X4 | 兩門候選各因不同限制排除（`noMorningClasses`／`blockedPeriods`） | `conflictSet` 含兩者，`relaxable` 標記分別為 `true`／`false` |
+| X5 | 一次成功的 `generateSchedule()` 結果 | 其 `schedule` 交給 `validateScheduleAgainstConstraints` 檢查回傳 `valid:true` |
+| X6 | 手造兩門衝堂的課，不帶 `constraints` 呼叫 `validateScheduleAgainstConstraints` | 回傳 `TIME_CONFLICT` violation，不需要 `constraints` |
+| X7 | 帶 `maxCredits` 的超額課表 vs 省略 `maxCredits` 的正常課表 | 前者出現 `CREDIT_CEILING` violation，後者採用預設值且不出錯 |
+| X8 | 任意呼叫 `validateScheduleAgainstConstraints` | `unchecked` 永遠包含 `PREREQUISITE`／`COREQUISITE` |
+| X9 | 舊版 `validateSchedule(courses)`（不帶 `constraints`） | 回傳形狀逐欄位維持不變（回歸釘住） |
+| X10 | 兩門必排課（`mustTakeCourseIds`）同天，`maxCoursesPerDay: 1` | 第二門因每日上限排不進去，正確回報 `success:false` 與失敗原因（修復先前的靜默消失） |
+| X11 | 檢查 `constraintSchema.js` 的 `CONSTRAINTS` 表 | 每個條目都有定義必要欄位，且沒有重複 id |
+| X12 | 正式必修（`isRequiredForStudent()===true`）違反 `noMorningClasses` | 仍被排入，`warnings` 含「必修優先」與偏好名稱的揭露訊息 |
+| X13 | 同一門正式必修改為違反 `blockedPeriods` | 仍會被排除（必修豁免不適用於 `BLOCKED_PERIODS`） |
+| X14 | `mustTakeCourseIds`（非正式必修）違反 `noMorningClasses` | 仍受排除，行為與 S10 一致（確認豁免範圍夠窄） |
 
 ### 班別收斂（必修不得換班）
 
@@ -166,7 +213,10 @@ node --check src/app.js
 | --- | --- | --- |
 | H4 | 已修課號有多個候選班次 | **每一個班次**都被排除，各自附上「已修過並通過（課號 XXX）」 |
 | H5 | 同一課號換成不同 section id（模擬跨學期） | 仍被排除——本次改動要修的核心目的 |
-| H6 | 課程 `passed: false` 且被 `retakeCourseIds` 指定 | 不被已修排除擋到，正常排入；已修與重補修依資料設計互斥，不需額外豁免邏輯 |
+| H6 | 最新紀錄為 `passed: false` 的必修 | 由 `courseHistory` 自動映射本學期同課號 section 並排入，不接受手動 `retakeCourseIds` |
+| H6 | 舊學期不及格、較新學期通過 | 只視為完成，不再成為重補修候選 |
+| H6 | 本學期必修與重補修衝堂 | 保留本學期必修，並提示重補修未排入 |
+| H6 | 不及格必修本學期沒有開課 | 回傳提醒下學期重修的明確 warning |
 | H7 | 候選課程沒有 `catalogCourseCode` | 不以課名 fallback 誤判為已修 |
 | H8 | 課號比對 | 精確字串比對，不做 trim 或大小寫正規化（已實測兩側格式一致，見 `docs/DATA_SCHEMA.md`） |
 
@@ -175,6 +225,101 @@ node --check src/app.js
 | 編號 | 斷言 |
 | --- | --- |
 | A1/A5 | `database.js` 原始碼不再出現 `completed_courses`，也不再產生或接受 `completedCourseCodes`、`completedCourseNames`、`completedCourseIds`、`completedCourses`、`completedCredits`、`earnedCredits` 等修課歷史衍生欄位 |
+
+### 課程評價派生與涼課排行一致性
+
+`Course_Reviews` 一列代表彙總後的多則評價（見 `docs/DATA_SCHEMA.md`）。涼度評分改用結構化評分
+（`sweetness`／`coolness`／`workload`／`overall`）取代課程描述關鍵字，並以 m-estimate 收縮
+（`(n×raw + m×prior)/(n+m)`，`m=5`）避免小樣本極端值支配排序。編號比照 `courseHistory.test.js`
+（H1–H3）→ `scheduler.test.js`（H4–H8）的既有慣例：純函式測試在前，端到端測試接續其後，
+同一序列橫跨多個檔案。
+
+`server/test/reviewStats.test.js` 的 `shrinkEasiness()` 測試（V1–V5）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| V1 | 人工算好的 m-estimate 值 | 精確符合公式計算 |
+| V2 | `n` 增大（4 → 50） | 結果單調趨近 `rawEasiness` |
+| V3 | `priorEasiness` 為 `null` 或非有限數 | 原樣回傳 `rawEasiness`，不噴例外 |
+| V4 | `rawEasiness` 為 `null` | 回傳 `null`，缺證據不可能收縮出分數 |
+| V5 | `m <= 0` | 原樣回傳 `rawEasiness`（收縮關閉） |
+
+`server/test/courseReviewStats.test.js`（課程 ↔ 評價對應，V6–V15）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| V6 | `review.courseId` 與 `course.id` 型別不一致 | index 仍對得上（統一用 `String()`） |
+| V7 | 評價列 `courseId` 為 `null`（section join 失敗） | 該列丟棄，不會全聚成同一鍵 |
+| V8 | 課程沒有任何評價 | 回 `null`，不是 0 也不是空物件 |
+| V9 | 評價列存在但四個涼度維度全缺 | 仍回 `null`（有列 ≠ 有證據） |
+| V10 | `easinessToScore`：1／3／5／0.5／6 | 0／50／100／0／100（超界 clamp） |
+| V11 | 一列 `reviewCount:8` vs 八列 `reviewCount:1` | 結果相同，證明重用 `weightedAverageScore`，沒有自己重寫一份未加權版 |
+| V12 | `buildReviewPrior` | 只由有評價的課算，每門貢獻一次；與之後查詢哪門課無關 |
+| V13 | `getNeutralEasyScore(prior)` | 等於先驗換算後的分數；先驗缺失時退回 50 |
+| V14 | `deriveReviewEvidence` 完整組裝 | 同時含未收縮 `easiness` 與收縮後 `adjustedEasiness`、`easyScore`（0–100） |
+| V15 | `deriveReviewEvidence` 對沒有評價的課 | 回傳 `null` |
+
+`server/test/reviewSearch.test.js`（`rankEasyCourses()` 純函式，V16–V19）——這是「涼課排行榜與排課
+引擎不一致」的直接迴歸測試：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| V16 | 課 A（4 則、原始分較高）vs 課 B（8 則、原始分較低） | 收縮後排序不再機械地把 A 排第一 |
+| V17 | 排行結果中任一課程 | 同時帶 `easiness`（未收縮）與 `adjustedEasiness`（收縮後），對低樣本課不相等 |
+| V18 | 課程 `reviewCount === 0` | 被排除，不出現在結果中 |
+| V19 | 對同一組 `reviews` 分別呼叫 `buildReviewPrior()` 與 `rankEasyCourses()` 內部算出的先驗 | 兩者相等，證明排行榜與排課引擎共用同一個母體先驗 |
+
+`server/test/scheduler.test.js`（`generateSchedule()` 端到端，V20–V28）見上方主表。
+
+`server/test/database-contract.test.js`（連真實 MySQL）：釘住 `Course_Reviews` 覆蓋率、五個評分
+欄位值域、`review.courseId` 可對回實際 section、母體 easiness 落在合理範圍，資料漂移時測試會響。
+
+### 內容偏好從硬過濾改成軟懲罰
+
+Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／重視平時成績／實作評量／期末報告／
+英文授課／學到較多內容）原本是 `hardConstraintReason()` 的硬性排除條件，判定依據全部是課程
+描述關鍵字比對。真實資料庫命中率兩極化（0.1%～97.6%），改為 `scoreCourse()` 裡的軟性加分，
+維持硬性的只剩 4 個時段類檢查（早八／晚課／封鎖時段／午休）。`server/test/scheduler.test.js`
+的 N1–N15（見上方主表）為端到端測試；這批純函式（`getContentPreferenceScore()`、
+`computeContentPreferenceSignal()`、`buildContentPreferenceWarnings()`）沒有跨模組共用或連 DB
+的需求，因此比照 `getInterestScore`／`getEasiness` 的既有慣例，只透過 `generateSchedule()`
+端到端測試涵蓋，不另開純函式測試檔案。
+
+真實資料驗證（node 層，連正式 MySQL）：對資工三學生的 227 門候選課，`weightDaily: true` 在
+舊版硬性排除下會把候選集壓縮到 3 門（1.3%），新版軟性加分後排課仍正常成功，候選集不再歸零。
+
+### Hard/Soft Constraint Schema、獨立 Validator、放寬階梯（Roadmap #21）
+
+`server/test/scheduler.test.js` 的 X1–X14（見上方主表）。涵蓋四個面向：
+
+- **opt-in 放寬階梯**（X1–X4）：預設 `allowRelaxation:false` 時行為不變；啟用後依使用者提供的
+  `timePreferencePriority` 逐步放寬並成功排課；`BLOCKED_PERIODS` 永不進入放寬清單；失敗回應
+  的 `conflictSet` 具備正確的 `constraintId`／`relaxable` 標記。
+- **獨立 validator**（`server/src/skills/scheduleValidator.js`，X5–X9）：`generateSchedule()`
+  成功時對自己的主推方案做自我檢查；`validateScheduleAgainstConstraints()` 不需要 `constraints`
+  也能檢查衝堂；帶 `maxCredits` 時檢查學分上限；`unchecked` 永遠列出先修／共修（沒有資料來源）；
+  舊版 `validateSchedule()` 回傳形狀維持不變（回歸釘住）。
+- **每日上限失敗回報修復**（X10）：先前必排課因每日上限被排除時不會推入 `plan.failures`，
+  會靜默消失而不回報失敗原因，X10 釘住修復後的行為。
+- **`constraintSchema.js` 完整性**（X11）與**正式必修的時段偏好豁免**（X12–X14）：豁免範圍嚴格
+  限定在 `isRequiredForStudent()===true`，不含 `blockedPeriods`，也不含使用者手動指定的
+  `mustTakeCourseIds`——後者與 S10 行為完全一致，未受影響。
+
+先修／共修（prerequisite/co-requisite）**只定義層級，不強制執行**：`server/src` 與
+`docs/DB_AUDIT_REPORT_2026-08-05.md` 皆確認沒有這方面的資料來源，屬 roadmap #8（尚未開始）的
+負責範圍，因此沒有對應的執行邏輯測試，只有 X8 釘住 validator 誠實回報 `unchecked`。
+
+## #12B 通識分類測試
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| G1 | 學年度 111／112／114／115 | 分別選到 `through-111`／`112-114`／`112-114`／`from-115` |
+| G2 | 114 課程的 `dept` 是官方四領域之一 | 分類為 `通識`，領域與 `dept` 相同 |
+| G3 | 課號以 `GE` 開頭但沒有正式領域或認抵資料 | 不猜成通識 |
+| G4 | 115 課程仍帶舊領域來源標記 | 分類為通識，但 `generalEducationDomain = null` |
+| G5 | 114-2 `IINE2832`／`IINE2833`／`HSS1007` | 依官方認抵表分類為世界格局與歷史地理視野 |
+| G6 | 明確搜尋 `category=通識` | 跨本人班級範圍回傳直接通識及認抵課 |
+| G7 | 一般未指定分類搜尋 | 維持 F7；排課候選則額外納入通識 |
 
 ## 資料庫契約測試
 
@@ -193,6 +338,8 @@ node --check src/app.js
 | D8 | `Courses.type` 只有 `必修`／`選修` | 類別解析的前提；`核心選修` 等值由程式產生 |
 | D9 | `time_str` 可解析率不得低於基準 | 解析不出時段的課不受任何限制，會被貪婪填充無限塞入 |
 | D10 | 解析失敗的 `time_str` 都有可解釋的原因（節次 `00`、`未決定`） | 出現新格式代表解析規則漏了規則 |
+| D11 | 114-2 四領域至少 167 個課號、208 個班次且零缺課號 | 通識分類資料不得被資料庫變動靜默破壞 |
+| D12 | 114-2 三門跨院認抵課可由正式課號唯一對回課名與學分 | PDF 課名與 MySQL 正式課號對照不得漂移 |
 
 基準值以 2026-08-04 實測為準（562 個相異 `dept`、85.9% 解析率、3086 筆 `Courses`、
 3560 筆 section、93.7% 時間可解析率），比例容忍 5%、數量容忍 25%。門檻是用來抓
@@ -214,24 +361,31 @@ node --check src/app.js
 | API | 測試項目 |
 | --- | --- |
 | `/api/health` | 回傳 `status: ok` |
-| `/api/auth/login` | 正確登入、錯誤密碼、缺少欄位 |
+| `/api/auth/login` | 正確登入、錯誤密碼、缺少欄位；成功時設定簽名 HttpOnly session cookie |
+| `/api/auth/me` | 未登入 401；登入後由 session 回傳 canonical student ID |
 | `/api/courses` | keyword、department、category、period 查詢 |
 | `/api/schedule/generate` | 無 courseIds、指定 courseIds、偏好限制 |
 | `/api/schedule/validate` | 有衝堂、無衝堂 |
-| `/api/profile` | 讀取與更新偏好 |
+| `/api/profile` | DB-less CI 驗證未登入 401、改送另一個 ID 時在資料存取前回 403；成功讀取／更新 session 使用者偏好須在已設定 MySQL 的整合環境驗證，schema v1 另由純函式測試固定契約 |
 | `/api/reviews/easy` | limit 正常運作 |
-| `/api/graduation/:studentId` | 學分缺口與推薦 |
+| `/api/graduation/me` | 學分缺口與推薦 |
 | `/api/chat` | 無 message、正常 message、無 API key |
 
 ## 前端操作測試
 
 - 登入後導向 onboarding 或 dashboard。
 - 初始偏好可儲存。
-- 課程搜尋可查詢並顯示結果。
+- 課程搜尋可查詢並顯示結果；通識篩選需顯示四領域，並與一般分類搜尋做 A/B。
 - 儀表板可產生課表。
 - 課表格可顯示不同星期與節次。
 - 畢業學分頁可顯示缺口。
 - AI 聊天輸入後可顯示回覆。
+- 自動重補修瀏覽器 A/B 使用 `server/test/fixtures/browser-with-failed` 與
+  `browser-without-failed`，由 `DATA_DIR` 指向隔離資料，不修改正式
+  `server/data/users.json`。兩組只改 `IECS3059` 的 `passed`，其餘登入與 Profile 條件相同。
+  `browser-not-offered` 另驗證本學期沒有對應 section 時的使用者 warning。
+  測試 client 可在 DEV 設定 `VITE_E2E_BYPASS_SETUP=true`；此開關只接受 `BROWSER*`
+  fixture 帳號，避免為了進 Dashboard 寫入 shared MySQL Profile。
 
 ## AI Agent 測試
 
@@ -249,5 +403,6 @@ node --check src/app.js
 2. 執行前端 build。
 3. 執行必要的 lint 或語法檢查。
 4. 確認 `.env` 與 `node_modules/` 沒有被加入 Git。
-5. 若修改排課邏輯，至少執行排課測試案例 S1-S10。
+5. 若修改排課邏輯，至少執行排課測試案例 S1-S10；若修改的是
+   `scheduler.js`／`scheduleValidator.js`／`constraintSchema.js`，一併執行 N1-N15 與 X1-X14。
 

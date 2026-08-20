@@ -7,10 +7,13 @@ import { normalizeDepartment, isDepartmentInput } from '../utils/text.js';
 import { getAbbreviations } from '../data/departmentMapping.js';
 import { tagsToFlags, extractTags } from '../data/preferenceTags.js';
 import { logger } from '../utils/logger.js';
+import { createTtlCache } from '../utils/ttlCache.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, '..', '..', 'data');
 
 const MYSQL_COLLECTIONS = new Set(['courses', 'reviews', 'user_preferences']);
 
@@ -405,6 +408,8 @@ function normalizeClassName(value) {
 // `SHOW COLUMNS` 只查一次並快取。組員新增欄位後需重啟後端才會生效
 // （`npm run dev:server` 使用 `node --watch`，改動任一後端檔案即會重啟）。
 let classNameColumnPromise = null;
+let profileSchemaVersionColumnPromise = null;
+let studentIdColumnPromise = null;
 
 function hasUserProfileClassNameColumn() {
   if (!isMysqlConfigured()) return Promise.resolve(false);
@@ -419,6 +424,41 @@ function hasUserProfileClassNameColumn() {
   }
 
   return classNameColumnPromise;
+}
+
+function hasUserProfileSchemaVersionColumn() {
+  if (!isMysqlConfigured()) return Promise.resolve(false);
+
+  if (!profileSchemaVersionColumnPromise) {
+    profileSchemaVersionColumnPromise = queryRows(
+      'SHOW COLUMNS FROM `User_Profiles` LIKE \'profile_schema_version\''
+    )
+      .then(rows => rows.length > 0)
+      .catch(err => {
+        logger.warn(
+          `無法確認 User_Profiles.profile_schema_version 欄位是否存在：${err.message}`,
+          { label: 'Profile' }
+        );
+        return false;
+      });
+  }
+
+  return profileSchemaVersionColumnPromise;
+}
+
+function hasUserProfileStudentIdColumn() {
+  if (!isMysqlConfigured()) return Promise.resolve(false);
+
+  if (!studentIdColumnPromise) {
+    studentIdColumnPromise = queryRows('SHOW COLUMNS FROM `User_Profiles` LIKE \'student_id\'')
+      .then(rows => rows.length > 0)
+      .catch(err => {
+        logger.warn(`無法確認 User_Profiles.student_id 欄位是否存在：${err.message}`, { label: 'Profile' });
+        return false;
+      });
+  }
+
+  return studentIdColumnPromise;
 }
 
 function readClassNameOverrides() {
@@ -529,7 +569,8 @@ function mapUserProfileRow(row) {
   return {
     id: normalizeId(row.user_id),
     // canonical 是學號，不是 `user_id`。這裡換過來之後，上層程式一律只看得到學號。
-    userId: toCanonicalUserId(row.user_id),
+    userId: row.student_id || toCanonicalUserId(row.user_id),
+    studentId: row.student_id || toCanonicalUserId(row.user_id),
     mysqlUserId: String(row.user_id),
     displayName: `User ${row.user_id}`,
     department: readProfileDepartment(row),
@@ -547,6 +588,7 @@ function mapUserProfileRow(row) {
     mustTakeCourses: [],
     avoidInstructors: [],
     preferencesJson: {},
+    storedSchemaVersion: normalizeNumber(row.profile_schema_version, 0),
 
     // 偏好旗標**由標籤推導**，且只展開為 true 的項目。
     //
@@ -589,7 +631,13 @@ async function getMysqlCourses() {
   return rows.map(mapCourseRow);
 }
 
-async function getMysqlReviews() {
+// 預設 60 秒。評價資料由外部爬蟲流程寫入，非本應用程式的寫入路徑，
+// 因此用短 TTL 換取「同一次伺服器啟動期間資料更新後最多 60 秒可見」，
+// 而不是像 `classNameColumnPromise` 那樣永久快取到重啟為止——那種模式
+// 適用於不會無重啟就變動的 schema 欄位，`Course_Reviews` 不是。
+const REVIEWS_CACHE_TTL_MS = Number(process.env.REVIEWS_CACHE_TTL_MS) || 60_000;
+
+async function fetchMysqlReviewsUncached() {
   // 評價資料表為 `Course_Reviews`（單數），以 selection_code 關聯 Course_Sections。
   // 舊程式碼查的 `Courses_Reviews` 並不存在，且欄位結構完全不同。
   const rows = await queryRows(`
@@ -616,6 +664,15 @@ async function getMysqlReviews() {
   return rows.map(mapReviewRow);
 }
 
+// 排課引擎每次排課都會呼叫 `getAll('reviews')`，`reviewSearch.js` 的
+// `getReviewsByCourse()`／`getSentimentSummary()` 也在同一次請求內各撈一次
+// 全表。加 TTL 快取後這些呼叫在到期前共用同一份結果，不必每次都下一次全表查詢。
+const getCachedMysqlReviews = createTtlCache(fetchMysqlReviewsUncached, REVIEWS_CACHE_TTL_MS);
+
+async function getMysqlReviews() {
+  return getCachedMysqlReviews();
+}
+
 async function getMysqlUserPreferences() {
   // `class_name` 只在欄位存在時才選取——直接寫進 SQL 會讓欄位尚未新增的環境
   // 整個查詢失敗，等於所有 profile 一起壞掉。
@@ -629,6 +686,12 @@ async function getMysqlUserPreferences() {
   ];
   if (await hasUserProfileClassNameColumn()) {
     columns.push('class_name');
+  }
+  if (await hasUserProfileSchemaVersionColumn()) {
+    columns.push('profile_schema_version');
+  }
+  if (await hasUserProfileStudentIdColumn()) {
+    columns.push('student_id');
   }
 
   const rows = await queryRows(`
@@ -647,13 +710,15 @@ async function getMysqlUserPreferences() {
 }
 
 async function updateMysqlUserPreference(canonicalId, item) {
-  // canonical 是學號，MySQL 的主鍵是數字。轉換在此發生，其餘程式不需要知道。
+  const hasStudentId = await hasUserProfileStudentIdColumn();
+  // migration 完成後直接以 student_id 查找；欄位尚未建立時才使用 users.json
+  // 內的 numeric id 對照，維持 shared MySQL 的相容性。
   const userId = toMysqlUserId(canonicalId);
 
   // 對照不到 numeric id 就不能寫——但這代表 `users.json` 缺對照列，是資料問題，
   // 必須講出來。先前這裡靜默 `return null`，導致前端送學號時
   // **每一次 profile 寫入都被跳過**而毫無跡象。
-  if (!/^\d+$/.test(String(userId))) {
+  if (!hasStudentId && !/^\d+$/.test(String(userId))) {
     logger.warn(
       `無法把 ${JSON.stringify(canonicalId)} 對應到 User_Profiles.user_id，`
       + 'MySQL profile 未更新。請確認 `users.json` 有對應的 id 欄位。',
@@ -700,14 +765,18 @@ async function updateMysqlUserPreference(canonicalId, item) {
     updates.push('`class_name` = ?');
     params.push(normalizeClassName(item.className));
   }
+  if (item.schemaVersion !== undefined && await hasUserProfileSchemaVersionColumn()) {
+    updates.push('`profile_schema_version` = ?');
+    params.push(item.schemaVersion);
+  }
 
   if (updates.length === 0) {
     return null;
   }
 
-  params.push(userId);
+  params.push(hasStudentId ? canonicalId : userId);
   const result = await queryRows(
-    `UPDATE \`User_Profiles\` SET ${updates.join(', ')} WHERE \`user_id\` = ?`,
+    `UPDATE \`User_Profiles\` SET ${updates.join(', ')} WHERE ${hasStudentId ? '\`student_id\`' : '\`user_id\`'} = ?`,
     params
   );
 
@@ -717,7 +786,11 @@ async function updateMysqlUserPreference(canonicalId, item) {
 
   // 回傳的 profile 以 canonical（學號）為鍵，不是剛才用來 UPDATE 的數字主鍵。
   const allProfiles = await getMysqlUserPreferences();
-  return allProfiles.find(profile => sameId(profile.mysqlUserId, userId)) || null;
+  return allProfiles.find(profile => (
+    hasStudentId
+      ? sameId(profile.userId, canonicalId)
+      : sameId(profile.mysqlUserId, userId)
+  )) || null;
 }
 
 // 只存在於 MySQL 的資料。`server/data/` 沒有對應的 JSON 檔——課程與評價的

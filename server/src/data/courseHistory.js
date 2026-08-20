@@ -20,27 +20,85 @@ const NON_GRADUATION_CATEGORY = 'nonGraduation';
 // 畢業學分的分類，與 `data/graduationRequirements.js` 的 breakdown 一致。
 const CREDIT_CATEGORIES = ['required', 'elective', 'general', 'external', 'unspecified'];
 
+export const COURSE_HISTORY_REQUIRED_FIELDS = [
+  'academicYear',
+  'semester',
+  'courseCode',
+  'courseName',
+  'score',
+  'letterGrade',
+  'credits',
+  'passed',
+  'requirementType',
+  'generalEducationCategory',
+  'graduationCategory',
+];
+
+export function validateCourseHistoryEntry(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return { valid: false, missingFields: [...COURSE_HISTORY_REQUIRED_FIELDS] };
+  }
+
+  const missingFields = COURSE_HISTORY_REQUIRED_FIELDS.filter(field => !(field in entry));
+  return { valid: missingFields.length === 0, missingFields };
+}
+
+function compareAttempts(left, right) {
+  const yearDiff = Number(left?.academicYear) - Number(right?.academicYear);
+  if (Number.isFinite(yearDiff) && yearDiff !== 0) return yearDiff;
+
+  const semesterDiff = Number(left?.semester) - Number(right?.semester);
+  return Number.isFinite(semesterDiff) ? semesterDiff : 0;
+}
+
+// 同一課號可能跨學期重修。已修與重補修判定只看最新一筆，避免「先不及格、
+// 後來及格」仍被誤列為重補修。學年度與學期是 courseHistory 的必要欄位。
+export function getLatestAttemptsByCourseCode(courseHistory = []) {
+  const latest = new Map();
+
+  for (const entry of toArray(courseHistory)) {
+    const code = entry?.courseCode;
+    if (!code) continue;
+
+    const current = latest.get(code);
+    if (!current || compareAttempts(entry, current) > 0) {
+      latest.set(code, entry);
+    }
+  }
+
+  return latest;
+}
+
 // 已通過的課號。
 //
 // **未通過的課不在此列**——那是重補修的對象，不是已修。這個區分讓
-// `scheduler.js` 的已修排除與 `retakeCourseIds` 天生互斥，不需要額外的豁免判斷：
-// 被排除的一定是通過的，需要重補修的一定不在排除清單裡。
+// `scheduler.js` 的已修排除與自動重補修天生互斥，不需要額外的豁免判斷：
+// 被排除的一定是最新一次已通過，需要重補修的一定是最新一次未通過必修。
 //
 // 回傳的課號直接對應 MySQL `Courses.subid3` 映射後的 `course.catalogCourseCode`，
 // 兩側皆為無空白的大寫字串，**不做正規化**（2026-08-11 實測：
 // `courseHistory.courseCode` 53 筆與 MySQL `Courses.subid3` 全表 3086 筆皆無前後空白、
 // 無非大寫、無空值，BINARY 精確比對與不分大小寫查詢結果相同）。
 export function getPassedCourseCodes(courseHistory = []) {
-  return toArray(courseHistory)
+  return [...getLatestAttemptsByCourseCode(courseHistory).values()]
     .filter(entry => entry?.passed)
     .map(entry => entry.courseCode);
+}
+
+export function getFailedRequiredCourses(courseHistory = []) {
+  return [...getLatestAttemptsByCourseCode(courseHistory).values()]
+    .filter(entry => entry?.passed === false && entry.requirementType === '必修');
+}
+
+export function getFailedRequiredCourseCodes(courseHistory = []) {
+  return getFailedRequiredCourses(courseHistory).map(entry => entry.courseCode);
 }
 
 // 依畢業分類加總已修學分。未通過的課與 `nonGraduation` 分類都不計入。
 export function getEarnedCredits(courseHistory = []) {
   const earned = Object.fromEntries(CREDIT_CATEGORIES.map(key => [key, 0]));
 
-  for (const entry of toArray(courseHistory)) {
+  for (const entry of getLatestAttemptsByCourseCode(courseHistory).values()) {
     if (!entry?.passed) continue;
     if (entry.graduationCategory === NON_GRADUATION_CATEGORY) continue;
 
@@ -66,7 +124,12 @@ function toArray(value) {
 }
 
 export default {
+  COURSE_HISTORY_REQUIRED_FIELDS,
+  validateCourseHistoryEntry,
+  getLatestAttemptsByCourseCode,
   getPassedCourseCodes,
+  getFailedRequiredCourses,
+  getFailedRequiredCourseCodes,
   getEarnedCredits,
   getTotalEarnedCredits,
 };

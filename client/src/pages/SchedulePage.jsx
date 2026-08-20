@@ -37,7 +37,7 @@ export default function SchedulePage() {
       return () => { cancelled = true; };
     }
 
-    profileAPI.get(user.studentId)
+    profileAPI.get()
       .then(profile => {
         if (cancelled) return;
         const scope = profile?.courseSearchScope || null;
@@ -92,7 +92,6 @@ export default function SchedulePage() {
     setLoading(true);
     try {
       const data = await scheduleAPI.generate({
-        userId: user.studentId,
         courseIds: selectedCourses.map(c => c.id),
         constraints: {},
       });
@@ -256,7 +255,7 @@ export default function SchedulePage() {
                   <option value="核心選修">核心選修</option>
                   <option value="一般選修">一般選修</option>
                   <option value="系外選修">系外選修</option>
-                  <option value="通識" disabled>通識（分類資料尚未建立）</option>
+                  <option value="通識">通識</option>
                 </select>
                 <button className="action-btn primary" onClick={searchCourses} id="search-btn">搜尋</button>
               </div>

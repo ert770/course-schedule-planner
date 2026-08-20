@@ -13,7 +13,7 @@ import { buildSystemPrompt } from '../src/services/promptService.js';
 const SCHEDULER_PARAMS = [
   'minCredits', 'maxCredits', 'maxCoursesPerDay',
   'blockedPeriods', 'mondayFree', 'noMorningClasses', 'noEveningClasses', 'lunchBreakFree',
-  'mustTakeCourseIds', 'retakeCourseIds',
+  'mustTakeCourseIds',
   'selectedCourseIds', 'watchingCourseIds', 'courseStates',
   'noMidterm', 'noGroupReport', 'discussion', 'learnMore',
   'weightDaily', 'practicalExam', 'finalReport', 'englishTaught',
@@ -46,7 +46,8 @@ describe('P1 system prompt 含所有排課參數', () => {
   test('不向模型暴露修課歷史或已修課號參數', () => {
     assert.ok(!prompt.includes('completedCourseIds'));
     assert.ok(!prompt.includes('courseHistory'));
-    assert.ok(prompt.includes('retakeCourseIds'), '重補修仍是使用者可表達的當次需求');
+    assert.ok(!prompt.includes('retakeCourseIds'), '重補修只能由 courseHistory 自動推導');
+    assert.ok(!prompt.includes('failedRequiredCourseIds'));
   });
 });
 
@@ -84,5 +85,13 @@ describe('P3 排課結果欄位有告知模型', () => {
 
     assert.ok(prompt.includes('preferenceScore'));
     assert.ok(prompt.includes('hasExpressedPreference'));
+  });
+
+  test('資格 unknown 必須說成資格待確認，不能宣稱可修', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('eligibility'));
+    assert.ok(prompt.includes('資格待確認'));
+    assert.ok(prompt.includes('不得宣稱使用者確定可修'));
   });
 });

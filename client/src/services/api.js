@@ -1,9 +1,10 @@
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api';
 
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
   const config = {
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     ...options,
   };
 
@@ -11,6 +12,10 @@ async function request(endpoint, options = {}) {
     const res = await fetch(url, config);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+      if (res.status === 401 && endpoint !== '/auth/login' && endpoint !== '/auth/me') {
+        localStorage.removeItem('fcu_user');
+        if (window.location.pathname !== '/login') window.location.assign('/login');
+      }
       throw new Error(err.error || `HTTP ${res.status}`);
     }
     return await res.json();
@@ -29,40 +34,24 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify({ studentId, password }),
     }),
-  getMe: (studentId) => request(`/auth/me?studentId=${studentId}`),
-  updateWatchlist: (studentId, watchlist) =>
+  getMe: () => request('/auth/me'),
+  logout: () => request('/auth/logout', { method: 'POST', keepalive: true }),
+  updateWatchlist: (watchlist) =>
     request('/auth/update-watchlist', {
       method: 'POST',
-      body: JSON.stringify({ studentId, watchlist }),
+      body: JSON.stringify({ watchlist }),
     }),
 };
 
 // Graduation API
-export const graduationAPI = {
-  get: (studentId) => request(`/graduation/${studentId}`),
-};
-
-// `userId` 不再有 `'default'` 預設值。
-//
-// 舊的預設值會讓未登入或身分讀取失敗的請求靜默落到一個共用假使用者，
-// 偏好、聊天記憶與課表全部寫到同一份資料上。現在缺身分就直接拋錯，
-// 由呼叫端負責在登入完成後才呼叫。
-//
-// **改這個函式時務必列出全部呼叫端**，包含共用元件（例如 `components/Chat/ChatPanel.jsx`）
-// 而不只是 pages——漏掉共用元件會讓整個頁面的功能失效。
-function requireUserId(userId, apiName) {
-  if (userId === undefined || userId === null || userId === '' || userId === 'default') {
-    throw new Error(`${apiName} 需要已登入的使用者身分`);
-  }
-  return userId;
-}
+export const graduationAPI = { get: () => request('/graduation/me') };
 
 // Chat API
 export const chatAPI = {
-  send: (message, userId) =>
+  send: (message) =>
     request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ userId: requireUserId(userId, 'chatAPI.send'), message }),
+      body: JSON.stringify({ message }),
     }),
 };
 
@@ -98,28 +87,25 @@ export const scheduleAPI = {
       method: 'POST',
       body: JSON.stringify({ courses }),
     }),
-  save: (name, schedule, totalCredits, userId) =>
+  save: (name, schedule, totalCredits) =>
     request('/schedule/save', {
       method: 'POST',
       body: JSON.stringify({
-        userId: requireUserId(userId, 'scheduleAPI.save'),
         name,
         schedule,
         totalCredits,
       }),
     }),
-  getSaved: (userId) =>
-    request(`/schedule/saved?userId=${encodeURIComponent(requireUserId(userId, 'scheduleAPI.getSaved'))}`),
+  getSaved: () => request('/schedule/saved'),
 };
 
 // Profile API
 export const profileAPI = {
-  get: (userId) =>
-    request(`/profile?userId=${encodeURIComponent(requireUserId(userId, 'profileAPI.get'))}`),
-  update: (data, userId) =>
+  get: () => request('/profile'),
+  update: (data) =>
     request('/profile', {
       method: 'POST',
-      body: JSON.stringify({ userId: requireUserId(userId, 'profileAPI.update'), ...data }),
+      body: JSON.stringify(data),
     }),
   // 偏好標籤目錄。不帶身分——回傳的是標籤定義本身，不是任何人的資料。
   // 前端各頁不再自己寫死清單，避免像先前 Dashboard 那樣漏掉 `#不點名`。

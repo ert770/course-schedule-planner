@@ -43,11 +43,16 @@ System prompt 必須讓 Agent：
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
+| `final_answer` | 輸出最終回答 |
 
 `query_course_db` 由後端依目前 `userId` 的 profile 建立班級範圍，Agent 不傳入或猜測
 `department`、`grade`、`className`。可用 `category` 為 `必修`、`核心選修`、
-`一般選修`、`系外選修`；通識分類資料尚未建立，不得要求工具假造結果。
-| `final_answer` | 輸出最終回答 |
+`一般選修`、`通識`、`系外選修`。通識領域必須使用工具回傳的
+`generalEducationDomain`；115 學年度起該欄位為 `null`（不分領域），不得由課號前綴
+或課名自行猜測。
+若工具回傳 `eligibility: "unknown"`，Agent 只能說「資格待確認」並附上
+`eligibilityReason`，不得宣稱使用者確定可修。搜尋結果可呈現；排課時除非使用者明確
+指定，否則後端會保守排除。
 
 ## `run_csp_scheduler` 參數
 
@@ -58,7 +63,7 @@ System prompt 必須讓 Agent：
 | 學分 | `minCredits`, `maxCredits`, `allowCreditOverload`, `maxCoursesPerDay` |
 | 學籍 | `department`, `gradeLevel` |
 | 時間 | `blockedPeriods`, `mondayFree`, `noMorningClasses`, `noEveningClasses`, `lunchBreakFree` |
-| 課程指定 | `mustTakeCourseIds`, `retakeCourseIds` |
+| 課程指定 | `mustTakeCourseIds` |
 | 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
 | 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
 | 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
@@ -74,7 +79,18 @@ System prompt 必須讓 Agent：
 `buildScheduleConstraints()` 只取 `prefs.courseHistory`。因此已修排除會自動生效，
 即使模型自行在參數中加入 `courseHistory` 也會被忽略。
 
-`retakeCourseIds` 維持為工具參數，因為重補修是使用者在當次對話中可以明確表達的需求。
+`retakeCourseIds` 與 `failedRequiredCourseIds` 也不得成為工具參數。重補修只由後端讀取
+Profile 的 `courseHistory`，依最新一次修習結果自動推導，避免模型或 client 指定不存在的
+失敗紀錄。
+
+### 課程評價不屬於工具參數
+
+`courseReviews` 不得出現在 `run_csp_scheduler` 的參數中，理由與 `courseHistory` 相同：
+沒有任何管道能讓模型可靠得知每門課的真實評價分數，讓模型自行提供只會誘導編造。
+
+`scheduleService.js` 從 `getAll('reviews')` 取得 `Course_Reviews` 全表後，經
+`buildScheduleConstraints()` 的 `context` 參數注入，兩條路徑（REST 與 Chat）共用同一份資料，
+Agent 完全不需要、也不能夠自己提供評價分數。
 
 ### 學分上下限與超修
 
@@ -91,6 +107,31 @@ System prompt 必須讓 Agent：
 使用者表達興趣、想集中排課或想修涼課時，Agent **必須**把對應參數帶進 `run_csp_scheduler`。未帶入時系統只能改以總學分挑選方案，推薦會失去個人化，且回應的 `hasExpressedPreference` 會是 `false`。
 
 排課結果的每個方案含 `preferenceScore`（0~1 的偏好符合度），Agent 應用它向使用者說明為何主推該方案。
+
+### 評價證據的使用限制
+
+排課結果每門課帶 `reviewEvidence`（來自 `Course_Reviews` 的評價統計），為 `null` 代表這門課沒有
+評價。**`reviewEvidence` 為 `null` 時，Agent 不得宣稱這門課「涼」「好拿分」「甜」**——沒有評價
+就是沒有依據，只能明說「這門課沒有評價資料」。這是 `AGENTS.md` 「不得編造課程、教師、時間、
+學分、評價或畢業規則」的直接要求。
+
+方案的 `preferenceBreakdown.easy` 可能為 `null`（代表排入的課全部沒有評價可評分），此時 Agent
+應改讀該方案的 `reviewCoverage`（`{ rated, total, ratio }`）向使用者說明證據有多少，不得把 `null`
+講成 0%。
+
+`get_easy_courses` 的排序依據是收縮後的 `adjustedEasiness`（樣本數少的課會被拉向全體平均），
+不是未收縮的 `easiness`；兩者皆會回傳，Agent 說明時以 `adjustedEasiness` 為準。
+
+### 內容偏好的使用限制
+
+`noMidterm`／`noGroupReport`／`discussion`／`weightDaily`／`practicalExam`／`finalReport`／
+`englishTaught`／`learnMore`（Roadmap #3）是**軟性**偏好，判定依據是課程描述的關鍵字比對，
+**不保證真的滿足**。Agent 不得因為使用者設定了 `noMidterm: true` 就宣稱「已排除所有有期中考的
+課」——關鍵字沒出現在描述裡不代表課程真的沒有這個特徵，只是描述沒提到。
+
+回應的 `warnings` 若包含「訊號極弱」或「無法有效區分課程」字樣，代表候選池中這個偏好的關鍵字
+命中率過低或過高，Agent 必須如實轉達，例如：「這個偏好目前只能靠課程描述關鍵字判斷，候選課程中
+符合的比例很低，排課結果不一定能反映你的偏好」，不得省略不提或講成偏好已確實生效。
 
 ### 陣列參數語意
 

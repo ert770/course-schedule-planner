@@ -10,9 +10,23 @@
 
 ## 最後更新
 
-2026-08-09（#13 拆成 #13A～#13D；依程式碼盤點補上 #4、#18、#19、#20、#21、#23、#26、#28、#31、#35、#36 的既有進度）
+2026-08-20（#21 大部分完成：建立正式 hard/soft constraint schema、與方案產生器分離的獨立
+validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修／共修強制執行，卡在 roadmap #8
+尚未開始的資料模型）
 
-前次更新：2026-08-08（保留既有完成紀錄；新增 #18～#38、任務相依與階段 Gate）
+前次更新：2026-08-19（完成 #3：8 個內容偏好從硬過濾改成軟懲罰，並回填 #21「開始前必須具備」欄位）
+
+再前次：2026-08-19（統一 #31、#35、#36 的總覽與詳細章節狀態為「部分完成」；#13D 因 #18 已完成，改為
+「工程可開始、正式驗收等待特殊身分資料」）
+
+再前次：2026-08-17（第二次更新：#5 拆成 #5A／#5B——#5A 已完成，#5B 阻塞在 #29→#33→#2→#30 依序完成，並修正
+#7／#26／#30／#36／Gate 4 原本誤指向 #5 的相依方向）
+
+更早：2026-08-17（完成 #4：評價聚合層接進排課引擎與 `/api/reviews/easy` 排行榜，取代課程描述關鍵字；#5、#10、#26 隨之回填進度）
+
+更早：2026-08-14（完成 #12、#13B、#18、#19 的進度回填；#13B 以現行 562 個班級名稱重新核對並完成 unknown eligibility）
+
+更早紀錄：2026-08-09（#13 拆成 #13A～#13D；依程式碼盤點補上 #4、#18、#19、#20、#21、#23、#26、#28、#31、#35、#36 的既有進度）
 
 > **2026-08-09 盤點方式**：狀態不是依印象或文件推定，而是逐一讀取 `server/src`、`client/src` 與 `server/test` 的實際程式碼後判定。凡標成「已完成」者，本文件均指出其實作位置或釘住它的測試；凡標成「尚未完成」者，均指出缺少的具體欄位、模組或測試。多項任務因此由「⬜ 未開始」改為「🟡 部分完成」——原本的標示低估了已完成的前置工作。
 
@@ -46,43 +60,44 @@
 | ---: | --- | --- | --- |
 | 1 | 修掉方案排序的自相矛盾：用偏好符合度決定 `plans[0]` | ✅ 已完成 | 無 |
 | 2 | 埋互動 log：記錄推薦清單、最終選擇、加選後退選 | ⬜ 未開始 | #18、#29、#33 |
-| 3 | 偏好從硬過濾改成軟懲罰 | ⬜ 未開始 | 無 |
-| 4 | 把評分方式結構化：新增課程欄位並從 reviews 聚合難度甜度 | 🟡 部分完成 | 無 |
-| 5 | 把 reviews 分數接進 `scoreCourse`，加權方向依使用者而異 | ⬜ 未開始 | #4 |
+| 3 | 偏好從硬過濾改成軟懲罰 | ✅ 已完成（2026-08-19） | 無 |
+| 4 | 把評分方式結構化：新增課程欄位並從 reviews 聚合難度甜度 | ✅ 已完成（2026-08-17） | 無（DDL 欄位另列 D 類） |
+| 5A | 結構化評價分數接進 `scoreCourse`（母體共用） | ✅ 已完成（2026-08-17） | #4 |
+| 5B | per-user 加權方向（同一分數對不同使用者相反符號） | ⛔ 等待 #29、#33、#2、#30 | #5A；#29→#33→#2→#30 依序完成 |
 | 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⬜ 未開始 | #2、#29、#31；另需足夠互動樣本 |
-| 7 | 以個人化權重向量取代 5 個固定 variant | ⬜ 未開始 | #2、#5、#30 |
+| 7 | 以個人化權重向量取代 5 個固定 variant | ⬜ 未開始 | #2、#5A、#30 |
 | 8 | 先修關係與多學期路徑規劃 | ⬜ 未開始 | #19、#20、#21、#23 |
 | 9 | 探索機制：小比例隨機與多樣性重排 | ⬜ 未開始 | #2、#21、#30、#36 |
-| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | ⬜ 未開始 | #4、#21、#22 |
+| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 部分完成（2026-08-17） | #4、#21、#22 |
 | 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ✅ 已完成 | 無 |
-| 12 | 課程類別不完整：資料庫只有必修／選修，缺通識、核心選修、系外選修 | 🟡 部分完成 | 通識正式資料來源待確認 |
+| 12 | 課程類別不完整：資料庫只有必修／選修，缺通識、核心選修、系外選修 | ✅ 已完成 | 無（歷史畢業認列另屬 #23） |
 | 13A | 資工系一般班級必修 scope | ✅ 已完成 | 無 |
-| 13B | B～F 類班級分類與 unknown eligibility | ⬜ 未開始（**現在可做**） | #13A |
+| 13B | B～F 類班級分類與 unknown eligibility | ✅ 已完成（2026-08-14） | #13A |
 | 13C | B～F 類的正式適用規則 | ⛔ 等待外部資料 | #13B；**另需系辦／校方正式規則** |
-| 13D | 學制、學程與特殊身分 | ⛔ 等待 #18 | #13B、#18 |
+| 13D | 學制、學程與特殊身分 | 🟡 工程可開始；正式驗收等待特殊身分資料 | #13B、#18（均已完成）；另需特殊身分資料與正式適用規則 |
 | 14 | 無時間課程永不衝堂，可被無限排入 | ✅ 已完成 | 無 |
 | 15 | 實習課程需與同名正課一併排入 | ⬜ 未開始 | #13A、#13B、#19、#20、#21 |
 | 16 | 多時段課程支援 | ✅ 已完成 | 無 |
 | 17 | 週六與週日課程支援 | ✅ 已完成 | 無 |
-| 18 | 統一 user identity、Profile、歷史修課與偏好資料來源 | 🟡 部分完成 | 無（新增任務的資料基礎） |
-| 19 | 以穩定 course code 建立歷史修課、重修與跨學期對應 | 🟡 部分完成 | #18 |
+| 18 | 統一 user identity、Profile、歷史修課與偏好資料來源 | ✅ 已完成（shared MySQL rollout 另列 D 類） | 無（新增任務的資料基礎） |
+| 19 | 以穩定 course code 建立歷史修課、重修與跨學期對應 | ✅ 已完成 | #18 |
 | 20 | 建立 active term 與完整 candidate eligibility 規則 | 🟡 部分完成 | #12、#13A、#13B、#18、#19 |
-| 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | 🟡 部分完成 | #3、#19、#20 |
+| 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | 🟡 部分完成（2026-08-20） | #3（已完成）、#19、#20 |
 | 22 | 為 greedy 排課加入 repair／backtracking 或 constraint solver | ⬜ 未開始 | #21 |
 | 23 | 建立版本化且可追溯的畢業規則引擎 | 🟡 部分完成 | #12、#19；另需校方正式規則 |
 | 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ⬜ 未開始 | #18、#21 |
 | 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ⬜ 未開始 | #20、#21、#24 |
-| 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成 | #4、#5、#21、#22 |
+| 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成 | #4、#5A、#21、#22 |
 | 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ 未開始 | #10、#26 |
-| 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成 | #18 |
+| 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成 | 無（#18 已完成；雙帳號完整驗收待補） |
 | 29 | 定義 interaction event schema 與回饋原因 | ⬜ 未開始 | #18 |
-| 30 | 建立可重現的 per-user preference update pipeline | ⬜ 未開始 | #2、#5、#29 |
+| 30 | 建立可重現的 per-user preference update pipeline | ⬜ 未開始 | #2、#5A、#29 |
 | 31 | 建立冷啟動、偏好重設、時間衰減與資料不足策略 | 🟡 部分完成 | #18、#30 |
 | 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | ⬜ 未開始 | #6、#7、#31、#36；另需足夠互動樣本 |
 | 33 | 建立互動資料隱私、匿名化、consent 與保存規則 | ⬜ 未開始 | #18、#29 |
 | 34 | 建立 Agent 自然語言需求理解 eval | ⬜ 未開始 | #24、#25 |
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成 | #15、#21、#22 |
-| 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成 | #5、#7、#30、#31 |
+| 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成 | #5B、#7、#30、#31 |
 | 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ 未開始 | #25、#26 |
 | 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始 | #27、#28、#33、#34、#35、#36、#37 |
 
@@ -101,7 +116,7 @@
 | Gate 1 — 限制與可行性 | 統一定義硬限制、軟偏好、共修與無解原因 | #3、#15、#21、#22 | 多方案、解釋與 feasibility benchmark |
 | Gate 2 — Agent 需求理解 | 讓自然語言先變成可驗證需求，再允許工具執行 | #24、#25、#28 | Agent-level 自動排課與對話 eval |
 | Gate 3 — 偏好資料與學習 | 先合法、安全記錄互動，再更新個人權重 | #29、#33、#2、#30、#31、#7 | 協同過濾、探索與 hybrid 比較 |
-| Gate 4 — 推薦解釋與比較 | 讓每門課與每個方案都有可追溯理由 | #4、#5、#10、#26、#27 | 教授展示與使用者研究 |
+| Gate 4 — 推薦解釋與比較 | 讓每門課與每個方案都有可追溯理由 | #4、#5A、#10、#26、#27 | 教授展示與使用者研究 |
 | Gate 5 — 系統驗證 | 證明需求理解、可行性、個人化與解釋均有效 | #34～#38 | 宣稱完成 AI 個人化課程規劃 Agent |
 
 核心依賴主線如下；協同過濾與探索是有資料後的研究分支，不應阻塞先完成單一使用者的 content-based 個人化：
@@ -279,45 +294,113 @@ flowchart LR
 
 ## #3 偏好從硬過濾改成軟懲罰
 
-**狀態**：⬜ 未開始
+**狀態**：✅ 已完成（2026-08-19）——詳見 [內容偏好從硬過濾改成軟懲罰變更報告](./2026-08-19-content-preference-soft-scoring.md)
 
 解決反向判定型（候選集歸零）與正向判定型（靜默假承諾）兩種失效模式，並提供 graceful degradation。
+
+### 已完成
+
+- 8 個內容偏好旗標（`noMidterm`／`noGroupReport`／`discussion`／`weightDaily`／`practicalExam`／
+  `finalReport`／`englishTaught`／`learnMore`）從 `hardConstraintReason()` 的硬性排除改為
+  `scoreCourse()` 裡的軟性加分，比照 #4／#5A 的「無證據不當成負面判定」設計哲學：未命中一律
+  中性 0 分，不論是「想避免」還是「想要」類。
+- 新增候選池層級的訊號可靠度警告：關鍵字命中率 <5% 或 >95% 時提醒使用者這個偏好幾乎無法有效
+  區分課程。門檻用真實命中率反推驗證過，正好命中本節一開始就診斷出的三個失效旗標
+  （`noMidterm`、`weightDaily`、`learnMore`）。
+- 真實資料驗證：對一位資工三學生的 227 門候選課，`weightDaily` 舊版行為會把候選集壓縮到 3 門
+  （1.3%），新版軟性加分後排課正常成功，8 門課、24 學分不變。
+- 4 個真正硬性的時段類檢查（`noMorningClasses`／`noEveningClasses`／`blockedPeriods`／
+  `lunchBreakFree`）維持不變；順手修正 `docs/SCHEDULING_LOGIC.md` 先前把這 3 項誤列在
+  「軟性偏好」的既有文件錯誤（只改文件敘述，不改程式行為）。
+- 新增 15 個測試（N1–N15），`npm test` 由 413 增至 428，全數通過，S1–S10 逐項確認無回歸；
+  瀏覽器實機以 Dashboard 既有的內容偏好 checkbox 完成 A/B 驗收。
+
+### 明確不含
+
+- Roadmap #21 的正式 `hard`／`soft` schema（`weight`／`relaxable`／`source`／`confidence` 欄位、
+  獨立 validator、逐級放寬機制）——#3 只是把誤判為硬性的內容偏好改成軟性，不是 #21 要的正式
+  分層，#21 仍是分開、後續的任務。
 
 ---
 
 ## #4 把評分方式結構化
 
-**狀態**：🟡 部分完成（2026-08-08 更新）——**評價聚合的前置工作已完成，但 scheduler scoring 尚未接上**
+**狀態**：✅ 已完成（2026-08-17）——評價聚合層已接進排課引擎；DDL 欄位與 per-user 加權另列後續任務
 
-新增 `has_midterm` / `has_group_project` / `grading_scheme` 等欄位進 courses 表；從 reviews 聚合難度甜度；修正 `schema.sql` 的 category CHECK 與 `CATEGORY_PRIORITY` 不一致；補上 `language` 欄位。
+詳見 [評價驅動的涼度評分變更報告](./2026-08-17-review-driven-easiness.md)。
 
-### 已完成：評價聚合層
+### 已完成
 
-`server/src/skills/reviewStats.js` 已提供結構化的聚合結果，不再需要從 description 撈關鍵字：
+- `server/src/skills/reviewStats.js` 已提供結構化聚合（`weightedAverageScore()`、`summarizeReviews()`、`calculateEasinessFromAverages()`、`countBySentiment()`），現新增 `shrinkEasiness()`（m-estimate 收縮，`m=5`）。
+- 新增 `server/src/skills/courseReviewStats.js`：課程 ↔ 評價對應、母體先驗、1–5→0–100 尺度映射、`deriveReviewEvidence()`。
+- **`scheduler.js` 已 import 並使用評價資料**：`getEasyCourseScore()`、`getEasiness()`、`evaluatePreference()`、`scoreCourse()` 的 `easy_score` 分支全數改用結構化評分，取代原本「涼／容易／輕鬆／高分／甜」關鍵字判斷（真實資料命中率僅 0.7%，且會誤判「教室很涼」為涼課）。
+- 沒有評價的課給母體先驗換算的中性分，不給 0（詳見 `docs/DECISIONS.md` ADR-006）；方案層涼度只在有證據的課上平均，另回傳 `plan.reviewCoverage`（ADR-008）。
+- `GET /api/reviews/easy` 同步改用收縮後分數排序，消除「涼課排行榜第一名沒被排進涼課方案」的不一致（ADR-007）。
+- 評價資料實測：`Course_Reviews` 181 列 / `Course_Sections` 3560（覆蓋率 5.1%），全部 114-下學期、全部選修。對資工三學生，181 筆中只有 75 筆（`eligible`）能真正進入自動排課，最大一塊（68 筆通識）卡在 #13C。
+- 測試：`ttlCache.test.js`（TC1–4）、`reviewStats.test.js` 新增 shrinkEasiness（V1–5）、`courseReviewStats.test.js`（V6–15）、`reviewSearch.test.js`（V16–19）、`scheduler.test.js`（V20–28）、`database-contract.test.js` 新增三則真實 MySQL 契約測試。`npm test` 由 365 增至 407，全數通過，S1–S10 逐項確認無回歸。
 
-- `weightedAverageScore()`：依 `getReviewWeight()` 做加權平均，而非簡單平均。
-- `summarizeReviews()`：回傳 `avgDifficulty`、`avgSweetness`、`avgCoolness`、`avgWorkload`、`avgOverall` 及評價則數。
-- `calculateEasinessFromAverages()`：由涼度、甜度、作業量與整體評分推導「好過程度」，取代原本「課程文字是否出現涼／容易／高分」的關鍵字判斷。
-- `countBySentiment()`：正負面評價則數。
-- regression：`server/test/reviewStats.test.js`。
+### 明確不在本次範圍（移出 #4，不再視為缺口的一部分）
 
-### 尚未完成：接進排課評分
-
-**`server/src/skills/scheduler.js` 目前完全沒有 import `reviewStats`。** `scoreCourse()` 仍以文字關鍵字計分，因此：
-
-- 「涼課高分優先」方案的加分依據仍是課程描述字串，不是 `avgCoolness` / `avgSweetness`。
-- `calculateEasinessFromAverages()` 的結果沒有任何排課路徑會讀到。
-- 這是 #5 的實際內容；#4 的資料面已備妥，卡點在 scheduler 端接線。
-
-課程表欄位（`has_midterm`、`has_group_project`、`grading_scheme`、`language`）仍未新增，`noMidterm`、`noGroupReport`、`englishTaught` 三個偏好因此仍然失效。
+- **`has_midterm` / `has_group_project` / `grading_scheme` / `language` 課程欄位**：需對共用 MySQL 做 `ALTER TABLE`，屬與 #18 `student_id` migration 同性質、需與組員協調的 D 類 rollout。`noMidterm`（真實命中率 0.1%）、`noGroupReport`、`englishTaught` 三個偏好因此仍用描述關鍵字判定；改判定方式會讓候選集歸零，屬 #3（硬過濾改軟懲罰）的範圍，不屬 #4。
+- **`schema.sql` 的 category CHECK 修正**：前提已失效。`server/src/db/schema.sql` 是 legacy SQLite 死檔，其 `reviews` 表連 `sweetness`/`overall` 等欄位都沒有，沒有任何程式讀取它。此項作廢，不再視為待辦。
+- 已實測確認 `Reviews_tags`（314 個相異自由標籤，含「教室很熱」「追星必備」等雜訊）不可用來推導上述課程屬性欄位，見 `docs/DATA_SCHEMA.md`。
 
 ---
 
 ## #5 把 reviews 分數接進 scoreCourse
 
-**狀態**：⬜ 未開始（卡 #4）
+原 #5 已於 2026-08-17 拆成 #5A～#5B。拆分理由：「把結構化評價分數接進 `scoreCourse()`」與「加權方向
+依使用者而異」原本混在同一個 🟡「部分完成」底下，但兩者是**完全不同性質**的工作——前者是 2026-08-17
+隨 #4 一併完成、可立即驗收的接線工作；後者是「真正的個人化」，會被一條明確、有順序的相依鏈卡住
+（#29 → #33 → #2 → #30），在鏈上任一環完成前**技術上做不到**，不是尚未安排時間去做。混在一起會讓
+「#5 到底還缺什麼」與「為什麼缺」都無法判讀——這正是本次拆分要解決的問題。
 
-評價分數需個人化加權：同一難度數值對不同使用者要有相反符號。
+| 子項 | 範圍 | 狀態 | 阻塞原因 |
+| --- | --- | --- | --- |
+| #5A | 結構化評價分數接進 `scoreCourse()`（母體共用，非個人化） | ✅ 已完成（2026-08-17） | 無 |
+| #5B | per-user 加權方向（同一評價分數對不同使用者要有相反符號） | ⛔ 阻塞 | 需 #29 → #33 → #2 → #30 依序完成 |
+
+---
+
+## #5A 結構化評價分數接進 scoreCourse
+
+**狀態**：✅ 已完成（2026-08-17）——詳見 [評價驅動的涼度評分變更報告](./2026-08-17-review-driven-easiness.md)
+
+**相依**：#4
+
+`scoreCourse()` 已讀取 `reviewStats`／`courseReviewStats` 的結構化評價（`sweetness`／`coolness`／
+`workload`／`overall`），不再是純文字關鍵字。這是「把 reviews 分數接進 scoreCourse」字面上的內容。
+
+**範圍邊界**：這裡的分數是**母體共用**的——所有使用者看到同一門課的涼度分數相同，不含任何個人化。
+「同一難度數值對不同使用者要有相反符號」不屬於 #5A，是 #5B 的內容。
+
+---
+
+## #5B per-user 加權方向
+
+**狀態**：⛔ 阻塞——**等待 #29 → #33 → #2 → #30 依序完成**
+
+**相依**：#5A（已完成）；外部條件為 #29、#33、#2、#30 這條相依鏈本身
+
+**開始前必須具備**：#29 已定義互動事件語意（曝光、選課、退選及原因）；#33 已確認隱私、consent、
+保存規則；#2 已依前兩項實際開始記錄互動；#30 已把記錄下來的事件轉成可重播、可解釋的 per-user
+權重更新管線。四項缺一即無法開始，且**彼此有順序**——沒有 #29 定義事件語意，#33 無從界定要保護
+什麼資料；沒有 #33 的合法性確認，#2 不能開始蒐集；沒有 #2 累積的互動資料，#30 沒有東西可學；沒有
+#30 產出的權重，#5B 沒有值可以塞進 `scoreCourse()`。
+
+**為什麼技術上做不到，不是排程問題**：「同一評價分數對不同使用者要有相反符號」的符號與強度**只能從
+使用者實際行為推論**（例如持續選硬課且沒退選的學生，隱含偏好挑戰）。在完全沒有任何互動資料的情況下，
+系統沒有依據判斷任何一位使用者該往哪個方向偏——不是「還沒空做」，而是「即使現在寫程式，也沒有輸入
+可以喂進去」。
+
+**與 #7 的關係（易混淆處）**：`docs/CHANGE_REPORTS/2026-08-17-review-driven-easiness.md` 一度誤寫
+成「#5 這部分會連帶拖進 #7」，語意上暗示 #5B 要等 #7——這是寫反了。roadmap 主表原本就把 #7 的相依
+列為 #2、#5、#30（現已改列 #5A，見下方），也就是 **#7 依賴 #5，不是 #5 依賴 #7**。#7（連續權重向量）
+是 #5B 完成後，把學到的方向跟 interest／compact 等其他軸統一表示的下游消費者，不是 #5B 的前提。
+
+**注意**：#5B 只需要 #5A 提供的評分軸位存在即可動工，**不需要等 #7**；#7 要做的是「用連續權重向量
+取代 5 個固定 variant」這個更大範圍的重構，#5B 學到的一個 easy 方向值即使沒有 #7 也能直接塞進現行
+`preferenceProfile.easy`。
 
 ---
 
@@ -335,9 +418,9 @@ flowchart LR
 
 ## #7 以個人化權重向量取代 5 個固定 variant
 
-**狀態**：⬜ 未開始（卡 #2、#5、#30）
+**狀態**：⬜ 未開始（卡 #2、#5A、#30）
 
-**相依**：#2、#5、#30
+**相依**：#2、#5A、#30
 
 **開始前必須具備**：已有可信課程 feature／review score，互動事件可轉成訓練訊號，且 per-user preference update 能重播得到相同權重。需先定義權重範圍、正規化、版本與回復預設值的方法。
 
@@ -371,7 +454,7 @@ flowchart LR
 
 ## #10 修復多方案塌縮
 
-**狀態**：⬜ 未開始（卡 #4、#21、#22）
+**狀態**：🟡 部分完成（2026-08-17）——根因二（涼課評分恆為 0）已緩解，根因一（必修互相衝堂）未動，仍卡 #21、#22
 
 **相依**：#4、#21、#22
 
@@ -399,6 +482,13 @@ flowchart LR
 **根因二：variant 評分函式退化為同一個**
 
 `interest` variant 的 `getInterestScore` 在使用者未提供關鍵字時恆為 0；`easy_score` variant 的 `getEasyCourseScore` 因涼課關鍵字 0 命中而恆為 0。兩者評分函式因此與 `required_first` 完全相同，必然產生同一份課表。`max_credits` 亦常與其他 variant 重合。
+
+**根因二已由 #4（2026-08-17）部分緩解**：`getEasyCourseScore` 改用結構化評價後不再恆為 0。以 75 筆
+「eligible 且有評價」的候選課測試，`easy_score` variant 確實產生與 `required_first` 不同的課表（例如
+「電子商務」被「商用英文會話(二)」取代），去重後方案數由 2 增至 3。**但根因一（必修互相衝堂、低年級
+無填充空間）完全未動**，且評價覆蓋率只有 5.1%，多數學生的實際候選池仍會退回塌縮——demo 帳號
+`D1249697` 實測 8 門候選中只有 1 門有評價（12.5%），去重後仍只剩 1 個方案。#10 因此維持部分解決，
+不宣告完成。
 
 **與 #7 的關係**：本任務是過渡修復，長期由連續權重向量取代固定 variant。
 
@@ -476,7 +566,7 @@ generateSchedule([課程5, 課程6], { watchingCourseIds: [5, 6], minCredits: 0 
 
 ## #12 課程類別不完整
 
-**狀態**：🟡 部分完成（2026-08-07）——#12A 已完成，#12B 通識分類待處理。詳見 [課程分類與搜尋一致性變更報告](./2026-08-07-course-category-consistency.md)
+**狀態**：✅ 已完成（2026-08-14）——#12A 與 #12B 均已完成。#12A 詳見 [課程分類與搜尋一致性變更報告](./2026-08-07-course-category-consistency.md)，#12B 詳見 [通識課程分類與學年度規則變更報告](./2026-08-14-complete-general-education-category.md)。
 
 **已完成（#12A）**
 
@@ -484,36 +574,36 @@ generateSchedule([課程5, 課程6], { watchingCourseIds: [5, 6], minCredits: 0 
 - 可由目前正式資料與資工課程表支持的必修、核心選修、一般選修、系外選修已統一。
 - 課程回應保留 `sourceCategory` 與 `classificationSource`，可追查原始分類及推導來源。
 - 系外選修另外回傳認列條件判斷，不把「可能可選」直接宣稱為可計入畢業學分。
+- 排課優先度已使用解析後的 `一般選修` 類別；非本人班級的必修也會降為一般選修優先度。`server/test/scheduler.test.js` 的 P1／P2 已固定這兩項行為。
 
-**尚未完成（#12B）**
+**已完成（#12B）**
 
-- 尚無正式通識課程分類表、領域及適用學年度規則。
-- 通識搜尋目前明確回傳未支援，不根據課號前綴自行猜測。
+- `server/src/data/generalEducationCatalog.js` 建立正式通識分類與課程開設學年度規則：111 以前為人文／社會／自然／統合，112～114 為官方四領域，115 起不分領域。
+- 114-2 MySQL 四領域共有 167 個不重複正式課號、208 個班次，全部具有 `catalogCourseCode`；分類直接使用官方領域名稱的 `Courses.dept`，不以 `GE*` 前綴猜測。
+- 官方 114-2 跨院認抵表新增的 `IINE2832`、`IINE2833`、`HSS1007` 已逐筆核對課名、學分、開課單位並納入通識分類。
+- 搜尋、排課與 AI Agent 共用 `annotateCourseCategory()`；`category=通識` 可跨本人班級搜尋，排課候選也會納入通識。
+- API 回傳 `generalEducationDomain`、`generalEducationRuleVersion`、`generalEducationRecognitionType` 與 `classificationReference`，可追查分類規則與官方來源。
+- 完整歷史畢業認列不屬於 #12：入學年度、舊學期逐門課號、跨院認列 6／4 學分上限、核心必修過渡與人工待確認狀態集中移至 #23。
 
-接上 MySQL 後發現。`Courses.type` 只有兩種值：`必修`（1760）、`選修`（1326）。資料庫**沒有** `通識`、`核心選修`、`系外選修`。
+### 目前資料契約（2026-08-14 重新核對）
 
-**與規格的落差**
+`Courses.type` 原始值仍只有 `必修`（1760）與 `選修`（1326），但「排課器實際只有兩階優先度」已不再成立。`courseCategory.js` 會在排課前依學生 scope 與正式資工科目表衍生類別：
 
-| 來源 | 類別定義 |
+| 來源 | 目前實際行為 |
 | --- | --- |
-| 資料庫 `Courses.type` | 必修 / 選修（僅兩類） |
-| `scheduler.js` 的 `CATEGORY_PRIORITY` | 必修 0 / 核心選修 1 / 選修 2 / 通識 3 / 系外選修 4（五階，後三者永不出現） |
-| `docs/REQUIREMENTS.md:49-55` | 必修 63 / 核心選修 12 / 選修 16 / 通識基礎 16 / 通識選修 12 / 系外選修 9（六類） |
-| `server/src/routes/graduation.js` | required / elective / general / external（四類英文 key） |
+| MySQL `Courses.type` | 保留 `必修`／`選修` 作為 `sourceCategory` |
+| 資工必選修科目表 | 將選修解析為 `核心選修` 或 `一般選修`，並帶出 `track` |
+| 他系課程與學生 scope | 符合規則時解析為 `系外選修`，並另做認列條件判斷 |
+| `scheduler.js` | 必修 0／核心選修 1／一般選修與未細分選修 2／通識 3／系外選修 4 |
+| 通識 | 依課程開設學年度、官方 `dept` 領域與跨院認抵表解析；115 起不分領域，不以 `subid3` 前綴猜測 |
 
-四份定義互不一致，且都無法由課程資料支撐。
-
-**後果**
-
-- 五階類別優先序實際只有兩階在運作。
-- 六類畢業學分要求、核心選修三條路徑、系外選修門檻皆無法正確計算。
-- `docs/SCHEDULING_LOGIC.md:58-72` 的核心選修路徑另需 `track` 欄位，資料庫同樣沒有。
-
-**可能線索**
-
-`Courses.subid3` 的前綴看似編碼了科目類別，例如 `GEID`（169 筆）、`GEH1`（86 筆）開頭者可能為通識。需向校方或課程資料來源確認編碼規則，**不應自行臆測**。
+因此 #12A 的核心選修、一般選修及系外選修，以及 #12B 的通識分類、領域與課程開設學年度規則均已有程式、MySQL 契約測試與搜尋／排課入口。畢業頁的英文分類 key、入學年度規則與逐門歷史認列屬 #8／#23，不再列為 #12 缺口。
 
 **相關**：`#8`（分類別畢業進度向量）、稽核報告的 `F13`（畢業學分分類渲染出英文 key）。
+
+**追蹤結論（2026-08-14，已確認）**：`CATEGORY_PRIORITY['一般選修'] = 2` 是必要修正，因為 `annotateCourseCategory()` 的正式輸出就是 `一般選修`；缺少此鍵時會錯誤落到未知類別優先度 5。P1 測試證明一般選修不再落到未知類別，P2 測試證明非本人班級的必修會降到同一優先度。此項已納入 #12A 完成範圍，不再列為待確認改動。
+
+**#12B 來源與邊界（2026-08-14）**：官方資料已足以完成目前 114-2 課程搜尋、排課與 Agent 分類。官方歷史認抵 PDF 對 112-1～114-1 多數資料只列課名、學分、領域與申請學院，沒有穩定課號；本專案 MySQL 又只有 114-2 sections，因此舊學期逐門 `catalogCourseCode` 不在 #12 猜測補值，改由 #23 取得歷史課程檢索資料後處理。
 
 ---
 
@@ -524,7 +614,7 @@ generateSchedule([課程5, 課程6], { watchingCourseIds: [5, 6], minCredits: 0 
 | 子項 | 範圍 | 狀態 | 阻塞原因 |
 | --- | --- | --- | --- |
 | #13A | 資工系一般班級（A 表）必修 scope | ✅ 已完成 | 無 |
-| #13B | B～F 類班級分類與 unknown eligibility | ⬜ 未開始 | 無，**現在可做** |
+| #13B | B～F 類班級分類與 unknown eligibility | ✅ 已完成（2026-08-14） | 無 |
 | #13C | B～F 類的正式適用規則 | ⛔ 阻塞 | 需系辦／校方正式規則 |
 | #13D | 學制、學程與特殊身分 | ⛔ 阻塞 | 需 #18 Profile schema |
 
@@ -604,13 +694,15 @@ eligible.filter(course => requiredIds.has(Number(course.id)) || course.category 
 - 實測（資訊工程學系）：必修 section 由 2094 收斂為大一 33、大二 19、大三 12、大四 0；大三課表排除 1576 門他人必修。
 - regression：`server/test/courseScope.test.js` 涵蓋班級名稱解析與必修判定。
 
-**限制**：只涵蓋 A 表班級。A 表以外的 51 個班級名稱（含 **506 筆必修**）落入 #13B～#13D。
+**限制**：一般語法涵蓋 483 個 A 類名稱。2026-08-14 重新核對 MySQL 後，另發現 79 個
+非一般格式名稱；其中 8 個實為特殊格式 A 類，已用明確對照補齊，另外 71 個才是 B～F 類。
+正式適用規則仍落入 #13C～#13D。
 
 ---
 
 ## #13B B～F 類班級分類與 unknown eligibility
 
-**狀態**：⬜ 未開始（**現在可做，不需外部資料**）
+**狀態**：✅ 已完成（2026-08-14）
 
 **相依**：#13A
 
@@ -618,13 +710,13 @@ eligible.filter(course => requiredIds.has(Number(course.id)) || course.category 
 
 ### 問題與目的
 
-目前 A 表以外的 51 個班級名稱一律**靜默**退回「一般候選課程」。系統既沒有把它們標成任何人的必修，也沒有記錄「我不知道這門課適不適用於這位學生」。結果是：`會計四合｜企業實習(二)` 這種修不到的課會被當成正常候選排入，而畫面上看不出任何疑慮。
+原先 A 表以外的班級名稱會**靜默**退回「一般候選課程」。系統既沒有把它們標成任何人的必修，也沒有記錄「我不知道這門課適不適用於這位學生」。重新核對資料庫後確認原「51 個」為過期盤點：現行 562 個名稱中，483 個由一般 A 類語法解析，8 個是特殊格式 A 類，71 個為 B～F 類。
 
 **本任務不判定「誰可以修」——那是 #13C。本任務只要求「知道自己不知道」，並把不確定性顯性化。**
 
 ### 實作範圍
 
-- 把 51 個班級名稱依 B～F 分類，寫成可測試的資料表（B 全校共同與通識、C 學院綜合班、D 英語授課班與國際學程、E 學分學程、F 其他）。
+- 把 71 個班級名稱依 B～F 分類，寫成可測試的資料表（B 全校共同與通識、C 學院綜合班、D 英語授課班與國際學程、E 學分學程、F 其他）。
 - `parseClassName()` 對這些名稱回傳結構化的 `classKind`，而不是 `null`。
 - 引入 `eligibility: 'eligible' | 'ineligible' | 'unknown'` 與 `eligibilityReason`，B～F 類在規則確認前一律為 `unknown`。
 - 排課與搜尋回應保留 `unknown` 標記，前端需能顯示「資格待確認」而不是當成一般候選。
@@ -636,6 +728,19 @@ eligible.filter(course => requiredIds.has(Number(course.id)) || course.category 
 - B～F 類課程在排課結果中帶 `eligibility: 'unknown'` 與可讀原因。
 - 系統不再把 `unknown` 課程當成確定可修的候選靜默排入。
 - 測試涵蓋每一類至少一個代表性班級名稱。
+
+### 實際完成內容
+
+- 新增 `server/src/data/classKindCatalog.js`：71 個 B～F 名稱逐筆分類；另列 8 個特殊格式 A 類，避免誤落入非系所類別。
+- `parseClassName()` 統一回傳 `classGroup`／`classKind`；未收錄的新名稱明確回傳 `unclassified`，不再用模糊樣態猜測。
+- `annotateCourseCategory()` 與所有課程回應加入 `eligibility`／`eligibilityReason`。
+- 搜尋保留 unknown；排課器未明確指定時保守排除，明確指定時保留並警告。
+- `CourseCard` 與搜尋頁顯示「資格待確認」；Agent prompt 禁止把 unknown 說成確定可修。
+- MySQL 契約測試確認現行 562 個名稱全部分類，且資料庫非系所名稱與 71 筆目錄完全一致。
+
+### 邊界
+
+#13B 只完成分類與 unknown 傳遞。B～F 的正式適用對象、學院歸屬、學程身分及校方加選規則仍屬 #13C／#13D，不得因本項完成而宣稱已知誰可以修。
 
 ---
 
@@ -667,11 +772,13 @@ eligible.filter(course => requiredIds.has(Number(course.id)) || course.category 
 
 ## #13D 學制、學程與特殊身分
 
-**狀態**：⛔ 阻塞——**等待 #18 Profile schema**
+**狀態**：🟡 工程可開始——**正式驗收等待特殊身分資料**
 
-**相依**：#13B、#18
+**相依**：#13B、#18（均已完成）；外部條件為學生的實際學制／學程身分資料與校方正式適用規則
 
-**開始前必須具備**：#18 的 versioned Profile schema 已定義學制（學士／碩士／博士／在職專班）、雙聯學程、英語授課班與已報名學分學程等欄位。目前 `User_Profiles` 沒有這些欄位，判定邏輯無處取值。
+**目前可開始的工程工作**：#18 已完成 canonical identity、Profile schema v1 與安全 migration 基礎，因此可以擴充學制（學士／碩士／博士／在職專班）、雙聯學程、英語授課班與已報名學分學程等欄位，並先以 `unknown` 表達未提供的特殊身分。
+
+**正式驗收仍需具備**：取得學生實際所屬學制／學程資料，以及各特殊班別的校方適用規則。資料尚未取得前，不得把缺值預設為一般學士班或宣稱相關課程確定可修。
 
 ### 待處理清單
 
@@ -788,7 +895,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #18 統一 user identity、Profile、歷史修課與偏好資料來源
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——Profile 寫入的優先序已定義且可測試，但 canonical ID 與 versioned schema 未做
+**狀態**：✅ 已完成（2026-08-14）——canonical identity、signed session、Profile schema v1、per-user 前端狀態與安全 migration 均已實作；shared MySQL DDL rollout 另列 D 類協調事項
 
 **相依**：無；這是 #18～#38 的資料基礎。
 
@@ -813,29 +920,37 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - API 不再接受 client 任意指定另一位使用者作為實際操作身分。
 - migration 前後的示範帳號資料筆數與必要欄位可核對，沒有靜默遺失。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-14 盤點，取代 2026-08-08 版本）
 
-**已完成**
+**已完成（2026-08-08 當時記錄的）**
 
-- **班別（`className`）的真相來源與寫入優先序已正式定義**，見 `server/src/db/database.js` 的說明區塊與 `pickClassNameTarget()`：`User_Profiles.class_name` 欄位 > `user_preferences.json` > `users.json`。
+- **班別（`className`）的真相來源與寫入優先序已正式定義**，見 `server/src/db/database.js` 的說明區塊與 `pickClassNameTarget()`。
 - `hasUserProfileClassNameColumn()` 以 `SHOW COLUMNS` 偵測欄位是否存在並快取，組員新增欄位後不需改程式即自動改走 SQL。
 - `pickClassNameTarget()` 是**與 I/O 分離的純函式**，因此「存在於 `User_Profiles` 但沒有 `users.json` 對應列的使用者，班別被靜默丟掉」這個 bug 有 regression 測試釘住。
 - `sameId()` 已統一 `studentId` 與 numeric `id` 的比對，讀寫兩邊都用同一個判斷。
 - `POST /api/profile` 已在邊界擋下型別錯誤的 `department`（物件／陣列／數字經字串化後會變成看似正常的值），不靠正規化「救回來」。
-- demo 使用者 `D1249697` 的 Profile 已含 `className`、`completedCourseCodes`、`courseHistory`，不再只有 numeric section id。
+- demo 使用者 `D1249697` 的 Profile 已含 `className`、`courseHistory`，不再只有 numeric section id。
 
-**尚未完成**
+**新完成（2026-08-11 commit `ad306a5` bundle，之前未回填進本文件）**
 
-- **沒有 canonical user ID**。`studentId`（`D1249697`）與 numeric `id`（`1`）仍並存，各 route 自行決定用哪一個比對。
-- **沒有 versioned Profile schema，也沒有 migration**。欄位是隨需求逐次長出來的，無版本號可判斷相容性。
-- **`'default'` fallback 仍然存在**：`server/src/routes/profile.js` 的 `req.query.userId || 'default'`，以及 `client/src/services/api.js` 與四個前端頁面的 `user?.studentId || 'default'`（詳見 #28）。這代表 API 仍接受 client 任意指定身分。
-- Profile source of truth 只在 `className` 這一個欄位上定義清楚，其餘欄位（偏好、系所、年級）在 MySQL `User_Profiles` 與 `user_preferences.json` 之間仍可能各自更新。
+- **Canonical user ID 已定案為 `studentId`**：新增 `server/src/services/identityService.js`，`resolveIdentity()`/`resolveIdentityFrom()` 為純函式（與 I/O 分離），對不到 `users.json` 同一列一律回傳 `found: false`，不做 ID 猜測。`profile.js`、`schedule.js`、`graduation.js`、`chat.js` 四條 route 已統一改用它取得身分，不再各自比對。
+- **`'default'` fallback 已全面移除**，非只有部分：後端 `profile.js:24` 明文擋下（`resolveIdentityFrom()` 把 `'default'` 視為 `default-user-not-allowed`，回 401）；前端 `client/src/services/api.js:54` 明確擋下 `userId === 'default'`。2026-08-14 盤點時對 `server/src`、`client/src` 全域 grep `|| 'default'`：**0 處殘留**（2026-08-08 記錄的 5 處前端 + 1 處後端已全部清除）。
+- **`server/data/user_preferences.json` 已刪除**（見 [2026-08-11 change report](./2026-08-11-drop-local-profile-store-and-restore-period-one.md)），`User_Profiles` 成為偏好資料唯一儲存體。2026-08-08 記錄的「Profile source of truth 其餘欄位在 MySQL 與 user_preferences.json 之間仍可能各自更新」這個問題，因為第二個來源已物理消失，**不再成立**。
+
+**本次完成（2026-08-14）**
+
+- 登入建立簽名 `HttpOnly`、`SameSite=Lax` session cookie，內容只保存 canonical `studentId`；`requireIdentity` 已套用 Profile、Schedule、Chat、Graduation、watchlist 與 saved schedules。未登入回 401，request 改送其他學號回 403。
+- `/api/auth/me` 改由 session 取得使用者，前端所有 API 開啟 credentials，不再傳 user ID。
+- 新增 `PROFILE_SCHEMA_VERSION = 1`、集中式 normalizer／validator 與 v0→v1 migration；Profile response 固定包含 `schemaVersion: 1`。
+- migration 已規劃 `student_id UNIQUE`、`class_name`、`profile_schema_version`，具 dry-run、執行前備份、重複執行不重複變更與 rollback。shared MySQL 的實際 `ALTER TABLE` **尚未執行**，必須另取得協調確認；此 rollout 歸入 D 類資料模型工作，不阻擋 #18 程式契約完成。
+- 前端 onboarding／setup 狀態改用 `fcu:<studentId>:...`，登出不再 `localStorage.clear()`；畢業頁移除硬編碼學號 fallback。
+- API canonical ID 文件已改成學號/session 契約；MySQL `user_id` 改存學號的後續資料模型工作由 `student_id` migration 取代並列入 D 類 rollout。
 
 ---
 
 ## #19 以穩定 course code 建立歷史修課、重修與跨學期對應
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——歷史修課已用穩定課程代碼保存，但排課器還沒讀到
+**狀態**：✅ 已完成（2026-08-14）——穩定課號、latest-attempt、自動重補修、跨學期 mapping 與 warning 均已完成；多狀態畢業認列移至 #23
 
 **相依**：#18
 
@@ -860,30 +975,40 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - 同一正式課程的不同 sections 不會同時排入。
 - 建立至少兩學期、同課不同 section ID 的 regression fixture。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-14 盤點，取代 2026-08-08 版本）
 
 **已完成：歷史資料層**（2026-08-06，詳見 [個人歷年修課成績資料匯入](./2026-08-06-personal-course-history-import.md)）
 
-- demo 使用者 `D1249697` 的 53 門歷史課程已用**穩定課程代碼**保存於 `completedCourseCodes`（`IECS2001`、`MATH1005`…），不是當學期 section id。
+- demo 使用者 `D1249697` 的 53 門歷史課程已用**穩定課程代碼**保存於 `courseHistory`（`IECS2001`、`MATH1005`…），不是當學期 section id。
 - `courseHistory` 保存 112-1 至 114-2 的學年度、學期、課程編碼、科目、百分制成績、等第、學分、修習別及通識類別——**跨學期比對所需的欄位已經齊備**。
-- **`completedCourseIds` 已被清空**，正是為了避免把歷史課程誤連到當期 section。這是刻意的，不是遺漏。
 - 「同一正式課程的不同 sections 不會同時排入」已達成，由 `getCourseKey()` 與 `server/test/scheduler.test.js` B1／B4 釘住；B3 另外確保正課與實習不被誤判為同一門課的兩個班次。
 - 缺少歷史資料時，`GET /api/graduation/:studentId` 回傳 `courseHistoryAvailable: false` 與說明訊息，前端顯示提示而非捏造進度。
 
-**尚未完成：排課器仍看不到歷史修課**
+**新完成：排課器已接上歷史修課**（Step 2 課號統一 Part A，A1-A9，2026-08-13，詳見 [consolidated change report](./2026-08-13-part-a-course-history-scheduling-data.md)，之前未回填進本文件）
 
-- **`completedCourseCodes` 與 `courseHistory` 目前只有 `server/src/routes/graduation.js` 在讀。** `server/src/skills/scheduler.js` 與 `server/src/services/constraintService.js` 仍只認 `completedCourseIds`——而那個欄位現在是空的。
-- 結果是 roadmap 開頭與專題進度報告都記錄過的現象：**demo 使用者有 53 筆歷史修課，排課器取得的 `completedCourseIds` 卻是空陣列，已修課程無法被排除。**
-- 欄位命名尚未統一為 `catalogCourseCode` / `sectionId` / `selectionCode`，`course.id`、`subid3`、`section_id` 的語意在不同模組間仍靠慣例維繫。
-- 歷史課程到當期 sections 的 mapping 不存在。
-- 未保存「未通過／停修／重修中／抵免」狀態，`retakeCourseIds` 需由使用者自行指定，無法從 `courseHistory` 的等第推導。
-- 沒有跨兩學期、同課不同 section ID 的 regression fixture。
+- 2026-08-08 記錄的核心缺口——「`server/src/skills/scheduler.js` 仍只認 `completedCourseIds`，那個欄位現在是空的，demo 使用者 53 筆歷史修課排課器完全看不到」——**已修好**：新增 `server/src/data/courseHistory.js` 的純函式 `getPassedCourseCodes()`，`scheduler.js` 用它比對 `course.subid3`（穩定課號，不是 section id），REST 與 AI Agent 兩條路徑經 `constraintService.js` 共用同一份邏輯，courseHistory 逐一傳遞（不是 shadow 欄位）。
+- **實測驗證**：demo 學生候選池 16 門中 6 門已修過並通過（`IECS3003`、`IECS3002`、`IECS4926` 等必修 + `IECS3059` 3 個班次）正確被排除，並附排除理由「已修過並通過（課號 XXX）」。
+- `completedCourseIds`／`completedCourseCodes`／`completedCourseNames`／`completedCredits`／`earnedCredits` 五個 shadow 欄位已從 `users.json`、`memoryService.js`、`SetupPage.jsx`、`database.js`（MySQL 映射的讀寫兩側）全部移除；`courseHistory` 是唯一資料來源，不再有「兩份資料互不同步」的空間。
+- `courseHistory` 每筆新增 `passed: boolean`（`score >= 60`），一次算好不重複推導。
+- `server/src/routes/graduation.js` 改用 `getPassedCourseCodes`/`getEarnedCredits`/`getTotalEarnedCredits`（同一份 `server/src/data/courseHistory.js`），查無系所對照表時回傳明確 warning，不再退回 `user.requiredCredits` 之類的假造預設值。
+
+**本次完成（2026-08-14）**
+
+- MySQL `subid3` 已只映射為 API `catalogCourseCode`；section identity 保持為 `id`／`sectionId`。
+- `courseHistory` 每筆必要欄位固定為 `academicYear`、`semester`、`courseCode`、`courseName`、`score`、`letterGrade`、`credits`、`passed`、`requirementType`、`generalEducationCategory`、`graduationCategory`，demo 53 筆皆通過契約測試。
+- 同一 `courseCode` 依 `academicYear + semester` 取最新一筆。先不及格後通過時視為完成；最新一筆仍是不及格必修時才成為重補修來源。
+- 排課前自動把不及格必修課號映射到本學期所有相同 `catalogCourseCode` sections，多班次仍最多排一班。優先序固定為「本學期必修 → 不及格必修重補修 → 其他課程」。
+- `retakeCourseIds`／`failedRequiredCourseIds` 已從 REST、Agent prompt 與 constraint contract 移除；舊 client 傳入時不生效。
+- 本學期無對應 section 時回傳「請下學期記得重修」warning；有開課但因本學期必修衝堂或硬限制未排入時回傳調整課表提醒。
+- 跨學期不同 section ID、先失敗後通過、不及格選修、多班次與未開課等 regression tests 已補齊。
+
+`withdrawn`、`transferred`、`exempted` 等狀態不在 #19 實作，已整併至 #23 的逐門畢業認列與規則來源工作。
 
 ---
 
 ## #20 建立 active term 與完整 candidate eligibility 規則
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——資格判定已有分層雛形，但 active term 與 `unknown` 完全未做
+**狀態**：🟡 部分完成（2026-08-15 盤點）——active term 過濾、`eligibilitySource`／`scopeReason`／`term` 三欄位、四種判定的正式對照均已完成；B～F 正式可加選規則仍卡 #13C／#13D，維持部分完成
 
 **相依**：#12、#13A、#13B、#18、#19
 
@@ -908,7 +1033,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - 使用者明確指定 scope 外課程時，系統保留並提出資格警告，不靜默刪除或宣稱可修。
 - 不同科系、年級、班級與無法確認資格的測試案例均有預期結果。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-14 盤點）
 
 **已完成：四種判定中的三種已有雛形**
 
@@ -917,30 +1042,59 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 | 可搜尋 | ✅ 有 | `buildCourseSearchScope()`、`buildCourseQueryScope()`、`COURSE_SEARCH_CATEGORIES` |
 | 本人必修 | ✅ 有（限 A 表班級） | `isRequiredForStudent()`、`isOtherStudentsRequiredCourse()` |
 | 可計入畢業學分 | 🟡 部分（限系外選修） | `evaluateOutsideElective()` 回傳認列條件與 `reasons` |
-| 可加選 | ❌ 無 | — |
+| 可加選 | 🟡 unknown 邊界已建立 | `resolveCourseEligibility()`；B～F 正式規則仍待 #13C |
 
 - 搜尋、排課與 AI Agent 共用同一套「先分類後篩選」流程（`searchCoursesForStudent` / `ForSchedule` / `ForAgent` 三個入口共用 `filterCategorizedCourses`），避免三條路徑各自漂移。
 - `annotateCourseCategory()` 已在課程回應保留 `sourceCategory` 與 `classificationSource`，**可追查分類的原始值與推導來源**——這正是 `eligibilitySource` 想要的性質，只是目前只涵蓋「分類」而非「資格」。
 - 系外選修不把「可能可選」直接宣稱為可計入畢業學分，會另外回傳判斷理由。
 - 排課時系外選修的認列條件**不會**靜默剔除使用者手動勾選的課（`explicitCourseIds`）——那條規則講的是能不能計入畢業學分，不是能不能修。
+- #13B 已加入 `classGroup`、`classKind`、`eligibility`、`eligibilityReason`；搜尋保留 unknown，排課自動候選保守排除，明確指定保留並警告。
 
-**尚未完成**
+**尚未完成（2026-08-14 當時）**
 
 - **完全沒有 active term 概念。** 全專案搜不到 `activeTerm` / `academicYear` 之類的設定；`server/src/db/database.js` 的課程查詢只是 `ORDER BY cs.year DESC, cs.semester`，沒有任何 API 以學年學期為必要條件。跨學期資料一旦同時存在，候選集就會混入非當學期的 sections。
-- **沒有 `eligibility` 欄位，也沒有 `unknown`。** 目前只有「有沒有被篩掉」兩種結果，資料不足時一律當成可修（見 #13B）。
 - candidate 沒有 `eligibilitySource`、`scopeReason`、`term` 三個欄位。
-- 「可加選」與「可搜尋」尚未分開；搜尋得到的課等同被視為可排入。
-- 跨班、同系他年級選修、學院綜合班、通識與學程的資格缺口仍在（#13B～#13D）。
+- 「可加選」與「可搜尋」尚未形成完整獨立規則；#13B 僅先對 unknown 建立「搜尋保留、排課自動候選排除」的保守邊界。
+- 跨班、同系他年級選修、學院綜合班、通識與學程的**正式適用規則**仍有缺口（#13C～#13D）；unknown 已不再被靜默當成可修。
+
+### 本次進度（2026-08-15 盤點）
+
+**新完成：active term 與三個 metadata 欄位**
+
+- 新增 `server/src/data/activeTerm.js`：`ACTIVE_TERM` 常數（預設 114 學年下學期，可用 `ACTIVE_ACADEMIC_YEAR`／`ACTIVE_SEMESTER` 環境變數覆寫，換學期不需改程式碼），與 `isActiveTermCourse()`／`annotateTerm()` 兩個 pure function。學年學期皆缺的候選視為本學期（相容既有無 term 資料的測試與資料，不新增排除）。
+- `courseScope.js` 的 `resolveCourseEligibility()` 新增 `ELIGIBILITY_SOURCE` 5 個固定代號（`UNCLASSIFIED`、`UNCONFIRMED_RULES`、`REQUIRED_SCOPE_UNRESOLVED`、`REQUIRED_TABLE`、`ELECTIVE_DEFAULT`），5 個分支各自附上 `eligibilitySource`。
+- `courseCategory.js` 的 `annotateCourseCategory()` 新增 `term`（呼叫 `annotateTerm()`）與 `scopeReason`（`buildScopeReason()`，融合 term／類別／eligibility 結論成一句白話說明，優先序：非本學期 → `eligibility=unknown` → 必修判定 → 通識 → 系外選修 → 一般選修）。系外選修算出認列結果後，由 `refineOutsideElectiveScopeReason()` 在既有兩個呼叫點（`courseQuery.js`、`scheduler.js`）事後覆寫精修文字——刻意不搬動 `evaluateOutsideElective()` 的呼叫方式，降低風險。
+- **Active term 過濾已上線，兩層**：`courseQuery.js` 的 `filterCategorizedCourses()` 無條件過濾非本學期候選（涵蓋搜尋、Agent 查詢、排課主要候選來源）；`scheduler.js` 的 `prepareCandidates()` 對繞過搜尋、直接查 `getAll('courses')` 的兩條路徑（明確 `courseIds`、#19 重補修查找）另做一次過濾，沿用「系統自撿排除＋原因、明確指定保留＋警告」的既有模式，且排在 unknown-eligibility 檢查之前（term 是更外層閘門）。
+- 驗證了一個容易忽略的副作用：#19 重補修查找若唯一對到的 section 是舊學期資料，先前會被誤當成本學期已開課而靜默滿足重補修、壓下「本學期沒有開課，請下學期記得重修」警告；active term 過濾後該 section 被排除，原本該出現的警告正確觸發。已新增 regression test 釘住這個互動。
+- 四種判定（可搜尋／本人必修／可加選／可計入畢業學分）整理成文件化對照表，寫入 `docs/SCHEDULING_LOGIC.md`；刻意不新增第四個頂層欄位（會與 `eligibility`／`outsideElective.eligible` 重複）。
+
+**測試與驗證**
+
+- 新增 `server/test/activeTerm.test.js`（16 tests）、`server/test/courseCategory.test.js`（15 tests）；`courseScope.test.js`、`courseQuery.test.js`、`scheduler.test.js`、`database-contract.test.js` 各自擴充。
+- `npm test`：從本輪開始前的 322 tests / 73 suites 成長為 365 tests / 86 suites，全數通過，零回歸。
+- `database-contract.test.js` 新增的 `ACTIVE_TERM` 對真實本機 MySQL 資料的契約測試通過，確認預設值（114/下學期）與現行資料相符。
+
+**仍未完成**
+
+- B～F 正式適用對象規則仍卡 `#13C`（等系辦／校方書面規則）。
+- 學制、學程與特殊身分欄位仍卡 `#13D`（`User_Profiles`／Profile schema v1 目前沒有這些欄位）。
+- 跨班、同系他年級選修、學院綜合班、通識與學程的完整正式規則因此仍未解鎖；`eligibility`／`scopeReason` 在這些情境下維持 `unknown`，不得因本輪完成而宣稱已知。
 
 ---
 
 ## #21 建立 hard／soft constraint schema、validator 與放寬策略
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——已有共用限制合併層與獨立 validator，但 hard／soft 分層未建立
+**狀態**：🟡 部分完成（2026-08-20 更新）——正式 `hard`／`soft` schema（`weight`／`relaxable`／`source`／`confidence` 欄位）、與方案產生器分離的完整 validator、opt-in 放寬階梯、結構化 conflict set 均已交付；唯一剩餘缺口是先修／共修（prerequisite/co-requisite）的**強制執行**——schema 已定義這個層級，但完全沒有資料來源可查，validator 誠實回報 `unchecked`，屬 roadmap #8（尚未開始）的負責範圍
 
-**相依**：#3、#19、#20
+**相依**：#3（已完成）、#19（已完成）、#20（部分完成）
 
-**開始前必須具備**：所有現有偏好已分類成 hard constraint 或 soft preference；candidate 與歷史修課使用一致 ID；可修資格已在排課前完成判定。
+**開始前必須具備**：所有現有偏好已分類成 hard constraint 或 soft preference——**這條已由 #3 滿足**：
+8 個內容偏好旗標已從硬性排除改成軟性加分，剩下的 4 個時段類檢查（早八／晚課／封鎖時段／午休）與
+其餘既有硬性條件（衝堂／資格／已修／學分上限／必修）維持硬性，分類已明確。**尚未滿足的是**：這
+只是「行為分類正確」，還沒有 #21 自己要求的正式 `hard`／`soft` schema（`weight`／`relaxable`／
+`source`／`confidence` 欄位）、獨立於方案產生器的完整 validator（現有 `validateSchedule()` 只驗
+衝堂與重複班次）、逐級放寬機制與結構化 conflict set——這些仍是 #21 自己要做的工作，不隨 #3 完成。
+candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判定兩項則由 #19、#20 提供。
 
 ### 問題與目的
 
@@ -961,27 +1115,26 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - 必修與 soft preference 衝突時，結果與警告符合規格。
 - 無解回應列出互相衝突的課程／條件與可放寬選項。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-20 更新）
 
-**已完成**
+**已完成（本輪新增）**
 
-- **限制合併已集中在單一模組**：`server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 由 REST 與 AI Agent 兩條路徑共用，避免「參數只在其中一條路徑生效」。
-- **合併語意已明確定義並有測試**（`server/test/constraints.test.js`）：
-  - 空陣列視同「未指定」退回已儲存偏好，不會把偏好整個蓋掉（若用 `||`，空陣列在 JS 是 truthy）。
-  - `false` 是有效值，會覆蓋已儲存偏好；`undefined` 才退回。
-  - `selectedCourseIds`、`watchingCourseIds`、`explicitCourseIds` 屬「本次操作的當下狀態」，**不從已儲存偏好回填**——這已經是 hard／soft 之外的第三種語意分層。
-  - `mondayFree` 展開為週一 1-14 節封鎖，且與已儲存封鎖時段合併而非取代。
-- **已有與方案產生器分離的 validator**：`validateSchedule()` 是獨立 export，檢查衝堂、同課重複班次，並分別回報 `totalCredits` / `graduationCredits` / `nonGraduationCredits`。
-- 排入與排除都已帶原因：`addCourseToPlan()` 接受 `reason`，`plan.excludedCourses` 記錄 `{ course, reason }`，`hardConstraintReason()` 產生排除理由字串。
-- 校規上下限（25／12／四年級 9／超修 30）已依 `docs/COURSE_SELECTION_RULES.md` 實作，且**移除了沒有校方依據的「每日 4 門課」預設值**。
+- **正式 schema**：`server/src/data/constraintSchema.js` 的 `CONSTRAINTS` 表，每個既有限制類型一筆，含 `category`／`relaxable`／`weight`／`source`／`confidence`／`exemptForRequiredCourses`／`enforced` 完整欄位。純資料表，不改變任何現行排除／評分行為。
+- **各層級的 relaxable 分類**：3 個時段類舒適偏好（不排早八／午休保留／不排晚課）標為可放寬；封鎖時段與其餘既有硬性條件（衝堂、資格、已修、學分上限、他班必修、非本學期、系外選修不符、每日上限）標為不可放寬，符合驗收標準「盡量不排早八可放寬、週一絕對不能上課不可放寬」的例子。explicit selection 的既有繞過機制正式化為 `overridableBy` 欄位。
+- **與方案產生器分離的完整 validator**：新增 `server/src/skills/scheduleValidator.js` 的 `validateScheduleAgainstConstraints()`，檢查衝堂、重複班次、學分上限、資格／學期／系外選修／已修過、4 個時段類限制、必修涵蓋率。`generateSchedule()` 每次成功回應前對主推方案自我檢查一次，落實「所有成功方案 hard constraint violation 為 0」這條驗收標準——不再是無法被證明，而是每次實際執行一次。
+- **opt-in 放寬階梯**：`constraints.allowRelaxation` + 使用者自訂的 `constraints.timePreferencePriority`，依序放寬可放寬的時段偏好並重試，成功時附上 `relaxedConstraints` 揭露。
+- **結構化 conflict set**：無解時額外回傳 `conflictSet`（`constraintId`／`relaxable`／`courses`／`reason`），取代「只回傳第一個錯誤字串」。
+- **正式必修無條件豁免時段偏好（使用者主導的設計決策，非路線圖原文）**：`isRequiredForStudent()===true` 的課永遠不受 3 個時段類舒適偏好排除（但仍受封鎖時段排除），豁免範圍嚴格排除 `mustTakeCourseIds`／`selectedCourseIds`，不影響既有 S10 測試。
+- 附帶修復：每日課程數上限排除必排課時，先前不會回報失敗原因而靜默消失，本次一併修復。
+- 限制合併已集中在單一模組、合併語意已測試、與方案產生器分離的基礎 validator（`validateSchedule()`）、校規上下限實作——以上延續先前盤點的既有基礎，本輪未變動。
 
 **尚未完成**
 
-- **沒有 `hardConstraints` / `softPreferences` 的正式 schema**，也沒有 `weight`、`relaxable`、`source`、`confidence` 欄位。所有限制目前都是 `buildScheduleConstraints()` 回傳物件上的扁平布林或陣列。
-- `hardConstraintReason()` 仍把部分「盡量不要」條件當成直接排除（#3 的內容），系統無法區分不可違反與可放寬。
-- **沒有逐級放寬機制**。排不出來就是排不出來，不會自動放寬 soft preference 再試。
-- **無解時只回傳第一個錯誤字串**，沒有結構化 conflict set（互相衝突的課程／條件配對）。
-- `validateSchedule()` 只驗證衝堂與重複班次，不驗證資格、已修、學分上下限、必修涵蓋或先修／共修——因此「所有成功方案 hard constraint violation 為 0」這條驗收標準目前無法被證明。
+- **先修／共修的強制執行**。schema 已定義這個層級（`enforced:false`），但完全沒有資料來源可查（已用 grep 確認 `server/src` 與 `docs/DB_AUDIT_REPORT_2026-08-05.md` 皆無先修表），validator 誠實回報 `unchecked`，不強制執行。資料模型屬 roadmap #8（尚未開始）的負責範圍。
+- `scoreCourse()` 尚未動態讀取 schema 表——內建評分算式維持逐位元組不變，`weight` 欄位目前僅供文件說明。
+- `maxCoursesPerDay`（每日課程數上限）尚未重新分類為可放寬——沒有明確需求驅動，維持現行 `relaxable:false`，不在本次範圍內。
+
+詳見 `docs/CHANGE_REPORTS/2026-08-20-hard-soft-constraint-schema.md`。
 
 ---
 
@@ -1031,6 +1184,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 ### 實作範圍
 
 - 建立 `program + degree + admissionYear + ruleVersion` 的規則模型。
+- 定義修課／認列狀態模型，至少涵蓋 `withdrawn`、`transferred`、`exempted`，並明確規範是否視為完成、是否計學分及是否需要重修。
 - 逐門歷史課程分類並計算 required／core／elective／general／external gaps。
 - 保存每筆認列的規則來源與人工待確認狀態。
 - 推薦補學分課程前，先驗證課程能補足指定 gap。
@@ -1062,6 +1216,18 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - **沒有逐門歷史課程分類**。學分是預先彙整的總數（`completedCredits: 118` 與四個分類小計），不是由 `courseHistory` 逐門推導，因此無法追溯「這 61 學分本系必修是哪些課湊出來的」。
 - 每筆認列沒有記錄規則來源與人工待確認狀態。
 - **補學分推薦仍未驗證能否補足指定 gap**：專題進度報告實測顯示，推薦只取同系第一門未完成課程，甚至把 0 學分的「班級活動」顯示成通識推薦——這條驗收標準明確**未通過**。
+
+### 新增待辦：完整歷史通識畢業認列（由 #12B 移入，2026-08-14）
+
+課程當期分類已由 #12B 完成；以下是「學生以前修過的課最後算入哪一類畢業學分」的版本化工作，必須留在 #23：
+
+- 依 `program + degree + admissionYear + ruleVersion` 選擇畢業規則，而不是只依目前開課學年度。
+- 建立通識版本比較：111 以前為人文／社會／自然／統合；112～114 為新四領域；115 起不分領域。
+- 實作過渡規則：112 前學生未滿 12 學分時可用新四領域補足；115 起舊生已滿 12 學分者不需重修，114 以前未完成「現代公民與社會實踐」或「科學與人文的對話」者可用通識選修補足。
+- 認抵上限依入學年度版本處理：112～114 入學生為 6 學分，115 起入學生為 4 學分；同一課不得重複認列。
+- 取得 112-1～114-1 歷史課程檢索資料，把官方認抵 PDF 的課名、學分、領域與申請學院對回穩定 `catalogCourseCode`；找不到唯一對應時標記 `unknown`，不得用名稱猜測後直接計入。
+- 每筆歷史認列保存課程開設學期、學生入學年度、規則版本、官方來源、認列結果及人工待確認狀態。
+- 各學系可排除與專業過於接近的通識課，這類系所例外必須取得正式規則後才能作為畢業判定。
 
   **追蹤記錄（2026-08-13）**：重新查證，現象仍存在，附具體重現數據：
   - `GEID0010`「班級活動」全校 169 個班次，每班一個，`credits: 0`、`type: 必修`；
@@ -1138,9 +1304,9 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #26 建立每門課的 evidence-based recommendation reason
 
-**狀態**：⬜ 未開始（卡 #4、#5、#21、#22）
+**狀態**：🟡 部分完成（2026-08-17）——`reviewEvidence` 已由 #4 提供，其餘三個欄位未開始
 
-**相依**：#4、#5、#21、#22
+**相依**：#4（已完成部分）、#5A（已完成）、#21、#22（其餘三個欄位仍待這兩項）
 
 **開始前必須具備**：課程 feature 與 review aggregate 已通過資料品質檢查；constraint exclusions 與 solver objective 可輸出結構化原因；禁止讓 LLM 自行推測缺少的課程事實。
 
@@ -1175,10 +1341,22 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 **尚未完成：reason 還不是 evidence-based**
 
 - 目前的 `reason` 是**產生器自己寫的字串**（例如「必修優先」），不是指向具體證據的結構化物件。沒有 `evidence` 欄位可以指回 Profile 欄位、review 統計或規則來源。
-- **沒有引用任何評價統計**——因為 #4／#5 尚未接線，`reviewStats` 的 `avgDifficulty`、`avgSweetness` 根本沒有進入 scheduler。
 - 沒有「替代課為何落選」的比較資訊，也沒有不確定性標示。
 - 「更改單一偏好後 reason 與分數同步改變」無法驗證，因為 reason 不含分數組成。
 - 沒有 explanation faithfulness 測試（那是 #37）。
+- `selectedBecause`、`matchedPreferences`、`requiredRules`、`alternativesRejected`、`constraintTradeoffs`、`confidence`、`dataSources` 一個都還沒做。
+
+**新完成（2026-08-17，隨 #4 一併提供）**
+
+- **`reviewEvidence` 已提供**：每門排入的課帶完整證據物件（`reviewCount`、四個維度平均分、
+  未收縮 `easiness`、收縮後 `adjustedEasiness`、0–100 的 `easyScore`、`priorEasiness`），無評價時
+  明確為 `null`。這是實作範圍列出的四個欄位（`selectedBecause`、`matchedPreferences`、
+  `requiredRules`、`reviewEvidence`）中唯一完成的一個——其餘三個刻意不在本次做，避免在其餘三
+  個介面還沒設計清楚前搶先發明。
+- 「評價不足或資格未知時明確標示，不產生涼、好拿分等無證據說法」的規則已在 `docs/PROMPT_DESIGN.md`
+  的「評價證據的使用限制」與 `promptService.js` 的 system prompt 明文落實。
+- 已由 #4 補齊「沒有引用任何評價統計」這條舊缺口——`reviewStats` 的聚合結果現在確實進入
+  scheduler，見 [評價驅動的涼度評分變更報告](./2026-08-17-review-driven-easiness.md)。
 
 ---
 
@@ -1212,11 +1390,11 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #28 統一 Dashboard、Schedule、Chat 的登入使用者 context
 
-**狀態**：⬜ 未開始（卡 #18）
+**狀態**：🟡 部分完成（2026-08-14）——authenticated context、API 身分與 per-user setup 狀態已完成；雙帳號完整資料隔離驗收尚未完成
 
 **相依**：#18
 
-**開始前必須具備**：canonical user ID 與 authenticated context 已完成；盤點前端所有 `default` user、student ID fallback 及 localStorage setup flag。
+**開始前必須具備**：canonical user ID 與 authenticated context 已由 #18 完成；前端 `default` user、student ID fallback 及 localStorage setup flag 已完成盤點與修正。
 
 ### 問題與目的
 
@@ -1236,32 +1414,24 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 - 未登入時所有 user-scoped routes 被拒絕，而非落到 default user。
 - 瀏覽器測試覆蓋登入、切換、登出與重新載入。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-14 重新核對）
 
 **已完成**
 
 - `client/src/contexts/AuthContext.jsx` 已是**唯一的登入狀態來源**，搭配 `useAuth.js` 供各頁面取用。
 - DashboardPage、SchedulePage、SearchPage、SetupPage **都已改成從 `useAuth()` 取得 `user`**，不再各自從 localStorage 或 props 推定身分。
-- Dashboard 與 SchedulePage 的 Chat 都以 `user?.studentId` 呼叫 `chatAPI.send()`，兩處來源一致。
+- Dashboard 與 SchedulePage 的 Chat 共用不帶 user ID 的 `chatAPI.send()`；實際身分只由 HttpOnly session 決定。
 - SetupPage 的年級預設值已改為登入使用者的實際年級（原本固定大一，會把三年級學生存成大一）。
+- `services/api.js` 已移除 user-scoped API 的 `default` 與 client user ID，並全面使用 `credentials: 'include'`；未登入回 401、改送不同 ID 回 403。
+- onboarding／setup key 已改為 `fcu:<studentId>:onboarded` 與 `fcu:<studentId>:setupDone`；登出只移除目前帳號的 key 與目前登入快取，不再使用 `localStorage.clear()`。
+- GraduationPage 已移除硬編碼學號 fallback；未登入時不發送個人資料請求。
+- #18 的 route／session 測試已固定 401、403、cookie 簽名與 `/auth/me` canonical student ID。
 
-**尚未完成：`default` fallback 仍在**
+**尚未完成**
 
-`|| 'default'` 共 5 處，這正是「盤點前端所有 `default` user」要處理的對象：
-
-| 檔案 | 位置 |
-| --- | --- |
-| `client/src/pages/DashboardPage.jsx` | `userId: user?.studentId \|\| 'default'`、`chatAPI.send(msg, user?.studentId \|\| 'default')` |
-| `client/src/pages/SchedulePage.jsx` | `profileAPI.get(...)`、`userId:` 兩處 |
-| `client/src/pages/SearchPage.jsx` | `profileAPI.get(...)` |
-| `client/src/pages/SetupPage.jsx` | `profileAPI.get(...)`、`profileAPI.update(...)` |
-| `client/src/services/api.js` | `chat.send`、`schedule.save`、`schedule.getSaved`、`profile.get`、`profile.update` 的 `userId = 'default'` 預設參數 |
-
-後果：
-
-- **未登入時 user-scoped routes 不會被拒絕**，而是落到 `default` user——第三條驗收標準明確未達成。
-- 後端 `server/src/routes/profile.js` 同樣有 `req.query.userId || 'default'`，因此不是只改前端就能修好。
-- 尚未做兩個測試帳號輪流登入的交叉污染測試，也沒有登入／切換／登出／重新載入的瀏覽器測試。
+- 尚未建立兩個可登入測試帳號，在同一瀏覽器依序完成登入、Profile 更新、Chat、儲存課表、登出、切換及重新載入，證明所有資料均不交叉。
+- 現有瀏覽器 A/B fixture 驗證的是「失敗必修／通過／未開課」排課差異，不等同雙帳號切換驗收，不能拿來宣稱 #28 完成。
+- interaction event schema 尚未實作（#29），因此「互動事件不交叉」這條驗收目前無法執行；完成 #29 後須補回 #28 的跨帳號驗證。
 
 ---
 
@@ -1296,15 +1466,18 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #30 建立可重現的 per-user preference update pipeline
 
-**狀態**：⬜ 未開始（卡 #2、#5、#29）
+**狀態**：⬜ 未開始（卡 #2、#5A、#29）
 
-**相依**：#2、#5、#29
+**相依**：#2、#5A、#29
 
 **開始前必須具備**：互動事件已穩定寫入；課程 feature 可供學習；先定義哪些事件更新哪些偏好、學習率、上下限、衰減與防止單一事件過度影響的規則。
 
 ### 問題與目的
 
 保存 checkbox 或讓 Agent 直接覆寫 Profile 不等於學習。需要一條可重播、可解釋、可撤銷的更新管線，將互動行為轉成使用者權重。
+
+**與 #5B 的關係**：#30 產出的 easy 方向權重就是 #5B（per-user 加權方向）要塞進 `scoreCourse()` 的值。
+#30 完成即代表 #5B 的阻塞條件解除；#30 未完成之前，#5B 沒有任何權重可用，不必另外排工。
 
 ### 實作範圍
 
@@ -1325,7 +1498,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #31 建立冷啟動、偏好重設、時間衰減與資料不足策略
 
-**狀態**：⬜ 未開始（卡 #18、#30）
+**狀態**：🟡 部分完成（2026-08-08 盤點）——零偏好冷啟動偵測與警告已完成；互動門檻、重設、時間衰減與來源標示仍卡 #30
 
 **相依**：#18、#30
 
@@ -1457,7 +1630,7 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 
 ## #35 建立 feasibility、constraint violation 與 solver benchmark
 
-**狀態**：⬜ 未開始（卡 #15、#21、#22）
+**狀態**：🟡 部分完成（2026-08-08 盤點）——已有 feasibility 單元測試骨架；完整 benchmark、constraint violation 指標與 conflict set 仍卡 #15、#21、#22
 
 **相依**：#15、#21、#22
 
@@ -1513,9 +1686,9 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 
 ## #36 建立 personalization baseline 與 preference sensitivity A/B
 
-**狀態**：⬜ 未開始（卡 #5、#7、#30、#31）
+**狀態**：🟡 部分完成（2026-08-08 盤點）——已有興趣偏好與 avoid-time 的最小敏感度 A/B；完整 baseline、量化指標與行為差異仍卡 #5B、#7、#30、#31
 
-**相依**：#5、#7、#30、#31
+**相依**：#5B、#7、#30、#31
 
 **開始前必須具備**：課程分數、個人權重、學習更新與冷啟動均已定義；固定 candidate set 與 solver version，避免 A/B 差異來自資料或演算法版本不同。
 

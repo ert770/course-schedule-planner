@@ -40,7 +40,7 @@ export default function ChatPanel({ onScheduleGenerated }) {
     setLoading(true);
 
     try {
-      const res = await chatAPI.send(msg, user.studentId);
+      const res = await chatAPI.send(msg);
       setMessages(prev => [...prev, { role: 'assistant', content: res.reply }]);
 
       // intent 為後端 agentService 的 tool 名稱，須與 run_csp_scheduler 完全一致

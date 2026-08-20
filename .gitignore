@@ -25,3 +25,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Profile migration backups contain user data and must remain local.
+server/backups/
+
+# Chat history is written at runtime and accumulates real student
+# conversations tied to a stable student ID and timestamp. It must never be
+# committed — Git history is durable and broadly replicated, so even a later
+# deletion would not remove already-pushed records. The file stays on disk
+# for the local JSON-fallback runtime path; only tracking is disabled.
+server/data/chat_history.json

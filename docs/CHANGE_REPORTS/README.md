@@ -2,6 +2,24 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-20
+
+1. [修復 backend 分支的 adversarial review 發現（3 項）](./2026-08-20-adversarial-review-fixes.md)
+2. [建立 hard/soft constraint schema、獨立 validator、放寬階梯、conflict set（Roadmap #21）](./2026-08-20-hard-soft-constraint-schema.md)
+
+## 2026-08-19
+
+1. [個人化路線圖狀態對齊](./2026-08-19-roadmap-status-alignment.md)
+2. [內容偏好從硬過濾改成軟懲罰（Roadmap #3）](./2026-08-19-content-preference-soft-scoring.md)
+
+## 2026-08-17
+
+1. [評價驅動的涼度評分（Roadmap #4）](./2026-08-17-review-driven-easiness.md)
+
+## 2026-08-15
+
+1. [#20 Active Term 過濾與候選課程可追溯 metadata](./2026-08-15-active-term-and-eligibility-metadata.md)
+
 ## 2026-08-07
 
 1. [任務進度追蹤同步](./2026-08-07-progress-tracking-update.md)

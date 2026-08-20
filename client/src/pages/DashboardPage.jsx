@@ -122,7 +122,6 @@ export default function DashboardPage() {
       }
 
       const data = await scheduleAPI.generate({
-        userId: user.studentId,
         constraints,
       });
 
@@ -173,7 +172,7 @@ export default function DashboardPage() {
     let cancelled = false;
     if (!user?.studentId) return undefined;
 
-    profileAPI.get(user.studentId)
+    profileAPI.get()
       .then(profile => {
         if (!cancelled && Array.isArray(profile?.selectedTags)) {
           setSelectedTags(new Set(profile.selectedTags));
@@ -206,7 +205,7 @@ export default function DashboardPage() {
     setPrefsError('');
 
     try {
-      await profileAPI.update({ selectedTags: [...next] }, user.studentId);
+      await profileAPI.update({ selectedTags: [...next] });
     } catch (err) {
       // 存不進去就把畫面退回原狀，不讓勾選狀態與資料庫說法不一致。
       setSelectedTags(previous);
@@ -236,7 +235,7 @@ export default function DashboardPage() {
     setChatLoading(true);
 
     try {
-      const res = await chatAPI.send(msg, user.studentId);
+      const res = await chatAPI.send(msg);
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
         setSchedule(res.data.schedule);
         setChatHistory(prev => [...prev, { 

@@ -1,4 +1,5 @@
 import { getAll, insert, upsertByField, clearCollection } from '../db/database.js';
+import { normalizeProfile } from '../data/profileSchema.js';
 
 export async function getChatHistory(userId, limit = 20) {
   const all = (await getAll('chat_history')).filter(message => String(message.userId) === String(userId));
@@ -104,12 +105,12 @@ export async function getUserPreferences(identity) {
 
   const history = await readCourseHistory(identity);
 
-  return {
+  return normalizeProfile({
     ...emptyProfile(identity),
     ...(prefs || {}),
     // 歷史修課的真相來源是 users.json，偏好列不得覆蓋它。
     ...history,
-  };
+  });
 }
 
 // 寫入走 canonical ID（學號），由 `db/database.js` 在 MySQL 邊界換成
@@ -118,11 +119,12 @@ export async function getUserPreferences(identity) {
 export async function updateUserPreferences(identity, updates) {
   const canonicalId = String(identity.canonicalId);
 
-  return upsertByField('user_preferences', 'userId', canonicalId, {
+  await upsertByField('user_preferences', 'userId', canonicalId, {
     userId: canonicalId,
     ...updates,
     updatedAt: new Date().toISOString(),
   });
+  return getUserPreferences(identity);
 }
 
 export async function getSavedSchedules(userId) {

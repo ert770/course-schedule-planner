@@ -120,7 +120,7 @@
 | 同系所同年級但**其他班別**的必修 | 別人的必修 | **整批排除，不進候選** |
 | 同系所其他年級或其他學制的必修 | 別人的必修 | **整批排除，不進候選** |
 | 其他系所的必修 | 別人的必修 | **整批排除，不進候選** |
-| 通識、共同科目、學院綜合班、英語授課班、學分學程的必修 | 適用對象未確認 | 保留為候選，但不享有必修優先度 |
+| B～F 類的通識、共同科目、學院綜合班、英語／國際班、學分學程及其他特殊班級 | `eligibility=unknown` | 系統自動候選保守排除；明確指定時保留並警告 |
 | 任何系所的選修 | 可修 | 一般候選（系外選修另有認列條件，見下方） |
 
 班級名稱必須是「簡稱 + （學制）+ 年級字」才算系所班級。只比對前綴會把 `建設英班` 判成建設系、`商學院綜合班` 判成商學、`商學一(UQ)` 判成商學一年級，全部是假陽性。
@@ -135,7 +135,71 @@
 畫面上只會少一門課而沒有任何線索——與系外選修的處理一致（見下方「系外選修認列條件」）。
 
 「明確指定」= `POST /api/schedule/generate` 的 `courseIds`、`selectedCourseIds`、
-`mustTakeCourseIds`、`retakeCourseIds`。
+`mustTakeCourseIds`。
+
+### B～F 班級分類與 unknown eligibility
+
+現行 MySQL 的 562 個相異 `Courses.dept` 已全部分類：483 個可由一般語法解析的 A 類、
+8 個明確對照的特殊格式 A 類，以及 71 個 B～F 類。B～F 目錄位於
+`server/src/data/classKindCatalog.js`，分類只回答「這是哪一種班級」，不回答「誰可以修」。
+
+- B：全校共同與通識班級。
+- C：學院綜合班。
+- D：英語授課班與國際學程班。
+- E：學分學程。
+- F：用途待確認班級。
+
+在 #13C 取得正式適用規則前，B～F 一律回傳 `eligibility: 'unknown'` 與
+`eligibilityReason`。搜尋保留這些課讓使用者看得到；排課器不得自動排入，會把課程及
+原因放入 `excludedCourses` 並彙整 warning。使用者透過 `courseIds`、
+`selectedCourseIds` 或 `mustTakeCourseIds` 明確指定時，課程仍保留並排入，但 warning
+必須顯示「資格待確認」。
+
+### Active Term（Roadmap #20）
+
+所有查課、排課與 Agent API 共用同一個「目前學期」設定：`server/src/data/activeTerm.js`
+的 `ACTIVE_TERM`（預設 114 學年下學期，可用 `ACTIVE_ACADEMIC_YEAR`／`ACTIVE_SEMESTER`
+環境變數覆寫）。這是**系統常數，不接受 per-request 覆寫**——所有使用者共用同一個
+學期範圍，不開放個別切換。
+
+- **搜尋**（`filterCategorizedCourses()`）：非本學期的候選課程一律過濾，沒有例外。
+  涵蓋 `GET /api/courses`、Agent 的課程查詢、以及排課的主要候選來源
+  （`searchCoursesForSchedule()`）。
+- **排課的例外處理**：使用者明確指定 `courseIds`，以及 #19 的重補修候選查找，是
+  直接查資料庫、繞過上述搜尋過濾，因此 `scheduler.js` 的 `prepareCandidates()`
+  另外做一次過濾——沿用「系統自撿排除＋原因、使用者明確指定保留＋警告」的既有
+  模式（與 B～F unknown eligibility 相同精神，且排在其之前，因為 term 是更外層
+  的閘門）。
+- 候選課程缺少學年學期資料時**視為本學期**（不新增排除），因為那是資料缺口，
+  不是「已知不符合」——既有測試 fixture 從未標註學年學期，若把缺資料當成不符合，
+  會讓所有既有候選被排除。
+
+換學期時只需更新 `ACTIVE_ACADEMIC_YEAR`／`ACTIVE_SEMESTER` 兩個環境變數（或
+`activeTerm.js` 的預設值），**並同步更新** `server/src/data/generalEducationCatalog.js`
+的 `RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2`——兩處目前都寫死 114 學年下學期，
+沒有互相引用，忘記其中一處會讓通識認列與排課候選各自套用不同學期。
+
+### 候選課程的可追溯 metadata（Roadmap #20）
+
+每門候選課除了既有的 `eligibility`／`eligibilityReason`，另外附加三個欄位：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `eligibilitySource` | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`（例如 `department-required-table`、`class-catalog:unconfirmed-rules`），供 UI／Agent／未來的 evidence-based reason（#26）追查來源 |
+| `term` | `{ academicYear, semester, isActiveTerm }`，這門課**自己的**開課學期與是否為 active term |
+| `scopeReason` | 給人看的完整白話說明，融合 term／類別／eligibility／系外選修認列結果；優先序為：非本學期 → `eligibility=unknown` → 必修判定（本人／他人）→ 通識 → 系外選修 → 一般選修 |
+
+### 四種候選判定的正式對照（Roadmap #20）
+
+| 判定 | 依據 | 程式位置 |
+| --- | --- | --- |
+| 可搜尋 | `term.isActiveTerm`（硬性過濾）＋ 班級範圍過濾／通識／系外選修分支 | `courseQuery.js` |
+| 本人必修 | `category==='必修' && eligibility==='eligible'`（`eligibilitySource: REQUIRED_TABLE`） | `courseScope.js` → `courseCategory.js` |
+| 可加選 | `eligibility !== 'ineligible'` 且 `term.isActiveTerm`；`scopeReason` 講明是哪個閘門在擋 | `courseCategory.js`（term 與 eligibility 融合） |
+| 可計入畢業學分 | 本人必修／本系選修／通識預設可計；系外選修委由 `evaluateOutsideElective().eligible` | `outsideElective.js`（不動）；文字併入 `scopeReason` |
+
+B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決，`eligibility` 與
+`scopeReason` 在那些情境下維持 `unknown`／保守排除，不因本項完成而宣稱已知誰可以修。
 
 ### 無法判定時
 
@@ -179,6 +243,7 @@
 | `type = '必修'` | `必修`（是否為這位學生的必修由上方必修範圍判定） |
 | 選修，且在資工系核心選修清單中 | `核心選修` |
 | 選修，且在資工系選修清單中 | `一般選修` |
+| `dept` 是該學年度官方通識領域，或課號在官方跨院認抵表 | `通識`，並帶領域、規則版本與來源 |
 | 選修，且開在其他系所班級 | `系外選修` |
 | 其他 | 維持原值 |
 
@@ -188,7 +253,11 @@
 課程搜尋、排課與 Agent 各有獨立入口：`searchCoursesForStudent()`、
 `searchCoursesForSchedule()`、`searchCoursesForAgent()`；三者共用
 `annotateCourseCategory()`，因此入口的班級限制可以不同，但分類規則不會漂移。
-通識分類資料尚未建立，目前不得推測或回傳假通識結果。
+通識分類位於 `server/src/data/generalEducationCatalog.js`：111 以前使用人文／社會／
+自然／統合，112～114 使用官方四領域，115 起不分領域。114-2 MySQL 中四領域共有
+167 個正式課號、208 個班次且均有 `catalogCourseCode`；另有三門官方跨院認抵課。
+分類只接受正式 `dept` 領域或認抵表對照，不以 `GE*` 課號前綴猜測。排課候選會在
+本人班級課程之外納入通識，優先度仍排在一般選修之後、系外選修之前。
 
 核心選修與修課路徑資料來自 `server/src/data/csCurriculum.js`（114 必選修科目表 + 113 課程地圖），
 比對條件為**課程物件的 `catalogCourseCode` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的
@@ -222,7 +291,7 @@
 
 「明確指定」= `POST /api/schedule/generate` 的 `courseIds`（課程瀏覽器勾選的課，
 它決定候選池但**不會**進入 `selectedCourseIds`，因此另以 `explicitCourseIds` 傳入）、
-`selectedCourseIds`、`mustTakeCourseIds`、`retakeCourseIds`。
+`selectedCourseIds`、`mustTakeCourseIds`。
 
 把使用者親手勾的課靜默刪掉，畫面上只會少一門課、沒有任何線索，而學生其實修得到
 那門課——去留必須交還給使用者。
@@ -232,7 +301,13 @@
 
 ### 尚未定義的部分
 
-通識與共同科目（`國文綜合班` 92 筆必修、`大二英文綜合班` 64 筆、`核心必修綜合班` 52 筆、`軍訓(一年級)` 18 筆）、學院綜合班、英語授課班與國際學程、學分學程的適用對象規則尚未確認，整理於路線圖 `#13` 與 `docs/DEPARTMENT_MAPPING.md`。目前一律視為一般候選課程。
+通識與共同科目（`國文綜合班`、`大二英文綜合班`、`核心必修綜合班`、`軍訓(一年級)`）、學院綜合班、英語授課班與國際學程、學分學程的**班級種類已於 #13B 完成分類**；正式適用對象仍未確認，整理於路線圖 `#13C` 與 `docs/DEPARTMENT_MAPPING.md`。目前搜尋保留並標示 `unknown`，排課不會自動納入。
+
+**#20 本輪已完成**：active term 過濾、`eligibilitySource`／`scopeReason`／`term` 三個
+可追溯欄位、四種候選判定的正式對照（見上方兩節）。**仍未解決**：B～F 的正式適用對象
+（卡 `#13C`，需系辦／校方書面規則）、學制與學程欄位（卡 `#13D`，需 Profile schema
+擴充學制／雙聯學程／英語班／已報名學分學程等欄位，目前 `User_Profiles` 沒有這些欄位）。
+這兩項在取得前維持 `unknown`，不得用猜測填入判定邏輯。
 
 ## 大二以上排課流程
 
@@ -256,9 +331,12 @@
 - 被排除的課推入 `excludedCourses`，附上 `已修過並通過（課號 XXX）` 的理由——
   已修課程若靜默從候選池消失、畫面上沒有任何線索，使用者會誤以為候選池本來
   就只有這麼少門課。
-- **未通過（`passed: false`）的課不在排除清單裡**，可以正常作為 `retakeCourseIds`
-  指定的重補修課程排入。已修排除與重補修依資料設計天生互斥，不需要額外的
-  豁免判斷。
+- 每個 `courseCode` 先依 `academicYear + semester` 取最新一次紀錄。最新紀錄
+  `passed: true` 時視為完成；最新紀錄 `passed: false` 且 `requirementType: 必修` 時，
+  自動映射到本學期相同 `catalogCourseCode` 的所有 sections，優先序排在本學期必修之後。
+- 不接受 `retakeCourseIds`／`failedRequiredCourseIds`。舊 client 即使送入也不生效。
+- 不及格必修若本學期沒有對應 section，回傳「本學期沒有開課，請下學期記得重修」warning；
+  若有開課但因本學期必修衝堂或其他硬限制無法排入，也回傳可操作的 warning。
 - `nonGraduation` 分類（體育、國防科技、班級活動等）的課**仍視為已修過**而排除，
   即使它不計入畢業學分——「修沒修過」與「計不計學分」是兩件事，見
   `docs/DATA_SCHEMA.md` 的 `courseHistory` 欄位定義。
@@ -267,7 +345,8 @@
   一份課號清單）。
 
 實作於 `server/src/skills/scheduler.js` 的 `buildPlan()`，比對函式來自
-`server/src/data/courseHistory.js` 的 `getPassedCourseCodes()`。
+`server/src/data/courseHistory.js` 的 `getPassedCourseCodes()`、
+`getLatestAttemptsByCourseCode()` 與 `getFailedRequiredCourses()`。
 `server/src/routes/graduation.js` 的「建議補足系上課程」推薦邏輯呼叫同一支函式，
 與排課共用同一套已修判定，兩處不會對「這位學生修過什麼」給出不同答案。
 
@@ -304,10 +383,7 @@
 選修推薦需考慮：
 
 - 學生興趣。
-- 教授容易度。
-- 課程難易度。
-- 給分甜度。
-- 評價推薦分數。
+- 教授容易度、課程難易度、給分甜度、評價推薦分數：來源是 `Course_Reviews` 的結構化評分（`sweetness`／`coolness`／`workload`／`overall`），**不是**課程描述關鍵字。詳見下方「涼度評分與評價覆蓋率」。
 - 是否可集中排課。
 - 是否能空出休息日。
 
@@ -315,8 +391,59 @@
 
 - 是否符合興趣。
 - 是否容易取得高分，例如 95 分以上。
-- 是否為涼課。
+- 是否為涼課：同樣來自 `Course_Reviews`，不是描述關鍵字。
 - 是否免考試，只需報告。
+
+## 涼度評分與評價覆蓋率
+
+`server/src/skills/courseReviewStats.js`（課程層派生）與 `server/src/skills/reviewStats.js`（統計數學）共同實作，`scheduler.js` 的「涼課與高分優先」方案與 `GET /api/reviews/easy` 排行榜共用同一套邏輯。
+
+**為什麼不用課程描述關鍵字**：舊版靠「涼／容易／輕鬆／高分／甜」等字樣計分，真實資料庫 3560 筆課程只有 26 筆（0.7%）命中，且會誤判——評價標籤裡的「教室很涼」（形容冷氣強）會被判成涼課。改用結構化評分後不再有這個問題。
+
+**涼度計算公式**：
+
+1. `easiness = mean([coolness, sweetness, 6-workload, overall])`（`reviewStats.calculateEasinessFromAverages`），四個維度皆缺值時回傳 `null`（未收縮，1–5 尺度）。
+2. **m-estimate 收縮**（`reviewStats.shrinkEasiness`）：`adjustedEasiness = (n×easiness + m×prior) / (n+m)`，`n` 為該課評論數、`prior` 為母體平均、`m=5`（實測 `review_count` 落在 4–8，取中位數）。樣本數少的課會被拉向母體平均，避免「剛好 4 則全 5 分」穩定壓過「8 則平均 4.5 分」的課。
+3. **母體先驗**（`courseReviewStats.buildReviewPrior`）由呼叫端傳入的**全部**評價計算，不是候選池，否則同一門課在不同搜尋條件下會得到不同的收縮後涼度。
+4. **1–5 → 0–100 尺度映射**（`courseReviewStats.easinessToScore`），供 `scoreCourse()` 與其他計分項目（`類別優先度 × 120`、`學分 × 12`）疊加，維持原有相對權重。
+
+**沒有評價的課不是 0 分**：`getEasyCourseScore(course)` 對沒有評價的課回傳 `null`，`scoreCourse()` 的排序邏輯改用「中性分」（母體先驗換算後的分數，即 m-estimate 在 `n=0` 時的極限）而不是 0。給 0 分等於斷言「查不到評價 = 這門課很硬」，而 3560 個班次只有 181 個（5.1%）有評價，這樣的預設會讓 95% 的課全部沉底。整批都沒有評價資料時，中性分退回尺度正中央（50 分）。
+
+**方案層涼度（`preferenceBreakdown.easy`）與課程層不同調，是刻意設計**：課程層排序需要每門課都有分數，因此無證據給中性分；方案層是「這個方案涼度 68%」這種對使用者的宣稱，只在**有評價證據的課**上取平均，無證據的課不參與，且可能回傳 `null`（代表整個方案沒有任何一門課帶評價）。覆蓋率另外由 `plan.reviewCoverage`（`{ rated, total, ratio }`）回報，讓使用者分得清楚「涼度 68%」是由幾門課推出來的。
+
+**已知限制**：181 筆評價中最大一塊（68 筆通識）因 #13C（B～F 類正式適用對象規則尚未確認）被保守排除，不會進入自動排課，因此不影響涼度評分。實際會生效的評價依候選池而定，warnings 會列出「有課程評價但因資格待確認未納入」的統計。
+
+## 內容偏好評分與訊號可靠度警告
+
+Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／重視平時成績／實作評量／
+期末報告／英文授課／學到較多內容）判定依據是課程描述的關鍵字比對（`course.description`），
+不是結構化欄位——`has_midterm`／`grading_scheme`／`language` 等欄位不存在，見「目前程式差距」。
+
+**為什麼從硬性排除改成軟性加分**：真實資料庫實測命中率差異極大（0.1%～97.6%）。
+未命中即排除的旗標在命中率極低時（`weightDaily` 1.7%）會讓候選集幾乎歸零——實測對一位
+資工三學生，227 門候選課只剩 3 門（1.3%）可排；命中即排除的旗標在命中率極低時
+（`noMidterm` 0.1%）幾乎從不真正排除任何課，等於對使用者的靜默假承諾。兩者都不該用一個
+不可靠的關鍵字判定去整批剔除候選課程。
+
+**評分公式**（`scheduler.js` 的 `getContentPreferenceScore()`，於 `scoreCourse()`
+不分 variant 一律套用，量級與 `INTEREST_KEYWORD_SCORE` 相同）：
+
+- 命中關鍵字：「想避免」類（`noMidterm`／`noGroupReport`）扣 40 分；
+  「想要」類（其餘 6 個）加 40 分。
+- **未命中：一律 0 分，不論哪一類。** 關鍵字沒出現在描述裡，代表「描述沒提到」，
+  不代表「這門課真的沒有這個特徵」——與涼度評分「沒有評價不是 0 分」是同一個
+  誠實原則的延伸，見 `docs/DECISIONS.md` ADR-010。
+
+**訊號可靠度警告**：`prepareCandidates()` 對候選池（5 個方案共用同一批）算出
+每個**已設定**旗標的關鍵字命中率，命中率 <5% 或 >95% 時發出警告，提醒使用者
+這個偏好的關鍵字判定幾乎無法區分課程，結果可能不準。用真實資料驗證：
+`noMidterm`（0.1%）、`weightDaily`（1.7%）、`learnMore`（97.6%）會觸發；
+`noGroupReport`（5.5%）、`discussion`（48.9%）、`practicalExam`（33.4%）、
+`finalReport`（12.2%）、`englishTaught`（8.0%）不會（見 ADR-011）。
+
+**這不是 roadmap #21 的正式 schema**：沒有 `weight`／`relaxable`／`source`／
+`confidence` 欄位，也沒有逐級放寬機制。#21 的正式 schema 見下方「Hard/Soft
+Constraint Schema（Roadmap #21）」一節。
 
 ## 硬性限制
 
@@ -326,24 +453,98 @@
 - 必修與重補修優先。
 - 總學分不得超過上限。
 - 若指定必修課無法排入，必須回傳失敗原因。
-- 被封鎖時段不得排入正式加選課程。
+- 被封鎖時段不得排入正式加選課程（含週一空堂 `mondayFree` 展開後的封鎖時段）。
+- 不上早八（`noMorningClasses`）。
+- 不上晚課（`noEveningClasses`）。
+- 午休保留（`lunchBreakFree`）。
 
 封鎖時段一律以 `{ day, period }` 表示（`day` 為 1~7、`period` 為 1~14）。使用者偏好可能以時間字串儲存（例如 `["08:00"]`），必須先經 `server/src/utils/periods.js` 的 `normalizeBlockedPeriods()` 轉換；時間字串沒有星期資訊，視為每天的該節次都要避開。未轉換直接送入排課引擎時，`bp.day` 為 `undefined`，比對會靜默跳過而使設定完全失效。
 
+上述時段類的 4 項限制是對課程時段的結構化事實判定（`block.startPeriod` 等），不是對自由文字做關鍵字猜測，因此不像上方「內容偏好」有訊號可靠度的問題，維持硬性排除（roadmap #3）。
+
+**Roadmap #21 補充**：`noMorningClasses`／`noEveningClasses`／`lunchBreakFree` 這 3 項
+對正式必修課（`isRequiredForStudent(course, scope) === true`）**無條件豁免**——必修課本學期
+一定要修，這 3 項是使用者比較希望的事，不是外部事實，不該讓它們把必修課排除掉；`blockedPeriods`
+**永遠不豁免**，包含對必修課，因為它代表真實的外部不可用時段（例如學生有工作），連必修課都
+無法違反。豁免發生時會在 `warnings` 附上「必修課「X」不符合「Y」偏好，但必修優先，已排入課表」
+的揭露訊息，不做靜默改動。此豁免範圍**僅限**正式必修，不含 `mustTakeCourseIds`／`selectedCourseIds`
+（使用者手動指定的必排課）——後者仍照原本規則被這 4 項排除。詳見下方 schema 一節與
+`docs/DECISIONS.md` ADR-013。
+
 ## 軟性偏好
 
-軟性偏好可用於排序不同課表方案：
+軟性偏好可用於排序不同課表方案，不會排除課程：
 
-- 不上早八。
-- 不上晚課。
-- 週一空堂或空出指定整天。
-- 午休保留。
-- 集中排課。
-- 免期中考。
-- 免分組報告。
-- 偏好討論課。
-- 偏好英文授課。
-- 偏好學到較多內容。
+- 集中排課（`preferCompact`）。
+- 涼課／高分優先（`preferEasyCourses`，見「涼度評分與評價覆蓋率」）。
+- 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`）。
+- 8 個內容偏好——免期中考（`noMidterm`）、免分組報告（`noGroupReport`）、討論課
+  （`discussion`）、重視平時成績（`weightDaily`）、實作評量（`practicalExam`）、
+  期末報告（`finalReport`）、英文授課（`englishTaught`）、學到較多內容（`learnMore`），
+  見下方「內容偏好評分與訊號可靠度警告」。
+
+## Hard/Soft Constraint Schema（Roadmap #21）
+
+`server/src/data/constraintSchema.js` 的 `CONSTRAINTS` 表，把上方「硬性限制」與
+「軟性偏好」兩節描述的每個限制類型正式登記成資料，補上 4 個欄位：
+
+- **`category`**：`'hard'`（排除課程／方案）或 `'soft'`（只影響排序分數）。與現行
+  機制行為完全一致，本次不會讓任何限制改變類別。
+- **`relaxable`**：只對 hard 條目有意義。`true` = 可被 opt-in 放寬階梯
+  （見下方）納入放寬；`false` = 永遠不進入階梯。目前只有 `NO_MORNING_CLASSES`／
+  `LUNCH_BREAK_FREE`／`NO_EVENING_CLASSES` 為 `true`；`BLOCKED_PERIODS`（代表真實
+  外部不可用時段）明確為 `false`——這正是驗收標準舉的例子：「盡量不排早八」可放寬、
+  「週一絕對不能上課」不可被放寬。
+- **`weight`**：可放寬條目的預設放寬順序（數字小的先放寬），可被
+  `constraints.timePreferencePriority` 整個覆蓋；軟性條目則是既有評分常數的字面
+  鏡射，僅供文件說明，`scoreCourse()` 不會動態讀這張表。
+- **`source`**：這項限制的真實性來自哪裡（使用者旗標、學業紀錄、課程目錄、系統
+  推導等固定代號），供除錯與追查用。
+- **`confidence`**：**不是**「這個限制多嚴格」（那是 `relaxable`），而是「系統對
+  這項判定的偵測結果有多確定」。結構性事實（衝堂、學分加總、資格查詢等）一律是
+  `1`；只有 8 個內容偏好關鍵字判定是 `null`，因為可靠度是候選池依賴、每次請求才
+  知道的（見「內容偏好評分與訊號可靠度警告」）。
+- **`enforced`**：`false` 代表 validator 完全不檢查這項。目前只有 `PREREQUISITE`／
+  `COREQUISITE`（先修／共修）——專案裡完全沒有這方面的資料來源（`server/src` 與
+  `docs/DB_AUDIT_REPORT_2026-08-05.md` 皆無先修表；roadmap #8 尚未開始，才是這個
+  資料模型真正的負責項目）。validator 會誠實回報 `unchecked: ['PREREQUISITE',
+  'COREQUISITE']`，不會假裝檢查過或悄悄放行。
+
+**正式必修的無條件豁免**（`exemptForRequiredCourses`）：另一個獨立欄位，只有 3 個
+時段類舒適偏好為 `true`。排入 `isRequiredForStudent()===true` 的課程時，這 3 項
+無條件跳過，跟 `allowRelaxation` 無關、永遠生效；`BLOCKED_PERIODS` 明確為 `false`，
+必修課也不豁免。詳見上方「硬性限制」一節與 `docs/DECISIONS.md` ADR-013。
+
+**與方案產生器分離的獨立 validator**：`server/src/skills/scheduleValidator.js` 的
+`validateScheduleAgainstConstraints(schedule, constraints)`，檢查衝堂、重複班次、
+學分上限、資格／學期／系外選修／已修過的 metadata 複查、4 個時段類硬性限制、必修
+涵蓋率，回傳 `{ valid, violations, unchecked }`。`generateSchedule()` 每次成功回應
+前都會對自己的主推方案呼叫一次作為內部自我檢查（落實「所有成功方案經 validator
+驗證 hard constraint violation 為 0」這條驗收標準）；理論上不該觸發，若真的觸發會
+把結果降級為失敗並誠實回報，而不是送出一份實際上不合法的課表。這個 validator
+**不套用**必修豁免——它是對「字面上給定的課表」做檢查，沒有 scope 可用，只認課程
+物件上由 `addCourseToPlan()` 寫入的 `formallyRequired` 標記；外部提供的課表（例如
+`/api/schedule/validate` 帶 `constraints` 時）沒有這個標記，一律照嚴格規則檢查。
+
+**opt-in 放寬階梯**：`constraints.allowRelaxation`（預設 `false`，沒有任何呼叫端
+會設定，行為與改動前完全相同）。啟用後，若方案的選修側因時段偏好排掉太多候選、
+導致湊不到學分下限，`generateSchedule()` 會依 `constraints.timePreferencePriority`
+（使用者自訂的 constraintId 陣列，未提供時退回 schema 的預設順序）逐一清除
+`relaxable:true` 的旗標並重試，一旦成功就停止，並在回應附上 `relaxedConstraints`
+與對應的 `warnings` 揭露字串。這是**獨立於**必修豁免的另一套機制——必修豁免永遠
+生效不需要旗標，這個階梯只在使用者明確開啟時才動作。`BLOCKED_PERIODS` 與其餘所有
+非 `relaxable` 條目結構上不存在於這個階梯的迭代清單中，不是執行期判斷擋掉。
+
+**結構化 conflict set**：無解時，`generateSchedule()` 除了維持既有的
+`message`／`warnings`（附加，不取代）之外，會額外回傳 `conflictSet`——走訪所有
+方案的排除紀錄、依 constraintId 與課程 id 去重後的陣列，每筆帶
+`{ constraintId, severity, relaxable, source, courses, reason }`，取代「無解時只
+回傳第一個錯誤字串」的舊行為。
+
+**範圍界定**：先修／共修只定義層級、不強制執行（見上方 `enforced`）；`scoreCourse()`
+的內建評分算式維持逐位元組不變，不會動態讀這張表；`maxCoursesPerDay`（每日課程數
+上限）維持非 `relaxable`，不在本次調整範圍內。詳見 `docs/DECISIONS.md` ADR-012～014
+與對應的變更報告。
 
 ## 課程時段
 
@@ -423,11 +624,16 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 - 核心選修與修課路徑解析。
 - 系外選修認列條件。
 - 學期學分與畢業學分分離。
+- 涼課評分改用結構化評價（`Course_Reviews`），取代課程描述關鍵字（見「涼度評分與評價覆蓋率」）。
+- 8 個內容偏好改為軟性加分並附訊號可靠度警告，取代硬性排除（roadmap #3，見「內容偏好評分與訊號可靠度警告」）。
+- roadmap #21 的正式 `hard`／`soft` constraint schema（`weight`／`relaxable`／`source`／`confidence` 欄位）、與方案產生器分離的獨立 validator、opt-in 放寬階梯、結構化 conflict set，見「Hard/Soft Constraint Schema（Roadmap #21）」。
 
 仍需補強：
 
 - 數位課程畢業門檻。
-- 推薦分數算法。
+- 評價分數的 per-user 個人化加權（同一難度數值對不同使用者相反符號）；目前是母體共用的涼度，屬 roadmap #5B。
+- `has_midterm`／`has_group_project`／`grading_scheme`／`language` 課程欄位仍不存在；8 個內容偏好因此仍以描述關鍵字軟性計分（見「內容偏好評分與訊號可靠度警告」），欄位化需要對共用 MySQL 做 `ALTER TABLE`，屬需與組員協調的 D 類 rollout，不在 roadmap #3 範圍內。
+- roadmap #21 的先修／共修（prerequisite/co-requisite）強制執行：schema 已定義這個層級（`enforced:false`），但完全沒有資料來源可查（無先修表），validator 誠實回報 `unchecked`，不強制執行；資料模型屬 roadmap #8，尚未開始。
 - 通識基礎 16 學分的完整對照（目前只實作「不計畢業學分」的那 3 學分）。
 - 核心選修 12 學分的達成度追蹤（目前只做到分類與優先度，未累計缺口）。
 
