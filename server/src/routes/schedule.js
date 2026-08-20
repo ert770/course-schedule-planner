@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { validateSchedule } from '../skills/scheduler.js';
+import { validateScheduleAgainstConstraints } from '../skills/scheduleValidator.js';
 import { saveSchedule, getSavedSchedules } from '../services/memoryService.js';
 import { generateForUser } from '../services/scheduleService.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
@@ -22,8 +23,20 @@ router.post('/generate', requireIdentity, async (req, res) => {
 
 router.post('/validate', (req, res) => {
   try {
-    const { courses } = req.body;
+    const { courses, constraints = {} } = req.body;
     const result = validateSchedule(courses);
+
+    // roadmap #21：只在請求帶有非空 constraints 時才額外檢查完整硬性限制
+    // 範圍，附加於既有欄位之外，不取代它們。省略 constraints（現行唯一的
+    // 實際呼叫模式——`client/src` 目前完全沒有呼叫這支端點）時回應與改動前
+    // 逐欄位相同。
+    if (constraints && Object.keys(constraints).length > 0) {
+      const extended = validateScheduleAgainstConstraints(courses, constraints);
+      result.violations = extended.violations;
+      result.unchecked = extended.unchecked;
+      result.hardConstraintsValid = extended.valid;
+    }
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

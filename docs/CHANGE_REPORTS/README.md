@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-20
+
+1. [建立 hard/soft constraint schema、獨立 validator、放寬階梯、conflict set（Roadmap #21）](./2026-08-20-hard-soft-constraint-schema.md)
+
 ## 2026-08-19
 
 1. [個人化路線圖狀態對齊](./2026-08-19-roadmap-status-alignment.md)

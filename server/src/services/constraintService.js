@@ -115,6 +115,15 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     interests: pickList(input.interests, prefs.interests ?? prefs.preferenceTags),
 
     digitalCreditsNeeded: pickFlag(input.digitalCreditsNeeded, prefs.digitalCreditsNeeded),
+
+    // roadmap #21：opt-in 放寬階梯的開關，預設 false——沒有任何呼叫端會
+    // 設定這個旗標，因此改動前後行為完全相同。`pickFlag` 的 `??` 語意讓
+    // `false` 也是有效的明確覆蓋值，跟其餘布林旗標一致。
+    allowRelaxation: pickFlag(input.allowRelaxation, prefs.allowRelaxation),
+    // 放寬階梯的順序，使用者可自訂（constraintId 陣列，例如
+    // `['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES', 'NO_EVENING_CLASSES']`）；
+    // 未提供時 `scheduler.js` 會退回 `constraintSchema.js` 的預設順序。
+    timePreferencePriority: pickList(input.timePreferencePriority, prefs.timePreferencePriority),
   };
 }
 

@@ -10,9 +10,13 @@
 
 ## 最後更新
 
-2026-08-19（完成 #3：8 個內容偏好從硬過濾改成軟懲罰，並回填 #21「開始前必須具備」欄位）
+2026-08-20（#21 大部分完成：建立正式 hard/soft constraint schema、與方案產生器分離的獨立
+validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修／共修強制執行，卡在 roadmap #8
+尚未開始的資料模型）
 
-前次更新：2026-08-19（統一 #31、#35、#36 的總覽與詳細章節狀態為「部分完成」；#13D 因 #18 已完成，改為
+前次更新：2026-08-19（完成 #3：8 個內容偏好從硬過濾改成軟懲罰，並回填 #21「開始前必須具備」欄位）
+
+再前次：2026-08-19（統一 #31、#35、#36 的總覽與詳細章節狀態為「部分完成」；#13D 因 #18 已完成，改為
 「工程可開始、正式驗收等待特殊身分資料」）
 
 再前次：2026-08-17（第二次更新：#5 拆成 #5A／#5B——#5A 已完成，#5B 阻塞在 #29→#33→#2→#30 依序完成，並修正
@@ -78,7 +82,7 @@
 | 18 | 統一 user identity、Profile、歷史修課與偏好資料來源 | ✅ 已完成（shared MySQL rollout 另列 D 類） | 無（新增任務的資料基礎） |
 | 19 | 以穩定 course code 建立歷史修課、重修與跨學期對應 | ✅ 已完成 | #18 |
 | 20 | 建立 active term 與完整 candidate eligibility 規則 | 🟡 部分完成 | #12、#13A、#13B、#18、#19 |
-| 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | 🟡 部分完成（2026-08-19） | #3（已完成）、#19、#20 |
+| 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | 🟡 部分完成（2026-08-20） | #3（已完成）、#19、#20 |
 | 22 | 為 greedy 排課加入 repair／backtracking 或 constraint solver | ⬜ 未開始 | #21 |
 | 23 | 建立版本化且可追溯的畢業規則引擎 | 🟡 部分完成 | #12、#19；另需校方正式規則 |
 | 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ⬜ 未開始 | #18、#21 |
@@ -1080,7 +1084,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #21 建立 hard／soft constraint schema、validator 與放寬策略
 
-**狀態**：🟡 部分完成（2026-08-19 更新）——已有共用限制合併層與獨立 validator，#3 已把誤判為硬性的內容偏好改成軟性，但正式 hard／soft schema 仍未建立
+**狀態**：🟡 部分完成（2026-08-20 更新）——正式 `hard`／`soft` schema（`weight`／`relaxable`／`source`／`confidence` 欄位）、與方案產生器分離的完整 validator、opt-in 放寬階梯、結構化 conflict set 均已交付；唯一剩餘缺口是先修／共修（prerequisite/co-requisite）的**強制執行**——schema 已定義這個層級，但完全沒有資料來源可查，validator 誠實回報 `unchecked`，屬 roadmap #8（尚未開始）的負責範圍
 
 **相依**：#3（已完成）、#19（已完成）、#20（部分完成）
 
@@ -1111,27 +1115,26 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 - 必修與 soft preference 衝突時，結果與警告符合規格。
 - 無解回應列出互相衝突的課程／條件與可放寬選項。
 
-### 目前進度（2026-08-08 盤點）
+### 目前進度（2026-08-20 更新）
 
-**已完成**
+**已完成（本輪新增）**
 
-- **限制合併已集中在單一模組**：`server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 由 REST 與 AI Agent 兩條路徑共用，避免「參數只在其中一條路徑生效」。
-- **合併語意已明確定義並有測試**（`server/test/constraints.test.js`）：
-  - 空陣列視同「未指定」退回已儲存偏好，不會把偏好整個蓋掉（若用 `||`，空陣列在 JS 是 truthy）。
-  - `false` 是有效值，會覆蓋已儲存偏好；`undefined` 才退回。
-  - `selectedCourseIds`、`watchingCourseIds`、`explicitCourseIds` 屬「本次操作的當下狀態」，**不從已儲存偏好回填**——這已經是 hard／soft 之外的第三種語意分層。
-  - `mondayFree` 展開為週一 1-14 節封鎖，且與已儲存封鎖時段合併而非取代。
-- **已有與方案產生器分離的 validator**：`validateSchedule()` 是獨立 export，檢查衝堂、同課重複班次，並分別回報 `totalCredits` / `graduationCredits` / `nonGraduationCredits`。
-- 排入與排除都已帶原因：`addCourseToPlan()` 接受 `reason`，`plan.excludedCourses` 記錄 `{ course, reason }`，`hardConstraintReason()` 產生排除理由字串。
-- 校規上下限（25／12／四年級 9／超修 30）已依 `docs/COURSE_SELECTION_RULES.md` 實作，且**移除了沒有校方依據的「每日 4 門課」預設值**。
+- **正式 schema**：`server/src/data/constraintSchema.js` 的 `CONSTRAINTS` 表，每個既有限制類型一筆，含 `category`／`relaxable`／`weight`／`source`／`confidence`／`exemptForRequiredCourses`／`enforced` 完整欄位。純資料表，不改變任何現行排除／評分行為。
+- **各層級的 relaxable 分類**：3 個時段類舒適偏好（不排早八／午休保留／不排晚課）標為可放寬；封鎖時段與其餘既有硬性條件（衝堂、資格、已修、學分上限、他班必修、非本學期、系外選修不符、每日上限）標為不可放寬，符合驗收標準「盡量不排早八可放寬、週一絕對不能上課不可放寬」的例子。explicit selection 的既有繞過機制正式化為 `overridableBy` 欄位。
+- **與方案產生器分離的完整 validator**：新增 `server/src/skills/scheduleValidator.js` 的 `validateScheduleAgainstConstraints()`，檢查衝堂、重複班次、學分上限、資格／學期／系外選修／已修過、4 個時段類限制、必修涵蓋率。`generateSchedule()` 每次成功回應前對主推方案自我檢查一次，落實「所有成功方案 hard constraint violation 為 0」這條驗收標準——不再是無法被證明，而是每次實際執行一次。
+- **opt-in 放寬階梯**：`constraints.allowRelaxation` + 使用者自訂的 `constraints.timePreferencePriority`，依序放寬可放寬的時段偏好並重試，成功時附上 `relaxedConstraints` 揭露。
+- **結構化 conflict set**：無解時額外回傳 `conflictSet`（`constraintId`／`relaxable`／`courses`／`reason`），取代「只回傳第一個錯誤字串」。
+- **正式必修無條件豁免時段偏好（使用者主導的設計決策，非路線圖原文）**：`isRequiredForStudent()===true` 的課永遠不受 3 個時段類舒適偏好排除（但仍受封鎖時段排除），豁免範圍嚴格排除 `mustTakeCourseIds`／`selectedCourseIds`，不影響既有 S10 測試。
+- 附帶修復：每日課程數上限排除必排課時，先前不會回報失敗原因而靜默消失，本次一併修復。
+- 限制合併已集中在單一模組、合併語意已測試、與方案產生器分離的基礎 validator（`validateSchedule()`）、校規上下限實作——以上延續先前盤點的既有基礎，本輪未變動。
 
 **尚未完成**
 
-- **沒有 `hardConstraints` / `softPreferences` 的正式 schema**，也沒有 `weight`、`relaxable`、`source`、`confidence` 欄位。所有限制目前都是 `buildScheduleConstraints()` 回傳物件上的扁平布林或陣列。
-- `hardConstraintReason()` 仍把部分「盡量不要」條件當成直接排除（#3 的內容），系統無法區分不可違反與可放寬。
-- **沒有逐級放寬機制**。排不出來就是排不出來，不會自動放寬 soft preference 再試。
-- **無解時只回傳第一個錯誤字串**，沒有結構化 conflict set（互相衝突的課程／條件配對）。
-- `validateSchedule()` 只驗證衝堂與重複班次，不驗證資格、已修、學分上下限、必修涵蓋或先修／共修——因此「所有成功方案 hard constraint violation 為 0」這條驗收標準目前無法被證明。
+- **先修／共修的強制執行**。schema 已定義這個層級（`enforced:false`），但完全沒有資料來源可查（已用 grep 確認 `server/src` 與 `docs/DB_AUDIT_REPORT_2026-08-05.md` 皆無先修表），validator 誠實回報 `unchecked`，不強制執行。資料模型屬 roadmap #8（尚未開始）的負責範圍。
+- `scoreCourse()` 尚未動態讀取 schema 表——內建評分算式維持逐位元組不變，`weight` 欄位目前僅供文件說明。
+- `maxCoursesPerDay`（每日課程數上限）尚未重新分類為可放寬——沒有明確需求驅動，維持現行 `relaxable:false`，不在本次範圍內。
+
+詳見 `docs/CHANGE_REPORTS/2026-08-20-hard-soft-constraint-schema.md`。
 
 ---
 

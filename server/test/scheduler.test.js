@@ -10,6 +10,8 @@ import {
   validateSchedule,
   checkConflict,
 } from '../src/skills/scheduler.js';
+import { validateScheduleAgainstConstraints } from '../src/skills/scheduleValidator.js';
+import { CONSTRAINTS } from '../src/data/constraintSchema.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
 import {
   makeCourse,
@@ -1333,5 +1335,185 @@ describe('N1-N15 內容偏好從硬過濾改成軟懲罰', () => {
 
     assert.ok(result.schedule.some(c => c.id === 1));
     assert.equal(result.schedule.some(c => c.id === 2), false);
+  });
+});
+
+describe('X1-X14 Roadmap #21：hard/soft constraint schema、獨立 validator、放寬階梯、conflict set', () => {
+  test('X1 allowRelaxation:false（預設）：因時段偏好排不出課表時行為與改動前一致', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], { noMorningClasses: true, minCredits: 0 });
+
+    assert.equal(result.success, false);
+    assert.equal(result.relaxedConstraints, undefined);
+    assert.ok(result.conflictSet.some(v => v.constraintId === 'NO_MORNING_CLASSES'));
+  });
+
+  test('X2 allowRelaxation:true 且指定 timePreferencePriority：依使用者順序逐步放寬並成功排課', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], {
+      noMorningClasses: true,
+      minCredits: 0,
+      allowRelaxation: true,
+      // 刻意把與此情境無關的 LUNCH_BREAK_FREE 排在使用者順序的第一位，
+      // 用來證明階梯真的依使用者指定順序逐步嘗試，不是巧合對上預設順序。
+      timePreferencePriority: ['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES', 'NO_EVENING_CLASSES'],
+    });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.deepEqual(
+      result.relaxedConstraints.map(r => r.constraintId),
+      ['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES']
+    );
+    assert.ok(result.warnings.some(w => w.includes('不排早八')));
+  });
+
+  test('X3 allowRelaxation:true 但無解原因是 blockedPeriods：放寬階梯不生效，仍然失敗', () => {
+    const course = makeCourse(1, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4 });
+    const result = generateSchedule([course], {
+      blockedPeriods: [{ day: 1, period: 3 }],
+      minCredits: 0,
+      allowRelaxation: true,
+      timePreferencePriority: ['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES'],
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.relaxedConstraints, undefined);
+  });
+
+  test('X4 conflictSet 具備 constraintId／relaxable／courses／reason，relaxable 標記正確', () => {
+    const morningCourse = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const blockedCourse = makeCourse(2, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4 });
+
+    const result = generateSchedule([morningCourse, blockedCourse], {
+      noMorningClasses: true,
+      blockedPeriods: [{ day: 1, period: 3 }],
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, false);
+    const morningEntry = result.conflictSet.find(v => v.constraintId === 'NO_MORNING_CLASSES');
+    const blockedEntry = result.conflictSet.find(v => v.constraintId === 'BLOCKED_PERIODS');
+    assert.ok(morningEntry);
+    assert.ok(blockedEntry);
+    assert.equal(morningEntry.relaxable, true);
+    assert.equal(blockedEntry.relaxable, false);
+    assert.ok(Array.isArray(morningEntry.courses) && morningEntry.courses.length > 0);
+    assert.ok(typeof morningEntry.reason === 'string' && morningEntry.reason.length > 0);
+  });
+
+  test('X5 成功方案通過內部自我檢查（validateScheduleAgainstConstraints）', () => {
+    const course = makeCourse(1);
+    const result = generateSchedule([course], { minCredits: 0 });
+
+    assert.equal(result.success, true);
+    const check = validateScheduleAgainstConstraints(result.schedule, {});
+    assert.equal(check.valid, true);
+    assert.deepEqual(check.violations, []);
+  });
+
+  test('X6 validateScheduleAgainstConstraints 偵測衝堂，不需要 constraints 參數', () => {
+    const a = makeCourse(1, { dayOfWeek: 2, startPeriod: 3, endPeriod: 4 });
+    const b = makeCourse(2, { dayOfWeek: 2, startPeriod: 3, endPeriod: 4 });
+
+    const check = validateScheduleAgainstConstraints([a, b]);
+    assert.equal(check.valid, false);
+    assert.ok(check.violations.some(v => v.constraintId === 'TIME_CONFLICT'));
+  });
+
+  test('X7 CREDIT_CEILING：帶 maxCredits 時偵測超額，省略時採用預設值且不出錯', () => {
+    const a = makeCourse(1, { credits: 20, dayOfWeek: 1 });
+    const b = makeCourse(2, { credits: 10, dayOfWeek: 2 });
+
+    const overLimit = validateScheduleAgainstConstraints([a, b], { maxCredits: 25 });
+    assert.ok(overLimit.violations.some(v => v.constraintId === 'CREDIT_CEILING'));
+
+    const withinDefault = validateScheduleAgainstConstraints([makeCourse(3, { credits: 3 })], {});
+    assert.ok(!withinDefault.violations.some(v => v.constraintId === 'CREDIT_CEILING'));
+  });
+
+  test('X8 unchecked 永遠包含 PREREQUISITE 與 COREQUISITE', () => {
+    const check = validateScheduleAgainstConstraints([], {});
+    assert.ok(check.unchecked.includes('PREREQUISITE'));
+    assert.ok(check.unchecked.includes('COREQUISITE'));
+  });
+
+  test('X9 舊版 validateSchedule() 回傳形狀維持不變（回歸釘住）', () => {
+    const result = validateSchedule([makeCourse(1)]);
+    assert.deepEqual(Object.keys(result).sort(), [
+      'conflicts', 'duplicates', 'graduationCredits', 'nonGraduationCredits', 'totalCredits', 'valid',
+    ]);
+  });
+
+  test('X10 每日上限 bug 修復：必排課因每日上限排不進去時正確回報失敗原因', () => {
+    const first = makeCourse(1, { dayOfWeek: 1, startPeriod: 1, endPeriod: 1, credits: 1 });
+    const second = makeCourse(2, { dayOfWeek: 1, startPeriod: 5, endPeriod: 5, credits: 1 });
+
+    const result = generateSchedule([first, second], {
+      minCredits: 0,
+      maxCoursesPerDay: 1,
+      mustTakeCourseIds: [1, 2],
+    });
+
+    assert.equal(result.success, false);
+    assert.ok(result.message.includes('超過每日'));
+  });
+
+  test('X11 CONSTRAINTS 表完整性：每個條目都有定義必要欄位，且沒有重複 id', () => {
+    const ids = new Set();
+    for (const [key, def] of Object.entries(CONSTRAINTS)) {
+      assert.equal(def.id, key, `${key} 的 id 欄位應與 key 一致`);
+      assert.ok(!ids.has(def.id), `${def.id} 重複`);
+      ids.add(def.id);
+      for (const field of [
+        'category', 'relaxable', 'weight', 'source', 'confidence', 'enforced', 'exemptForRequiredCourses',
+      ]) {
+        assert.ok(field in def, `${key} 缺少欄位 ${field}`);
+      }
+    }
+  });
+
+  test('X12 正式必修無條件豁免時段偏好：仍被排入，並附上必修優先的揭露警告', () => {
+    const required = makeCourse(1, { category: '必修', startPeriod: 1, endPeriod: 2 });
+
+    const result = generateSchedule([required], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      noMorningClasses: true,
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.ok(result.warnings.some(w => w.includes('必修優先') && w.includes('不排早八')));
+  });
+
+  test('X13 必修豁免不適用於 BLOCKED_PERIODS：仍會被排除', () => {
+    const required = makeCourse(1, { category: '必修', dayOfWeek: 1, startPeriod: 3, endPeriod: 4 });
+
+    const result = generateSchedule([required], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      blockedPeriods: [{ day: 1, period: 3 }],
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, false);
+    assert.ok(result.conflictSet.some(v => v.constraintId === 'BLOCKED_PERIODS'));
+  });
+
+  test('X14 mustTakeCourseIds（非正式必修）仍受時段偏好排除，行為與 S10 一致', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+
+    const result = generateSchedule([course], {
+      noMorningClasses: true,
+      mustTakeCourseIds: [1],
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, false);
+    assert.ok(result.message.length > 0);
   });
 });

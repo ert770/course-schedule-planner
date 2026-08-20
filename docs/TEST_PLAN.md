@@ -123,6 +123,20 @@ node --check src/app.js
 | N13 | 訊號可靠度警告觸發時 | `allWarnings`（5 個方案聯集去重後）只出現一次 |
 | N14 | 未設定任何內容偏好旗標 | 不產生相關警告，排序與改動前一致（回歸測試） |
 | N15 | `englishTaught: true`，候選課 `course.language === 'English'` 但描述不含「英文」 | 仍視為命中（驗證 `extra` 判定路徑，不只靠關鍵字） |
+| X1 | `allowRelaxation` 未設定（預設），選修因時段偏好排不出課表 | 行為與改動前一致（`success:false`），無 `relaxedConstraints` |
+| X2 | `allowRelaxation:true` 且指定 `timePreferencePriority` | 依使用者順序逐步放寬並成功排課，`relaxedConstraints` 反映該順序 |
+| X3 | `allowRelaxation:true`，但無解原因是 `blockedPeriods` | 放寬階梯不生效，仍然失敗（`BLOCKED_PERIODS` 永不放寬） |
+| X4 | 兩門候選各因不同限制排除（`noMorningClasses`／`blockedPeriods`） | `conflictSet` 含兩者，`relaxable` 標記分別為 `true`／`false` |
+| X5 | 一次成功的 `generateSchedule()` 結果 | 其 `schedule` 交給 `validateScheduleAgainstConstraints` 檢查回傳 `valid:true` |
+| X6 | 手造兩門衝堂的課，不帶 `constraints` 呼叫 `validateScheduleAgainstConstraints` | 回傳 `TIME_CONFLICT` violation，不需要 `constraints` |
+| X7 | 帶 `maxCredits` 的超額課表 vs 省略 `maxCredits` 的正常課表 | 前者出現 `CREDIT_CEILING` violation，後者採用預設值且不出錯 |
+| X8 | 任意呼叫 `validateScheduleAgainstConstraints` | `unchecked` 永遠包含 `PREREQUISITE`／`COREQUISITE` |
+| X9 | 舊版 `validateSchedule(courses)`（不帶 `constraints`） | 回傳形狀逐欄位維持不變（回歸釘住） |
+| X10 | 兩門必排課（`mustTakeCourseIds`）同天，`maxCoursesPerDay: 1` | 第二門因每日上限排不進去，正確回報 `success:false` 與失敗原因（修復先前的靜默消失） |
+| X11 | 檢查 `constraintSchema.js` 的 `CONSTRAINTS` 表 | 每個條目都有定義必要欄位，且沒有重複 id |
+| X12 | 正式必修（`isRequiredForStudent()===true`）違反 `noMorningClasses` | 仍被排入，`warnings` 含「必修優先」與偏好名稱的揭露訊息 |
+| X13 | 同一門正式必修改為違反 `blockedPeriods` | 仍會被排除（必修豁免不適用於 `BLOCKED_PERIODS`） |
+| X14 | `mustTakeCourseIds`（非正式必修）違反 `noMorningClasses` | 仍受排除，行為與 S10 一致（確認豁免範圍夠窄） |
 
 ### 班別收斂（必修不得換班）
 
@@ -274,6 +288,27 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 真實資料驗證（node 層，連正式 MySQL）：對資工三學生的 227 門候選課，`weightDaily: true` 在
 舊版硬性排除下會把候選集壓縮到 3 門（1.3%），新版軟性加分後排課仍正常成功，候選集不再歸零。
 
+### Hard/Soft Constraint Schema、獨立 Validator、放寬階梯（Roadmap #21）
+
+`server/test/scheduler.test.js` 的 X1–X14（見上方主表）。涵蓋四個面向：
+
+- **opt-in 放寬階梯**（X1–X4）：預設 `allowRelaxation:false` 時行為不變；啟用後依使用者提供的
+  `timePreferencePriority` 逐步放寬並成功排課；`BLOCKED_PERIODS` 永不進入放寬清單；失敗回應
+  的 `conflictSet` 具備正確的 `constraintId`／`relaxable` 標記。
+- **獨立 validator**（`server/src/skills/scheduleValidator.js`，X5–X9）：`generateSchedule()`
+  成功時對自己的主推方案做自我檢查；`validateScheduleAgainstConstraints()` 不需要 `constraints`
+  也能檢查衝堂；帶 `maxCredits` 時檢查學分上限；`unchecked` 永遠列出先修／共修（沒有資料來源）；
+  舊版 `validateSchedule()` 回傳形狀維持不變（回歸釘住）。
+- **每日上限失敗回報修復**（X10）：先前必排課因每日上限被排除時不會推入 `plan.failures`，
+  會靜默消失而不回報失敗原因，X10 釘住修復後的行為。
+- **`constraintSchema.js` 完整性**（X11）與**正式必修的時段偏好豁免**（X12–X14）：豁免範圍嚴格
+  限定在 `isRequiredForStudent()===true`，不含 `blockedPeriods`，也不含使用者手動指定的
+  `mustTakeCourseIds`——後者與 S10 行為完全一致，未受影響。
+
+先修／共修（prerequisite/co-requisite）**只定義層級，不強制執行**：`server/src` 與
+`docs/DB_AUDIT_REPORT_2026-08-05.md` 皆確認沒有這方面的資料來源，屬 roadmap #8（尚未開始）的
+負責範圍，因此沒有對應的執行邏輯測試，只有 X8 釘住 validator 誠實回報 `unchecked`。
+
 ## #12B 通識分類測試
 
 | 編號 | 情境 | 預期結果 |
@@ -368,5 +403,6 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 2. 執行前端 build。
 3. 執行必要的 lint 或語法檢查。
 4. 確認 `.env` 與 `node_modules/` 沒有被加入 Git。
-5. 若修改排課邏輯，至少執行排課測試案例 S1-S10。
+5. 若修改排課邏輯，至少執行排課測試案例 S1-S10；若修改的是
+   `scheduler.js`／`scheduleValidator.js`／`constraintSchema.js`，一併執行 N1-N15 與 X1-X14。
 

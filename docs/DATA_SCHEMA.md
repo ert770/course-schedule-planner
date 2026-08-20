@@ -372,3 +372,35 @@ store 的邏輯名稱。
 `Course_Sections.rag_tag` 的 JSON 主題標籤陣列，資料庫中 100% 有值，例如 `["機器學習","圖像處理","物件偵測"]`。排課引擎的興趣比對會使用此欄位。
 
 排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。
+
+## Constraint Schema（Roadmap #21）
+
+`server/src/data/constraintSchema.js` 匯出的 `CONSTRAINTS`——排課引擎每個限制類型
+（硬性與軟性都算）的正式登記表，供 `server/src/skills/scheduleValidator.js`（獨立
+validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。**純資料表，不是
+新的排除／評分邏輯**——`hardConstraintReason()`／`scoreCourse()` 目前的機制完全不變，
+這裡只是把「目前的行為分類」寫成可查詢的資料。以固定 id 為 key，例如
+`NO_MORNING_CLASSES`、`BLOCKED_PERIODS`、`ELIGIBILITY_UNKNOWN`。每筆欄位：
+
+| 欄位 | 型別 | 意義 |
+| --- | --- | --- |
+| `id` | string | 與 key 相同，固定代號 |
+| `category` | `'hard'` \| `'soft'` | hard 會排除課程／方案；soft 只影響排序分數 |
+| `relaxable` | boolean \| null | 只對 hard 有意義；是否可被 opt-in 放寬階梯納入放寬 |
+| `exemptForRequiredCourses` | boolean \| null | 排入正式必修（`isRequiredForStudent()===true`）時是否無條件跳過這項檢查，與 `relaxable`／`allowRelaxation` 無關 |
+| `weight` | number \| null | 可放寬條目的預設放寬順序；軟性條目為既有評分常數的字面鏡射（僅供文件說明） |
+| `source` | string | `CONSTRAINT_SOURCE` 其中一個固定代號，這項限制的真實性來源 |
+| `confidence` | number \| null | 系統對這項判定的偵測結果有多確定（不是「多嚴格」），結構性事實一律 `1`，只有 8 個內容偏好為 `null` |
+| `overridableBy` | string（可選） | 使用者可用哪種方式繞過這項排除（目前只有 `CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION`） |
+| `flag` | string（可選） | 對應到 `constraints` 上單一布林旗標的名稱，只有 3 個時段類舒適偏好有此欄位 |
+| `label` | string（可選） | 中文顯示標籤，供揭露警告與放寬訊息使用 |
+| `enforced` | boolean | validator 是否真的檢查得到；`false` 只有先修／共修（`PREREQUISITE`／`COREQUISITE`），因為完全沒有資料來源 |
+
+`CONSTRAINT_SOURCE` 為固定列舉字串（例如 `'user:flag'`、`'academic-record:completed-courses'`），
+比照 `resolveCourseEligibility()` 的 `ELIGIBILITY_SOURCE`「不得用裸字串」的紀律，但這是**限制類型
+層級**的登記表，跟逐課程的 `eligibilitySource` 是不同軸，刻意不合併。
+
+`DEFAULT_TIME_PREFERENCE_PRIORITY` 為放寬階梯在使用者未指定 `constraints.timePreferencePriority`
+時的預設順序（`['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES']`）。
+
+詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」。

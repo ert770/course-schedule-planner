@@ -290,6 +290,8 @@ Request:
     "finalReport": false,
     "englishTaught": false,
     "learnMore": false,
+    "allowRelaxation": false,
+    "timePreferencePriority": [],
     "department": "資訊工程學系",
     "gradeLevel": 3,
     "className": "資訊三甲"
@@ -346,6 +348,21 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 候選池中某個已設定旗標的關鍵字命中率過低（<5%）或過高（>95%）時，`warnings` 會附上一條「訊號
 可靠度」警告，說明這個偏好目前幾乎無法有效區分課程；未觸發門檻時不會有額外警告。詳見
 `docs/SCHEDULING_LOGIC.md` 的「內容偏好評分與訊號可靠度警告」。
+
+`allowRelaxation`／`timePreferencePriority`（Roadmap #21）：opt-in 放寬階梯的開關與順序，
+預設 `allowRelaxation:false`（沒有任何現行呼叫端會設定，行為與改動前完全相同）。啟用後，
+若方案的選修側因 `noMorningClasses`／`lunchBreakFree`／`noEveningClasses` 排掉太多候選、
+導致湊不到學分下限，會依 `timePreferencePriority`（constraintId 陣列，例如
+`["LUNCH_BREAK_FREE", "NO_MORNING_CLASSES", "NO_EVENING_CLASSES"]`；未提供時採用系統預設
+順序）逐一放寬並重試，成功時回應會附上 `relaxedConstraints` 並在 `warnings` 揭露。這個機制
+**獨立於**正式必修對這 3 項的無條件豁免——後者永遠生效，不需要這個旗標。`blockedPeriods`
+永遠不會被這個機制放寬。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema
+（Roadmap #21）」。
+
+Response 除既有欄位外，無解時額外回傳 `conflictSet`（結構化的限制違規清單，取代「只回傳
+第一個錯誤字串」），格式為 `[{ constraintId, severity, relaxable, source, courses, reason }]`，
+附加於 `message`／`warnings` 之外，不取代它們；透過放寬階梯成功時額外回傳
+`relaxedConstraints: [{ constraintId, reason, order }]`。
 
 ### 限制條件合併語意
 
@@ -423,6 +440,7 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學期 |
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明 |
 | `reviewEvidence`（Roadmap #4） | 課程評價證據物件，`null` 代表這門課沒有評價，**不是** 0 分。有值時包含 `reviewCount`、`avgSweetness`／`avgCoolness`／`avgWorkload`／`avgOverall`／`avgDifficulty`／`avgRecommend`、`positiveCount`／`negativeCount`／`neutralCount`、`easiness`（1–5，未收縮）、`adjustedEasiness`（1–5，m-estimate 收縮後）、`easyScore`（0–100，排課實際採用）、`priorEasiness`、`shrinkagePriorWeight`、`source`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」 |
+| `formallyRequired`（Roadmap #21） | 布林，永遠存在（`true`／`false`）。`true` 代表這門課是這位學生本學期正式必修（`isRequiredForStudent()===true`），且排入時已無條件豁免 3 個時段類舒適偏好（不排早八／午休保留／不排晚課）；不含封鎖時段，也不含使用者手動指定的 `mustTakeCourseIds`。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」 |
 
 `category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」；`term`／
 `eligibilitySource`／`scopeReason` 見同檔案的「Active Term」與「候選課程的可追溯
@@ -457,11 +475,15 @@ Request:
 
 ```json
 {
-  "courses": []
+  "courses": [],
+  "constraints": {}
 }
 ```
 
-Response:
+`constraints` 為 Roadmap #21 新增的可選欄位。省略或傳空物件 `{}`（目前唯一的實際呼叫
+模式——`client/src` 尚未呼叫這支端點）時，回應與改動前逐欄位相同。
+
+Response（不帶 `constraints` 或帶空物件時）：
 
 ```json
 {
@@ -475,6 +497,29 @@ Response:
 ```
 
 `duplicates` 為同一門課的多個班次（以 `catalogCourseCode` 課號判定），例如兩門不同老師開的「計算機演算法」。學生只能選一個班次，因此即使時段不衝突也屬不合法，`valid` 為 `false`。`conflicts` 與 `duplicates` 的元素皆為 `{ course1, course2 }`。
+
+**Roadmap #21**：`constraints` 非空時，額外呼叫 `server/src/skills/scheduleValidator.js` 的
+`validateScheduleAgainstConstraints()`，附加以下欄位（不取代上述既有欄位）：
+
+```json
+{
+  "hardConstraintsValid": true,
+  "violations": [
+    { "constraintId": "CREDIT_CEILING", "severity": "hard", "relaxable": false,
+      "source": "user:numeric-limit", "confidence": 1, "courses": [], "reason": "課表共 28 學分，超過上限 25 學分" }
+  ],
+  "unchecked": ["PREREQUISITE", "COREQUISITE"]
+}
+```
+
+這個檢查涵蓋衝堂、重複班次、學分上限、資格／學期／系外選修／已修過的 metadata 複查、
+4 個時段類硬性限制、必修涵蓋率，比既有的 `valid`（只查衝堂與重複班次）範圍更完整。
+`unchecked` 永遠包含 `PREREQUISITE`／`COREQUISITE`（先修／共修）——這兩項專案裡完全
+沒有資料來源可查，validator 誠實回報未檢查，不假裝檢查過。此檢查**不套用**正式必修對
+時段偏好的無條件豁免（沒有 scope 可用）；只有課程物件已帶 `formallyRequired: true`
+標記（來自 `generateSchedule()` 自己產出的課表）時才會豁免，外部直接提供的課表一律
+照嚴格規則檢查。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema
+（Roadmap #21）」。
 
 ### `POST /api/schedule/save`
 
