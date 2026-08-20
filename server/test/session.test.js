@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assertSessionSecretConfigured,
   buildClearSessionCookie,
   buildSessionCookie,
   createSessionToken,
@@ -30,6 +31,34 @@ describe('I3 簽名 session cookie', () => {
     assert.match(cookie, /SameSite=Lax/);
     assert.equal(readSession(cookie, { secret: SECRET, now: 2000 }).studentId, 'D1249697');
     assert.match(buildClearSessionCookie({ secure: false }), /Max-Age=0/);
+  });
+});
+
+describe('I5 assertSessionSecretConfigured（adversarial review 修復：生產環境拒絕暫時密鑰）', () => {
+  test('非 production 時，不論有沒有設定都不拋錯', () => {
+    assert.doesNotThrow(() => assertSessionSecretConfigured({ nodeEnv: 'development', secret: undefined }));
+    assert.doesNotThrow(() => assertSessionSecretConfigured({ nodeEnv: 'test', secret: undefined }));
+  });
+
+  test('production 且完全沒設定 SESSION_SECRET 時拋錯', () => {
+    assert.throws(
+      () => assertSessionSecretConfigured({ nodeEnv: 'production', secret: undefined }),
+      /SESSION_SECRET/
+    );
+  });
+
+  test('production 且 SESSION_SECRET 過短時拋錯', () => {
+    assert.throws(
+      () => assertSessionSecretConfigured({ nodeEnv: 'production', secret: '太短了' }),
+      /SESSION_SECRET/
+    );
+  });
+
+  test('production 且 SESSION_SECRET 長度足夠時不拋錯', () => {
+    assert.doesNotThrow(() => assertSessionSecretConfigured({
+      nodeEnv: 'production',
+      secret: 'a'.repeat(32),
+    }));
   });
 });
 

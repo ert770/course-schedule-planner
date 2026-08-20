@@ -440,3 +440,88 @@ Consequences:
   `minCredits`, not re-optimizing every variant's own bias.
 - A relaxed successful response carries `relaxedConstraints` in addition to every existing
   success-path field (`schedule`, `plans`, `warnings`, etc.) — additive, not a replacement shape.
+
+## ADR-015: Three Fixes From the Adversarial Security Review of the `backend` Branch
+
+Date: 2026-08-20
+
+Context:
+A Codex adversarial review of the `backend` branch against `main` (117 files, ~12k insertions)
+found three issues severe enough to mark the branch "needs-attention": student chat conversations
+committed to Git, a profile migration script that could silently bind one student's data to
+another student's account, and a production session-secret fallback that fails unpredictably
+instead of failing at startup. All three are fixed in this branch; none required design changes
+outside the flagged files.
+
+Decision (three independent fixes):
+
+**1. Chat history is no longer tracked in Git.** `server/data/chat_history.json` is the runtime
+persistence target for `memoryService.js`'s `addChatMessage()` — it is not a demo fixture, it
+accumulates real conversation content keyed by a stable student ID and timestamp on every chat
+turn, because `chat_history` is absent from `database.js`'s `MYSQL_COLLECTIONS` set and therefore
+always goes through the local-JSON path regardless of whether MySQL is configured. It was added to
+`.gitignore` and `git rm --cached`, so the file remains on disk for the runtime fallback path but
+is never staged again. The file's four prior commits (going back to the initial commit) still
+contain historical snapshots in Git history — removing those requires a history rewrite and a
+force-push to the shared GitHub remote, which was deliberately **not** done as part of this fix; it
+is a separate, more disruptive decision the repository owner needs to make explicitly (it would
+require every other clone to be discarded and re-cloned).
+
+**2. The `student_id` profile-migration backfill is now transactional and verifies every row.**
+`server/scripts/profileSchemaMigration.js`'s `backfillStudentIds()` previously issued one `UPDATE
+… WHERE user_id = ?` per row from `server/data/users.json`, one call at a time, each auto-committed
+independently, with no check on how many rows each `UPDATE` actually affected. Two failure modes
+followed directly: a mid-run error left the shared `User_Profiles` table partially migrated with no
+way to know which rows had and hadn't been touched, and a `user_id` that existed in the local
+`users.json` snapshot but pointed at a *different* student's row in the shared MySQL instance (or
+didn't exist there at all) would still "succeed" silently — the local file's numeric `id` was
+trusted as authoritative with no verification against the actual shared database it was mutating.
+
+The fix does not — and structurally cannot — *prove* that a local `users.json` row and a shared
+`User_Profiles` row with the same numeric id represent the same real student: the pre-migration
+schema has no other column (email, name, or any identity signal) common to both sides to
+cross-check against, and `student_id` itself is the column being populated for the first time, so
+it cannot yet be used to look itself up. Given that constraint, the fix makes the assumption
+impossible to miss and mechanically fails safe instead of mechanically failing silent:
+`server/src/db/mysql.js` gained a `withTransaction()` helper (a single pooled connection,
+`beginTransaction`/`commit`/`rollback`), and every `UPDATE` inside `backfillStudentIds()` now
+asserts `affectedRows === 1`, throwing immediately (rolling back the entire transaction, leaving
+zero rows touched) the moment any row doesn't match exactly once. The dry-run and `--apply` paths
+now both print the full `user_id → studentId, className` mapping table before anything is written,
+prefixed with an explicit warning that this correspondence is an operator-verified assumption, not
+something the script can confirm on its own.
+
+**3. Production refuses to start without a real, shared `SESSION_SECRET`.**
+`sessionService.js`'s `getSecret()` silently generated a random 32-byte secret per process when
+`SESSION_SECRET` was unset, logging only a warning. In production this is a correctness bug wearing
+the costume of a convenience feature: every server restart invalidates every logged-in session, and
+every replica behind a load balancer signs cookies with a *different* random secret, so requests
+routed to a different replica than the one that issued the cookie fail authentication — an
+intermittent, hard-to-reproduce 401 pattern that looks like a client bug, not a missing
+environment variable. `assertSessionSecretConfigured()` is a no-op outside `NODE_ENV=production`
+(preserving today's zero-config local/demo behavior), and in production requires `SESSION_SECRET`
+to be set and at least 32 characters, throwing a descriptive error otherwise. `app.js`'s
+`startServer()` calls it before `app.listen()`, so a misconfigured production deployment fails at
+process startup — a clear, immediate, loud failure — rather than starting successfully and failing
+unpredictably per-request once traffic and multiple replicas are involved.
+
+Rejected alternative for #3 — checking inside `getSecret()` at first use instead of at startup:
+rejected because it would let the server report itself as healthy and accept traffic before the
+first session-dependent request reveals the misconfiguration, which is a strictly worse failure
+mode for an operator to diagnose than a startup crash with a clear message.
+
+Consequences:
+
+- `server/data/chat_history.json` staying `git rm --cached` but present on disk means a fresh clone
+  of the repository after this commit will not have the file; `memoryService.js`/`database.js`
+  already handle a missing collection file as an empty collection (`readCollection()`'s
+  `fs.existsSync` guard), so this requires no additional runtime change.
+- The migration script's new transactional path means a partial `--apply` run is no longer
+  possible in principle — either all rows in `backfillPlan()` are backfilled, or the shared
+  database is left exactly as it was before the run started.
+- `assertSessionSecretConfigured()` has no effect on `npm test`, local `npm run dev`, or any
+  existing test file, none of which set `NODE_ENV=production`; `server/test/session.test.js`
+  gained direct unit tests (I5) for the function itself, independent of a real server process.
+- Deploying this branch to any environment that sets `NODE_ENV=production` without also setting a
+  sufficiently long `SESSION_SECRET` will now fail to start — this is a deliberate breaking change
+  for that specific misconfiguration, not a regression to work around.

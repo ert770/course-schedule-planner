@@ -4,7 +4,8 @@
 
 ## 2026-08-20
 
-1. [建立 hard/soft constraint schema、獨立 validator、放寬階梯、conflict set（Roadmap #21）](./2026-08-20-hard-soft-constraint-schema.md)
+1. [修復 backend 分支的 adversarial review 發現（3 項）](./2026-08-20-adversarial-review-fixes.md)
+2. [建立 hard/soft constraint schema、獨立 validator、放寬階梯、conflict set（Roadmap #21）](./2026-08-20-hard-soft-constraint-schema.md)
 
 ## 2026-08-19
 

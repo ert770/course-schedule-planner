@@ -10,6 +10,7 @@ import profileRoutes from './routes/profile.js';
 import reviewRoutes from './routes/reviews.js';
 import authRoutes from './routes/auth.js';
 import graduationRoutes from './routes/graduation.js';
+import { assertSessionSecretConfigured } from './services/sessionService.js';
 
 dotenv.config({ quiet: true });
 const __filename = fileURLToPath(import.meta.url);
@@ -41,6 +42,12 @@ app.get('/api/health', (req, res) => {
 });
 
 export function startServer(port = PORT) {
+  // 生產環境沒有固定、所有 replica 共用的 SESSION_SECRET 時直接拒絕啟動，
+  // 而不是安靜地退回每個 process 各自產生的暫時密鑰——後者會讓重啟後所有
+  // 登入 session 失效，多台 replica 之間也互相拒絕彼此簽的 cookie，而且
+  // 症狀是隨機、難以重現的認證失敗，不是一個清楚可診斷的啟動錯誤。
+  assertSessionSecretConfigured();
+
   return app.listen(port, () => {
     console.log(`\n🚀 課表規劃推薦系統後端已啟動`);
     console.log(`   http://localhost:${port}`);

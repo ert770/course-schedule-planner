@@ -174,6 +174,20 @@ npm run migrate:profile --prefix server -- --rollback --confirm-shared-mysql --b
 migration 先檢查欄位，全部存在時不重複新增；偵測到部分套用狀態會停止並要求人工檢查，
 避免半套 schema。rollback 移除這次新增的 unique index 與三個欄位；原始 row 備份保留供核對。
 
+**`student_id` 回填的身分對應無法由程式自動證明**（adversarial review 修復，2026-08-20）：
+`backfillStudentIds()` 用本機 `server/data/users.json` 的 `id` 欄位去比對 shared MySQL 的
+`User_Profiles.user_id`——這是回填當下**唯一**兩邊都有的鍵，因為 `student_id` 本身正是這次
+要被填入的目標欄位，還不能拿來反查。若這個本機 `id` 剛好對不上 shared MySQL 裡同一個
+`user_id` 代表的真實學生（例如兩邊各自獨立匯入、或曾以不同順序重建過），程式**無法自行
+偵測**——只能盡量讓錯誤盡快、盡響地暴露出來，而不是假裝有辦法證明對應正確：
+
+- dry-run 與 `--apply` 都會先印出完整的 `user_id → studentId, className` 對照表，附上
+  「這個對應無法由程式自動證明」的警告，操作者必須在下 `--apply` 前自行核對。
+- 回填包在單一交易裡（`server/src/db/mysql.js` 的 `withTransaction()`），每筆 `UPDATE`
+  都檢查 `affectedRows === 1`；任何一筆對不上就整批 rollback，不留下部分套用的中間狀態。
+- 先前的版本每筆各自 autocommit、完全不檢查 affectedRows——半途失敗會留下半套資料，
+  對錯學生也會靜默「成功」。詳見 `docs/DECISIONS.md` ADR-015。
+
 ### `className`（班別）
 
 資工系不接受必修換班，必修範圍必須收斂到班別（`資訊三甲`／`資訊三乙`…），
