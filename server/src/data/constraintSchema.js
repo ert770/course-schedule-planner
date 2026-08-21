@@ -313,6 +313,24 @@ export const CONSTRAINTS = Object.freeze({
     confidence: null,
     enforced: true,
   },
+  // roadmap #15：正課與實習的窄範圍共修規則（`subid3` 的 `P` 後綴配對），
+  // 與下面 `COREQUISITE`（roadmap #8 負責的廣義先修／共修概念，任意課程間
+  // 的共同修習規則，目前完全沒有資料來源）是兩個不同層級的東西，不要混淆，
+  // 也不要因為這個交付了就誤以為下面 COREQUISITE 的缺口已解決。本項目有
+  // 明確、可查證的資料來源（P 後綴字串規則 + 候選池 partner-existence
+  // 查找，已用真實 MySQL 資料驗證），因此 `enforced:true`、`confidence:1`，
+  // 與 `TIME_CONFLICT`／`DUPLICATE_SECTION` 同一 source 等級——都是從課程
+  // 代碼結構推導出的事實，不是使用者偏好。
+  COREQUISITE_PAIR_INCOMPLETE: {
+    id: 'COREQUISITE_PAIR_INCOMPLETE',
+    category: CONSTRAINT_CATEGORY.HARD,
+    relaxable: false,
+    exemptForRequiredCourses: false,
+    weight: null,
+    source: CONSTRAINT_SOURCE.DERIVED_SCHEDULE,
+    confidence: 1,
+    enforced: true,
+  },
   // 先修／共修：資料庫與程式碼裡完全沒有這方面的資料來源（已用 grep 確認
   // `server/src` 與 `docs/DB_AUDIT_REPORT_2026-08-05.md` 皆無先修表；
   // roadmap #8 本身尚未開始，才是這個資料模型真正的負責項目）。這裡定義

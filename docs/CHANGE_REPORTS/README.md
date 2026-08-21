@@ -4,8 +4,10 @@
 
 ## 2026-08-20
 
-1. [修復 backend 分支的 adversarial review 發現（3 項）](./2026-08-20-adversarial-review-fixes.md)
-2. [建立 hard/soft constraint schema、獨立 validator、放寬階梯、conflict set（Roadmap #21）](./2026-08-20-hard-soft-constraint-schema.md)
+1. [修復共同必修（Roadmap #15）的 adversarial review 發現（3 項）](./2026-08-20-corequisite-adversarial-review-fixes.md)
+2. [實習課程需與同名正課一併排入（Roadmap #15）](./2026-08-20-corequisite-internship-pairing.md)
+3. [修復 backend 分支的 adversarial review 發現（3 項）](./2026-08-20-adversarial-review-fixes.md)
+4. [建立 hard/soft constraint schema、獨立 validator、放寬階梯、conflict set（Roadmap #21）](./2026-08-20-hard-soft-constraint-schema.md)
 
 ## 2026-08-19
 

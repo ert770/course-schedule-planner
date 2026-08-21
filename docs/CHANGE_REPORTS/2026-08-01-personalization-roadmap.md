@@ -10,16 +10,24 @@
 
 ## 最後更新
 
-2026-08-20（#21 大部分完成：建立正式 hard/soft constraint schema、與方案產生器分離的獨立
+2026-08-20（#15 的 Codex adversarial review 修復：多候選實習班次逐一重試互相污染、
+不及格必修重補修漏接配對邏輯、`/validate` 端點繞過新規則，3 項發現全數修復，三個
+排入路徑統一共用 `placeCourseWithCorequisite()`，新增 Y10-Y12 與路由層級測試，
+461/461 通過）
+
+前次更新：2026-08-20（完成 #15：實習課程與同名正課的共同必修排入——配對推導、原子排入、獨立 validator
+複查配對完整性，已用真實 MySQL 資料驗證例外清單；順手修正 #35 兩項已由 #21 解決的過期缺口記錄）
+
+再前次：2026-08-20（#21 大部分完成：建立正式 hard/soft constraint schema、與方案產生器分離的獨立
 validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修／共修強制執行，卡在 roadmap #8
 尚未開始的資料模型）
 
-前次更新：2026-08-19（完成 #3：8 個內容偏好從硬過濾改成軟懲罰，並回填 #21「開始前必須具備」欄位）
+再前次：2026-08-19（完成 #3：8 個內容偏好從硬過濾改成軟懲罰，並回填 #21「開始前必須具備」欄位）
 
-再前次：2026-08-19（統一 #31、#35、#36 的總覽與詳細章節狀態為「部分完成」；#13D 因 #18 已完成，改為
+更早：2026-08-19（統一 #31、#35、#36 的總覽與詳細章節狀態為「部分完成」；#13D 因 #18 已完成，改為
 「工程可開始、正式驗收等待特殊身分資料」）
 
-再前次：2026-08-17（第二次更新：#5 拆成 #5A／#5B——#5A 已完成，#5B 阻塞在 #29→#33→#2→#30 依序完成，並修正
+更早：2026-08-17（第二次更新：#5 拆成 #5A／#5B——#5A 已完成，#5B 阻塞在 #29→#33→#2→#30 依序完成，並修正
 #7／#26／#30／#36／Gate 4 原本誤指向 #5 的相依方向）
 
 更早：2026-08-17（完成 #4：評價聚合層接進排課引擎與 `/api/reviews/easy` 排行榜，取代課程描述關鍵字；#5、#10、#26 隨之回填進度）
@@ -76,7 +84,7 @@ validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修
 | 13C | B～F 類的正式適用規則 | ⛔ 等待外部資料 | #13B；**另需系辦／校方正式規則** |
 | 13D | 學制、學程與特殊身分 | 🟡 工程可開始；正式驗收等待特殊身分資料 | #13B、#18（均已完成）；另需特殊身分資料與正式適用規則 |
 | 14 | 無時間課程永不衝堂，可被無限排入 | ✅ 已完成 | 無 |
-| 15 | 實習課程需與同名正課一併排入 | ⬜ 未開始 | #13A、#13B、#19、#20、#21 |
+| 15 | 實習課程需與同名正課一併排入 | ✅ 已完成（2026-08-20） | #13A、#13B、#19、#20、#21 |
 | 16 | 多時段課程支援 | ✅ 已完成 | 無 |
 | 17 | 週六與週日課程支援 | ✅ 已完成 | 無 |
 | 18 | 統一 user identity、Profile、歷史修課與偏好資料來源 | ✅ 已完成（shared MySQL rollout 另列 D 類） | 無（新增任務的資料基礎） |
@@ -833,15 +841,11 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #15 實習課程需與同名正課一併排入
 
-**狀態**：⬜ 未開始（卡 #13A、#13B、#19、#20、#21）
+**狀態**：✅ 已完成（2026-08-20）——配對推導、原子排入（要嘛兩者皆排、要嘛皆不排）、實習不得單獨排入、學分正確加總、獨立 validator 複查配對完整性均已交付並用真實 MySQL 資料驗證過例外清單
 
 **相依**：#13A、#13B、#19、#20、#21
 
-**開始前必須具備**：正課與實習使用穩定課程代碼建立關聯；candidate eligibility 已能判斷兩門是否同時可修；constraint schema 可表達 co-requisite group。需先驗證 `P` 後綴是否涵蓋所有實習，並整理例外清單。
-
-> **2026-08-08 進度確認**：本項**仍未完成**，且**沒有任何共修強制邏輯**。目前唯一成立的是「正課與實習是不同課號，不得被當成同一門課的兩個班次」——這一點已由 `server/test/scheduler.test.js` 的 B3 測試釘住，避免 #B（同課只選一班）誤把 `STAT1002` 與 `STAT1002P` 視為重複而砍掉其中一門。
->
-> 換句話說：系統現在**不會誤把實習當成正課的替代品**，但仍然**可能只排入其中一門**。實測仍會出現「會計學(二)實習」被排入而沒有「會計學(二)」的情況。co-requisite group 的定義、綁定排入與整組回退都還沒開始。
+**開始前必須具備**：正課與實習使用穩定課程代碼建立關聯（#19 已提供）；candidate eligibility 已能判斷兩門是否同時可修（#20 已提供）；constraint schema 可表達 co-requisite group（#21 已提供 `CONSTRAINTS` 表機制）。~~需先驗證 `P` 後綴是否涵蓋所有實習，並整理例外清單~~——**已於 2026-08-20 用唯讀 SQL 對 shared MySQL 完成驗證**，見下方「目前進度」。
 
 使用者說明的領域規則：實習課一定搭配課程名稱相同的正課。例如「物件導向」有正課與實習，3 學分但共四堂課。
 
@@ -858,16 +862,38 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 422 筆 0 學分課程的組成：實習（`P` 後綴）187 筆，班級活動 168 筆，碩士論文 54 筆，博士論文 10 筆，其餘為統籌科目實習等。
 
-**目前問題**：排課引擎把實習視為獨立課程。實測結果出現「會計學(二)實習」被排入但沒有「會計學(二)」正課的情況，這在選課上不成立。反之只排正課不排實習也不完整。
+**已於資料驗證的例外清單**（2026-08-20，唯讀 SQL 對真實 shared MySQL 執行，重現 2026-08-05 稽核、15 天內數字零漂移）：
 
-**範圍**
+| `subid3` | 課名 | 學分 | 例外原因 |
+| --- | --- | --- | --- |
+| `BUS1121P` | 統籌科目實習(二) | 0 | 全庫查無對應正課 `BUS1121` |
+| `HY2073P` | 水質分析實驗 | 0 | 全庫查無對應正課 `HY2073` |
+| `LAND2012P` | 測量平差實習 | **1.0（非 0）** | 正課 `LAND2012` 存在且配對正確，但配對規則不得用「學分必須為 0」判定 |
+| `MKT2020P` | （行銷相關實習） | 0 | 正課 `MKT2020` 存在，但 `dept` 完全不重疊（合班命名差異）；配對規則不得用 `dept` 交叉驗證 |
 
-- 以 `subid3` 的 `P` 後綴建立正課與實習的關聯
-- 排入正課時必須一併排入對應實習，兩者任一無法排入則整組不排
-- 實習不得單獨排入
-- 學分計算以正課為準，實習 0 學分但佔用時段
-- `docs/SCHEDULING_LOGIC.md` 補上共同必修（co-requisite）定義
-- 需確認 `P` 後綴規則是否涵蓋所有實習課程，或另有例外
+零學分且課名含「實習」／「實驗」但不以 `P` 結尾的課程：0 筆——`P` 後綴慣例在「有沒有漏標」這個方向上完全可靠。
+
+**目前進度（2026-08-20，含 Codex adversarial review 修復）**
+
+**已完成**
+
+- `server/src/skills/scheduler.js`：`deriveBaseCourseCode()`／`annotateCorequisite()` 在 `prepareCandidates()` 對候選池原始輸入建配對索引（五個排課方案共用，`tryRelaxationLadder()` 重試時自動沿用）；`attemptCorequisitePair()` 用快照/回滾包裝 `addCourseToPlan()` 試一次整組排入（失敗靜默回滾、不寫訊息），`placeCourseWithCorequisite()` 逐一嘗試候選實習班次、只在全部班次都失敗後統一寫入一次排除紀錄——`addCourseToPlan()` 本身未改動；接進三個排入路徑並共用同一套規則：必修排入迴圈（正課帶動實習，實習不得反向升級正課為必修）、貪婪填充迴圈（實習永不獨立進入評分競爭）、**不及格必修重補修迴圈**（原本完全沒接上配對邏輯，是 adversarial review 抓到的缺口，已補上）。
+- `server/src/data/constraintSchema.js`：新增 `COREQUISITE_PAIR_INCOMPLETE`（`enforced:true`，與下方 `COREQUISITE` 明確區分：後者是 #8／#21 負責的廣義先修/共修概念，`enforced:false`，本次交付不代表那個缺口已解決）。
+- `server/src/skills/scheduleValidator.js`：`checkCorequisitePairs()` 對課表複查配對完整性；只在課表裡至少有一門課帶 `corequisiteRole` 時才視為「已檢查」，否則誠實回報 `checked:false`（列進 `unchecked`），不會憑課號猜測配對關係。
+- `server/src/routes/schedule.js`：`POST /api/schedule/validate` 的擴充硬性限制檢查改成一律執行，不再只在請求帶非空 `constraints` 時才跑——原本的條件式會讓目前唯一的實際呼叫形狀（只送 `{courses}`）完全繞過共同必修檢查。
+- 學分計算沿用既有的逐課加總，**沒有**新增任何把實習學分強制歸零的邏輯——`LAND2012P` 這種非 0 學分的例外也正確加總。
+- `docs/SCHEDULING_LOGIC.md` 新增「共同必修（Co-requisite，Roadmap #15）」一節；`docs/DATA_SCHEMA.md`／`docs/API_SPEC.md` 同步更新。
+- 測試：`server/test/scheduler.test.js` 的 Y1-Y9（原始 9 個情境）之外新增 Y10-Y12，涵蓋多候選實習班次逐一重試不互相污染、重修必修一併帶入實習、重修必修的實習排不進去時兩者皆不排入；新增 `server/test/scheduleRoutes.test.js`（3 個路由層級測試，對真實 HTTP server 驗證 `/validate` 一律執行擴充檢查）。完整 server 測試套件 461/461 通過，零回歸。
+
+**Codex adversarial review（2026-08-20，針對本任務尚未提交的 diff）**：標記 `needs-attention`，3 項發現（2 個 high：多候選實習班次重試互相污染、重修必修漏接配對邏輯；1 個 medium：`/validate` 端點繞過新規則）皆已修復，詳見下方連結的修復報告。
+
+**尚未涵蓋（明確排除在本次範圍外）**
+
+- 廣義的先修／共修規則（#8／#21 負責，任意課程之間的修課先後或共同修習規則）——本次只解決正課/實習這一種窄範圍、代碼驅動的特例。
+- `/validate` 端點對「外部直接提供、從未經過 `generateSchedule()` 的原始課程物件」仍無法檢查共同必修配對完整性（需要伺服器端查詢完整課程目錄才能可靠判斷，範圍明顯更大；`client/src` 目前完全不呼叫這支端點，實際影響面為零，回應會誠實列進 `unchecked`）。
+
+詳見 `docs/CHANGE_REPORTS/2026-08-20-corequisite-internship-pairing.md` 與
+`docs/CHANGE_REPORTS/2026-08-20-corequisite-adversarial-review-fixes.md`。
 
 ---
 
@@ -1677,10 +1703,10 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 **尚未完成**
 
 - **沒有 benchmark**，只有單元測試。沒有固定的 golden case 資料集、沒有量化指標、沒有比較報告，也無法在固定環境重現。
-- 「成功方案 hard violation count 為 0」**無法證明**——`validateSchedule()` 不檢查資格、已修、學分上下限與必修涵蓋（見 #21）。
-- **沒有 conflict set**，infeasible 只回傳第一個錯誤字串，因此「回傳正確 conflict set」尚未成立。
 - 測試資料仍以少量手寫 fixture 為主，未涵蓋不同科系、年級、班級、學期與歷史狀態的組合。
-- co-requisite（#15）未實作，實習相關的 feasibility 無從量測。
+- `#22`（repair／backtracking／constraint solver）仍未開始，因此無法比較 greedy 與其他解法的可行率、品質與執行時間差異——這才是 benchmark 真正的比較對象。
+
+**2026-08-20 更新**：「成功方案 hard violation count 為 0」與「無解回傳 conflict set」兩項已由 #21 交付（`scheduleValidator.js` 的獨立 validator 自我檢查、`generateSchedule()` 的結構化 `conflictSet`）；co-requisite（#15，正課/實習配對）也已交付。以上三項不再是 #35 的缺口，但仍未組成正式 benchmark（無 golden case、無量化指標），故 #35 狀態維持部分完成。
 
 ---
 

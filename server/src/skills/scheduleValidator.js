@@ -200,6 +200,49 @@ function checkRequiredCoverage(schedule, constraints) {
   };
 }
 
+// roadmap #15：對「字面上給定的課表」複查——若某課帶 corequisiteRole，
+// 其搭檔的 catalogCourseCode 必須也出現在同一張課表中，否則代表
+// buildPlan() 的配對邏輯本身有 bug，或這是一份外部直接提供給 /validate
+// 的不合法課表。`corequisiteRole`／`corequisiteCode` 由 `prepareCandidates()`
+// 附加、經 `addCourseToPlan()` 的展開語法帶進 schedule，不需要重新推導；
+// 與 checkTimePreferences() 一樣不套用必修豁免——這裡沒有 scope 可用。
+//
+// Codex adversarial review 修正（2026-08-20）：`corequisiteRole` 只會出現
+// 在 `generateSchedule()` 自己產出、走過 `prepareCandidates()` 的課表上。
+// 外部直接呼叫 `/validate` 送進來的原始課程物件（例如把 `generateSchedule()`
+// 產出的一組配對課表拿掉其中一半再送回來驗證）完全沒有這個欄位可讀，
+// 本函式不會、也不該憑 `catalogCourseCode` 的 `P` 後綴自行「猜」哪些課
+// 應該配對——`BUS1121P`／`HY2073P` 這種找不到正課的真實例外若被猜錯，
+// 反而會把合法課表誤判成違規。比照 checkRequiredCoverage() 的既有作法：
+// 沒有任何一門課帶 corequisiteRole 時，回傳 checked:false，讓呼叫端把
+// 這項規則列進 unchecked，誠實回報「沒有可信的配對資訊、沒有檢查」，
+// 而不是悄悄回傳 valid:true 讓人誤以為配對規則有被驗證過。
+function checkCorequisitePairs(schedule) {
+  const hasTrustworthyAnnotations = schedule.some(course => course.corequisiteRole);
+  if (!hasTrustworthyAnnotations) {
+    return { violations: [], checked: false };
+  }
+
+  const violations = [];
+  const codesPresent = new Set(
+    schedule.map(course => String(course.catalogCourseCode || '').trim()).filter(Boolean)
+  );
+
+  for (const course of schedule) {
+    if (!course.corequisiteRole || !course.corequisiteCode) continue;
+    if (codesPresent.has(course.corequisiteCode)) continue;
+
+    const missingLabel = course.corequisiteRole === 'internship' ? '正課' : '實習';
+    violations.push(buildViolation(
+      'COREQUISITE_PAIR_INCOMPLETE',
+      [courseRef(course)],
+      `「${course.name}」的對應${missingLabel}（課號 ${course.corequisiteCode}）未出現在課表中`
+    ));
+  }
+
+  return { violations, checked: true };
+}
+
 // 與方案產生器分離的最終課表 validator（roadmap #21）。
 //
 // checks 2（學分上限）、4（時段類硬性限制）、5（必修涵蓋率）需要 `constraints`
@@ -209,12 +252,16 @@ export function validateScheduleAgainstConstraints(schedule = [], constraints = 
   const { violations: coverageViolations, checked: coverageChecked } = checkRequiredCoverage(
     schedule, constraints
   );
+  const { violations: corequisiteViolations, checked: corequisiteChecked } = checkCorequisitePairs(
+    schedule
+  );
 
   const violations = [
     ...checkTimeConflictsAndDuplicates(schedule),
     ...checkCourseMetadata(schedule, constraints),
     ...checkCreditCeiling(schedule, constraints),
     ...checkTimePreferences(schedule, constraints),
+    ...corequisiteViolations,
     ...coverageViolations,
   ];
 
@@ -225,6 +272,7 @@ export function validateScheduleAgainstConstraints(schedule = [], constraints = 
     .filter(def => def.enforced === false)
     .map(def => def.id);
   if (!coverageChecked) unchecked.push('REQUIRED_COURSE_COVERAGE');
+  if (!corequisiteChecked) unchecked.push('COREQUISITE_PAIR_INCOMPLETE');
 
   return {
     valid: violations.length === 0,

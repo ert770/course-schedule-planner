@@ -808,6 +808,242 @@ describe('B1-B5 同一門課只能選一個班次', () => {
   });
 });
 
+describe('Y1-Y12 共同必修：正課與實習一併排入（Roadmap #15）', () => {
+  test('Y1 正課與實習皆可排入時，兩者一併排入課表', () => {
+    const result = generateSchedule([
+      makeCourse(1, { catalogCourseCode: 'STAT1002', name: '統計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3 }),
+      makeCourse(2, { catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5 }),
+    ], { mustTakeCourseIds: [1, 2], minCredits: 0, maxCredits: 22 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(1) && scheduledIds.includes(2));
+  });
+
+  test('Y2 貪婪填充中，實習因衝堂無法排入時，正課也一併不排入', () => {
+    // blocker 學分刻意設高，讓它在貪婪填充的評分排序中優先於 regular
+    // 被排入，之後嘗試排入 regular+internship 這組時，internship 才會
+    // 真的跟已排入的 blocker 衝堂。
+    const blocker = makeCourse(3, {
+      catalogCourseCode: 'IECS1001', name: '衝堂用課程', credits: 10, dayOfWeek: 2, startPeriod: 4, endPeriod: 4,
+    });
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', credits: 1, dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 2, startPeriod: 4, endPeriod: 4,
+    });
+
+    const result = generateSchedule([blocker, regular, internship], { minCredits: 0, maxCredits: 22 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(3));
+    assert.ok(!scheduledIds.includes(1) && !scheduledIds.includes(2));
+    assert.ok(result.excludedCourses.some(
+      item => item.course.id === 1 && item.constraintId === 'COREQUISITE_PAIR_INCOMPLETE'
+    ));
+    assert.ok(result.excludedCourses.some(
+      item => item.course.id === 2 && item.constraintId === 'COREQUISITE_PAIR_INCOMPLETE'
+    ));
+  });
+
+  test('Y3 貪婪填充中，正課因衝堂無法排入時，實習也一併不排入', () => {
+    const blocker = makeCourse(3, {
+      catalogCourseCode: 'IECS1001', name: '衝堂用課程', credits: 10, dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', credits: 1, dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule([blocker, regular, internship], { minCredits: 0, maxCredits: 22 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(3));
+    assert.ok(!scheduledIds.includes(1) && !scheduledIds.includes(2));
+  });
+
+  test('Y4 必修排入迴圈只指定正課為必修時，仍一併帶入實習', () => {
+    const regular = makeCourse(1, { catalogCourseCode: 'ACCT1012', name: '會計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 4 });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'ACCT1012P', name: '會計學(二)實習', credits: 0, dayOfWeek: 4, startPeriod: 6, endPeriod: 6,
+    });
+
+    const result = generateSchedule([regular, internship], { mustTakeCourseIds: [1], minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.success, true);
+    assert.deepEqual(result.schedule.map(c => c.id).sort(), [1, 2]);
+  });
+
+  test('Y5 必修正課的實習因非本學期被排除時，明確以共修不完整原因失敗', () => {
+    // 實習確實存在於候選輸入（annotateCorequisite 因此能標記出配對），
+    // 但因非本學期被 prepareCandidates() 的 term gate 排除，不在 eligible
+    // 裡——這才是「找得到搭檔、但搭檔排不進來」的真實情境，跟「候選裡
+    // 根本沒有這門實習」（Y8 的例外情境）是不同的失敗原因。
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'ACCT1012', name: '會計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 4,
+      year: 114, semester: '下學期',
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'ACCT1012P', name: '會計學(二)實習', credits: 0, dayOfWeek: 4, startPeriod: 6, endPeriod: 6,
+      year: 113, semester: '上學期',
+    });
+
+    const result = generateSchedule([regular, internship], { mustTakeCourseIds: [1], minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.success, false);
+    // generateSchedule() 失敗時回應物件沒有頂層 failures 欄位——plan.failures
+    // 併進 warnings 陣列回傳（見 scheduler.js 的失敗路徑），斷言要用 warnings。
+    assert.ok(result.warnings.some(w => w.includes('找不到對應實習')));
+    assert.ok(!result.warnings.some(w => w.includes('衝堂')), '失敗原因應為共修不完整，不是誤判成一般硬性限制');
+  });
+
+  test('Y6 貪婪填充選中有實習的正課時，兩者一併排入，實習不會單獨出現', () => {
+    const regular = makeCourse(1, { catalogCourseCode: 'FINA2034', name: '財務管理', dayOfWeek: 1, startPeriod: 2, endPeriod: 4 });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'FINA2034P', name: '財務管理實習', credits: 0, dayOfWeek: 4, startPeriod: 6, endPeriod: 6,
+    });
+
+    const result = generateSchedule([regular, internship], { minCredits: 0, maxCredits: 22 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(1) && scheduledIds.includes(2));
+  });
+
+  test('Y7 貪婪填充中，正課因學分上限無法排入時，實習不會單獨排入', () => {
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'FINA2034', name: '財務管理', credits: 3, dayOfWeek: 1, startPeriod: 2, endPeriod: 4,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'FINA2034P', name: '財務管理實習', credits: 0, dayOfWeek: 4, startPeriod: 6, endPeriod: 6,
+    });
+
+    // maxCredits 設為 0，讓正課本身在貪婪填充階段就過不了學分上限檢查。
+    const result = generateSchedule([regular, internship], { minCredits: 0, maxCredits: 0 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(!scheduledIds.includes(1));
+    assert.ok(!scheduledIds.includes(2), '實習不應在正課排不進去的情況下單獨排入');
+  });
+
+  test('Y8 P 後綴但找不到正課的例外課程，視為一般課程正常排入並附警告', () => {
+    const orphan = makeCourse(1, {
+      catalogCourseCode: 'BUS1121P', name: '統籌科目實習(二)', credits: 0, dayOfWeek: 1, startPeriod: 2, endPeriod: 2,
+    });
+
+    const result = generateSchedule([orphan], { mustTakeCourseIds: [1], minCredits: 0, maxCredits: 22 });
+
+    assert.deepEqual(result.schedule.map(c => c.id), [1]);
+    assert.ok(result.warnings.some(w => w.includes('找不到對應正課')));
+  });
+
+  test('Y9 實習學分非 0 時，配對後學分正確加總，不做任何學分歸零', () => {
+    const regular = makeCourse(1, { catalogCourseCode: 'LAND2012', name: '測量平差', credits: 2, dayOfWeek: 1, startPeriod: 2, endPeriod: 3 });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'LAND2012P', name: '測量平差實習', credits: 1, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule([regular, internship], { mustTakeCourseIds: [1, 2], minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.schedule.length, 2);
+    assert.equal(result.totalCredits, 3);
+  });
+
+  test('Y10 多個候選實習班次時，前面班次衝堂失敗不會污染後面班次的成功排入（Codex adversarial review 修正）', () => {
+    // 迴歸測試：修正前，`.some()` 逐一嘗試候選實習班次時，第一個失敗的
+    // 嘗試會直接寫入 excludedCourses／failures，即使第二個班次後來成功
+    // 排入，那則失敗訊息仍會殘留，讓最終驗證器把整組誤判成不完整。
+    const blocker = makeCourse(3, {
+      catalogCourseCode: 'IECS1001', name: '衝堂用必修課', dayOfWeek: 2, startPeriod: 4, endPeriod: 4,
+    });
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    // 兩個班次課號相同（同一門實習開兩班），第一個班次時段故意與 blocker
+    // 衝堂，第二個班次時段是空的。
+    const internshipConflict = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習-甲班', credits: 0, dayOfWeek: 2, startPeriod: 4, endPeriod: 4,
+    });
+    const internshipOk = makeCourse(4, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習-乙班', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule(
+      [blocker, regular, internshipConflict, internshipOk],
+      { mustTakeCourseIds: [3, 1], minCredits: 0, maxCredits: 22 }
+    );
+
+    assert.equal(result.success, true);
+    const scheduledIds = result.schedule.map(c => c.id).sort((a, b) => a - b);
+    assert.deepEqual(scheduledIds, [1, 3, 4]);
+    assert.ok(!result.excludedCourses.some(item => item.constraintId === 'COREQUISITE_PAIR_INCOMPLETE'),
+      '第二個班次成功排入後，不應殘留任何一個班次的共修不完整排除紀錄');
+    assert.ok(!result.warnings.some(w => w.includes('皆不排入')),
+      '第二個班次成功排入後，不應殘留失敗訊息');
+  });
+
+  test('Y11 重修必修正課帶共同必修時，重補修迴圈一併排入對應實習（Codex adversarial review 修正）', () => {
+    // 迴歸測試：修正前，不及格必修重補修迴圈直接呼叫 addCourseToPlan()，
+    // 只排入重修的正課；對應實習因「不得單獨排入」規則被貪婪填充排除，
+    // 排出「有正課沒實習」的不合法課表，被內部驗證器攔下來變成整批失敗。
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule([regular, internship], {
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'STAT1002',
+        courseName: '統計學(二)',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 22,
+    });
+
+    assert.equal(result.success, true);
+    const scheduledIds = result.schedule.map(c => c.id).sort((a, b) => a - b);
+    assert.deepEqual(scheduledIds, [1, 2]);
+  });
+
+  test('Y12 重修必修正課的實習衝堂排不進去時，重修正課也一併不排入', () => {
+    const blocker = makeCourse(3, {
+      catalogCourseCode: 'IECS1001', name: '衝堂用課程', dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule([blocker, regular, internship], {
+      mustTakeCourseIds: [3],
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'STAT1002',
+        courseName: '統計學(二)',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 22,
+    });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(3));
+    assert.ok(!scheduledIds.includes(1) && !scheduledIds.includes(2),
+      '重修正課的實習排不進去時，重修正課不應單獨排入');
+  });
+});
+
 // C1-C6：學分上下限依校規（docs/COURSE_SELECTION_RULES.md）。
 //
 // 先前寫死下限 15、上限 22、每日最多 4 門課，三個數字都沒有出處。

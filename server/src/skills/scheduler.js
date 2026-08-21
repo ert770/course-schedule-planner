@@ -381,6 +381,64 @@ function getCourseKey(course) {
   return `id:${course.id}`;
 }
 
+// roadmap #15：正課與實習的配對規則純粹以 `subid3`／`catalogCourseCode` 的
+// `P` 後綴（大小寫敏感，已用真實 MySQL 資料確認全庫無小寫 p）為準，
+// **不看課名、學分或系所**——`LAND2012P`（實際 1.0 學分，一般實習慣例是 0）
+// 與 `MKT2020P`↔`MKT2020`（dept 完全不重疊，合班命名差異）都是真實例外，
+// 任何加上學分或 dept 條件的判斷式都會誤判其中一種。
+//
+// 回傳去掉 `P` 後的課號字串；不是 `P` 後綴或空字串一律回傳 null——呼叫端
+// 還要另外查詢這個去尾碼的課號是否真的存在於候選池，本函式只做字串推導，
+// 不做存在性判斷（存在性判斷需要看整個候選池，不屬於單一課程的純函式）。
+function deriveBaseCourseCode(catalogCourseCode) {
+  const code = String(catalogCourseCode || '').trim();
+  if (!code || !code.endsWith('P')) return null;
+  return code.slice(0, -1);
+}
+
+// 把配對結果寫回課程物件本身，而不是回傳另一份對照表——這樣
+// `buildPlan()`／`scheduleValidator.js` 讀到的每個課程物件天生帶著這個
+// 資訊，且 `addCourseToPlan()` 的 `{ ...course, ... }` 展開語法會讓這些
+// 欄位自動流進 `plan.schedule`／`unscheduledCourses`，validator 因此不需要
+// 任何額外接線就能看到它們。
+//
+// `allCandidateCodes` 必須是候選池的**原始輸入**（未經 term／eligibility
+// 過濾），否則某門課的搭檔若因非本學期或資格未知被排除，會誤判成
+// 「找不到搭檔」，即使它其實只是被別的規則擋掉，不是真的不存在。
+function annotateCorequisite(course, allCandidateCodes) {
+  const code = String(course.catalogCourseCode || '').trim();
+  if (!code) {
+    course.corequisiteCode = null;
+    course.corequisiteRole = null;
+    return;
+  }
+
+  const baseCode = deriveBaseCourseCode(code);
+  if (baseCode) {
+    // 這門課本身是 P 後綴——`BUS1121P`／`HY2073P` 這類「P 後綴但候選池
+    // 中沒有對應正課」的例外，落在 corequisiteRole:null，視為一般課程，
+    // 不受任何共同必修規則影響。
+    if (allCandidateCodes.has(baseCode)) {
+      course.corequisiteCode = baseCode;
+      course.corequisiteRole = 'internship';
+    } else {
+      course.corequisiteCode = null;
+      course.corequisiteRole = null;
+    }
+    return;
+  }
+
+  // 這門課不是 P 後綴，檢查是否有人拿它當正課。
+  const pCode = `${code}P`;
+  if (allCandidateCodes.has(pCode)) {
+    course.corequisiteCode = pCode;
+    course.corequisiteRole = 'regular';
+  } else {
+    course.corequisiteCode = null;
+    course.corequisiteRole = null;
+  }
+}
+
 // 涼度分數 0-100，來自課程評價（見 `courseReviewStats.deriveReviewEvidence`）。
 //
 // **回傳 null 代表「沒有評價可判斷」，不是「不涼」。** 呼叫端自己決定要用
@@ -664,6 +722,102 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
   return true;
 }
 
+// roadmap #15：正課與實習必須整組成功才算數，任一失敗則兩者皆不排入。
+// 刻意不改 addCourseToPlan()——它已經很密集且被 roadmap #21 期間新增的
+// 大量 regression 測試釘住；改用快照/回滾包一層，讓 addCourseToPlan()
+// 本身邏輯完全不變，只是被連續呼叫兩次，第二次失敗時把第一次的效果撤銷。
+//
+// 安全性：plan.schedule／unscheduledCourses／excludedCourses／failures／
+// warnings 皆為 push-only 陣列（addCourseToPlan() 從不 splice 或重排），
+// 因此只記錄長度、失敗時把陣列截回原長度即可精確復原，不論成功的那次
+// 呼叫把課推進 schedule 還是 unscheduledCourses。placedCourseKeys 是唯一
+// 非陣列的可變狀態，用淺拷貝 Map 記錄快照。
+//
+// `options` 是同一個物件傳給兩次 addCourseToPlan() 呼叫，讓 `formallyRequired`
+// 自動從正課傳給實習——正課因必修豁免時段偏好時，實習不會被同一個時段
+// 偏好單獨擋下，否則就違反「兩者要嘛都排、要嘛都不排」。
+//
+// Codex adversarial review 修正（2026-08-20）：這個函式本身**刻意不再
+// 寫入 excludedCourses／failures**——只做「試一次、失敗就靜默回滾」。
+// 原因：呼叫端（`placeCourseWithCorequisite()`）可能對同一門正課逐一嘗試
+// 多個實習班次，若每次失敗都在這裡留下訊息，前面失敗的嘗試會在後面某個
+// 班次成功排入後仍然殘留在 plan 裡，讓最終驗證器誤判整組不完整（即使
+// plan.schedule 裡其實已經同時有正課與某個成功排入的實習班次）。訊息只
+// 應該在「所有候選班次都試過且全部失敗」時才由呼叫端統一寫入一次。
+function attemptCorequisitePair(plan, regularCourse, internshipCourse, constraints, reason, options = {}) {
+  const snapshot = {
+    scheduleLength: plan.schedule.length,
+    unscheduledLength: plan.unscheduledCourses.length,
+    excludedLength: plan.excludedCourses.length,
+    failuresLength: plan.failures.length,
+    warningsLength: plan.warnings.length,
+    totalCredits: plan.totalCredits,
+    graduationCredits: plan.graduationCredits,
+    nonGraduationCredits: plan.nonGraduationCredits,
+    placedCourseKeys: new Map(plan.placedCourseKeys),
+  };
+
+  const regularPlaced = addCourseToPlan(plan, regularCourse, constraints, reason, options);
+  const internshipPlaced = regularPlaced
+    && addCourseToPlan(plan, internshipCourse, constraints, reason, options);
+
+  if (regularPlaced && internshipPlaced) return true;
+
+  plan.schedule.length = snapshot.scheduleLength;
+  plan.unscheduledCourses.length = snapshot.unscheduledLength;
+  plan.excludedCourses.length = snapshot.excludedLength;
+  plan.failures.length = snapshot.failuresLength;
+  plan.warnings.length = snapshot.warningsLength;
+  plan.totalCredits = snapshot.totalCredits;
+  plan.graduationCredits = snapshot.graduationCredits;
+  plan.nonGraduationCredits = snapshot.nonGraduationCredits;
+  plan.placedCourseKeys = snapshot.placedCourseKeys;
+  return false;
+}
+
+// roadmap #15 + Codex adversarial review 修正（2026-08-20）：把「正課帶
+// 對應實習、逐一嘗試候選班次、整組原子排入」的邏輯抽成單一共用函式，讓
+// 本學期必修排入迴圈、貪婪填充、不及格必修重補修三個呼叫端共用同一套
+// 規則——原本重補修路徑完全沒有接上這套邏輯（Codex 抓到的第二個 bug：
+// 重修正課排入了、對應實習卻被貪婪填充的「實習不得單獨排入」規則擋下，
+// 排出「有正課沒實習」的不合法課表，被驗證器攔下來變成整批失敗）。
+//
+// 對候選實習班次逐一呼叫 attemptCorequisitePair()（失敗即靜默回滾，見
+// 上方註解），只有全部班次都試過且全部失敗，才在這裡統一寫入一次
+// excludedCourses／failures，修正 Codex 抓到的第一個 bug：多班次重試時
+// 不會再被中途失敗的嘗試污染最終判定。
+function placeCourseWithCorequisite(plan, regularCourse, internshipCandidates, constraints, reason, options = {}) {
+  if (internshipCandidates.length === 0) {
+    const message = `此課程需與實習（課號 ${regularCourse.corequisiteCode}）一併排入，`
+      + '但候選課程中找不到對應實習班次，兩者皆不排入';
+    plan.excludedCourses.push({ course: regularCourse, reason: message, constraintId: 'COREQUISITE_PAIR_INCOMPLETE' });
+    if (options.required) {
+      plan.failures.push(`必要課程「${regularCourse.name}」${message}`);
+    }
+    return false;
+  }
+
+  for (const internship of internshipCandidates) {
+    if (attemptCorequisitePair(plan, regularCourse, internship, constraints, reason, options)) {
+      return true;
+    }
+  }
+
+  const message = `此課程需與實習（課號 ${regularCourse.corequisiteCode}）一併排入，`
+    + '但所有候選實習班次皆無法一併排入，兩者皆不排入';
+  plan.excludedCourses.push(
+    { course: regularCourse, reason: message, constraintId: 'COREQUISITE_PAIR_INCOMPLETE' },
+    ...internshipCandidates.map(internship => ({
+      course: internship, pairedCourse: regularCourse,
+      reason: message, constraintId: 'COREQUISITE_PAIR_INCOMPLETE',
+    })),
+  );
+  if (options.required) {
+    plan.failures.push(`必要課程「${regularCourse.name}」${message}`);
+  }
+  return false;
+}
+
 function createEmptyPlan(variant, constraints) {
   return {
     id: variant.id,
@@ -794,6 +948,19 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   // 「涼課方案沒有通識」時，必須分得出來是「沒抓到評價」還是「抓到了但規則擋住」。
   let unknownEligibilityWithReviews = 0;
   let unknownEligibilityReviewCount = 0;
+  // roadmap #15：P 後綴但候選池中找不到對應正課的課程（例如 BUS1121P／
+  // HY2073P），彙總成一則警告，不逐課發。
+  const orphanedInternshipNames = new Set();
+
+  // roadmap #15：配對存在性必須看候選池的**原始輸入**，不能看下面迴圈過濾後
+  // 的 `courses` 輸出——否則某門課的實習若因非本學期／資格未知被 term/
+  // eligibility gate `continue` 掉，這門課本身永遠不會進入 `courses`，用
+  // `courses` 當索引會誤判成「找不到搭檔」，即使它其實只是被別的規則排除。
+  const allCandidateCodes = new Set(
+    candidateCourses
+      .map(course => String(course.catalogCourseCode || '').trim())
+      .filter(Boolean)
+  );
 
   for (const raw of candidateCourses) {
     const course = annotateCourseCategory(raw, scope);
@@ -801,6 +968,14 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     // term gate 與 eligibility gate **之前**——被排除的課也要帶著它，
     // 才能統計「有評價但因資格待確認而未納入」的門數。
     course.reviewEvidence = deriveReviewEvidence(reviewIndex, reviewPrior, course);
+
+    // roadmap #15：共同必修配對同樣要在任何排除 continue 之前標記，
+    // 理由與上面 reviewEvidence 相同——被排除的那一半也要帶著這個資訊，
+    // 另一半才查得到「我曾經有配對，只是被別的規則擋住」。
+    annotateCorequisite(course, allCandidateCodes);
+    if (deriveBaseCourseCode(course.catalogCourseCode) && course.corequisiteRole === null) {
+      orphanedInternshipNames.add(`${course.name}（${course.catalogCourseCode}）`);
+    }
 
     // Roadmap #20：term 是比 eligibility 更外層的閘門——這門課這學期根本沒開，
     // 不管系所年級班別是否符合都不該被排入。這一段只處理繞過
@@ -970,6 +1145,14 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   // 方案選出來才算，也不必逐一方案重算五次）。
   warnings.push(...buildContentPreferenceWarnings(computeContentPreferenceSignal(courses, constraints)));
 
+  if (orphanedInternshipNames.size > 0) {
+    warnings.push(
+      `${orphanedInternshipNames.size} 門課程符合實習／實驗代碼慣例（課號以 P 結尾）`
+      + `但找不到對應正課（${summarizeNames([...orphanedInternshipNames])}），`
+      + '本規則對這些課程不生效，視為一般課程處理。'
+    );
+  }
+
   return { courses, exclusions, warnings, scope, explicitIds, neutralEasyScore };
 }
 
@@ -1089,17 +1272,49 @@ function buildPlan(prepared, constraints, variant) {
   }
 
   for (const course of currentRequiredCourses) {
+    // roadmap #15：實習不得單獨排入，由對應正課的分支帶動——這裡直接跳過，
+    // 不會漏排：只要它的正課也在 currentRequiredCourses 裡，下面的
+    // 'regular' 分支會把兩者一併處理。若正課不在必修清單裡（使用者只把
+    // 實習的 id 放進 mustTakeCourseIds），本規則刻意不反向把正課升級為
+    // 必排——見 docs/SCHEDULING_LOGIC.md 的「共同必修」單向設計說明。
+    if (course.corequisiteRole === 'internship') continue;
+
     // roadmap #21：`formallyRequired` 與 `required` 是兩個獨立欄位——
     // `required` 只在課程屬於 requiredIds（使用者手動指定的必排課）時為真，
     // 語意與改動前完全相同；`formallyRequired` 只給時段偏好豁免機制讀取
     // （見 addCourseToPlan()），不影響 plan.failures 的既有回報方式。
-    addCourseToPlan(plan, course, constraints, isRequiredForStudent(course, scope) ? '本學期必修優先' : '指定課程優先', {
-      required: requiredIds.has(Number(course.id)),
-      formallyRequired: isRequiredForStudent(course, scope),
-    });
+    const required = requiredIds.has(Number(course.id));
+    const formallyRequired = isRequiredForStudent(course, scope);
+    const reasonLabel = formallyRequired ? '本學期必修優先' : '指定課程優先';
+
+    if (course.corequisiteRole !== 'regular') {
+      addCourseToPlan(plan, course, constraints, reasonLabel, { required, formallyRequired });
+      continue;
+    }
+
+    // roadmap #15：正課帶著共同必修的實習——從 eligible 找同課號的實習
+    // 候選（可能有多個班次），透過 placeCourseWithCorequisite() 逐一嘗試、
+    // 整組原子排入；候選池裡完全沒有這門實習、或全部班次都排不進去時，
+    // 由該函式統一寫入一次「找不到對應實習」／「全部班次皆排不進去」的
+    // 訊息，不會有中途失敗殘留。
+    const internshipCandidates = eligible.filter(
+      c => c.catalogCourseCode === course.corequisiteCode
+    );
+
+    placeCourseWithCorequisite(
+      plan, course, internshipCandidates, constraints, `${reasonLabel}（共同必修）`,
+      { required, formallyRequired }
+    );
   }
 
   // 不及格必修只由 courseHistory 自動推導，且固定排在本學期必修之後。
+  //
+  // Codex adversarial review 修正（2026-08-20）：重修的正課若帶共同必修
+  // （corequisiteRole === 'regular'），一併透過 placeCourseWithCorequisite()
+  // 嘗試排入對應實習——原本這裡直接呼叫 addCourseToPlan()，只排正課，
+  // 實習又因「不得單獨排入」規則被貪婪填充排除，排出「重修正課排入了、
+  // 實習卻缺席」的不合法課表，被驗證器攔下來變成整批排課失敗。實習本身
+  // 不會單獨進入這個迴圈嘗試排入——一律由它對應的正課那一側帶動。
   for (const failedCourse of failedRequired) {
     if (currentRequiredCodes.has(failedCourse.courseCode)) continue;
     const sections = retakeCourses.filter(
@@ -1107,9 +1322,18 @@ function buildPlan(prepared, constraints, variant) {
     );
     if (sections.length === 0) continue;
 
-    const placed = sections.some(course => (
-      addCourseToPlan(plan, course, constraints, '不及格必修重補修優先')
-    ));
+    const placed = sections.some(course => {
+      if (course.corequisiteRole === 'internship') return false;
+      if (course.corequisiteRole === 'regular') {
+        const internshipCandidates = eligible.filter(
+          c => c.catalogCourseCode === course.corequisiteCode
+        );
+        return placeCourseWithCorequisite(
+          plan, course, internshipCandidates, constraints, '不及格必修重補修優先'
+        );
+      }
+      return addCourseToPlan(plan, course, constraints, '不及格必修重補修優先');
+    });
     if (!placed) {
       plan.warnings.push(
         `${failedCourse.courseCode} ${failedCourse.courseName}雖於本學期開課，但因衝堂或排課限制未能排入，請優先調整課表。`
@@ -1128,8 +1352,12 @@ function buildPlan(prepared, constraints, variant) {
 
   // 貪婪填充只考慮有排定時間的課程。無時間課程不佔時段、不衝堂也不受任何限制，
   // 讓它們參與填充會被無限塞入；它們只有在被明確指定為必要課程時才會排入。
+  // roadmap #15：實習（corequisiteRole === 'internship'）不得單獨進入候選
+  // 競爭——它只能靠對應正課帶動排入，見下方 while 迴圈內的 'regular' 分支。
   const remaining = optional.filter(course => (
-    !currentRequiredCourses.some(c => c.id === course.id) && hasScheduledTime(course)
+    !currentRequiredCourses.some(c => c.id === course.id)
+    && hasScheduledTime(course)
+    && course.corequisiteRole !== 'internship'
   ));
 
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
@@ -1139,7 +1367,20 @@ function buildPlan(prepared, constraints, variant) {
     ));
 
     const course = remaining.shift();
-    addCourseToPlan(plan, course, constraints, variant.title);
+
+    if (course.corequisiteRole === 'regular') {
+      // roadmap #15：貪婪填充選中一門帶共同必修的正課時，兩者一併嘗試
+      // 排入，不是只排正課。找不到候選實習或整組排不進去時，皆不進入
+      // plan.schedule／plan.failures（此處與必修迴圈不同，貪婪填充失敗
+      // 從不影響 plan.failures，比照既有的 addCourseToPlan(..., variant.title)
+      // 呼叫慣例，不傳 options.required）。
+      const internshipCandidates = eligible.filter(
+        c => c.catalogCourseCode === course.corequisiteCode
+      );
+      placeCourseWithCorequisite(plan, course, internshipCandidates, constraints, variant.title);
+    } else {
+      addCourseToPlan(plan, course, constraints, variant.title);
+    }
 
     if (plan.totalCredits >= plan.minCredits && variant.id !== 'max_credits') {
       // 只計入還能推進學分的課程。0 學分課程恆滿足學分上限條件，
@@ -1263,12 +1504,17 @@ function buildConflictSet(plans) {
       seen.add(key);
 
       const def = CONSTRAINTS[constraintId];
+      // roadmap #15：共同必修排除項帶 pairedCourse 時，一併列出兩門課；
+      // 既有排除項從不設定這個欄位，維持原本的單一課程陣列，向下相容。
+      const courses = item.pairedCourse
+        ? [{ id: item.course.id, name: item.course.name }, { id: item.pairedCourse.id, name: item.pairedCourse.name }]
+        : [{ id: item.course.id, name: item.course.name }];
       conflictSet.push({
         constraintId,
         severity: 'hard',
         relaxable: def?.relaxable ?? null,
         source: def?.source ?? null,
-        courses: [{ id: item.course.id, name: item.course.name }],
+        courses,
         reason: item.reason,
       });
     }
@@ -1616,6 +1862,8 @@ export {
   collectExplicitCourseIds,
   DEFAULT_MAX_CREDITS,
   OVERLOAD_MAX_CREDITS,
+  // roadmap #15：供 scheduleValidator.js 的共同必修完整性複查重用。
+  deriveBaseCourseCode,
 };
 
 export default { generateSchedule, checkConflict: timeConflict, validateSchedule };
