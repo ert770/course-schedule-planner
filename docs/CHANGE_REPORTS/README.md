@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-21
+
+1. [定義 InteractionEvent schema 與回饋原因（Roadmap #29）](./2026-08-21-interaction-event-schema.md)
+
 ## 2026-08-20
 
 1. [修復共同必修（Roadmap #15）的 adversarial review 發現（3 項）](./2026-08-20-corequisite-adversarial-review-fixes.md)

@@ -429,3 +429,88 @@ validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。
 時的預設順序（`['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES']`）。
 
 詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」。
+
+## InteractionEvent Schema v1（Roadmap #29）
+
+`server/src/data/interactionEventSchema.js` 定義互動事件的正式資料契約、正規化、
+validator、v0 draft → v1 migration 與 idempotency 純邏輯。**目前沒有 API、資料表或
+JSON collection 會持久化這些事件**：#29 只固定事件語意；必須先完成 #33 的 consent、
+匿名化與保存規則，才由 #2 把實際產品操作接上儲存層。
+
+```json
+{
+  "schemaVersion": 1,
+  "eventId": "11111111-1111-4111-8111-111111111111",
+  "eventType": "recommendation_exposed",
+  "userId": "D1249697",
+  "timestamp": "2026-08-21T01:02:03.000Z",
+  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "actionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "idempotencyKey": "sha256:<64 lowercase hex>",
+  "course": null,
+  "term": { "academicYear": 114, "semester": "second" },
+  "plan": { "planId": "plan-a", "variantId": "required_first" },
+  "position": { "planRank": 1, "courseRank": null },
+  "exposureContext": {
+    "surface": "dashboard",
+    "trigger": "initial_load",
+    "candidateSet": [
+      { "catalogCourseCode": "IECS3002", "sectionId": 101 },
+      { "catalogCourseCode": "IECS3059", "sectionId": 102 }
+    ],
+    "displayedSet": [
+      { "catalogCourseCode": "IECS3002", "sectionId": 101 }
+    ]
+  },
+  "versionSnapshot": {
+    "profileSchemaVersion": 1,
+    "modelVersion": "scheduler-greedy-v1",
+    "recommendationReasonVersion": null
+  },
+  "source": "system_recommendation",
+  "feedbackReason": null
+}
+```
+
+### 欄位語意
+
+| 欄位 | 型別 | 意義 |
+| --- | --- | --- |
+| `schemaVersion` | `1` | 事件契約版本；缺版本的 flat draft 經明確 migration 轉成 v1，未知未來版本拒絕讀取 |
+| `eventId` | UUID | 單筆 event envelope 的唯一 ID，由 server 產生 |
+| `eventType` | enum | 曝光、查看、收藏、選擇、接受、移除、退選或重新規劃 |
+| `userId` | string | authenticated identity 的 canonical ID；不得由 client 決定。#33 會在持久化前定義分析用 pseudonymous ID |
+| `timestamp` | UTC ISO 8601 | server 認定的事件發生時間，不接受 client 覆寫 |
+| `requestId` | UUID | 一次搜尋／推薦／排課請求；同一 response 產生的事件共用 |
+| `actionId` | UUID | 一次 logical UI action；React 重送同一操作時沿用 |
+| `idempotencyKey` | `sha256:<hex>` | 由 request/action/event/plan/course subject 決定，不含 `eventId`／`timestamp` |
+| `course` | object \| null | `catalogCourseCode` 是穩定課號，`sectionId` 是實際班次；非單課事件可為 null |
+| `term` | object | `academicYear` + 正規化後的 `semester: first \| second` |
+| `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `required_first` 等產生策略 |
+| `position` | object | `planRank`／`courseRank` 一律從 1 起算；不適用者為 null |
+| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單 |
+| `versionSnapshot` | object | 當時的 Profile schema、模型與推薦理由版本；#26 尚未完成時理由版本必須為 null |
+| `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
+| `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
+
+### Event types
+
+| `eventType` | 意義 |
+| --- | --- |
+| `recommendation_exposed` | 推薦清單或方案已實際顯示；必須帶 `exposureContext` |
+| `course_viewed` | 開啟課程詳情 |
+| `course_favorited`／`course_unfavorited` | 加入／移出收藏或關注 |
+| `course_selected`／`course_deselected` | 手動加入／移出排課輸入 |
+| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan` |
+| `course_removed` | 從推薦方案或預排課表移除，尚未正式退選 |
+| `course_withdrawn` | 已進入正式選課狀態後退選 |
+| `schedule_regenerated` | 修改條件後要求重新產生課表 |
+
+`candidateSet` 與 `displayedSet` 必須分開，後者也必須是前者的子集；未顯示的候選
+不得被解讀為「使用者看過但拒絕」。必修接受保留 `source=required`，衝堂移除保留
+`feedbackReason=time`，讓後續 #30 不會把兩者錯當成興趣正／負回饋。
+
+idempotency 的唯一範圍是 `(userId, idempotencyKey)`：不存在時可 append；相同 key
+與相同 logical payload 回傳既有事件（duplicate）；相同 key 但 payload 不同則回
+conflict，不靜默覆寫。`resolveIdempotentAppend()` 目前只對傳入陣列執行這項純邏輯，
+不會自行寫入任何 runtime store。

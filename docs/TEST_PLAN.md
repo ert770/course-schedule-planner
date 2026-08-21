@@ -321,6 +321,24 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | G6 | 明確搜尋 `category=通識` | 跨本人班級範圍回傳直接通識及認抵課 |
 | G7 | 一般未指定分類搜尋 | 維持 F7；排課候選則額外納入通識 |
 
+## #29 InteractionEvent schema 測試
+
+`server/test/interactionEventSchema.test.js`。這組測試只操作 pure functions，不連 MySQL、
+不建立 runtime JSON，也不代表 #2 的前端埋點或 #33 的 consent 已完成。
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| I29-1 | client 嘗試帶入 user／event／timestamp／idempotency 欄位 | 全部由 authenticated identity 與 server envelope 覆寫；學期正規化為 `first`／`second` |
+| I29-2 | 推薦曝光 | 完整保留 ordered candidate set、displayed subset、方案順位與版本快照 |
+| I29-3 | displayed section 不在 candidate set | validator 拒絕不一致曝光資料 |
+| I29-4 | 必修推薦被接受 | `source=required` 保留，不會混成興趣正回饋 |
+| I29-5 | 移除／退選原因 | 只接受 7 個 enum；其他 event type 禁止夾帶原因 |
+| I29-6 | 同一 request/action 重送但 eventId／timestamp 不同 | `(userId, idempotencyKey)` 命中 duplicate，維持一筆事件 |
+| I29-7 | 相同 key 但 logical payload 改變 | 回 conflict，不覆寫既有事件 |
+| I29-8 | actionId 不同 | 產生不同 key，可 append 為獨立操作 |
+| I29-9 | 無版本 flat draft | migration 轉為合法 v1 nested shape |
+| I29-10 | 未知未來版本、未知 event type、無身分、非法順位 | 明確拒絕，不補猜值 |
+
 ## 資料庫契約測試
 
 `server/test/database-contract.test.js`。合成資料的測試不會在**資料庫變動時**失敗，
