@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
+import { useSchedule } from '../contexts/useSchedule';
 import { coursesAPI, profileAPI } from '../services/api';
-import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, X } from 'lucide-react';
+import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, Check } from 'lucide-react';
 import '../App.css'; // Reuse some layout styles
 import { formatCourseTime } from '../utils/courseTime';
 
@@ -13,6 +14,7 @@ export default function SearchPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { schedule, watchlist, validating, addCourse, toggleWatchlist } = useSchedule();
   
   const [activeTab, setActiveTab] = useState('dept');
   const [searchResults, setSearchResults] = useState([]);
@@ -22,6 +24,8 @@ export default function SearchPage() {
   const [courseSearchScope, setCourseSearchScope] = useState(null);
   const [scopeLoading, setScopeLoading] = useState(true);
   const [searchError, setSearchError] = useState('');
+  const [actionNotice, setActionNotice] = useState(null);
+  const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
 
   // Form states for Tab 1
   const [deptForm, setDeptForm] = useState({
@@ -39,7 +43,7 @@ export default function SearchPage() {
     period: '',
     keyword: '',
     instructor: '',
-    language: '中文 (Chinese)',
+    language: '',
     isGenEd: false,
     description: ''
   });
@@ -137,6 +141,31 @@ export default function SearchPage() {
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleAddCourse = async (event, course) => {
+    event.stopPropagation();
+    setActionNotice(null);
+    const result = await addCourse(course);
+    setActionNotice({
+      level: result.success ? 'success' : 'error',
+      text: result.success ? `已將「${course.name}」加入課表。` : result.message,
+    });
+  };
+
+  const handleToggleWatchlist = async (event, course) => {
+    event.stopPropagation();
+    const id = String(course.id);
+    setWatchlistUpdatingId(id);
+    setActionNotice(null);
+    const result = await toggleWatchlist(course);
+    setWatchlistUpdatingId('');
+    setActionNotice({
+      level: result.success ? 'success' : 'error',
+      text: result.success
+        ? (result.watching ? `已關注「${course.name}」。` : `已取消關注「${course.name}」。`)
+        : result.message,
+    });
   };
 
   return (
@@ -301,6 +330,7 @@ export default function SearchPage() {
               <div className="form-group">
                 <label>授課語言 (Language)</label>
                 <select value={condForm.language} onChange={e => setCondForm({...condForm, language: e.target.value})}>
+                  <option value="">全部 (All)</option>
                   <option value="中文 (Chinese)">中文 (Chinese)</option>
                   <option value="English">English</option>
                 </select>
@@ -338,6 +368,11 @@ export default function SearchPage() {
           <div className="results-header">
             <h3>搜尋結果 ({searchResults.length} 筆)</h3>
           </div>
+          {actionNotice && (
+            <div className={`search-action-notice ${actionNotice.level}`} role="status">
+              {actionNotice.text}
+            </div>
+          )}
           {searchError ? (
             <div className="no-results error-text" role="alert">{searchError}</div>
           ) : searchResults.length === 0 ? (
@@ -375,6 +410,31 @@ export default function SearchPage() {
                           : `不可認列：${course.outsideElective.reasons.join('；')}`}
                       </span>
                     )}
+                  </div>
+                  <div className="course-card-actions">
+                    <button
+                      type="button"
+                      className={`course-card-action ${watchlist.includes(String(course.id)) ? 'active' : ''}`}
+                      onClick={event => handleToggleWatchlist(event, course)}
+                      disabled={watchlistUpdatingId === String(course.id)}
+                      aria-label={watchlist.includes(String(course.id)) ? `取消關注 ${course.name}` : `關注 ${course.name}`}
+                    >
+                      <Heart size={15} fill={watchlist.includes(String(course.id)) ? 'currentColor' : 'none'} />
+                      {watchlistUpdatingId === String(course.id)
+                        ? '更新中…'
+                        : (watchlist.includes(String(course.id)) ? '已關注' : '關注')}
+                    </button>
+                    <button
+                      type="button"
+                      className="course-card-action primary"
+                      onClick={event => handleAddCourse(event, course)}
+                      disabled={validating || schedule.some(item => String(item.id) === String(course.id))}
+                      aria-label={`加入課表 ${course.name}`}
+                    >
+                      {schedule.some(item => String(item.id) === String(course.id))
+                        ? <><Check size={15} /> 已加入</>
+                        : <><Plus size={15} /> {validating ? '驗證中…' : '加入課表'}</>}
+                    </button>
                   </div>
                 </div>
               ))}

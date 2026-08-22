@@ -4,7 +4,8 @@
 
 ## 2026-08-22
 
-1. [建立互動資料隱私、匿名化、consent 與保存規則（Roadmap #33）](./2026-08-22-interaction-data-privacy.md)
+1. [選擇性整合 PR #3：修復搜尋加選、課表儲存與關注同步](./2026-08-22-pr3-course-search-schedule-sync.md)
+2. [建立互動資料隱私、匿名化、consent 與保存規則（Roadmap #33）](./2026-08-22-interaction-data-privacy.md)
 
 ## 2026-08-21
 

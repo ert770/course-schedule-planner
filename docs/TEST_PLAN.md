@@ -381,7 +381,7 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | `/api/health` | 回傳 `status: ok` |
 | `/api/auth/login` | 正確登入、錯誤密碼、缺少欄位；成功時設定簽名 HttpOnly session cookie |
 | `/api/auth/me` | 未登入 401；登入後由 session 回傳 canonical student ID |
-| `/api/courses` | keyword、department、category、period 查詢 |
+| `/api/courses` | keyword、department、category、period 查詢；多時段課程可命中第二段以後，day + period 必須落在同一個 time block |
 | `/api/schedule/generate` | 無 courseIds、指定 courseIds、偏好限制 |
 | `/api/schedule/validate` | 有衝堂、無衝堂 |
 | `/api/profile` | DB-less CI 驗證未登入 401、改送另一個 ID 時在資料存取前回 403；成功讀取／更新 session 使用者偏好須在已設定 MySQL 的整合環境驗證，schema v1 另由純函式測試固定契約 |
@@ -411,6 +411,9 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 - 啟用 privacy enforcement 時，未同意先導向 Privacy Center；必要用途同意後才能進入 onboarding/dashboard，兩個可選項保持未勾仍可使用核心服務（A/B）。
 - 初始偏好可儲存。
 - 課程搜尋可查詢並顯示結果；通識篩選需顯示四領域，並與一般分類搜尋做 A/B。
+- 搜尋結果可加入共用課表與更新關注清單；加入前必須等待 `/api/schedule/validate` 明確通過，衝堂／重複班次／API 失敗皆不得 fail-open。
+- 課表只在使用者按下「儲存課表」時呼叫 `/api/schedule/save`；重新整理後載入最新已存版本，未儲存的畫面修改不冒充持久化資料。
+- 登出或切換帳號時先清空共用課表與關注狀態；舊帳號尚未完成的非同步回應不得覆寫新帳號狀態。
 - 儀表板可產生課表。
 - 課表格可顯示不同星期與節次。
 - 畢業學分頁可顯示缺口。

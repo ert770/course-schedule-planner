@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/useAuth';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { ScheduleProvider } from './contexts/ScheduleContext';
 import LoginPage from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SetupPage from './pages/SetupPage';
@@ -114,7 +115,9 @@ function App() {
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
-          <AppRoutes />
+          <ScheduleProvider>
+            <AppRoutes />
+          </ScheduleProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>
