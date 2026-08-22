@@ -28,6 +28,35 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `dept` | varchar(45) | `course.department`，實際存的是**班級名稱**（見 `docs/DEPARTMENT_MAPPING.md`） |
 | `subid3` | varchar(45) | `course.catalogCourseCode`，**真正的課號**（見下方說明） |
 
+`Courses.type` 仍只有 `必修`／`選修`；`course.category` 是分類流程的衍生值，不等同
+資料庫原始欄位。通識衍生欄位如下：
+
+`Courses.dept` 的 562 個現行相異值由 `courseScope.parseClassName()` 解析。一般系所班級
+為 A 類；71 個非系所班級由 `server/src/data/classKindCatalog.js` 明確列為 B～F 類；
+另有 8 個不符合一般語法的 A 類專班／學位學程使用同檔案的明確對照。這些都是
+應用程式衍生資料，未修改 MySQL schema。
+
+| 應用程式欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `classGroup` | `A`～`F` \| null | 班級分組；未收錄的新名稱為 `null` |
+| `classKind` | string | 結構化班級種類；未收錄時為 `unclassified` |
+| `eligibility` | `eligible` \| `ineligible` \| `unknown` | 對目前學生的班級適用資格 |
+| `eligibilityReason` | string | 判定或未知的可讀原因 |
+
+`eligibility` 不代表學分是否可計入畢業。B～F 類正式適用規則仍待 roadmap #13C，
+目前一律為 `unknown`；系外選修畢業認列仍由 `outsideElective` 獨立判定。
+
+| 應用程式欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `generalEducationDomain` | string \| null | 111 以前的舊領域、112～114 的四領域；115 起因不分領域而為 `null` |
+| `generalEducationRuleVersion` | string | `through-111`、`112-114` 或 `from-115` |
+| `generalEducationRecognitionType` | string | `direct` 或 `cross_college` |
+| `classificationReference` | string | 逢甲大學官方分類或認抵來源網址 |
+
+114-2 直接通識課以 `Courses.dept` 的四個官方領域名稱分類；三門跨院認抵課以
+`catalogCourseCode` 的正式對照表分類。不得只看 `GE*` 課號前綴。完整歷史畢業認列、
+入學年度與認抵學分上限屬 roadmap #23，不由課程物件自行推導。
+
 #### `course_id` 不是課程識別碼，`subid3` 才是
 
 `course_id` 是「班級 + 課程」的組合，同一門課在不同班級有不同的 `course_id`：
@@ -44,7 +73,18 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 alias。一門課可能由不同老師開在不同班次，學生只能選一個；用 `course_id` 或
 `section_id` 比對會讓同一門課的多個班次同時排進課表。
 
-`subid3` 的 `P` 後綴代表實習（`MATH1005P` 對應正課 `MATH1005`），兩者是不同課號、本來就該一起修（路線圖 `#15`）。
+`subid3` 的 `P` 後綴代表實習（`MATH1005P` 對應正課 `MATH1005`），兩者是不同課號、本來就該一起修（路線圖 `#15`，排課引擎的配對與原子排入邏輯見 `docs/SCHEDULING_LOGIC.md` 的「共同必修」一節）。
+
+**已用真實 MySQL 資料驗證過的例外清單**（2026-08-20，重現 2026-08-05 稽核、15 天內數字零漂移）：全庫 3086 筆課程、2004 個相異 `subid3`；422 筆零學分課程中 187 筆以 `P` 結尾（大小寫敏感，全庫無小寫 `p`），46 個相異 `subid3` 以 `P` 結尾（跨所有學分區間）。已知例外：
+
+| `subid3` | 課名 | 學分 | 例外原因 |
+| --- | --- | --- | --- |
+| `BUS1121P` | 統籌科目實習(二) | 0 | 全庫查無對應正課 `BUS1121` |
+| `HY2073P` | 水質分析實驗 | 0 | 全庫查無對應正課 `HY2073` |
+| `LAND2012P` | 測量平差實習 | **1.0**（非 0） | 正課 `LAND2012`（2.0 學分）存在且配對正確，但配對規則若加上「學分必須為 0」會漏掉這筆 |
+| `MKT2020P` | （行銷相關實習） | 0 | 正課 `MKT2020` 存在，但兩者 `dept` 完全不重疊（合班命名差異）；配對規則不得用 `dept` 做交叉驗證 |
+
+零學分且課名含「實習」／「實驗」但不以 `P` 結尾的課程：**0 筆**——`P` 後綴慣例在「有沒有漏標」這個方向上完全可靠。
 
 #### 必修的意義
 
@@ -92,19 +132,72 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 
 情緒判定由 `overall` 推導：4 分以上為 positive，2 分以下為 negative，其餘為 neutral。
 
+**實測現況（2026-08-17）**：`Course_Reviews` 共 181 列，對應 `Course_Sections` 3560 個 section
+（覆蓋率 5.1%）。五個評分欄位（`sweetness`／`coolness`／`workload`／`overall`／`value`）0 個 null，
+值域皆 1–5。`review_count` 落在 4–8、平均 5.40，總計 977 則評論。181 列**全部**是 114-下學期、
+**全部**是「選修」（0 筆必修）。這批資料供排課引擎的涼度評分使用，見
+`docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」與 `server/src/skills/courseReviewStats.js`。
+
+**`Reviews_tags` 不得用來推導課程屬性欄位**：這是 Dcard 式的自由標籤，314 個相異值、長尾雜訊
+（例如「教室很熱」「追星必備」「不用每次都出現」），不是結構化的課程性質。`has_midterm`、
+`has_group_project` 等欄位不存在於現行 schema，也**不能**從 `Reviews_tags` 猜測填入——曾經考慮
+過這個做法，因標籤雜訊過高而否決。這些欄位若要補齊，需要對共用 MySQL 做 `ALTER TABLE`，屬於
+與 #18 `student_id` migration 同性質、需與組員協調的 D 類 rollout。
+
 ### `User_Profiles`
 
 | Column | Type | API mapping |
 | --- | --- | --- |
-| `user_id` | int | `profile.userId` |
+| `user_id` | int | 既有 MySQL 內部鍵；migration 前的資料庫邊界相容欄位，不是 API canonical ID |
+| `student_id` | varchar(32), UNIQUE | `profile.userId`、`profile.studentId`；canonical ID（migration 目標欄位） |
 | `department` | varchar(45) | `profile.department`（見下方說明） |
 | `grade_level` | int | `profile.gradeLevel` |
+| `class_name` | varchar(45) | `profile.className`（migration 目標欄位） |
+| `profile_schema_version` | int | `profile.schemaVersion`；目前版本 `1`（migration 目標欄位） |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
 | `completed_courses` | json | **已停用**（2026-08-13）。本專案不再讀寫此欄位——已修排除改用 `users.json` 的 `courseHistory`，理由與遷移細節見 `docs/CHANGE_REPORTS/2026-08-13-part-a-course-history-scheduling-data.md`。欄位本身仍存在於共用表，本專案不自行 `ALTER TABLE`，清理需與組員協調 |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
-**`class_name` 欄位尚未新增**（待組員加上）。見下方「`className`（班別）」。
+`student_id`、`class_name`、`profile_schema_version` 的 DDL 與安全 migration 已備妥，
+但 shared MySQL 尚未套用；必須先取得組員協調確認。程式會偵測欄位是否存在，
+因此 rollout 前可讀既有 v0 row，rollout 後改以 `student_id` 查詢。
+
+### Profile schema v1 與 migration
+
+API Profile 的 canonical shape 固定回傳 `schemaVersion: 1`。缺少版本的既有資料視為 v0，
+由 `server/src/data/profileSchema.js` 的集中式 normalizer 轉為 v1；欄位型別由 validator
+檢查。資料庫 migration 位於 `server/migrations/001_profile_schema_v1.*.sql`，執行器為
+`server/scripts/profileSchemaMigration.js`。
+
+```text
+# 預設只做 dry-run，不修改資料庫
+npm run migrate:profile --prefix server
+
+# 取得 shared MySQL 協調確認後才可執行
+npm run migrate:profile --prefix server -- --apply --confirm-shared-mysql
+
+# 以 apply 前產生的備份檔進行 rollback
+npm run migrate:profile --prefix server -- --rollback --confirm-shared-mysql --backup=<path>
+```
+
+執行前會備份 `User_Profiles` 到被 `.gitignore` 排除的 `server/backups/profile-schema/`。
+migration 先檢查欄位，全部存在時不重複新增；偵測到部分套用狀態會停止並要求人工檢查，
+避免半套 schema。rollback 移除這次新增的 unique index 與三個欄位；原始 row 備份保留供核對。
+
+**`student_id` 回填的身分對應無法由程式自動證明**（adversarial review 修復，2026-08-20）：
+`backfillStudentIds()` 用本機 `server/data/users.json` 的 `id` 欄位去比對 shared MySQL 的
+`User_Profiles.user_id`——這是回填當下**唯一**兩邊都有的鍵，因為 `student_id` 本身正是這次
+要被填入的目標欄位，還不能拿來反查。若這個本機 `id` 剛好對不上 shared MySQL 裡同一個
+`user_id` 代表的真實學生（例如兩邊各自獨立匯入、或曾以不同順序重建過），程式**無法自行
+偵測**——只能盡量讓錯誤盡快、盡響地暴露出來，而不是假裝有辦法證明對應正確：
+
+- dry-run 與 `--apply` 都會先印出完整的 `user_id → studentId, className` 對照表，附上
+  「這個對應無法由程式自動證明」的警告，操作者必須在下 `--apply` 前自行核對。
+- 回填包在單一交易裡（`server/src/db/mysql.js` 的 `withTransaction()`），每筆 `UPDATE`
+  都檢查 `affectedRows === 1`；任何一筆對不上就整批 rollback，不留下部分套用的中間狀態。
+- 先前的版本每筆各自 autocommit、完全不檢查 affectedRows——半途失敗會留下半套資料，
+  對錯學生也會靜默「成功」。詳見 `docs/DECISIONS.md` ADR-015。
 
 ### `className`（班別）
 
@@ -117,7 +210,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 ALTER TABLE `User_Profiles` ADD COLUMN `class_name` varchar(45) NULL;
 ```
 
-本專案**不自行執行**這道 DDL——該表與組員共用。程式已具備此欄位的完整讀寫：
+本專案不會在未協調時直接執行這道 DDL——該表與組員共用。程式已具備此欄位的完整讀寫：
 
 | 路徑 | 位置 |
 | --- | --- |
@@ -195,6 +288,12 @@ store 的邏輯名稱。
 | `generalEducationCategory` | string \| null | 原始通識類別，例如 `(M)`、`(N)`；未標示時為 `null` |
 | `graduationCategory` | string | 畢業分類：`required`、`elective`、`general`、`external` 或 `nonGraduation`。`nonGraduation`（體育、國防科技、班級活動等）不計入畢業學分，但**仍視為已修過**——`getPassedCourseCodes()` 不排除它，`getEarnedCredits()` 才排除其學分，兩者是不同的判定 |
 
+以上 11 個欄位都是 `courseHistory` v1 的必要欄位。若同一 `courseCode` 有多筆紀錄，
+以 `academicYear`、再以 `semester` 取最新一筆；最新 `passed: true` 視為完成，最新
+`passed: false` 且 `requirementType: 必修` 才成為自動重補修來源。`withdrawn`、
+`transferred`、`exempted` 等多狀態模型不屬於 #19，本次不新增欄位，改由 roadmap #23
+在畢業認列規則與來源可追溯性一併設計。
+
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——
 先前 `graduation.js` 讀 `users.json`、排課讀 `user_preferences`，兩邊可以依不同的系所
@@ -219,6 +318,10 @@ store 的邏輯名稱。
   "endPeriod": 4,
   "location": "B101",
   "category": "必修",
+  "classGroup": "A",
+  "classKind": "department",
+  "eligibility": "eligible",
+  "eligibilityReason": "班級系所、學制、年級及班別符合目前學生資料。",
   "timeStr": "(一)02-04",
   "timeBlocks": [
     { "dayOfWeek": 1, "startPeriod": 2, "endPeriod": 4 }
@@ -294,3 +397,35 @@ store 的邏輯名稱。
 `Course_Sections.rag_tag` 的 JSON 主題標籤陣列，資料庫中 100% 有值，例如 `["機器學習","圖像處理","物件偵測"]`。排課引擎的興趣比對會使用此欄位。
 
 排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。
+
+## Constraint Schema（Roadmap #21）
+
+`server/src/data/constraintSchema.js` 匯出的 `CONSTRAINTS`——排課引擎每個限制類型
+（硬性與軟性都算）的正式登記表，供 `server/src/skills/scheduleValidator.js`（獨立
+validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。**純資料表，不是
+新的排除／評分邏輯**——`hardConstraintReason()`／`scoreCourse()` 目前的機制完全不變，
+這裡只是把「目前的行為分類」寫成可查詢的資料。以固定 id 為 key，例如
+`NO_MORNING_CLASSES`、`BLOCKED_PERIODS`、`ELIGIBILITY_UNKNOWN`。每筆欄位：
+
+| 欄位 | 型別 | 意義 |
+| --- | --- | --- |
+| `id` | string | 與 key 相同，固定代號 |
+| `category` | `'hard'` \| `'soft'` | hard 會排除課程／方案；soft 只影響排序分數 |
+| `relaxable` | boolean \| null | 只對 hard 有意義；是否可被 opt-in 放寬階梯納入放寬 |
+| `exemptForRequiredCourses` | boolean \| null | 排入正式必修（`isRequiredForStudent()===true`）時是否無條件跳過這項檢查，與 `relaxable`／`allowRelaxation` 無關 |
+| `weight` | number \| null | 可放寬條目的預設放寬順序；軟性條目為既有評分常數的字面鏡射（僅供文件說明） |
+| `source` | string | `CONSTRAINT_SOURCE` 其中一個固定代號，這項限制的真實性來源 |
+| `confidence` | number \| null | 系統對這項判定的偵測結果有多確定（不是「多嚴格」），結構性事實一律 `1`，只有 8 個內容偏好為 `null` |
+| `overridableBy` | string（可選） | 使用者可用哪種方式繞過這項排除（目前只有 `CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION`） |
+| `flag` | string（可選） | 對應到 `constraints` 上單一布林旗標的名稱，只有 3 個時段類舒適偏好有此欄位 |
+| `label` | string（可選） | 中文顯示標籤，供揭露警告與放寬訊息使用 |
+| `enforced` | boolean | validator 是否真的檢查得到；`false` 只有先修／共修（`PREREQUISITE`／`COREQUISITE`），因為完全沒有資料來源 |
+
+`CONSTRAINT_SOURCE` 為固定列舉字串（例如 `'user:flag'`、`'academic-record:completed-courses'`），
+比照 `resolveCourseEligibility()` 的 `ELIGIBILITY_SOURCE`「不得用裸字串」的紀律，但這是**限制類型
+層級**的登記表，跟逐課程的 `eligibilitySource` 是不同軸，刻意不合併。
+
+`DEFAULT_TIME_PREFERENCE_PRIORITY` 為放寬階梯在使用者未指定 `constraints.timePreferencePriority`
+時的預設順序（`['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES']`）。
+
+詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」。

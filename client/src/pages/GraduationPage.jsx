@@ -25,8 +25,13 @@ export default function GraduationPage() {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const loadGraduationData = useCallback(async () => {
+    if (!user?.studentId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     try {
-      const result = await graduationAPI.get(user?.studentId || 'D1249196');
+      const result = await graduationAPI.get();
       setData(result);
     } catch (err) {
       console.error('Failed to load graduation data:', err);

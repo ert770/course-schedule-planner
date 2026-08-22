@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { clearCollection, getAll, insert } from '../db/database.js';
+import { requireIdentity } from '../middleware/requireIdentity.js';
+import { buildClearSessionCookie, buildSessionCookie } from '../services/sessionService.js';
 
 const router = Router();
 
@@ -19,21 +21,24 @@ router.post('/login', async (req, res) => {
     }
 
     const { password: _, ...userProfile } = user;
+    res.setHeader('Set-Cookie', buildSessionCookie(user.studentId));
     res.json({ success: true, user: userProfile });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.get('/me', async (req, res) => {
-  try {
-    const studentId = req.query.studentId;
-    if (!studentId) {
-      return res.status(400).json({ error: '未提供學號' });
-    }
+router.post('/logout', (req, res) => {
+  res.setHeader('Set-Cookie', buildClearSessionCookie());
+  res.json({ success: true });
+});
 
+router.get('/me', requireIdentity, async (req, res) => {
+  try {
     const users = await getAll('users');
-    const user = users.find(item => String(item.studentId) === String(studentId));
+    const user = users.find(item => (
+      String(item.studentId) === String(req.identity.canonicalId)
+    ));
 
     if (!user) {
       return res.status(404).json({ error: '找不到使用者' });
@@ -46,11 +51,13 @@ router.get('/me', async (req, res) => {
   }
 });
 
-router.post('/update-watchlist', async (req, res) => {
+router.post('/update-watchlist', requireIdentity, async (req, res) => {
   try {
-    const { studentId, watchlist } = req.body;
+    const { watchlist } = req.body;
     const users = await getAll('users');
-    const userIndex = users.findIndex(item => String(item.studentId) === String(studentId));
+    const userIndex = users.findIndex(item => (
+      String(item.studentId) === String(req.identity.canonicalId)
+    ));
 
     if (userIndex === -1) {
       return res.status(404).json({ error: '找不到使用者' });

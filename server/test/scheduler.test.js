@@ -10,8 +10,17 @@ import {
   validateSchedule,
   checkConflict,
 } from '../src/skills/scheduler.js';
+import { validateScheduleAgainstConstraints } from '../src/skills/scheduleValidator.js';
+import { CONSTRAINTS } from '../src/data/constraintSchema.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
-import { makeCourse, makeMultiBlockCourse, makeUnscheduledCourse } from './fixtures.js';
+import {
+  makeCourse,
+  makeMultiBlockCourse,
+  makeUnscheduledCourse,
+  makeReview,
+  makeEasyReview,
+  makeToughReview,
+} from './fixtures.js';
 
 describe('S1-S2 衝堂與關注課程', () => {
   test('S1 兩門加選課同天同時段判定衝堂', () => {
@@ -69,24 +78,160 @@ describe('S3-S4 必修與重補修優先', () => {
     const required = makeCourse(1, { category: '必修' });
     const elective = makeCourse(2, { category: '選修' });
 
-    const result = generateSchedule([elective, required], { minCredits: 0, maxCredits: 9 });
+    const result = generateSchedule([elective, required], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      minCredits: 0,
+      maxCredits: 9,
+    });
 
     assert.ok(result.schedule.some(course => course.id === 1));
     assert.ok(!result.schedule.some(course => course.id === 2));
   });
 
   test('S4 重補修課程優先排入', () => {
-    const retake = makeCourse(1, { dayOfWeek: 2 });
-    const other = makeCourse(2, { dayOfWeek: 2 });
+    const retake = makeCourse(1, {
+      name: '計算機結構學',
+      catalogCourseCode: 'IECS3003',
+      category: '選修',
+      dayOfWeek: 2,
+    });
+    const other = makeCourse(2, { category: '選修', dayOfWeek: 2 });
 
     const result = generateSchedule([other, retake], {
-      retakeCourseIds: [1],
+      courseHistory: [{
+        academicYear: 113,
+        semester: 2,
+        courseCode: 'IECS3003',
+        courseName: '計算機結構學',
+        passed: false,
+        requirementType: '必修',
+      }],
       minCredits: 0,
       maxCredits: 3,
     });
 
     assert.equal(result.schedule.length, 1);
     assert.equal(result.schedule[0].id, 1);
+  });
+});
+
+describe('#13B 資格待確認課程', () => {
+  const pendingCourse = makeCourse(901, {
+    name: '共同國文',
+    department: '國文綜合班',
+    category: '選修',
+  });
+  const student = {
+    department: '資訊工程學系',
+    gradeLevel: 3,
+    className: '資訊三甲',
+    minCredits: 0,
+    maxCredits: 9,
+  };
+
+  test('未明確指定時保守排除並附上原因', () => {
+    const result = generateSchedule([pendingCourse], student);
+
+    assert.equal(result.schedule.length, 0);
+    assert.ok(result.excludedCourses.some(item => (
+      item.course.id === pendingCourse.id
+      && item.reason.includes('正式適用對象規則尚未確認')
+    )));
+    assert.ok(result.warnings.some(warning => warning.includes('資格待確認')));
+  });
+
+  test('使用者明確指定時保留課程，但仍顯示資格待確認', () => {
+    const result = generateSchedule([pendingCourse], {
+      ...student,
+      mustTakeCourseIds: [pendingCourse.id],
+    });
+
+    assert.ok(result.schedule.some(course => course.id === pendingCourse.id));
+    assert.ok(result.warnings.some(warning => (
+      warning.includes('資格待確認') && warning.includes('共同國文')
+    )));
+  });
+});
+
+describe('#20 active term 過濾（繞過 courseQuery、直接查詢的候選）', () => {
+  test('系統自撿的非本學期候選被排除，並附上開課學期原因', () => {
+    const offTerm = makeCourse(601, {
+      name: '舊學期選修',
+      department: '資訊三甲',
+      category: '選修',
+      year: 113,
+      semester: '上學期',
+    });
+    const onTerm = makeCourse(602, {
+      name: '本學期選修',
+      department: '資訊三甲',
+      category: '選修',
+      year: 114,
+      semester: '下學期',
+      dayOfWeek: 2,
+    });
+
+    const result = generateSchedule([offTerm, onTerm], { minCredits: 0, maxCredits: 9 });
+
+    assert.ok(!result.schedule.some(course => course.id === 601));
+    assert.ok(result.excludedCourses.some(item => (
+      item.course.id === 601 && item.reason.includes('113學年上學期開課')
+    )));
+    assert.ok(result.warnings.some(warning => warning.includes('非本學期')));
+  });
+
+  test('使用者明確指定非本學期課程時保留並警告，不靜默排除', () => {
+    const offTerm = makeCourse(603, {
+      name: '舊學期選修',
+      department: '資訊三甲',
+      category: '選修',
+      year: 113,
+      semester: '上學期',
+      dayOfWeek: 2,
+    });
+
+    const result = generateSchedule([offTerm], {
+      minCredits: 0,
+      maxCredits: 9,
+      mustTakeCourseIds: [offTerm.id],
+    });
+
+    assert.ok(result.schedule.some(course => course.id === 603));
+    assert.ok(result.warnings.some(warning => (
+      warning.includes('你指定的課程中有') && warning.includes('非本學期開課')
+    )));
+  });
+
+  test('#19 重補修 union 遇到非本學期 section 時，仍正確提醒下學期重修，不被靜默滿足', () => {
+    // 唯一對得上這個不及格必修課號的 section 是舊學期資料。若不做 active term
+    // 過濾，這門課會被誤當成「本學期已開課」而靜默滿足重補修，
+    // 壓下原本該出現的「本學期沒有開課」警告——這正是本測試要釘住的行為。
+    const offTermRetake = makeCourse(604, {
+      name: '高等演算法',
+      catalogCourseCode: 'IECS3999',
+      category: '選修',
+      year: 113,
+      semester: '上學期',
+    });
+
+    const result = generateSchedule([offTermRetake], {
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'IECS3999',
+        courseName: '高等演算法',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+    });
+
+    assert.ok(!result.schedule.some(course => course.id === 604));
+    assert.ok(result.warnings.some(warning => (
+      warning === 'IECS3999 高等演算法本學期沒有開課，請下學期記得重修。'
+    )));
   });
 });
 
@@ -172,21 +317,103 @@ describe('H4-H8 已修課程依課號排除', () => {
     assert.ok(result.excludedCourses.some(item => item.course.id === 999));
   });
 
-  test('H6 passed: false 不被排除，且可由 retakeCourseIds 排入', () => {
+  test('H6 passed: false 的必修不被排除，且由 courseHistory 自動排入', () => {
     const retake = makeCourse(303, {
       name: '計算機演算法',
       catalogCourseCode: 'IECS3002',
     });
 
     const result = generateSchedule([retake], {
-      courseHistory: [{ courseCode: 'IECS3002', passed: false }],
-      retakeCourseIds: [303],
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'IECS3002',
+        courseName: '計算機演算法',
+        passed: false,
+        requirementType: '必修',
+      }],
       minCredits: 0,
       maxCredits: 3,
     });
 
     assert.ok(result.schedule.some(course => course.id === 303));
     assert.ok(!result.excludedCourses.some(item => item.reason.includes('已修過並通過')));
+  });
+
+  test('H6 同一重補修課有多個班次時最多排一班，任一班排入後不發失敗 warning', () => {
+    const sections = [
+      makeCourse(303, { name: '人工智慧導論', catalogCourseCode: 'IECS3059', dayOfWeek: 2 }),
+      makeCourse(304, { name: '人工智慧導論', catalogCourseCode: 'IECS3059', dayOfWeek: 3 }),
+      makeCourse(305, { name: '人工智慧導論', catalogCourseCode: 'IECS3059', dayOfWeek: 4 }),
+    ];
+    const result = generateSchedule(sections, {
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'IECS3059',
+        courseName: '人工智慧導論',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 3,
+    });
+
+    assert.equal(result.schedule.filter(course => course.catalogCourseCode === 'IECS3059').length, 1);
+    assert.ok(!result.warnings.some(warning => warning.includes('未能排入')));
+  });
+
+  test('H6 本學期沒有開不及格必修時提醒下學期重修', () => {
+    const result = generateSchedule([makeCourse(1)], {
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'IECS3999',
+        courseName: '高等演算法',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+    });
+
+    assert.ok(result.warnings.some(warning => (
+      warning === 'IECS3999 高等演算法本學期沒有開課，請下學期記得重修。'
+    )));
+  });
+
+  test('H6 本學期必修優先於不及格必修重修', () => {
+    const currentRequired = makeCourse(1, {
+      name: '本學期必修',
+      catalogCourseCode: 'IECS4001',
+      category: '必修',
+      department: '資訊三甲',
+      dayOfWeek: 2,
+    });
+    const retake = makeCourse(2, {
+      name: '舊必修重修',
+      catalogCourseCode: 'IECS2001',
+      category: '選修',
+      department: '資訊二甲',
+      dayOfWeek: 2,
+    });
+
+    const result = generateSchedule([retake, currentRequired], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      courseHistory: [{
+        academicYear: 112,
+        semester: 1,
+        courseCode: 'IECS2001',
+        courseName: '舊必修重修',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 3,
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [1]);
   });
 
   test('H7 缺少 catalogCourseCode 時不以課名 fallback 誤判為已修', () => {
@@ -581,6 +808,242 @@ describe('B1-B5 同一門課只能選一個班次', () => {
   });
 });
 
+describe('Y1-Y12 共同必修：正課與實習一併排入（Roadmap #15）', () => {
+  test('Y1 正課與實習皆可排入時，兩者一併排入課表', () => {
+    const result = generateSchedule([
+      makeCourse(1, { catalogCourseCode: 'STAT1002', name: '統計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3 }),
+      makeCourse(2, { catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5 }),
+    ], { mustTakeCourseIds: [1, 2], minCredits: 0, maxCredits: 22 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(1) && scheduledIds.includes(2));
+  });
+
+  test('Y2 貪婪填充中，實習因衝堂無法排入時，正課也一併不排入', () => {
+    // blocker 學分刻意設高，讓它在貪婪填充的評分排序中優先於 regular
+    // 被排入，之後嘗試排入 regular+internship 這組時，internship 才會
+    // 真的跟已排入的 blocker 衝堂。
+    const blocker = makeCourse(3, {
+      catalogCourseCode: 'IECS1001', name: '衝堂用課程', credits: 10, dayOfWeek: 2, startPeriod: 4, endPeriod: 4,
+    });
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', credits: 1, dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 2, startPeriod: 4, endPeriod: 4,
+    });
+
+    const result = generateSchedule([blocker, regular, internship], { minCredits: 0, maxCredits: 22 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(3));
+    assert.ok(!scheduledIds.includes(1) && !scheduledIds.includes(2));
+    assert.ok(result.excludedCourses.some(
+      item => item.course.id === 1 && item.constraintId === 'COREQUISITE_PAIR_INCOMPLETE'
+    ));
+    assert.ok(result.excludedCourses.some(
+      item => item.course.id === 2 && item.constraintId === 'COREQUISITE_PAIR_INCOMPLETE'
+    ));
+  });
+
+  test('Y3 貪婪填充中，正課因衝堂無法排入時，實習也一併不排入', () => {
+    const blocker = makeCourse(3, {
+      catalogCourseCode: 'IECS1001', name: '衝堂用課程', credits: 10, dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', credits: 1, dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule([blocker, regular, internship], { minCredits: 0, maxCredits: 22 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(3));
+    assert.ok(!scheduledIds.includes(1) && !scheduledIds.includes(2));
+  });
+
+  test('Y4 必修排入迴圈只指定正課為必修時，仍一併帶入實習', () => {
+    const regular = makeCourse(1, { catalogCourseCode: 'ACCT1012', name: '會計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 4 });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'ACCT1012P', name: '會計學(二)實習', credits: 0, dayOfWeek: 4, startPeriod: 6, endPeriod: 6,
+    });
+
+    const result = generateSchedule([regular, internship], { mustTakeCourseIds: [1], minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.success, true);
+    assert.deepEqual(result.schedule.map(c => c.id).sort(), [1, 2]);
+  });
+
+  test('Y5 必修正課的實習因非本學期被排除時，明確以共修不完整原因失敗', () => {
+    // 實習確實存在於候選輸入（annotateCorequisite 因此能標記出配對），
+    // 但因非本學期被 prepareCandidates() 的 term gate 排除，不在 eligible
+    // 裡——這才是「找得到搭檔、但搭檔排不進來」的真實情境，跟「候選裡
+    // 根本沒有這門實習」（Y8 的例外情境）是不同的失敗原因。
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'ACCT1012', name: '會計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 4,
+      year: 114, semester: '下學期',
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'ACCT1012P', name: '會計學(二)實習', credits: 0, dayOfWeek: 4, startPeriod: 6, endPeriod: 6,
+      year: 113, semester: '上學期',
+    });
+
+    const result = generateSchedule([regular, internship], { mustTakeCourseIds: [1], minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.success, false);
+    // generateSchedule() 失敗時回應物件沒有頂層 failures 欄位——plan.failures
+    // 併進 warnings 陣列回傳（見 scheduler.js 的失敗路徑），斷言要用 warnings。
+    assert.ok(result.warnings.some(w => w.includes('找不到對應實習')));
+    assert.ok(!result.warnings.some(w => w.includes('衝堂')), '失敗原因應為共修不完整，不是誤判成一般硬性限制');
+  });
+
+  test('Y6 貪婪填充選中有實習的正課時，兩者一併排入，實習不會單獨出現', () => {
+    const regular = makeCourse(1, { catalogCourseCode: 'FINA2034', name: '財務管理', dayOfWeek: 1, startPeriod: 2, endPeriod: 4 });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'FINA2034P', name: '財務管理實習', credits: 0, dayOfWeek: 4, startPeriod: 6, endPeriod: 6,
+    });
+
+    const result = generateSchedule([regular, internship], { minCredits: 0, maxCredits: 22 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(1) && scheduledIds.includes(2));
+  });
+
+  test('Y7 貪婪填充中，正課因學分上限無法排入時，實習不會單獨排入', () => {
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'FINA2034', name: '財務管理', credits: 3, dayOfWeek: 1, startPeriod: 2, endPeriod: 4,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'FINA2034P', name: '財務管理實習', credits: 0, dayOfWeek: 4, startPeriod: 6, endPeriod: 6,
+    });
+
+    // maxCredits 設為 0，讓正課本身在貪婪填充階段就過不了學分上限檢查。
+    const result = generateSchedule([regular, internship], { minCredits: 0, maxCredits: 0 });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(!scheduledIds.includes(1));
+    assert.ok(!scheduledIds.includes(2), '實習不應在正課排不進去的情況下單獨排入');
+  });
+
+  test('Y8 P 後綴但找不到正課的例外課程，視為一般課程正常排入並附警告', () => {
+    const orphan = makeCourse(1, {
+      catalogCourseCode: 'BUS1121P', name: '統籌科目實習(二)', credits: 0, dayOfWeek: 1, startPeriod: 2, endPeriod: 2,
+    });
+
+    const result = generateSchedule([orphan], { mustTakeCourseIds: [1], minCredits: 0, maxCredits: 22 });
+
+    assert.deepEqual(result.schedule.map(c => c.id), [1]);
+    assert.ok(result.warnings.some(w => w.includes('找不到對應正課')));
+  });
+
+  test('Y9 實習學分非 0 時，配對後學分正確加總，不做任何學分歸零', () => {
+    const regular = makeCourse(1, { catalogCourseCode: 'LAND2012', name: '測量平差', credits: 2, dayOfWeek: 1, startPeriod: 2, endPeriod: 3 });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'LAND2012P', name: '測量平差實習', credits: 1, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule([regular, internship], { mustTakeCourseIds: [1, 2], minCredits: 0, maxCredits: 22 });
+
+    assert.equal(result.schedule.length, 2);
+    assert.equal(result.totalCredits, 3);
+  });
+
+  test('Y10 多個候選實習班次時，前面班次衝堂失敗不會污染後面班次的成功排入（Codex adversarial review 修正）', () => {
+    // 迴歸測試：修正前，`.some()` 逐一嘗試候選實習班次時，第一個失敗的
+    // 嘗試會直接寫入 excludedCourses／failures，即使第二個班次後來成功
+    // 排入，那則失敗訊息仍會殘留，讓最終驗證器把整組誤判成不完整。
+    const blocker = makeCourse(3, {
+      catalogCourseCode: 'IECS1001', name: '衝堂用必修課', dayOfWeek: 2, startPeriod: 4, endPeriod: 4,
+    });
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    // 兩個班次課號相同（同一門實習開兩班），第一個班次時段故意與 blocker
+    // 衝堂，第二個班次時段是空的。
+    const internshipConflict = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習-甲班', credits: 0, dayOfWeek: 2, startPeriod: 4, endPeriod: 4,
+    });
+    const internshipOk = makeCourse(4, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習-乙班', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule(
+      [blocker, regular, internshipConflict, internshipOk],
+      { mustTakeCourseIds: [3, 1], minCredits: 0, maxCredits: 22 }
+    );
+
+    assert.equal(result.success, true);
+    const scheduledIds = result.schedule.map(c => c.id).sort((a, b) => a - b);
+    assert.deepEqual(scheduledIds, [1, 3, 4]);
+    assert.ok(!result.excludedCourses.some(item => item.constraintId === 'COREQUISITE_PAIR_INCOMPLETE'),
+      '第二個班次成功排入後，不應殘留任何一個班次的共修不完整排除紀錄');
+    assert.ok(!result.warnings.some(w => w.includes('皆不排入')),
+      '第二個班次成功排入後，不應殘留失敗訊息');
+  });
+
+  test('Y11 重修必修正課帶共同必修時，重補修迴圈一併排入對應實習（Codex adversarial review 修正）', () => {
+    // 迴歸測試：修正前，不及格必修重補修迴圈直接呼叫 addCourseToPlan()，
+    // 只排入重修的正課；對應實習因「不得單獨排入」規則被貪婪填充排除，
+    // 排出「有正課沒實習」的不合法課表，被內部驗證器攔下來變成整批失敗。
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule([regular, internship], {
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'STAT1002',
+        courseName: '統計學(二)',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 22,
+    });
+
+    assert.equal(result.success, true);
+    const scheduledIds = result.schedule.map(c => c.id).sort((a, b) => a - b);
+    assert.deepEqual(scheduledIds, [1, 2]);
+  });
+
+  test('Y12 重修必修正課的實習衝堂排不進去時，重修正課也一併不排入', () => {
+    const blocker = makeCourse(3, {
+      catalogCourseCode: 'IECS1001', name: '衝堂用課程', dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+    const regular = makeCourse(1, {
+      catalogCourseCode: 'STAT1002', name: '統計學(二)', dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
+    });
+    const internship = makeCourse(2, {
+      catalogCourseCode: 'STAT1002P', name: '統計學(二)實習', credits: 0, dayOfWeek: 3, startPeriod: 5, endPeriod: 5,
+    });
+
+    const result = generateSchedule([blocker, regular, internship], {
+      mustTakeCourseIds: [3],
+      courseHistory: [{
+        academicYear: 113,
+        semester: 1,
+        courseCode: 'STAT1002',
+        courseName: '統計學(二)',
+        passed: false,
+        requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 22,
+    });
+
+    const scheduledIds = result.schedule.map(c => c.id);
+    assert.ok(scheduledIds.includes(3));
+    assert.ok(!scheduledIds.includes(1) && !scheduledIds.includes(2),
+      '重修正課的實習排不進去時，重修正課不應單獨排入');
+  });
+});
+
 // C1-C6：學分上下限依校規（docs/COURSE_SELECTION_RULES.md）。
 //
 // 先前寫死下限 15、上限 22、每日最多 4 門課，三個數字都沒有出處。
@@ -660,5 +1123,633 @@ describe('C1-C6 學分上下限與每日課程數', () => {
     const result = generateSchedule(sameDay, { minCredits: 0, maxCoursesPerDay: 3 });
 
     assert.equal(result.schedule.length, 3);
+  });
+});
+
+describe('V20-V28 評價驅動的涼度評分', () => {
+  // 兩門課同天同時段，只能擇一排入，用來觀察 easy_score 方案的選擇差異。
+  function makeConflictingPair() {
+    return [
+      makeCourse(1, {
+        name: '課X', dayOfWeek: 1, startPeriod: 3, endPeriod: 4, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '課Y', dayOfWeek: 1, startPeriod: 3, endPeriod: 4, credits: 3,
+      }),
+    ];
+  }
+
+  // 三門不進入候選、只用來讓母體先驗落在中間值的背景課評價。
+  // 若只有兩門候選課各帶一則評價，先驗會剛好等於其中一門課，測不出
+  // 「中性分」與「實際分數」的差異。
+  function makeBackgroundReviews() {
+    return [90, 91, 92].map(id => makeReview({
+      id, courseId: id, reviewCount: 5, sweetness: 3, coolness: 3, workload: 3, overall: 3,
+    }));
+  }
+
+  test('V20 A/B：帶評價 vs 不帶評價，easy_score 方案的選擇不同，且不帶評價時 breakdown.easy 為 null', () => {
+    const withReviews = generateSchedule(makeConflictingPair(), {
+      minCredits: 0,
+      maxCredits: 3,
+      courseReviews: [makeToughReview(1), makeEasyReview(2)],
+    });
+    const withoutReviews = generateSchedule(makeConflictingPair(), { minCredits: 0, maxCredits: 3 });
+
+    const easyPlanWith = withReviews.plans.find(plan => plan.id === 'easy_score');
+    assert.ok(easyPlanWith, '評價證據讓 easy_score 方案與其他方案產出不同課表，不會被 uniquePlans 去重掉');
+    assert.equal(easyPlanWith.schedule[0].id, 2, '有評價時應選涼課 Y');
+
+    // 沒有評價時，easy_score 與其他方案對這兩門課的評分完全相同（中性分為常數），
+    // `uniquePlans()` 會把它們去重成同一份課表——這正是 roadmap #10「五方案塌縮」
+    // 的具體例證，本次改動只解除「有評價資料時」的塌縮，不是全部塌縮成因。
+    assert.equal(withoutReviews.plans.length, 1);
+    assert.equal(withoutReviews.plans[0].schedule[0].id, 1, '沒有評價時中性分相同，維持候選原始順序');
+    assert.equal(withoutReviews.plans[0].preferenceBreakdown.easy, null, '沒有評價時 easy 軸應為 null，不是 0');
+  });
+
+  test('V21 有評價且很硬 vs 完全沒評價，優先排入沒評價那門，證明無評價未被當成 0', () => {
+    const courseReviews = [makeToughReview(1), ...makeBackgroundReviews()];
+
+    const result = generateSchedule(makeConflictingPair(), {
+      minCredits: 0,
+      maxCredits: 3,
+      courseReviews,
+    });
+    const easyPlan = result.plans.find(plan => plan.id === 'easy_score');
+
+    assert.equal(easyPlan.schedule[0].id, 2, '沒有評價的課應優先於有評價但很硬的課');
+  });
+
+  test('V22 描述含「涼」字但無評價，不因關鍵字取得涼課加分（釘住關鍵字誤判的修復）', () => {
+    const misleadingCourse = makeCourse(1, {
+      name: '課X',
+      dayOfWeek: 1,
+      startPeriod: 3,
+      endPeriod: 4,
+      credits: 3,
+      description: '教室很涼，冷氣很強',
+    });
+    const genuinelyEasyCourse = makeCourse(2, {
+      name: '課Y', dayOfWeek: 1, startPeriod: 3, endPeriod: 4, credits: 3, description: '',
+    });
+    const courseReviews = [makeEasyReview(2), ...makeBackgroundReviews()];
+
+    const result = generateSchedule([misleadingCourse, genuinelyEasyCourse], {
+      minCredits: 0,
+      maxCredits: 3,
+      courseReviews,
+    });
+    const easyPlan = result.plans.find(plan => plan.id === 'easy_score');
+
+    assert.equal(
+      easyPlan.schedule[0].id,
+      2,
+      '真正有涼課評價的課應勝出，而不是描述含「涼」字但沒有評價的課'
+    );
+  });
+
+  test('V23 涼課偏好但候選全無評價：breakdown.easy 為 null、覆蓋率 0、發出警告', () => {
+    const candidates = [
+      makeCourse(1, {
+        name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '課B', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+    ];
+    // 有評價資料存在，但都不是這兩門候選課——覆蓋率仍應為 0。
+    const courseReviews = makeBackgroundReviews();
+
+    const result = generateSchedule(candidates, {
+      minCredits: 0,
+      maxCredits: 22,
+      preferEasyCourses: true,
+      courseReviews,
+    });
+
+    assert.equal(result.hasExpressedPreference, true);
+    assert.equal(result.plans[0].preferenceBreakdown.easy, null);
+    assert.equal(result.plans[0].reviewCoverage.ratio, 0);
+    assert.ok(result.warnings.some(w => w.includes('涼課偏好') && w.includes('沒有課程評價')));
+  });
+
+  test('V24 涼課偏好搭配集中排課偏好，候選全無評價時 preferenceScore 只由 compact 決定', () => {
+    const candidates = [
+      makeCourse(1, {
+        name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '課B', dayOfWeek: 1, startPeriod: 6, endPeriod: 7, credits: 3,
+      }),
+    ];
+    const courseReviews = makeBackgroundReviews();
+
+    const result = generateSchedule(candidates, {
+      minCredits: 0,
+      maxCredits: 22,
+      preferEasyCourses: true,
+      preferCompact: true,
+      courseReviews,
+    });
+
+    const primary = result.plans[0];
+    assert.equal(primary.preferenceBreakdown.easy, null);
+    assert.ok(primary.preferenceScore > 0, 'compact 軸應仍能貢獻分數，不被 null 的 easy 軸拖累成 0');
+    assert.equal(
+      primary.preferenceScore,
+      primary.preferenceBreakdown.compact,
+      'easy 軸被排除後，分數應完全等於 compact 軸的值'
+    );
+  });
+
+  test('V25 完全不帶 courseReviews：reviewDataLoaded 為 false 且發出警告，不影響既有排序邏輯', () => {
+    const candidates = [
+      makeCourse(1, {
+        name: '網路安全概論', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '網路程式設計', dayOfWeek: 1, startPeriod: 6, endPeriod: 7, credits: 3,
+      }),
+      makeCourse(3, {
+        name: '文學賞析', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+    ];
+
+    const result = generateSchedule(candidates, {
+      preferredKeywords: ['網路'],
+      minCredits: 0,
+      maxCredits: 22,
+    });
+
+    assert.equal(result.reviewDataLoaded, false);
+    assert.ok(result.warnings.some(w => w.includes('沒有取得任何課程評價資料')));
+    // 沒有評價資料不影響既有的興趣偏好排序邏輯：興趣方案仍應成為主推方案，
+    // 與 S13 建立的既有行為一致——這正是「排序結果與改動前逐項相同」的證據。
+    assert.equal(result.hasExpressedPreference, true);
+    assert.ok(result.plans[0].preferenceScore > 0);
+  });
+
+  test('V26 4 則全高分 vs 8 則中高分：收縮後差距小於未收縮差距的一半', () => {
+    const courseA = makeCourse(1, {
+      name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+    });
+    const courseB = makeCourse(2, {
+      name: '課B', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3,
+    });
+    const courseReviews = [
+      // raw easiness = mean([5,5,6-1=5,5]) = 5
+      makeReview({
+        id: 1, courseId: 1, reviewCount: 4, sweetness: 5, coolness: 5, workload: 1, overall: 5,
+      }),
+      // raw easiness = mean([4,5,6-2=4,5]) = 4.5
+      makeReview({
+        id: 2, courseId: 2, reviewCount: 8, sweetness: 4, coolness: 5, workload: 2, overall: 5,
+      }),
+      ...makeBackgroundReviews(),
+    ];
+
+    const result = generateSchedule([courseA, courseB], {
+      minCredits: 0,
+      maxCredits: 22,
+      courseReviews,
+    });
+
+    const a = result.schedule.find(course => course.id === 1);
+    const b = result.schedule.find(course => course.id === 2);
+    const rawGap = a.reviewEvidence.easiness - b.reviewEvidence.easiness;
+    const adjustedGap = a.reviewEvidence.adjustedEasiness - b.reviewEvidence.adjustedEasiness;
+
+    assert.ok(rawGap > 0, '未收縮差距應為正（A 原始分數較高）');
+    assert.ok(Math.abs(adjustedGap) < rawGap / 2, '收縮後差距應小於未收縮差距的一半');
+  });
+
+  test('V27 schedule 內每門課都有 reviewEvidence 鍵，無評價時為 null 而非 undefined', () => {
+    const candidates = [
+      makeCourse(1, {
+        name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+      makeCourse(2, {
+        name: '課B', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3,
+      }),
+    ];
+    const courseReviews = [makeEasyReview(1)];
+
+    const result = generateSchedule(candidates, {
+      minCredits: 0,
+      maxCredits: 22,
+      courseReviews,
+    });
+
+    for (const course of result.schedule) {
+      assert.ok('reviewEvidence' in course);
+    }
+    const withEvidence = result.schedule.find(course => course.id === 1);
+    const withoutEvidence = result.schedule.find(course => course.id === 2);
+    assert.notEqual(withEvidence.reviewEvidence, null);
+    assert.equal(withoutEvidence.reviewEvidence, null);
+    assert.notEqual(withoutEvidence.reviewEvidence, undefined);
+  });
+
+  test('V28 有評價的課因 eligibility 為 unknown 被排除時，警告會統計這種情況', () => {
+    const pendingCourse = makeCourse(901, {
+      name: '共同國文', department: '國文綜合班', category: '選修',
+    });
+    const courseReviews = [makeEasyReview(901)];
+
+    const result = generateSchedule([pendingCourse], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      minCredits: 0,
+      maxCredits: 9,
+      courseReviews,
+    });
+
+    assert.equal(result.schedule.length, 0);
+    assert.ok(result.warnings.some(warning => (
+      warning.includes('有課程評價')
+      && warning.includes('資格待確認')
+      && warning.includes('#13C')
+    )));
+  });
+});
+
+describe('N1-N15 內容偏好從硬過濾改成軟懲罰', () => {
+  test('N1 noMidterm 命中關鍵字的課不再被硬性排除', () => {
+    const course = makeCourse(1, { description: '本課程有期中考與期末考試' });
+
+    const result = generateSchedule([course], { noMidterm: true, minCredits: 0 });
+
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.excludedCourses.some(item => item.course.id === 1), false);
+    assert.ok(!result.warnings.some(w => w.includes('不符合免期中考偏好')));
+  });
+
+  test('N2 weightDaily（未命中即排除類）候選池全不含關鍵字時仍能排課成功', () => {
+    const candidates = Array.from({ length: 5 }, (_, i) => makeCourse(i + 1, {
+      dayOfWeek: (i % 5) + 1, startPeriod: 2, endPeriod: 3, description: '一般課程介紹',
+    }));
+
+    const result = generateSchedule(candidates, { weightDaily: true, minCredits: 0 });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.length > 0);
+  });
+
+  test('N3 全部 8 個內容偏好旗標開啟，未命中的課不再被排除', () => {
+    const course = makeCourse(1, { description: '一般課程介紹，無特殊字樣' });
+    const constraints = {
+      noMidterm: true,
+      noGroupReport: true,
+      discussion: true,
+      weightDaily: true,
+      practicalExam: true,
+      finalReport: true,
+      englishTaught: true,
+      learnMore: true,
+      minCredits: 0,
+    };
+
+    const result = generateSchedule([course], constraints);
+
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.excludedCourses.length, 0);
+  });
+
+  test('N4 必修或明確指定課程不再因內容偏好被誤判失敗', () => {
+    const course = makeCourse(1, { description: '一般課程介紹' });
+
+    const result = generateSchedule([course], {
+      noMidterm: true, mustTakeCourseIds: [1], minCredits: 0,
+    });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.some(c => c.id === 1));
+  });
+
+  test('N5 noMidterm 命中的課分數較低，同時段衝突時排序較後', () => {
+    const hit = makeCourse(1, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '有期中考' });
+    const clean = makeCourse(2, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '無特殊考試安排' });
+
+    const result = generateSchedule([hit, clean], { noMidterm: true, minCredits: 0, maxCredits: 3 });
+
+    assert.ok(result.schedule.some(c => c.id === 2));
+    assert.equal(result.schedule.some(c => c.id === 1), false);
+  });
+
+  test('N6 practicalExam 命中的課排序較前', () => {
+    const hit = makeCourse(1, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '本課程包含實作練習' });
+    const miss = makeCourse(2, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '純講授課程' });
+
+    const result = generateSchedule([hit, miss], { practicalExam: true, minCredits: 0, maxCredits: 3 });
+
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.schedule.some(c => c.id === 2), false);
+  });
+
+  test('N7 內容偏好加總不蓋過類別優先度：同時段衝突時核心選修優先於命中多個內容偏好的通識課', () => {
+    // 核心選修(1) vs 通識(3)：類別優先度差距 2 級 = 240 分。
+    // 通識課命中 discussion+practicalExam 兩項 = +80 分，遠不足以扭轉 240 分的差距。
+    const generalEd = makeCourse(1, {
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4, category: '通識', description: '本課程採討論與實作方式進行',
+    });
+    const coreElective = makeCourse(2, {
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4, category: '核心選修', description: '一般講授課程',
+    });
+
+    const result = generateSchedule([generalEd, coreElective], {
+      discussion: true, practicalExam: true, minCredits: 0, maxCredits: 3,
+    });
+
+    assert.ok(result.schedule.some(c => c.id === 2));
+    assert.equal(result.schedule.some(c => c.id === 1), false);
+  });
+
+  test('N8 noEveningClasses 維持硬性排除（既有行為的回歸測試，先前無測試釘住）', () => {
+    const evening = makeCourse(1, { startPeriod: 12, endPeriod: 13 });
+
+    const result = generateSchedule([evening], { noEveningClasses: true, minCredits: 0 });
+
+    assert.equal(result.schedule.some(c => c.id === 1), false);
+    assert.ok(result.excludedCourses.some(item => item.reason.includes('晚課')));
+  });
+
+  test('N9 lunchBreakFree 維持硬性排除（既有行為的回歸測試，先前無測試釘住）', () => {
+    const lunch = makeCourse(1, { startPeriod: 4, endPeriod: 6 }); // 涵蓋第 5 節（午休）
+
+    const result = generateSchedule([lunch], { lunchBreakFree: true, minCredits: 0 });
+
+    assert.equal(result.schedule.some(c => c.id === 1), false);
+    assert.ok(result.excludedCourses.some(item => item.reason.includes('午休')));
+  });
+
+  test('N10 訊號可靠度警告：命中率低於 5% 時觸發', () => {
+    const candidates = [
+      makeCourse(1, { dayOfWeek: 1, description: '有期中考評量' }),
+      ...Array.from({ length: 20 }, (_, i) => makeCourse(i + 2, {
+        dayOfWeek: (i % 5) + 1, description: '一般課程',
+      })),
+    ];
+
+    const result = generateSchedule(candidates, { noMidterm: true, minCredits: 0 });
+
+    assert.ok(result.warnings.some(w => w.includes('免期中考') && w.includes('訊號極弱')));
+  });
+
+  test('N11 訊號可靠度警告：命中率高於 95% 時觸發', () => {
+    const candidates = [
+      makeCourse(1, { dayOfWeek: 1, description: '一般課程，無特殊字樣' }),
+      ...Array.from({ length: 20 }, (_, i) => makeCourse(i + 2, {
+        dayOfWeek: (i % 5) + 1, description: '本課程強調實作與應用',
+      })),
+    ];
+
+    const result = generateSchedule(candidates, { learnMore: true, minCredits: 0 });
+
+    assert.ok(result.warnings.some(w => w.includes('學到較多內容') && w.includes('無法有效區分課程')));
+  });
+
+  test('N12 訊號可靠度警告：命中率介於門檻之間時不觸發', () => {
+    const candidates = [
+      ...Array.from({ length: 5 }, (_, i) => makeCourse(i + 1, {
+        dayOfWeek: (i % 5) + 1, description: '課堂討論與互動',
+      })),
+      ...Array.from({ length: 5 }, (_, i) => makeCourse(i + 6, {
+        dayOfWeek: (i % 5) + 1, description: '一般講授課程',
+      })),
+    ];
+
+    const result = generateSchedule(candidates, { discussion: true, minCredits: 0 });
+
+    assert.equal(
+      result.warnings.some(w => w.includes('討論課') && (w.includes('訊號極弱') || w.includes('無法有效區分課程'))),
+      false
+    );
+  });
+
+  test('N13 訊號可靠度警告在多方案聯集後只出現一次', () => {
+    const candidates = [
+      makeCourse(1, { dayOfWeek: 1, description: '有期中考評量' }),
+      ...Array.from({ length: 20 }, (_, i) => makeCourse(i + 2, {
+        dayOfWeek: (i % 5) + 1, description: '一般課程',
+      })),
+    ];
+
+    const result = generateSchedule(candidates, { noMidterm: true, minCredits: 0 });
+
+    const matches = result.warnings.filter(w => w.includes('免期中考') && w.includes('訊號極弱'));
+    assert.equal(matches.length, 1);
+  });
+
+  test('N14 未設定任何內容偏好時，排序與改動前一致（不受課程描述影響）', () => {
+    const hit = makeCourse(1, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '有期中考' });
+    const clean = makeCourse(2, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '無特殊考試安排' });
+
+    const result = generateSchedule([hit, clean], { minCredits: 0, maxCredits: 3 });
+
+    // 沒有設定 noMidterm，兩門課的內容偏好分數皆為 0，維持候選原始順序（穩定排序）。
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.schedule.some(c => c.id === 2), false);
+    assert.equal(
+      result.warnings.some(w => w.includes('訊號極弱') || w.includes('無法有效區分課程')),
+      false
+    );
+  });
+
+  test('N15 englishTaught 的 language 欄位判定路徑（不只靠關鍵字）', () => {
+    const englishCourse = makeCourse(1, {
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '一般課程介紹', language: 'English',
+    });
+    const other = makeCourse(2, {
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4, description: '一般課程介紹',
+    });
+
+    const result = generateSchedule([englishCourse, other], {
+      englishTaught: true, minCredits: 0, maxCredits: 3,
+    });
+
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.equal(result.schedule.some(c => c.id === 2), false);
+  });
+});
+
+describe('X1-X14 Roadmap #21：hard/soft constraint schema、獨立 validator、放寬階梯、conflict set', () => {
+  test('X1 allowRelaxation:false（預設）：因時段偏好排不出課表時行為與改動前一致', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], { noMorningClasses: true, minCredits: 0 });
+
+    assert.equal(result.success, false);
+    assert.equal(result.relaxedConstraints, undefined);
+    assert.ok(result.conflictSet.some(v => v.constraintId === 'NO_MORNING_CLASSES'));
+  });
+
+  test('X2 allowRelaxation:true 且指定 timePreferencePriority：依使用者順序逐步放寬並成功排課', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], {
+      noMorningClasses: true,
+      minCredits: 0,
+      allowRelaxation: true,
+      // 刻意把與此情境無關的 LUNCH_BREAK_FREE 排在使用者順序的第一位，
+      // 用來證明階梯真的依使用者指定順序逐步嘗試，不是巧合對上預設順序。
+      timePreferencePriority: ['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES', 'NO_EVENING_CLASSES'],
+    });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.deepEqual(
+      result.relaxedConstraints.map(r => r.constraintId),
+      ['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES']
+    );
+    assert.ok(result.warnings.some(w => w.includes('不排早八')));
+  });
+
+  test('X3 allowRelaxation:true 但無解原因是 blockedPeriods：放寬階梯不生效，仍然失敗', () => {
+    const course = makeCourse(1, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4 });
+    const result = generateSchedule([course], {
+      blockedPeriods: [{ day: 1, period: 3 }],
+      minCredits: 0,
+      allowRelaxation: true,
+      timePreferencePriority: ['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES'],
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.relaxedConstraints, undefined);
+  });
+
+  test('X4 conflictSet 具備 constraintId／relaxable／courses／reason，relaxable 標記正確', () => {
+    const morningCourse = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const blockedCourse = makeCourse(2, { dayOfWeek: 1, startPeriod: 3, endPeriod: 4 });
+
+    const result = generateSchedule([morningCourse, blockedCourse], {
+      noMorningClasses: true,
+      blockedPeriods: [{ day: 1, period: 3 }],
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, false);
+    const morningEntry = result.conflictSet.find(v => v.constraintId === 'NO_MORNING_CLASSES');
+    const blockedEntry = result.conflictSet.find(v => v.constraintId === 'BLOCKED_PERIODS');
+    assert.ok(morningEntry);
+    assert.ok(blockedEntry);
+    assert.equal(morningEntry.relaxable, true);
+    assert.equal(blockedEntry.relaxable, false);
+    assert.ok(Array.isArray(morningEntry.courses) && morningEntry.courses.length > 0);
+    assert.ok(typeof morningEntry.reason === 'string' && morningEntry.reason.length > 0);
+  });
+
+  test('X5 成功方案通過內部自我檢查（validateScheduleAgainstConstraints）', () => {
+    const course = makeCourse(1);
+    const result = generateSchedule([course], { minCredits: 0 });
+
+    assert.equal(result.success, true);
+    const check = validateScheduleAgainstConstraints(result.schedule, {});
+    assert.equal(check.valid, true);
+    assert.deepEqual(check.violations, []);
+  });
+
+  test('X6 validateScheduleAgainstConstraints 偵測衝堂，不需要 constraints 參數', () => {
+    const a = makeCourse(1, { dayOfWeek: 2, startPeriod: 3, endPeriod: 4 });
+    const b = makeCourse(2, { dayOfWeek: 2, startPeriod: 3, endPeriod: 4 });
+
+    const check = validateScheduleAgainstConstraints([a, b]);
+    assert.equal(check.valid, false);
+    assert.ok(check.violations.some(v => v.constraintId === 'TIME_CONFLICT'));
+  });
+
+  test('X7 CREDIT_CEILING：帶 maxCredits 時偵測超額，省略時採用預設值且不出錯', () => {
+    const a = makeCourse(1, { credits: 20, dayOfWeek: 1 });
+    const b = makeCourse(2, { credits: 10, dayOfWeek: 2 });
+
+    const overLimit = validateScheduleAgainstConstraints([a, b], { maxCredits: 25 });
+    assert.ok(overLimit.violations.some(v => v.constraintId === 'CREDIT_CEILING'));
+
+    const withinDefault = validateScheduleAgainstConstraints([makeCourse(3, { credits: 3 })], {});
+    assert.ok(!withinDefault.violations.some(v => v.constraintId === 'CREDIT_CEILING'));
+  });
+
+  test('X8 unchecked 永遠包含 PREREQUISITE 與 COREQUISITE', () => {
+    const check = validateScheduleAgainstConstraints([], {});
+    assert.ok(check.unchecked.includes('PREREQUISITE'));
+    assert.ok(check.unchecked.includes('COREQUISITE'));
+  });
+
+  test('X9 舊版 validateSchedule() 回傳形狀維持不變（回歸釘住）', () => {
+    const result = validateSchedule([makeCourse(1)]);
+    assert.deepEqual(Object.keys(result).sort(), [
+      'conflicts', 'duplicates', 'graduationCredits', 'nonGraduationCredits', 'totalCredits', 'valid',
+    ]);
+  });
+
+  test('X10 每日上限 bug 修復：必排課因每日上限排不進去時正確回報失敗原因', () => {
+    const first = makeCourse(1, { dayOfWeek: 1, startPeriod: 1, endPeriod: 1, credits: 1 });
+    const second = makeCourse(2, { dayOfWeek: 1, startPeriod: 5, endPeriod: 5, credits: 1 });
+
+    const result = generateSchedule([first, second], {
+      minCredits: 0,
+      maxCoursesPerDay: 1,
+      mustTakeCourseIds: [1, 2],
+    });
+
+    assert.equal(result.success, false);
+    assert.ok(result.message.includes('超過每日'));
+  });
+
+  test('X11 CONSTRAINTS 表完整性：每個條目都有定義必要欄位，且沒有重複 id', () => {
+    const ids = new Set();
+    for (const [key, def] of Object.entries(CONSTRAINTS)) {
+      assert.equal(def.id, key, `${key} 的 id 欄位應與 key 一致`);
+      assert.ok(!ids.has(def.id), `${def.id} 重複`);
+      ids.add(def.id);
+      for (const field of [
+        'category', 'relaxable', 'weight', 'source', 'confidence', 'enforced', 'exemptForRequiredCourses',
+      ]) {
+        assert.ok(field in def, `${key} 缺少欄位 ${field}`);
+      }
+    }
+  });
+
+  test('X12 正式必修無條件豁免時段偏好：仍被排入，並附上必修優先的揭露警告', () => {
+    const required = makeCourse(1, { category: '必修', startPeriod: 1, endPeriod: 2 });
+
+    const result = generateSchedule([required], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      noMorningClasses: true,
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.some(c => c.id === 1));
+    assert.ok(result.warnings.some(w => w.includes('必修優先') && w.includes('不排早八')));
+  });
+
+  test('X13 必修豁免不適用於 BLOCKED_PERIODS：仍會被排除', () => {
+    const required = makeCourse(1, { category: '必修', dayOfWeek: 1, startPeriod: 3, endPeriod: 4 });
+
+    const result = generateSchedule([required], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      blockedPeriods: [{ day: 1, period: 3 }],
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, false);
+    assert.ok(result.conflictSet.some(v => v.constraintId === 'BLOCKED_PERIODS'));
+  });
+
+  test('X14 mustTakeCourseIds（非正式必修）仍受時段偏好排除，行為與 S10 一致', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+
+    const result = generateSchedule([course], {
+      noMorningClasses: true,
+      mustTakeCourseIds: [1],
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, false);
+    assert.ok(result.message.length > 0);
   });
 });

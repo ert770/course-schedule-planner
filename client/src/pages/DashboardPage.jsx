@@ -150,7 +150,7 @@ export default function DashboardPage() {
     setPrefsError('');
 
     try {
-      await profileAPI.update({ selectedTags: [...next] }, user.studentId);
+      await profileAPI.update({ selectedTags: [...next] });
     } catch (err) {
       setSelectedTags(previous);
       setPrefsError(err.message || '偏好儲存失敗，請再試一次。');
@@ -190,7 +190,7 @@ export default function DashboardPage() {
     setChatLoading(true);
 
     try {
-      const res = await chatAPI.send(msg, user.studentId);
+      const res = await chatAPI.send(msg);
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
         setSchedule(res.data.schedule);
         setChatHistory(prev => [...prev, { 

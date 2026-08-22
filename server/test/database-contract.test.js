@@ -26,6 +26,12 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  GENERAL_EDUCATION_DOMAINS_112_TO_114,
+  RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2,
+} from '../src/data/generalEducationCatalog.js';
+import { NON_DEPARTMENT_CLASS_CATALOG } from '../src/data/classKindCatalog.js';
+import { ACTIVE_TERM } from '../src/data/activeTerm.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,6 +75,8 @@ let getAll;
 let parseClassName;
 let getAbbreviations;
 let normalizeDepartment;
+let buildReviewIndex;
+let buildReviewPrior;
 
 before(async () => {
   if (!DB_CONFIGURED) return;
@@ -78,6 +86,7 @@ before(async () => {
   ({ parseClassName } = await import('../src/skills/courseScope.js'));
   ({ getAbbreviations } = await import('../src/data/departmentMapping.js'));
   ({ normalizeDepartment } = await import('../src/utils/text.js'));
+  ({ buildReviewIndex, buildReviewPrior } = await import('../src/skills/courseReviewStats.js'));
 });
 
 // 連線池會讓 test runner 的 event loop 一直不結束，`npm test` 因此永遠不會返回。
@@ -143,6 +152,28 @@ describe('資料庫契約：Courses.dept 是班級名稱', () => {
     );
   });
 
+  test('#13B 現行 562 個班級名稱全部有 classKind', { skip }, async () => {
+    assert.equal(
+      names.length,
+      BASELINE.distinctDepartments,
+      '班級名稱集合已變動，需重新稽核並更新 A～F 分類表'
+    );
+
+    const unclassified = names.filter(name => parseClassName(name).classKind === 'unclassified');
+    assert.deepEqual(unclassified, [], '這些班級名稱尚未納入 A～F 分類');
+  });
+
+  test('#13B 資料庫的非系所班級與 71 筆 B～F 目錄完全一致', { skip }, async () => {
+    const actual = names
+      .filter(name => !parseClassName(name).isDepartmentClass)
+      .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+    const expected = NON_DEPARTMENT_CLASS_CATALOG
+      .map(entry => entry.className)
+      .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+
+    assert.deepEqual(actual, expected, 'B～F 目錄與 MySQL 現行班級名稱不一致');
+  });
+
   test('可解析為系所班級的比例不得低於基準', { skip }, async () => {
     // 解析規則（`parseClassName`）被改壞時，這條會立刻紅燈——
     // 比例掉下來代表大量班級名稱突然對不到系所，必修範圍會整批判錯。
@@ -184,6 +215,41 @@ describe('資料庫契約：Courses.dept 是班級名稱', () => {
       .map(parsed => parsed.className);
 
     assert.deepEqual(unmapped, [], 'A 表缺少這些班級的系所簡稱，必修判定會漏掉整個系所');
+  });
+});
+
+describe('資料庫契約：#12B 114-2 通識分類', () => {
+  test('四領域課程都有正式課號，資料量不低於已核對基準', { skip }, async () => {
+    const placeholders = GENERAL_EDUCATION_DOMAINS_112_TO_114.map(() => '?').join(',');
+    const [row] = await queryRows(
+      'SELECT COUNT(*) AS sections, COUNT(DISTINCT c.`subid3`) AS courseCodes,'
+      + ' SUM(CASE WHEN c.`subid3` IS NULL OR TRIM(c.`subid3`) = \'\' THEN 1 ELSE 0 END) AS blanks'
+      + ' FROM `Courses` c INNER JOIN `Course_Sections` cs'
+      + ' ON BINARY c.`course_id` = BINARY cs.`course_id`'
+      + ` WHERE cs.\`year\` = 114 AND cs.\`semester\` = '下學期'`
+      + ` AND c.\`dept\` IN (${placeholders})`,
+      GENERAL_EDUCATION_DOMAINS_112_TO_114
+    );
+
+    assert.equal(Number(row.blanks), 0, '四領域課程不得缺 catalogCourseCode');
+    assert.ok(Number(row.courseCodes) >= 167, `通識正式課號只有 ${row.courseCodes} 筆`);
+    assert.ok(Number(row.sections) >= 208, `通識班次只有 ${row.sections} 筆`);
+  });
+
+  test('114-2 三門跨院認抵課均可用正式課號對到唯一課程', { skip }, async () => {
+    for (const expected of RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2) {
+      const rows = await queryRows(
+        'SELECT c.`subid3`, c.`name`, c.`credits`, cs.`year`, cs.`semester`'
+        + ' FROM `Courses` c INNER JOIN `Course_Sections` cs'
+        + ' ON BINARY c.`course_id` = BINARY cs.`course_id`'
+        + ' WHERE c.`subid3` = ? AND cs.`year` = ? AND cs.`semester` = ?',
+        [expected.catalogCourseCode, expected.academicYear, expected.semester]
+      );
+
+      assert.equal(rows.length, 1, `${expected.catalogCourseCode} 應唯一對到 114-2 認抵課`);
+      assert.equal(rows[0].name, expected.name);
+      assert.equal(Number(rows[0].credits), expected.credits);
+    }
   });
 });
 
@@ -253,6 +319,79 @@ describe('資料庫契約：Courses.type 與時間欄位', () => {
     assert.deepEqual(
       [...new Set(unexplained)], [],
       '出現無法解釋的 time_str 格式，parseTimeBlocks() 需補上對應規則'
+    );
+  });
+});
+
+describe('資料庫契約：#20 ACTIVE_TERM 與現行資料相符', () => {
+  test('Course_Sections 存在符合 ACTIVE_TERM 的資料列', { skip }, async () => {
+    // 防呆：若忘記在換學期時更新 `ACTIVE_ACADEMIC_YEAR`／`ACTIVE_SEMESTER`
+    // 環境變數（或 `server/src/data/activeTerm.js` 的預設值），候選池會被
+    // active-term 過濾整批清空，排課與搜尋會回傳空結果——這則測試先炸掉，
+    // 不必等到使用者回報排不出課表。
+    const [row] = await queryRows(
+      'SELECT COUNT(*) AS total FROM `Course_Sections` WHERE `year` = ? AND `semester` = ?',
+      [ACTIVE_TERM.academicYear, ACTIVE_TERM.semester]
+    );
+
+    assert.ok(
+      Number(row.total) > 0,
+      `Course_Sections 找不到符合 ACTIVE_TERM（${ACTIVE_TERM.academicYear}學年${ACTIVE_TERM.semester}）`
+      + '的資料列，請確認是否忘記換學期，或資料庫尚未匯入本學期課程。'
+    );
+  });
+});
+
+describe('資料庫契約：Course_Reviews 供排課引擎涼度評分使用', () => {
+  // 2026-08-17 實測：181 列 / 3560 個 section，全部 114-下學期、全部選修，
+  // review_count 4-8。此區塊釘住 #4「把評價聚合層接進排課引擎」依賴的資料前提，
+  // 資料量成長時只需要調整下限，不必調整判定邏輯。
+  test('Course_Reviews 有資料，且五個評分欄位皆在 1-5 值域內', { skip }, async () => {
+    const rows = await queryRows(
+      'SELECT `sweetness`, `coolness`, `workload`, `overall`, `value` FROM `Course_Reviews`'
+    );
+
+    assert.ok(rows.length > 0, 'Course_Reviews 沒有任何資料，涼度評分會全部退回中性分');
+
+    const outOfRange = rows.filter(row => (
+      ['sweetness', 'coolness', 'workload', 'overall', 'value'].some(field => {
+        const value = row[field];
+        return value !== null && (Number(value) < 1 || Number(value) > 5);
+      })
+    ));
+    assert.deepEqual(
+      outOfRange, [],
+      '評分欄位超出 1-5 值域，reviewStats.js 的 easiness 公式假設會不成立'
+    );
+  });
+
+  test('review.courseId 能對回 Course_Sections 的實際 section_id', { skip }, async () => {
+    const [reviews, courses] = await Promise.all([getAll('reviews'), getAll('courses')]);
+    const sectionIds = new Set(courses.map(course => String(course.id)));
+
+    const withCourseId = reviews.filter(review => (
+      review.courseId !== null && review.courseId !== undefined
+    ));
+    assert.ok(withCourseId.length > 0, '沒有任何評價列能對到 Course_Sections，LEFT JOIN 可能全數落空');
+
+    const unresolved = withCourseId.filter(review => !sectionIds.has(String(review.courseId)));
+    assert.deepEqual(
+      unresolved.map(review => review.selectionCode), [],
+      'review.courseId 對不到任何現行 section，courseReviewStats 的 index 對應前提不成立'
+    );
+  });
+
+  test('母體 easiness 落在合理範圍內，用來偵測資料或公式被改壞', { skip }, async () => {
+    const reviews = await getAll('reviews');
+    const index = buildReviewIndex(reviews);
+    const prior = buildReviewPrior(index);
+
+    assert.ok(prior.courseCount > 0, '母體先驗沒有任何課程貢獻，deriveReviewEvidence 會全部退回中性 50 分');
+    // 2026-08-17 實測 mean ≈ 3.725（1-5 尺度）。留寬鬆區間：這是資料真的長歪時的
+    // 防呆，不是鎖死當前數值——評價資料成長後這個平均值本來就會變動。
+    assert.ok(
+      prior.easiness >= 2 && prior.easiness <= 5,
+      `母體 easiness ${prior.easiness} 超出合理範圍，reviewStats 的公式或資料可能已改變`
     );
   });
 });

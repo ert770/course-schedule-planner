@@ -6,7 +6,10 @@ import {
   roundScore,
   countBySentiment,
   calculateEasinessFromAverages,
+  summarizeReviews,
+  shrinkEasiness,
 } from './reviewStats.js';
+import { buildReviewIndex, buildReviewPrior } from './courseReviewStats.js';
 
 export async function getReviewsByCourse(courseId) {
   const reviews = await getAll('reviews');
@@ -25,49 +28,46 @@ export async function searchReviews(keyword) {
   );
 }
 
-export async function getEasyCourses(limit = 10) {
-  const courses = await getAll('courses');
-  const reviews = await getAll('reviews');
+// 抽成純函式，不做 I/O：讓排名邏輯可以用合成資料直接測試，也讓「涼課排行」
+// 與排課引擎（`scheduler.js` 經 `courseReviewStats.js`）用同一份索引／母體
+// 先驗／m-estimate 收縮邏輯，不會各自算出不同答案——這正是本次要修的問題：
+// 未收縮排序下，一門「4 則評論、四維全 5 分」的課會排第一，即使排課引擎
+// （收縮後）認為一門「8 則評論、平均 4.5 分」的課更可信。
+//
+// `easiness`（未收縮，向後相容既有欄位定義）與 `adjustedEasiness`（收縮後，
+// 與排課引擎採用同一個數字）兩者並存，不是互相取代——排序改用後者。
+export function rankEasyCourses(courses, reviews, limit = 10) {
+  const index = buildReviewIndex(reviews);
+  const prior = buildReviewPrior(index);
 
   const courseStats = courses.map(course => {
-    const courseReviews = reviews.filter(review => String(review.courseId) === String(course.id));
-    const reviewCount = getTotalReviewCount(courseReviews);
-    if (reviewCount === 0) {
-      return { ...course, easiness: 0, reviewCount: 0 };
+    const courseReviews = index.get(String(course.id)) ?? [];
+    const stats = summarizeReviews(courseReviews);
+    if (stats.reviewCount === 0) {
+      return { ...course, easiness: null, adjustedEasiness: null, reviewCount: 0 };
     }
 
-    const avgDifficulty = weightedAverageScore(courseReviews, 'difficultyRating');
-    const avgRecommend = weightedAverageScore(courseReviews, 'recommendScore');
-    const avgCoolness = weightedAverageScore(courseReviews, 'coolness');
-    const avgSweetness = weightedAverageScore(courseReviews, 'sweetness');
-    const avgWorkload = weightedAverageScore(courseReviews, 'workload');
-    const avgOverall = weightedAverageScore(courseReviews, 'overall');
-    const easiness = calculateEasinessFromAverages({
-      avgCoolness,
-      avgSweetness,
-      avgWorkload,
-      avgOverall,
-    });
-    const positive = countBySentiment(courseReviews, 'positive');
+    const rawEasiness = calculateEasinessFromAverages(stats);
+    const adjustedEasiness = shrinkEasiness(rawEasiness, stats.reviewCount, prior?.easiness);
 
     return {
       ...course,
-      easiness: roundScore(easiness, 2) || 0,
-      avgDifficulty: roundScore(avgDifficulty),
-      avgRecommend: roundScore(avgRecommend),
-      avgCoolness: roundScore(avgCoolness),
-      avgSweetness: roundScore(avgSweetness),
-      avgWorkload: roundScore(avgWorkload),
-      avgOverall: roundScore(avgOverall),
-      reviewCount,
-      positiveRatio: Math.round((positive / reviewCount) * 100),
+      ...stats,
+      easiness: roundScore(rawEasiness, 2),
+      adjustedEasiness: roundScore(adjustedEasiness, 2),
+      positiveRatio: Math.round((stats.positiveCount / stats.reviewCount) * 100),
     };
   });
 
   return courseStats
     .filter(course => course.reviewCount > 0)
-    .sort((a, b) => b.easiness - a.easiness)
+    .sort((a, b) => b.adjustedEasiness - a.adjustedEasiness)
     .slice(0, Number(limit) || 10);
+}
+
+export async function getEasyCourses(limit = 10) {
+  const [courses, reviews] = await Promise.all([getAll('courses'), getAll('reviews')]);
+  return rankEasyCourses(courses, reviews, limit);
 }
 
 export async function getSentimentSummary(courseId) {
@@ -123,4 +123,4 @@ export async function getSentimentSummary(courseId) {
   };
 }
 
-export default { getReviewsByCourse, searchReviews, getEasyCourses, getSentimentSummary };
+export default { getReviewsByCourse, searchReviews, rankEasyCourses, getEasyCourses, getSentimentSummary };

@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "studentId": "BROWSER01",
+    "password": "browser-test",
+    "name": "瀏覽器驗收帳號",
+    "className": "資訊三甲",
+    "courseHistory": [
+      {
+        "academicYear": 113,
+        "semester": 2,
+        "courseCode": "IECS3999",
+        "courseName": "高等演算法",
+        "score": 45,
+        "letterGrade": "E",
+        "credits": 3,
+        "passed": false,
+        "requirementType": "必修",
+        "generalEducationCategory": null,
+        "graduationCategory": "required"
+      }
+    ]
+  }
+]

@@ -48,7 +48,7 @@ export default function SearchPage() {
       return () => { cancelled = true; };
     }
 
-    profileAPI.get(user.studentId)
+    profileAPI.get()
       .then(profile => {
         if (cancelled) return;
         const scope = profile?.courseSearchScope || null;
@@ -244,7 +244,7 @@ export default function SearchPage() {
                   <option value="核心選修">核心選修 (Core Elective)</option>
                   <option value="一般選修">一般選修 (Elective)</option>
                   <option value="系外選修">系外選修 (Outside Elective)</option>
-                  <option value="通識" disabled>通識（分類資料尚未建立）</option>
+                  <option value="通識">通識 (General Education)</option>
                 </select>
               </div>
               <div className="form-group">
@@ -332,9 +332,8 @@ export default function SearchPage() {
                     type="checkbox" 
                     checked={condForm.isGenEd}
                     onChange={e => setCondForm({...condForm, isGenEd: e.target.checked})}
-                    disabled
                   />
-                  特定科目類別：通識課程（分類資料尚未建立）
+                  特定科目類別：通識課程
                 </label>
               </div>
               <div className="form-group">

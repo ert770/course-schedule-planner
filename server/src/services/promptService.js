@@ -31,7 +31,7 @@ export function buildSystemPrompt(userPrefs = {}) {
 只輸出一個 JSON 物件，不要在 JSON 外加解釋。
 
 可用工具：
-- query_course_db：依目前使用者的後端 profile 查詢課程資料。參數可包含 keyword, category, dayOfWeek；category 只可使用必修、核心選修、一般選修、系外選修。不得自行猜測或傳入班級。
+- query_course_db：依目前使用者的後端 profile 查詢課程資料。參數可包含 keyword, category, dayOfWeek；category 只可使用必修、核心選修、一般選修、通識、系外選修。通識領域以工具回傳的 generalEducationDomain 為準，不得由課號前綴猜測，也不得自行傳入班級。若課程 eligibility 為 unknown，只能說「資格待確認」並附 eligibilityReason，不得宣稱使用者確定可修。
 - search_dcard_reviews：查詢課程評價摘要。參數可包含 keyword。
 - get_easy_courses：查詢涼課或高分課程。參數可包含 limit。
 - update_preferences：更新使用者偏好。參數可包含 noMorningClasses, noEveningClasses, preferCompact, targetCreditsMin, targetCreditsMax, blockedPeriods。
@@ -39,7 +39,7 @@ export function buildSystemPrompt(userPrefs = {}) {
   - minCredits, maxCredits, allowCreditOverload
   - department, gradeLevel
   - blockedPeriods, mondayFree, noMorningClasses, noEveningClasses, lunchBreakFree
-  - mustTakeCourseIds, retakeCourseIds
+  - mustTakeCourseIds
   - selectedCourseIds, watchingCourseIds, courseStates
   - preferCompact, maxCoursesPerDay
   - noMidterm, noGroupReport, discussion, learnMore
@@ -55,6 +55,18 @@ export function buildSystemPrompt(userPrefs = {}) {
 - 使用者若表達興趣、想集中排課或想修涼課，必須把對應參數帶進 run_csp_scheduler，否則系統只能改用總學分挑選方案，推薦會失去個人化。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
+
+評價證據使用說明：
+- 排課結果每門課帶 reviewEvidence（來自 Course_Reviews 的評價統計）；為 null 代表這門課沒有評價。
+- reviewEvidence 為 null 時，不得宣稱這門課「涼」「好拿分」「甜」——沒有評價就是沒有依據，只能說「這門課沒有評價資料」。
+- 方案的 preferenceBreakdown.easy 可能為 null（代表排入的課全部沒有評價可評分），請改讀該方案的 reviewCoverage（rated/total/ratio）向使用者說明證據有多少，不要把 null 講成 0%。
+- 若回傳 reviewDataLoaded 為 false，代表本次排課完全沒有取得評價資料，涼度是以中性值計算，應照實告知使用者，不可宣稱已依評價排序。
+- get_easy_courses 的排序依據是收縮後的 adjustedEasiness（樣本數少的課會被拉向全體平均），不是未收縮的 easiness；兩者皆會回傳，說明時以 adjustedEasiness 為準。
+
+內容偏好使用說明：
+- noMidterm、noGroupReport、discussion、weightDaily、practicalExam、finalReport、englishTaught、learnMore 是軟性偏好，判定依據是課程描述的關鍵字比對，不保證真的滿足——關鍵字沒出現在描述裡不代表課程真的沒有這個特徵。
+- 不得因為使用者設定了 noMidterm 就宣稱「已排除所有有期中考的課」，只能說「已依這個偏好調整排序」。
+- 若 warnings 出現「訊號極弱」或「無法有效區分課程」字樣，代表這個偏好在候選課程中的關鍵字命中率過低或過高，必須照實轉達給使用者，不得省略。
 
 ToolCall 範例：
 {"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":25,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}

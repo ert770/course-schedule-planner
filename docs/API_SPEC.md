@@ -8,6 +8,16 @@ http://localhost:3001/api
 
 All request and response bodies are JSON.
 
+## Authenticated identity
+
+登入成功後，後端以簽名的 `fcu_session` cookie 保存 canonical student ID（學號）。
+cookie 設為 `HttpOnly`、`SameSite=Lax`，前端所有 API request 都使用
+`credentials: include`。Profile、Schedule、Chat、Graduation、watchlist 與 saved schedules
+一律從 session 取得實際操作身分，不接受 client 指定其他使用者。
+
+相容期間若 request 仍帶 `userId`／`studentId`，其值只能是 session 中的同一個學號；
+不一致回傳 `403`。未登入或 session 失效回傳 `401`。
+
 ## Data Source
 
 Course, section, review, and numeric user profile data are read from MySQL database `defaultdb`.
@@ -56,9 +66,13 @@ Response:
 }
 ```
 
-### `GET /api/auth/me?studentId={studentId}`
+### `GET /api/auth/me`
 
-Returns the local demo user profile without password.
+從 session 回傳目前登入的 local demo user profile（不含密碼），不接受 query student ID。
+
+### `POST /api/auth/logout`
+
+清除 session cookie。
 
 ### `POST /api/auth/update-watchlist`
 
@@ -66,7 +80,6 @@ Request:
 
 ```json
 {
-  "studentId": "D1249196",
   "watchlist": [1, 2, 3]
 }
 ```
@@ -83,7 +96,7 @@ Query params:
 - `grade`（必填；由使用者完整班級解析出的年級，例如 `3`）
 - `className`（必填；由完整班級解析出的班別尾碼，例如 `甲`）
 - `keyword`
-- `category`（選填：`必修`、`核心選修`、`一般選修`、`系外選修`）
+- `category`（選填：`必修`、`核心選修`、`一般選修`、`通識`、`系外選修`）
 - `dayOfWeek`
 - `credits`
 - `instructor`
@@ -109,15 +122,13 @@ GET /api/courses?department=資訊工程學系&grade=3&className=甲
 ```
 
 後端會先以學生 scope 解析每門課的分類，再套用 category 與其他搜尋條件。未指定
-category 時維持 F7，只回傳本人班級及同年級合班；只有明確指定 `系外選修` 時才會
-查詢其他系所班級。通識分類資料尚未建立，傳入 `category=通識` 回傳 `422`：
+category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `系外選修` 或 `通識`
+才會跨出本人班級範圍。通識課以正式學年度規則、MySQL `Courses.dept` 的官方領域
+名稱及官方跨院認抵表分類，不以 `catalogCourseCode` 前綴猜測。
 
-```json
-{
-  "error": "通識課程分類資料尚未建立，目前無法依通識分類搜尋。",
-  "code": "GENERAL_EDUCATION_CATEGORY_UNAVAILABLE"
-}
-```
+課程搜尋會保留班級資格資訊。B～F 類（共同／通識、學院綜合班、英語與國際班、
+學分學程及其他特殊班級）的正式適用對象尚未由校方確認，因此仍可被明確搜尋，
+但回應為 `eligibility: "unknown"`，前端顯示「資格待確認」，不得解讀成確定可修。
 
 Response:
 
@@ -152,6 +163,13 @@ Response:
       "category": "核心選修",
       "sourceCategory": "選修",
       "classificationSource": "cs_curriculum",
+      "classGroup": "A",
+      "classKind": "department",
+      "eligibility": "eligible",
+      "eligibilityReason": "已辨識為 A 類系所班級；其他選修限制仍依既有候選規則判定。",
+      "eligibilitySource": "department-required-table:elective-default",
+      "term": { "academicYear": 114, "semester": "下學期", "isActiveTerm": true },
+      "scopeReason": "一般選修，可搜尋與加選。",
       "track": "技術應用類"
     }
   ],
@@ -168,6 +186,31 @@ Response:
 | `classificationSource` | `mysql`、`cs_curriculum` 或 `outside_department` |
 | `track` | 資工科目表對應的修課路徑，沒有資料時為 `null` |
 | `outsideElective` | 系外選修的認列檢查、原因、警告及系辦確認狀態 |
+| `classGroup` | 班級分類 `A`～`F`；尚未收錄的名稱為 `null` |
+| `classKind` | `department`、`commonCurriculum`、`collegeWide`、`englishProgram`、`internationalProgram`、`creditProgram`、`other` 或 `unclassified` |
+| `eligibility` | `eligible`、`ineligible` 或 `unknown`；是班級適用資格，不等同畢業學分認列 |
+| `eligibilityReason` | 可供 UI 與 Agent 直接呈現的資格判定理由 |
+| `eligibilitySource`（Roadmap #20） | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`，供追查來源用，不是給人看的文字 |
+| `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學年學期，以及是否為系統目前的 active term |
+| `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明，可直接呈現給使用者 |
+
+**Active term（Roadmap #20）**：所有課程搜尋、排課與 Agent 查詢只回傳
+`server/src/data/activeTerm.js` 定義的 `ACTIVE_TERM`（預設 114 學年下學期）內的
+sections，非本學期候選不會出現在搜尋結果中；換學期時更新 `ACTIVE_ACADEMIC_YEAR`／
+`ACTIVE_SEMESTER` 兩個環境變數即可，不需改程式碼（見 `docs/SCHEDULING_LOGIC.md`
+「Active Term」一節）。
+
+通識課另有下列欄位：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `generalEducationDomain` | 111 以前的舊領域、112～114 的四領域；115 起固定為 `null`（不分領域） |
+| `generalEducationRuleVersion` | `through-111`、`112-114` 或 `from-115` |
+| `generalEducationRecognitionType` | 通識中心直接開課為 `direct`；官方跨院認抵為 `cross_college` |
+| `classificationReference` | 支撐該分類的逢甲大學官方來源網址 |
+
+通識的 `classificationSource` 為 `general_education_department` 或
+`general_education_recognition`。
 
 ### `GET /api/courses/departments`
 
@@ -225,7 +268,6 @@ Request:
 
 ```json
 {
-  "userId": "1",
   "courseIds": [1, 2, 3],
   "filters": {},
   "constraints": {
@@ -240,6 +282,16 @@ Request:
     "interests": [],
     "preferredTrack": null,
     "preferEasyCourses": false,
+    "noMidterm": false,
+    "noGroupReport": false,
+    "discussion": false,
+    "weightDaily": false,
+    "practicalExam": false,
+    "finalReport": false,
+    "englishTaught": false,
+    "learnMore": false,
+    "allowRelaxation": false,
+    "timePreferencePriority": [],
     "department": "資訊工程學系",
     "gradeLevel": 3,
     "className": "資訊三甲"
@@ -251,10 +303,10 @@ Request:
 系上不接受必修換班，未提供時必修只收斂到系所與年級，並在 `warnings` 提醒。
 三者未提供時會從使用者已儲存的 profile 帶入。系統自動建立候選池時，若 profile
 缺少可解析班級，不會退回全校課程，而是回傳 `CLASS_NAME_REQUIRED`。前端不需要在
-schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再呼叫
+schedule request 重複傳班級；route 會先依 session identity 讀取 profile，再呼叫
 `searchCoursesForSchedule()`。
 
-`courseIds`, `selectedCourseIds`, `watchingCourseIds`, and `retakeCourseIds` should use section ids.
+`courseIds`、`selectedCourseIds`、`watchingCourseIds` 與 `mustTakeCourseIds` 使用 section id。
 
 `completedCourseIds` 已於 2026-08-13 移除——已修排除改用穩定的 `courseHistory`
 課號比對（`skills/scheduler.js` 呼叫 `data/courseHistory.js` 的
@@ -262,8 +314,14 @@ schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再
 一律以使用者已儲存的 `courseHistory` 為準。詳見「限制條件合併語意」。
 
 `courseIds` 決定候選池，同時代表「使用者明確指定的課」。route 會把它併入
-`explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds`、
-`retakeCourseIds` 同樣視為明確指定。
+`explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds` 同樣視為明確指定。
+
+`retakeCourseIds` 與 `failedRequiredCourseIds` 已移除。重補修不得由 client 或 Agent
+手動指定；後端只依 Profile 的 `courseHistory`，對每個 `courseCode` 取最新
+`academicYear + semester` 紀錄，自動找出 `passed: false` 且
+`requirementType: "必修"` 的課，再映射到本學期相同 `catalogCourseCode` 的所有 sections。
+優先序固定為「本學期必修 → 不及格必修重補修 → 其他課程」。本學期未開課時，
+`warnings` 會提醒使用者下學期重修。
 
 明確指定的課程**不會被系統的推論規則剔除**，一律排入並附警告：
 
@@ -271,18 +329,48 @@ schedule request 重複傳班級；route 會先依 `userId` 讀取 profile，再
 | --- | --- | --- |
 | 系外選修不符認列條件 | 剔除，原因記入 `excludedCourses` | 排入，標記不計入畢業學分 |
 | 他班／他系的必修 | 剔除，不進候選 | 排入，警告需自行向系辦確認 |
+| B～F 類或未分類、`eligibility=unknown` | 保守排除，原因記入 `excludedCourses` | 保留並排入，警告「資格待確認」 |
+| 非本學期開課（`term.isActiveTerm=false`，Roadmap #20） | 保守排除，原因記入 `excludedCourses` | 保留並排入，警告「非本學期開課」 |
 
-理由：這兩條都是「依系所、年級、班別**推論**」，不是校方的選課權限。
-見 `docs/SCHEDULING_LOGIC.md` 的「明確指定的課程豁免整批排除」。
+理由：前三條都是「依系所、年級、班別**推論**」，不是校方的選課權限；非本學期一項
+同樣可能因轉系、輔系、雙主修或加簽而修得到，處理原則一致。
+見 `docs/SCHEDULING_LOGIC.md` 的「明確指定的課程豁免整批排除」與「Active Term」。
+
+**注意**：`GET /api/courses` 課程搜尋沒有「明確指定」的概念（那是排課階段才有的
+語意），非本學期候選一律直接過濾，不出現在搜尋結果中——見 `docs/SCHEDULING_LOGIC.md`
+「Active Term」一節。
 
 `preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供任何一項時，主推方案改以總學分決定。
+
+`noMidterm`／`noGroupReport`／`discussion`／`weightDaily`／`practicalExam`／`finalReport`／
+`englishTaught`／`learnMore` 這 8 個「內容偏好」（Roadmap #3）**同樣是軟性偏好，不會排除課程**：
+判定依據是課程描述的關鍵字比對，命中會調整候選課的排序分數，未命中維持中性（不當成負面證據）。
+候選池中某個已設定旗標的關鍵字命中率過低（<5%）或過高（>95%）時，`warnings` 會附上一條「訊號
+可靠度」警告，說明這個偏好目前幾乎無法有效區分課程；未觸發門檻時不會有額外警告。詳見
+`docs/SCHEDULING_LOGIC.md` 的「內容偏好評分與訊號可靠度警告」。
+
+`allowRelaxation`／`timePreferencePriority`（Roadmap #21）：opt-in 放寬階梯的開關與順序，
+預設 `allowRelaxation:false`（沒有任何現行呼叫端會設定，行為與改動前完全相同）。啟用後，
+若方案的選修側因 `noMorningClasses`／`lunchBreakFree`／`noEveningClasses` 排掉太多候選、
+導致湊不到學分下限，會依 `timePreferencePriority`（constraintId 陣列，例如
+`["LUNCH_BREAK_FREE", "NO_MORNING_CLASSES", "NO_EVENING_CLASSES"]`；未提供時採用系統預設
+順序）逐一放寬並重試，成功時回應會附上 `relaxedConstraints` 並在 `warnings` 揭露。這個機制
+**獨立於**正式必修對這 3 項的無條件豁免——後者永遠生效，不需要這個旗標。`blockedPeriods`
+永遠不會被這個機制放寬。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema
+（Roadmap #21）」。
+
+Response 除既有欄位外，無解時額外回傳 `conflictSet`（結構化的限制違規清單，取代「只回傳
+第一個錯誤字串」），格式為 `[{ constraintId, severity, relaxable, source, courses, reason }]`，
+附加於 `message`／`warnings` 之外，不取代它們；透過放寬階梯成功時額外回傳
+`relaxedConstraints: [{ constraintId, reason, order }]`。
 
 ### 限制條件合併語意
 
 request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
 
-- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`retakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
 - **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 `prefs.courseHistory`。修課歷史沒有任何呼叫端會在 request 裡送（REST 不送，AI Agent 的 `run_csp_scheduler` 工具參數也不含它），寫成雙來源合併只會暗示一個不存在的覆蓋能力，還可能讓模型塞入捏造的修課紀錄。
+- **`courseReviews`**（Roadmap #4）：與 `courseHistory` 同理，**純伺服器端注入、不接受 request 覆蓋**。`scheduleService.js` 從 `getAll('reviews')` 取得 `Course_Reviews` 全表後放進 `context`，request body 與 AI Agent 的 tool 參數都不含這個欄位——沒有任何管道能讓客戶端塞入捏造的評價分數。
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
 - **`selectedCourseIds`、`watchingCourseIds`、`courseStates`**：屬於本次操作的當下狀態，不從已儲存偏好回填。
 - **`mondayFree`**：會展開成週一第 1~14 節的 `blockedPeriods`，並與既有封鎖時段合併。
@@ -310,9 +398,14 @@ Response:
   "unscheduledCourses": [],
   "watchOnly": false,
   "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
-  "hasExpressedPreference": true
+  "hasExpressedPreference": true,
+  "reviewDataLoaded": true
 }
 ```
+
+`reviewDataLoaded`（Roadmap #4）表示這次排課是否取得了任何 `Course_Reviews` 資料。為 `false`
+代表接線異常（呼叫端沒帶 `courseReviews` 或資料庫回空），不是「沒有評價可用所以正常忽略」——
+此時所有課程的涼度一律以中性值計算，`warnings` 會明確告知。與成功與否無關，成功與失敗回應都會帶上。
 
 `watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
 
@@ -338,11 +431,22 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `nonGraduationCategory` | 不計入時的類別（`軍訓國防`／`體育`／`班級活動`／`系外選修未認列`），計入時為 `null` |
 | `outsideElectiveRecognized` | 僅在使用者指定、但不符合系外選修認列條件時出現，值為 `false` |
 | `outsideElectiveReasons` | 同上，不認列的原因清單 |
-| `category` | **對這位學生解析後**的類別（`必修`／`核心選修`／`選修`／`系外選修`） |
+| `category` | **對這位學生解析後**的類別（`必修`／`核心選修`／`選修`／`通識`／`系外選修`） |
 | `sourceCategory` | 資料庫原始的 `Courses.type`，僅在解析結果不同時出現 |
 | `track` | 修課路徑（`嵌入式系統類`／`技術應用類`／`網路與安全類`），無歸類時為 `null` |
+| `classGroup`／`classKind` | 班級 A～F 分組及結構化種類 |
+| `eligibility`／`eligibilityReason` | 班級適用資格及可讀原因；`unknown` 不得宣稱確定可修 |
+| `eligibilitySource`（Roadmap #20） | `eligibility` 結論套用的規則代號，供追查來源 |
+| `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學期 |
+| `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明 |
+| `reviewEvidence`（Roadmap #4） | 課程評價證據物件，`null` 代表這門課沒有評價，**不是** 0 分。有值時包含 `reviewCount`、`avgSweetness`／`avgCoolness`／`avgWorkload`／`avgOverall`／`avgDifficulty`／`avgRecommend`、`positiveCount`／`negativeCount`／`neutralCount`、`easiness`（1–5，未收縮）、`adjustedEasiness`（1–5，m-estimate 收縮後）、`easyScore`（0–100，排課實際採用）、`priorEasiness`、`shrinkagePriorWeight`、`source`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」 |
+| `formallyRequired`（Roadmap #21） | 布林，永遠存在（`true`／`false`）。`true` 代表這門課是這位學生本學期正式必修（`isRequiredForStudent()===true`），且排入時已無條件豁免 3 個時段類舒適偏好（不排早八／午休保留／不排晚課）；不含封鎖時段，也不含使用者手動指定的 `mustTakeCourseIds`。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」 |
+| `corequisiteCode`（Roadmap #15） | 字串或 `null`。有配對時為對應正課／實習的 `catalogCourseCode`；`null` 代表這門課沒有配對（含 P 後綴但候選池中找不到正課的例外情況） |
+| `corequisiteRole`（Roadmap #15） | `'regular'`／`'internship'`／`null`。標示這門課在共同必修配對中的角色；`null` 代表不受共同必修規則影響。`excludedCourses`／`conflictSet` 可能出現 `constraintId: 'COREQUISITE_PAIR_INCOMPLETE'`，代表配對中的一方排不進去、兩者皆不排入。詳見 `docs/SCHEDULING_LOGIC.md` 的「共同必修（Co-requisite，Roadmap #15）」 |
 
-`category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」。
+`category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」；`term`／
+`eligibilitySource`／`scopeReason` 見同檔案的「Active Term」與「候選課程的可追溯
+metadata」兩節。
 
 `watchOnly` 為 `true` 時表示沒有任何正式加選課程排入，課表上只有關注課程。此情境的 `success` 仍為 `true`，因為關注課程本身是合法且可顯示的結果。
 
@@ -351,11 +455,21 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 ```json
 {
   "preferenceScore": 0.214,
-  "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0 }
+  "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0.68 },
+  "reviewCoverage": { "rated": 5, "total": 8, "ratio": 0.625 }
 }
 ```
 
 `plans` 依 `success` → 是否達最低學分 → `preferenceScore` → `totalCredits` 排序，`plans[0]` 即為主推方案，其內容會複製到頂層 `schedule`。
+
+`preferenceBreakdown.easy`（Roadmap #4）改為由已排入且**有評價**課程的 `adjustedEasiness` 平均而得，
+不再是課程描述關鍵字命中率。**可能為 `null`**——代表這個方案排入的課全部沒有評價，無法評分，
+此時該軸連同權重一起從 `preferenceScore` 的加權平均中排除，不會以 0 分拉低分數。
+
+`reviewCoverage`（Roadmap #4）說明 `preferenceBreakdown.easy` 是由幾門課推出來的：`rated` 為方案中帶
+`reviewEvidence` 的課程數、`total` 為方案總課程數、`ratio` 為兩者比值。「涼度 68%」與「涼度 68%但只
+由 1／8 門課推得」是完全不同的兩件事，只讀 `preferenceBreakdown.easy` 而不看 `reviewCoverage` 會誤判
+可信度。
 
 ### `POST /api/schedule/validate`
 
@@ -363,11 +477,16 @@ Request:
 
 ```json
 {
-  "courses": []
+  "courses": [],
+  "constraints": {}
 }
 ```
 
-Response:
+`constraints` 為 Roadmap #21 新增的可選欄位，省略或傳空物件 `{}`（目前唯一的實際呼叫
+模式——`client/src` 尚未呼叫這支端點）皆可。
+
+Response（`valid`／`conflicts`／`duplicates`／`totalCredits`／`graduationCredits`／
+`nonGraduationCredits` 為既有欄位，語意不變）：
 
 ```json
 {
@@ -376,11 +495,50 @@ Response:
   "duplicates": [],
   "totalCredits": 18,
   "graduationCredits": 17,
-  "nonGraduationCredits": 1
+  "nonGraduationCredits": 1,
+  "hardConstraintsValid": true,
+  "violations": [],
+  "unchecked": ["PREREQUISITE", "COREQUISITE"]
 }
 ```
 
 `duplicates` 為同一門課的多個班次（以 `catalogCourseCode` 課號判定），例如兩門不同老師開的「計算機演算法」。學生只能選一個班次，因此即使時段不衝突也屬不合法，`valid` 為 `false`。`conflicts` 與 `duplicates` 的元素皆為 `{ course1, course2 }`。
+
+**Roadmap #21，2026-08-20 起一律執行**（Codex adversarial review 修正——原本只在
+`constraints` 非空時才額外檢查，導致只送 `{courses}` 的呼叫完全繞過了不需要
+`constraints` 就能檢查的規則，例如共同必修配對完整性）：呼叫
+`server/src/skills/scheduleValidator.js` 的 `validateScheduleAgainstConstraints()`，
+附加 `hardConstraintsValid`／`violations`／`unchecked` 三個欄位（不取代上述既有欄位）：
+
+```json
+{
+  "hardConstraintsValid": false,
+  "violations": [
+    { "constraintId": "CREDIT_CEILING", "severity": "hard", "relaxable": false,
+      "source": "user:numeric-limit", "confidence": 1, "courses": [], "reason": "課表共 28 學分，超過上限 25 學分" }
+  ],
+  "unchecked": ["PREREQUISITE", "COREQUISITE"]
+}
+```
+
+這個檢查涵蓋衝堂、重複班次、學分上限、資格／學期／系外選修／已修過的 metadata 複查、
+4 個時段類硬性限制、必修涵蓋率、共同必修配對完整性（Roadmap #15），比既有的 `valid`
+（只查衝堂與重複班次）範圍更完整。
+
+`unchecked` 永遠包含 `PREREQUISITE`／`COREQUISITE`（先修／共修，見 Roadmap #21）——這
+兩項專案裡完全沒有資料來源可查。**`COREQUISITE_PAIR_INCOMPLETE`（Roadmap #15）只在
+送入的課程物件完全沒有任何一門帶 `corequisiteRole` 欄位時才會出現在 `unchecked`
+裡**——這個欄位只由 `generateSchedule()` 產出的課表天生帶著；外部直接組出來、沒有這
+個欄位的原始課程物件無法讓 validator 安全判斷哪些課「應該」有搭檔（`catalogCourseCode`
+的 `P` 後綴規則有真實例外，見 `docs/DATA_SCHEMA.md`），因此**不會**用課號猜測配對關
+係，寧可誠實回報未檢查，也不假裝檢查過而誤判合法課表。只要把 `generateSchedule()`
+產出的課表（或至少保留其 `corequisiteRole`／`corequisiteCode` 欄位）原樣送回
+`/validate`，這項規則就會確實執行。
+
+此檢查**不套用**正式必修對時段偏好的無條件豁免（沒有 scope 可用）；只有課程物件已帶
+`formallyRequired: true` 標記（來自 `generateSchedule()` 自己產出的課表）時才會豁免，
+外部直接提供的課表一律照嚴格規則檢查。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft
+Constraint Schema（Roadmap #21）」與「共同必修（Co-requisite，Roadmap #15）」。
 
 ### `POST /api/schedule/save`
 
@@ -388,7 +546,6 @@ Request:
 
 ```json
 {
-  "userId": "1",
   "name": "我的課表",
   "schedule": [],
   "totalCredits": 18
@@ -397,9 +554,9 @@ Request:
 
 Saved schedules remain local JSON data.
 
-### `GET /api/schedule/saved?userId={userId}`
+### `GET /api/schedule/saved`
 
-Returns locally saved schedules for the user.
+Returns locally saved schedules for the session user.
 
 ## Chat
 
@@ -409,7 +566,6 @@ Request:
 
 ```json
 {
-  "userId": "1",
   "message": "幫我排課"
 }
 ```
@@ -426,14 +582,17 @@ Response:
 
 ## Profile
 
-### `GET /api/profile?userId={userId}`
+### `GET /api/profile`
 
-For numeric `userId`, reads `User_Profiles.user_id` from MySQL when present.
+從 session 的 canonical student ID 讀取 `User_Profiles`。Response 固定包含
+`schemaVersion: 1`；資料庫 migration 尚未套用時，後端會把既有 v0 row 正規化成 v1 response。
 
 回應保留完整 `className`，並由後端共用 `parseClassName()` 產生課程搜尋範圍：
 
 ```json
 {
+  "schemaVersion": 1,
+  "studentId": "D1249697",
   "className": "資訊三甲",
   "courseSearchScope": {
     "department": "資訊工程學系",
@@ -447,7 +606,7 @@ For numeric `userId`, reads `User_Profiles.user_id` from MySQL when present.
 
 ### `POST /api/profile`
 
-For numeric `userId`, updates supported `User_Profiles` fields when the row exists. Demo or non-numeric users are saved to local JSON.
+只更新 session 使用者的 `User_Profiles` 支援欄位。request 不需也不應傳 `userId`。
 
 `department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
 
@@ -464,6 +623,20 @@ For numeric `userId`, updates supported `User_Profiles` fields when the row exis
 ### `GET /api/reviews/easy?limit=10`
 
 Returns courses ranked by derived easiness score from `Course_Reviews`.
+
+排序依據（Roadmap #4）是 **`adjustedEasiness`**（m-estimate 收縮後的分數），**不是**
+`easiness`（未收縮的原始加權平均）。兩者皆會回傳：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `easiness` | 未收縮，1–5 尺度。單一課程自己的評價原始算出來的分數，不管評論數多寡 |
+| `adjustedEasiness` | 收縮後，1–5 尺度。排序實際採用；評論數少的課會被拉向母體平均 |
+| `reviewCount` | 該課評論數（加權後，非資料列數） |
+
+**這是一次行為變更**：舊版直接用 `easiness` 排序，樣本數少的課（例如剛好 4 則評論全 5 分）
+會穩定壓過樣本數更多、更可信的課（例如 8 則評論平均 4.5 分）。改用 `adjustedEasiness` 後，
+這份排行榜與排課引擎「涼課與高分優先」方案採用同一套邏輯（`courseReviewStats.js`），不會再
+出現「涼課排行榜第一名沒被排進涼課方案」的不一致。
 
 ### `GET /api/reviews/:courseId`
 
@@ -484,9 +657,10 @@ Response:
 
 ## Graduation
 
-### `GET /api/graduation/:studentId`
+### `GET /api/graduation/me`
 
-Uses local demo users when available, otherwise uses numeric MySQL `User_Profiles.user_id` for basic profile data.
+Uses the authenticated session identity. Legacy `/api/graduation/:studentId` 暫時保留，
+但 path student ID 必須與 session 相同，否則回傳 `403`。
 
 畢業學分要求**依學生系所查 `server/src/data/graduationRequirements.js`**，沒有全校通用的預設值（總學分有 128／130／131／134／156 五種）。
 

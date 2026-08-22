@@ -59,6 +59,27 @@ export async function queryRows(sql, params = []) {
   return rows;
 }
 
+// 供需要原子性的多陳述式操作使用（例如 profileSchemaMigration.js 的
+// student_id 回填）：`fn` 收到一個已開啟交易的 connection，內部所有
+// `connection.execute(...)` 呼叫要嘛全部成功才 commit，`fn` 拋出例外時
+// 整批 rollback，不會留下半套資料。呼叫端不得繼續用共用的 `queryRows()`
+// 執行同一批操作——那是各自向連線池借用不同連線、各自 autocommit，
+// 無法組成單一交易。
+export async function withTransaction(fn) {
+  const connection = await getPool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await fn(connection);
+    await connection.commit();
+    return result;
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function closePool() {
   if (pool) {
     await pool.end();

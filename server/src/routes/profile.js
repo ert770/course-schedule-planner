@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { getUserPreferences, updateUserPreferences } from '../services/memoryService.js';
 import { isDepartmentInput } from '../utils/text.js';
 import { buildCourseSearchScope } from '../skills/courseScope.js';
-import { resolveIdentity, identityErrorResponse } from '../services/identityService.js';
 import { PREFERENCE_TAG_GROUPS } from '../data/preferenceTags.js';
+import { requireIdentity } from '../middleware/requireIdentity.js';
 
 const router = Router();
 
@@ -19,17 +19,9 @@ router.get('/preference-tags', (req, res) => {
   res.json({ groups: PREFERENCE_TAG_GROUPS });
 });
 
-router.get('/', async (req, res) => {
+router.get('/', requireIdentity, async (req, res) => {
   try {
-    // 不再有 `|| 'default'`。沒帶身分或查無此人一律拒絕，
-    // 否則未登入的請求會落到一個共用假使用者身上並讀寫它的偏好。
-    const identity = await resolveIdentity(req.query.userId);
-    if (!identity.found) {
-      const { status, error } = identityErrorResponse(identity);
-      return res.status(status).json({ error });
-    }
-
-    const prefs = await getUserPreferences(identity);
+    const prefs = await getUserPreferences(req.identity);
     res.json({
       ...prefs,
       courseSearchScope: buildCourseSearchScope(prefs),
@@ -39,15 +31,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireIdentity, async (req, res) => {
   try {
     const { userId, ...updates } = req.body;
-
-    const identity = await resolveIdentity(userId);
-    if (!identity.found) {
-      const { status, error } = identityErrorResponse(identity);
-      return res.status(status).json({ error });
-    }
 
     // 型別錯誤的 department 必須在邊界擋下，不能靠正規化「救回來」。
     // 物件、陣列、數字經字串轉換後會變成看起來正常的值寫進資料庫，
@@ -60,7 +46,7 @@ router.post('/', async (req, res) => {
     // 「#不排早八」標籤（舊決策 C）——但那兩者不是同一件事：標籤是「每天的
     // 第一節都不要」，避開時段是「這個星期幾的這一節不要」。擋掉第 1 節等於
     // 讓使用者無法只避開某一天的早八。兩者可重疊，排課時取聯集。
-    const updated = await updateUserPreferences(identity, updates);
+    const updated = await updateUserPreferences(req.identity, updates);
     res.json({ success: true, preferences: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -61,3 +61,17 @@ export function makeReview(overrides = {}) {
     ...overrides,
   };
 }
+
+// 典型「涼課」評價：四個涼度維度取值域高分端。
+export function makeEasyReview(courseId, overrides = {}) {
+  return makeReview({
+    courseId, sweetness: 5, coolness: 5, workload: 1, overall: 5, reviewCount: 5, ...overrides,
+  });
+}
+
+// 典型「硬課」評價：四個涼度維度取值域低分端。
+export function makeToughReview(courseId, overrides = {}) {
+  return makeReview({
+    courseId, sweetness: 1, coolness: 1, workload: 5, overall: 1, reviewCount: 5, ...overrides,
+  });
+}

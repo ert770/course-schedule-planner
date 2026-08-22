@@ -1,25 +1,19 @@
 import { Router } from 'express';
 import { validateSchedule } from '../skills/scheduler.js';
+import { validateScheduleAgainstConstraints } from '../skills/scheduleValidator.js';
 import { saveSchedule, getSavedSchedules } from '../services/memoryService.js';
 import { generateForUser } from '../services/scheduleService.js';
-import { resolveIdentity, identityErrorResponse } from '../services/identityService.js';
+import { requireIdentity } from '../middleware/requireIdentity.js';
 
 const router = Router();
 
-router.post('/generate', async (req, res) => {
+router.post('/generate', requireIdentity, async (req, res) => {
   try {
     const { userId, courseIds = [], filters = {}, constraints = {} } = req.body;
 
-    // 排課讀的是這位學生的偏好與修課歷史，身分錯了整份結果都不可信。
-    const identity = await resolveIdentity(userId);
-    if (!identity.found) {
-      const { status, error } = identityErrorResponse(identity);
-      return res.status(status).json({ error });
-    }
-
     // 排課流程只有一份實作，與 AI Agent 的 `run_csp_scheduler` 共用
     // （見 `services/scheduleService.js`），避免兩條路徑各自漂移。
-    const result = await generateForUser(identity, { courseIds, filters, constraints });
+    const result = await generateForUser(req.identity, { courseIds, filters, constraints });
     res.json(result);
   } catch (err) {
     if (!err.status) console.error('Schedule error:', err);
@@ -29,40 +23,42 @@ router.post('/generate', async (req, res) => {
 
 router.post('/validate', (req, res) => {
   try {
-    const { courses } = req.body;
+    const { courses, constraints = {} } = req.body;
     const result = validateSchedule(courses);
+
+    // roadmap #21 + Codex adversarial review 修正（2026-08-20）：原本只在
+    // 請求帶有非空 constraints 時才額外跑完整硬性限制檢查，導致目前唯一
+    // 的實際呼叫模式（`client/src` 尚未呼叫這支端點，但外部呼叫端可能
+    // 只送 `{courses}`）完全繞過了不需要 constraints 就能檢查的規則
+    // （例如 roadmap #15 的共同必修配對完整性）——把生成好的一組配對課表
+    // 拿掉其中一半再送回來驗證，回應仍會是 `valid`。現在一律執行，
+    // 附加於既有欄位之外，不取代它們；沒有 constraints 時傳空物件即可，
+    // `validateScheduleAgainstConstraints()` 已對每一項規則各自處理
+    // constraints 資料不足的情況（回報進 `unchecked`，不是假裝通過）。
+    const extended = validateScheduleAgainstConstraints(courses, constraints);
+    result.violations = extended.violations;
+    result.unchecked = extended.unchecked;
+    result.hardConstraintsValid = extended.valid;
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.post('/save', async (req, res) => {
+router.post('/save', requireIdentity, async (req, res) => {
   try {
     const { userId, name = '我的課表', schedule, totalCredits } = req.body;
-
-    const identity = await resolveIdentity(userId);
-    if (!identity.found) {
-      const { status, error } = identityErrorResponse(identity);
-      return res.status(status).json({ error });
-    }
-
-    const saved = await saveSchedule(identity.canonicalId, name, schedule, totalCredits);
+    const saved = await saveSchedule(req.identity.canonicalId, name, schedule, totalCredits);
     res.json({ success: true, schedule: saved });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.get('/saved', async (req, res) => {
+router.get('/saved', requireIdentity, async (req, res) => {
   try {
-    const identity = await resolveIdentity(req.query.userId);
-    if (!identity.found) {
-      const { status, error } = identityErrorResponse(identity);
-      return res.status(status).json({ error });
-    }
-
-    const schedules = await getSavedSchedules(identity.canonicalId);
+    const schedules = await getSavedSchedules(req.identity.canonicalId);
     res.json({ schedules });
   } catch (err) {
     res.status(500).json({ error: err.message });
