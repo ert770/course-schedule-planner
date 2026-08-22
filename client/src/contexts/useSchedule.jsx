@@ -1,32 +1,25 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { useAuth } from './useAuth';
 
 const ScheduleContext = createContext();
 
 export function ScheduleProvider({ children }) {
   const { user } = useAuth();
-  const [schedule, setSchedule] = useState([]);
-  const [watchlist, setWatchlist] = useState([]);
 
-  // 1. 登入或整理網頁時，瞬間從 LocalStorage 讀取草稿 (符合 React ESLint 規範)
-  useEffect(() => {
-    if (user?.studentId) {
-      const localSchedule = localStorage.getItem(`fcu_schedule_${user.studentId}`);
-      const localWatchlist = localStorage.getItem(`fcu_watchlist_${user.studentId}`);
-      
-      // 先準備好要更新的資料，最後一次性設定狀態，避免多次同步呼叫 setState
-      const nextSchedule = localSchedule ? JSON.parse(localSchedule) : [];
-      const nextWatchlist = localWatchlist ? JSON.parse(localWatchlist) : [];
+  // 🌟 透過函式初始化 state，直接從 LocalStorage 讀取，完全不需要 useEffect 觸發 setState！
+  const [schedule, setSchedule] = useState(() => {
+    if (!user?.studentId) return [];
+    const local = localStorage.getItem(`fcu_schedule_${user.studentId}`);
+    return local ? JSON.parse(local) : [];
+  });
 
-      setSchedule(nextSchedule);
-      setWatchlist(nextWatchlist);
-    } else {
-      setSchedule([]);
-      setWatchlist([]);
-    }
-  }, [user?.studentId]);
+  const [watchlist, setWatchlist] = useState(() => {
+    if (!user?.studentId) return [];
+    const local = localStorage.getItem(`fcu_watchlist_${user.studentId}`);
+    return local ? JSON.parse(local) : [];
+  });
 
-  // 2. 存檔邏輯 (純前端 LocalStorage，不發送 API、不塞爆資料庫)
+  // 存檔邏輯 (純前端 LocalStorage)
   const saveScheduleToLocal = (newSchedule) => {
     if (!user?.studentId) return;
     localStorage.setItem(`fcu_schedule_${user.studentId}`, JSON.stringify(newSchedule));
@@ -37,14 +30,14 @@ export function ScheduleProvider({ children }) {
     localStorage.setItem(`fcu_watchlist_${user.studentId}`, JSON.stringify(newWatchlist));
   };
 
-  // 3. 加退選邏輯
+  // 加退選邏輯
   const addCourse = async (newCourse) => {
     if (schedule.some(c => c.id === newCourse.id)) {
       return { success: false, message: '此課程已在您的課表中。' };
     }
     const newSchedule = [...schedule, newCourse];
     setSchedule(newSchedule);
-    saveScheduleToLocal(newSchedule); // 異動後立刻寫入瀏覽器
+    saveScheduleToLocal(newSchedule);
     return { success: true, message: `成功將【${newCourse.name}】加入課表！` };
   };
 
