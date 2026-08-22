@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
+import { useSchedule } from '../contexts/useSchedule';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { coursesAPI, profileAPI } from '../services/api';
-import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, X } from 'lucide-react';
+import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X } from 'lucide-react';
 import '../App.css'; // Reuse some layout styles
 import { formatCourseTime } from '../utils/courseTime';
 
@@ -13,6 +15,7 @@ export default function SearchPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist } = useSchedule();
   
   const [activeTab, setActiveTab] = useState('dept');
   const [searchResults, setSearchResults] = useState([]);
@@ -22,6 +25,14 @@ export default function SearchPage() {
   const [courseSearchScope, setCourseSearchScope] = useState(null);
   const [scopeLoading, setScopeLoading] = useState(true);
   const [searchError, setSearchError] = useState('');
+  const [actionNotice, setActionNotice] = useState(null);
+  const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
+  const [watchlistCourses, setWatchlistCourses] = useState([]);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [watchlistError, setWatchlistError] = useState('');
+  const userMenuRef = useRef(null);
+
+  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   // Form states for Tab 1
   const [deptForm, setDeptForm] = useState({
@@ -39,7 +50,7 @@ export default function SearchPage() {
     period: '',
     keyword: '',
     instructor: '',
-    language: '中文 (Chinese)',
+    language: '',
     isGenEd: false,
     description: ''
   });
@@ -76,6 +87,38 @@ export default function SearchPage() {
 
     return () => { cancelled = true; };
   }, [user?.studentId]);
+
+  useEffect(() => {
+    if (activeTab !== 'watchlist') return undefined;
+    if (watchlist.length === 0) {
+      setWatchlistCourses([]);
+      setWatchlistError('');
+      setWatchlistLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setWatchlistLoading(true);
+    setWatchlistError('');
+
+    Promise.allSettled(watchlist.map(id => coursesAPI.getDetail(id)))
+      .then(results => {
+        if (cancelled) return;
+        const courses = results
+          .filter(result => result.status === 'fulfilled')
+          .map(result => result.value);
+        setWatchlistCourses(courses);
+        const unavailableCount = results.length - courses.length;
+        if (unavailableCount > 0) {
+          setWatchlistError(`有 ${unavailableCount} 門關注課程目前無法載入，其他課程仍可正常管理。`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setWatchlistLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [activeTab, watchlist]);
 
   const handleDeptSearch = async (e) => {
     e.preventDefault();
@@ -139,6 +182,60 @@ export default function SearchPage() {
     }
   };
 
+  const handleAddCourse = async (event, course) => {
+    event.stopPropagation();
+    setActionNotice(null);
+    const result = await addCourse(course);
+    setActionNotice({
+      level: result.success ? 'success' : 'error',
+      text: result.success ? `已將「${course.name}」加入課表。` : result.message,
+    });
+  };
+
+  const handleToggleCourse = async (event, course) => {
+    event.stopPropagation();
+    const isAdded = schedule.some(item => String(item.id) === String(course.id));
+    if (isAdded) {
+      removeCourse(course.id);
+      setActionNotice({ level: 'success', text: `已將「${course.name}」從課表移除。` });
+      return;
+    }
+    await handleAddCourse(event, course);
+  };
+
+  const handleToggleWatchlist = async (event, course) => {
+    event.stopPropagation();
+    const id = String(course.id);
+    setWatchlistUpdatingId(id);
+    setActionNotice(null);
+    const result = await toggleWatchlist(course);
+    setWatchlistUpdatingId('');
+    setActionNotice({
+      level: result.success ? 'success' : 'error',
+      text: result.success
+        ? (result.watching ? `已關注「${course.name}」。` : `已取消關注「${course.name}」。`)
+        : result.message,
+    });
+  };
+
+  const handleResetDeptForm = () => {
+    setDeptForm(prev => ({ ...prev, category: '', keyword: '' }));
+    setSearchError(courseSearchScope?.className ? '' : CLASS_REQUIRED_MESSAGE);
+    setActionNotice(null);
+  };
+
+  const handleResetCondForm = () => {
+    setCondForm({
+      code: '', dayOfWeek: '', period: '', keyword: '', instructor: '',
+      language: '', isGenEd: false, description: '',
+    });
+    setSearchError(courseSearchScope?.className ? '' : CLASS_REQUIRED_MESSAGE);
+    setActionNotice(null);
+  };
+
+  const displayCourses = activeTab === 'watchlist' ? watchlistCourses : searchResults;
+  const resultError = activeTab === 'watchlist' ? watchlistError : searchError;
+
   return (
     <div className="layout-container" id="search-page">
       {/* Top Navbar */}
@@ -153,7 +250,7 @@ export default function SearchPage() {
           <button className="nav-btn active"><Search size={16}/> 尋找課程</button>
         </div>
         <div className="nav-actions">
-          <div className="nav-user" onClick={() => setShowUserMenu(!showUserMenu)}>
+          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
             <div className="avatar">{(user?.name || '同')[0]}</div>
             <span>{user?.name || '同學'}</span>
             
@@ -189,6 +286,12 @@ export default function SearchPage() {
               onClick={() => setActiveTab('cond')}
             >
               依條件查詢
+            </button>
+            <button
+              className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`}
+              onClick={() => setActiveTab('watchlist')}
+            >
+              ❤️ 我的關注
             </button>
           </div>
 
@@ -237,9 +340,21 @@ export default function SearchPage() {
                   onChange={e => setDeptForm({...deptForm, keyword: e.target.value})}
                 />
               </div>
-              <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>
-                {scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}
-              </button>
+              <div className="search-form-actions">
+                <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>
+                  {scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}
+                </button>
+                <button
+                  type="button"
+                  className="search-reset-btn"
+                  onClick={handleResetDeptForm}
+                  disabled={isSearching || scopeLoading}
+                  aria-label="重設依系所查詢條件"
+                  title="重設查詢條件"
+                >
+                  <RotateCcw size={17} />
+                </button>
+              </div>
             </form>
           )}
 
@@ -301,6 +416,7 @@ export default function SearchPage() {
               <div className="form-group">
                 <label>授課語言 (Language)</label>
                 <select value={condForm.language} onChange={e => setCondForm({...condForm, language: e.target.value})}>
+                  <option value="">全部 (All)</option>
                   <option value="中文 (Chinese)">中文 (Chinese)</option>
                   <option value="English">English</option>
                 </select>
@@ -327,24 +443,54 @@ export default function SearchPage() {
                 />
               </div>
 
-              <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>
-                {scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}
-              </button>
+              <div className="search-form-actions">
+                <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>
+                  {scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}
+                </button>
+                <button
+                  type="button"
+                  className="search-reset-btn"
+                  onClick={handleResetCondForm}
+                  disabled={isSearching || scopeLoading}
+                  aria-label="重設依條件查詢條件"
+                  title="重設查詢條件"
+                >
+                  <RotateCcw size={17} />
+                </button>
+              </div>
             </form>
+          )}
+
+          {activeTab === 'watchlist' && (
+            <div className="watchlist-help">
+              <Heart size={42} aria-hidden="true" />
+              <h3>關注清單</h3>
+              <p>關注資料保存在目前登入帳號中，可在這裡集中比較、加選或取消關注。</p>
+            </div>
           )}
         </div>
 
         <div className="search-results-area">
           <div className="results-header">
-            <h3>搜尋結果 ({searchResults.length} 筆)</h3>
+            <h3>{activeTab === 'watchlist' ? '我的關注清單' : '搜尋結果'} ({displayCourses.length} 筆)</h3>
           </div>
-          {searchError ? (
-            <div className="no-results error-text" role="alert">{searchError}</div>
-          ) : searchResults.length === 0 ? (
-            <div className="no-results">請設定條件並開始搜尋</div>
-          ) : (
+          {actionNotice && (
+            <div className={`search-action-notice ${actionNotice.level}`} role="status">
+              {actionNotice.text}
+            </div>
+          )}
+          {resultError && (
+            <div className="search-action-notice error" role="alert">{resultError}</div>
+          )}
+          {watchlistLoading ? (
+            <div className="no-results" role="status">正在載入關注課程…</div>
+          ) : displayCourses.length === 0 && !resultError ? (
+            <div className="no-results">
+              {activeTab === 'watchlist' ? '目前沒有關注課程。' : '請設定條件並開始搜尋'}
+            </div>
+          ) : displayCourses.length > 0 ? (
             <div className="results-grid">
-              {searchResults.map(course => (
+              {displayCourses.map(course => (
                 <div key={course.id} className="course-card" onClick={() => setDetailCourse(course)}>
                   <div className="course-card-header">
                     <h4>{course.name}</h4>
@@ -376,10 +522,37 @@ export default function SearchPage() {
                       </span>
                     )}
                   </div>
+                  <div className="course-card-actions">
+                    <button
+                      type="button"
+                      className={`course-card-action ${watchlist.includes(String(course.id)) ? 'active' : ''}`}
+                      onClick={event => handleToggleWatchlist(event, course)}
+                      disabled={watchlistUpdatingId === String(course.id)}
+                      aria-label={watchlist.includes(String(course.id)) ? `取消關注 ${course.name}` : `關注 ${course.name}`}
+                    >
+                      <Heart size={15} fill={watchlist.includes(String(course.id)) ? 'currentColor' : 'none'} />
+                      {watchlistUpdatingId === String(course.id)
+                        ? '更新中…'
+                        : (watchlist.includes(String(course.id)) ? '已關注' : '關注')}
+                    </button>
+                    <button
+                      type="button"
+                      className={`course-card-action ${schedule.some(item => String(item.id) === String(course.id)) ? 'danger' : 'primary'}`}
+                      onClick={event => handleToggleCourse(event, course)}
+                      disabled={validating && !schedule.some(item => String(item.id) === String(course.id))}
+                      aria-label={schedule.some(item => String(item.id) === String(course.id))
+                        ? `取消加選 ${course.name}`
+                        : `加入課表 ${course.name}`}
+                    >
+                      {schedule.some(item => String(item.id) === String(course.id))
+                        ? <><X size={15} /> 取消加選</>
+                        : <><Plus size={15} /> {validating ? '驗證中…' : '加入課表'}</>}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 

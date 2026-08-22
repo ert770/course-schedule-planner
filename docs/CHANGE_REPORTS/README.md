@@ -2,6 +2,20 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-23
+
+1. [讓 PR #11 與後續 backend pull request 執行 GitHub Actions CI](./2026-08-23-pr11-backend-ci.md)
+2. [補齊 PR #3 的加退選、持久化關注、搜尋重設與登入／選單 UI/UX](./2026-08-23-pr3-ui-ux-alignment.md)
+
+## 2026-08-22
+
+1. [選擇性整合 PR #3：修復搜尋加選、課表儲存與關注同步](./2026-08-22-pr3-course-search-schedule-sync.md)
+2. [建立互動資料隱私、匿名化、consent 與保存規則（Roadmap #33）](./2026-08-22-interaction-data-privacy.md)
+
+## 2026-08-21
+
+1. [定義 InteractionEvent schema 與回饋原因（Roadmap #29）](./2026-08-21-interaction-event-schema.md)
+
 ## 2026-08-20
 
 1. [修復共同必修（Roadmap #15）的 adversarial review 發現（3 項）](./2026-08-20-corequisite-adversarial-review-fixes.md)

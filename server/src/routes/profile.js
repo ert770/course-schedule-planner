@@ -4,6 +4,7 @@ import { isDepartmentInput } from '../utils/text.js';
 import { buildCourseSearchScope } from '../skills/courseScope.js';
 import { PREFERENCE_TAG_GROUPS } from '../data/preferenceTags.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
+import { requireServiceConsent } from '../middleware/requireConsent.js';
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.get('/preference-tags', (req, res) => {
   res.json({ groups: PREFERENCE_TAG_GROUPS });
 });
 
-router.get('/', requireIdentity, async (req, res) => {
+router.get('/', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
     const prefs = await getUserPreferences(req.identity);
     res.json({
@@ -31,7 +32,7 @@ router.get('/', requireIdentity, async (req, res) => {
   }
 });
 
-router.post('/', requireIdentity, async (req, res) => {
+router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
     const { userId, ...updates } = req.body;
 

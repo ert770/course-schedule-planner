@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
+import { useSchedule } from '../contexts/useSchedule';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { scheduleAPI, chatAPI, profileAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import { formatCourseTime } from '../utils/courseTime';
@@ -50,8 +52,14 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  
-  const [schedule, setSchedule] = useState([]);
+  const {
+    schedule,
+    loading: scheduleLoading,
+    saving,
+    replaceSchedule,
+    removeCourse,
+    saveCurrentSchedule,
+  } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
   // 偏好狀態就是**目前勾選的標籤集合**，來源是 profile API（即 MySQL
@@ -73,6 +81,10 @@ export default function DashboardPage() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const chatInputRef = useRef(null);
   const chatScrollRef = useRef(null);
+  const initialGenerationUserRef = useRef(null);
+  const userMenuRef = useRef(null);
+
+  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   useEffect(() => {
     // Scroll chat to bottom
@@ -130,7 +142,7 @@ export default function DashboardPage() {
       setScheduleNotice(buildScheduleNotice(data));
 
       if (data.success) {
-        setSchedule(data.schedule);
+        replaceSchedule(data.schedule);
       } else {
         setChatHistory(prev => [...prev, {
           role: 'bot',
@@ -148,11 +160,18 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [user?.studentId]);
+  }, [replaceSchedule, user?.studentId]);
 
   useEffect(() => {
+    if (scheduleLoading || !user?.studentId) return;
+    if (schedule.length > 0) {
+      initialGenerationUserRef.current = user.studentId;
+      return;
+    }
+    if (initialGenerationUserRef.current === user.studentId) return;
+    initialGenerationUserRef.current = user.studentId;
     generateInitialSchedule();
-  }, [generateInitialSchedule]);
+  }, [generateInitialSchedule, schedule.length, scheduleLoading, user?.studentId]);
 
   // 標籤目錄不隨使用者變動，載入一次即可。
   useEffect(() => {
@@ -237,7 +256,7 @@ export default function DashboardPage() {
     try {
       const res = await chatAPI.send(msg);
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
-        setSchedule(res.data.schedule);
+        replaceSchedule(res.data.schedule);
         setChatHistory(prev => [...prev, { 
           role: 'bot', 
           text: `成功生成課表！共 ${res.data.schedule.length} 門課，${res.data.totalCredits} 學分。`,
@@ -269,6 +288,14 @@ export default function DashboardPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleSave = async () => {
+    const result = await saveCurrentSchedule();
+    setScheduleNotice(makeNotice({
+      level: result.success ? 'success' : 'error',
+      message: result.success ? '課表已儲存到目前登入帳號。' : result.message,
+    }));
+  };
+
   return (
     <div className="layout-container" id="dashboard-page">
       {/* Top Navbar */}
@@ -283,7 +310,7 @@ export default function DashboardPage() {
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
         </div>
         <div className="nav-actions">
-          <div className="nav-user" onClick={() => setShowUserMenu(!showUserMenu)}>
+          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
             <div className="avatar">{(user?.name || '同')[0]}</div>
             <span>{user?.name || '同學'}</span>
             
@@ -291,6 +318,9 @@ export default function DashboardPage() {
               <div className="user-dropdown-menu">
                 <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
                   <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
+                </button>
+                <button className="user-dropdown-item" onClick={() => navigate('/privacy')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 隱私與資料
                 </button>
                 <button className="user-dropdown-item" onClick={toggleTheme}>
                   {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 
@@ -387,6 +417,14 @@ export default function DashboardPage() {
             </div>
             <div className="schedule-actions">
               <button className="action-btn secondary" onClick={handleExport}>匯出課表</button>
+              <button
+                className="action-btn secondary"
+                onClick={handleSave}
+                disabled={saving || schedule.length === 0}
+                id="save-dashboard-schedule-btn"
+              >
+                {saving ? '儲存中…' : '儲存課表'}
+              </button>
               <button className="action-btn primary" onClick={handleRegenerate}>
                 <Sparkles size={16} /> 套用偏好排課
               </button>
@@ -554,6 +592,15 @@ export default function DashboardPage() {
                 <p>{detailCourse.description}</p>
               </div>
             )}
+            <button
+              className="action-btn secondary modal-remove-course"
+              onClick={() => {
+                removeCourse(detailCourse.id);
+                setDetailCourse(null);
+              }}
+            >
+              從課表移除
+            </button>
           </div>
         </div>
       )}

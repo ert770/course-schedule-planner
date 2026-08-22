@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
-import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, Sun } from 'lucide-react';
+import { useSchedule } from '../contexts/useSchedule';
+import { useClickOutside } from '../hooks/useClickOutside';
+import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, Sun, Save } from 'lucide-react';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
@@ -15,8 +17,14 @@ export default function SchedulePage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const {
+    schedule,
+    saving,
+    replaceSchedule,
+    removeCourse,
+    saveCurrentSchedule,
+  } = useSchedule();
 
-  const [schedule, setSchedule] = useState([]);
   const [courses, setCourses] = useState([]);
   const [selectedCourses, setSelectedCourses] = useState([]);
   const [showCourses, setShowCourses] = useState(false);
@@ -26,6 +34,9 @@ export default function SchedulePage() {
   const [detailCourse, setDetailCourse] = useState(null);
   const [notice, setNotice] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef(null);
+
+  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +108,7 @@ export default function SchedulePage() {
       });
 
       if (data.success) {
-        setSchedule(data.schedule);
+        replaceSchedule(data.schedule);
         setShowCourses(false);
         const warnings = data.warnings || [];
         setNotice(
@@ -116,9 +127,17 @@ export default function SchedulePage() {
   };
 
   const handleScheduleFromChat = (newSchedule) => {
-    setSchedule(newSchedule);
+    replaceSchedule(newSchedule);
     setShowCourses(false);
     setNotice(null);
+  };
+
+  const handleSave = async () => {
+    const result = await saveCurrentSchedule();
+    setNotice({
+      level: result.success ? 'success' : 'error',
+      text: result.success ? '課表已儲存到目前登入帳號。' : result.message,
+    });
   };
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
@@ -144,7 +163,7 @@ export default function SchedulePage() {
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
         </div>
         <div className="nav-actions">
-          <div className="nav-user" onClick={() => setShowUserMenu(!showUserMenu)}>
+          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
             <div className="avatar">{(user?.name || '同')[0]}</div>
             <span>{user?.name || '同學'}</span>
 
@@ -182,6 +201,15 @@ export default function SchedulePage() {
               )}
             </div>
             <div className="schedule-actions">
+              <button
+                className="action-btn secondary"
+                onClick={handleSave}
+                disabled={saving || schedule.length === 0}
+                id="save-schedule-btn"
+              >
+                <Save size={16} />
+                {saving ? '儲存中…' : '儲存課表'}
+              </button>
               <button
                 className="action-btn secondary"
                 onClick={() => setShowCourses(!showCourses)}
@@ -312,6 +340,15 @@ export default function SchedulePage() {
                 <p>{detailCourse.description}</p>
               </div>
             )}
+            <button
+              className="action-btn secondary modal-remove-course"
+              onClick={() => {
+                removeCourse(detailCourse.id);
+                setDetailCourse(null);
+              }}
+            >
+              從課表移除
+            </button>
           </div>
         </div>
       )}

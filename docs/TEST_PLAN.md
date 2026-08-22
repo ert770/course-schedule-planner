@@ -321,6 +321,24 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | G6 | 明確搜尋 `category=通識` | 跨本人班級範圍回傳直接通識及認抵課 |
 | G7 | 一般未指定分類搜尋 | 維持 F7；排課候選則額外納入通識 |
 
+## #29 InteractionEvent schema 測試
+
+`server/test/interactionEventSchema.test.js`。這組測試只操作 pure functions，不連 MySQL、
+不建立 runtime JSON，也不代表 #2 的前端埋點或 #33 的 consent 已完成。
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| I29-1 | client 嘗試帶入 user／event／timestamp／idempotency 欄位 | 全部由 authenticated identity 與 server envelope 覆寫；學期正規化為 `first`／`second` |
+| I29-2 | 推薦曝光 | 完整保留 ordered candidate set、displayed subset、方案順位與版本快照 |
+| I29-3 | displayed section 不在 candidate set | validator 拒絕不一致曝光資料 |
+| I29-4 | 必修推薦被接受 | `source=required` 保留，不會混成興趣正回饋 |
+| I29-5 | 移除／退選原因 | 只接受 7 個 enum；其他 event type 禁止夾帶原因 |
+| I29-6 | 同一 request/action 重送但 eventId／timestamp 不同 | `(userId, idempotencyKey)` 命中 duplicate，維持一筆事件 |
+| I29-7 | 相同 key 但 logical payload 改變 | 回 conflict，不覆寫既有事件 |
+| I29-8 | actionId 不同 | 產生不同 key，可 append 為獨立操作 |
+| I29-9 | 無版本 flat draft | migration 轉為合法 v1 nested shape |
+| I29-10 | 未知未來版本、未知 event type、無身分、非法順位 | 明確拒絕，不補猜值 |
+
 ## 資料庫契約測試
 
 `server/test/database-contract.test.js`。合成資料的測試不會在**資料庫變動時**失敗，
@@ -363,19 +381,44 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | `/api/health` | 回傳 `status: ok` |
 | `/api/auth/login` | 正確登入、錯誤密碼、缺少欄位；成功時設定簽名 HttpOnly session cookie |
 | `/api/auth/me` | 未登入 401；登入後由 session 回傳 canonical student ID |
-| `/api/courses` | keyword、department、category、period 查詢 |
+| `/api/courses` | keyword、department、category、period 查詢；多時段課程可命中第二段以後，day + period 必須落在同一個 time block |
 | `/api/schedule/generate` | 無 courseIds、指定 courseIds、偏好限制 |
 | `/api/schedule/validate` | 有衝堂、無衝堂 |
 | `/api/profile` | DB-less CI 驗證未登入 401、改送另一個 ID 時在資料存取前回 403；成功讀取／更新 session 使用者偏好須在已設定 MySQL 的整合環境驗證，schema v1 另由純函式測試固定契約 |
 | `/api/reviews/easy` | limit 正常運作 |
 | `/api/graduation/me` | 學分缺口與推薦 |
 | `/api/chat` | 無 message、正常 message、無 API key |
+| `/api/privacy/policy` | 公開政策含三用途、Raw Chat 30 天與研究 k≥5 |
+| `/api/privacy/consents` | 未同意預設拒絕；必要同意後可用；兩個可選用途維持 false；政策改版要求重同意 |
+| `/api/privacy/chat` | 只刪登入者 Raw Chat，不影響他人與結構化 Profile |
+| `/api/privacy/deletion-intents` | token 短效、subject scoped、單次使用，錯誤確認詞不得刪除 |
+
+## #33 隱私與加密測試
+
+| 編號 | 情境 | 預期 |
+| --- | --- | --- |
+| PR1 | canonical ID 經 HMAC | 固定為 `v1:<64 hex>`，輸出不含學號，不同學生不同值 |
+| PR2 | AES-256-GCM round-trip | 密文不含明文且可正確還原 |
+| PR3 | ciphertext／auth tag 被竄改 | 以 `CHAT_INTEGRITY_ERROR` 拒絕，不回傳部分明文 |
+| PR4 | 兩位已同意使用者各有聊天 | 歷史完全隔離，清除 A 不影響 B |
+| PR5 | 未同意呼叫個人 Chat API | HTTP 428 `CONSENT_REQUIRED`；同意必要用途後才通過 middleware |
+| PR6 | 選擇性同意未勾 | 核心服務仍可使用，不產生可學習／研究資料 |
+| PR7 | legacy chat cleanup 不帶 apply | 只回報筆數與日期區間，不顯示內容或 ID，也不刪檔 |
 
 ## 前端操作測試
 
 - 登入後導向 onboarding 或 dashboard。
+- 啟用 privacy enforcement 時，未同意先導向 Privacy Center；必要用途同意後才能進入 onboarding/dashboard，兩個可選項保持未勾仍可使用核心服務（A/B）。
 - 初始偏好可儲存。
 - 課程搜尋可查詢並顯示結果；通識篩選需顯示四領域，並與一般分類搜尋做 A/B。
+- 搜尋結果可加入共用課表與更新關注清單；加入前必須等待 `/api/schedule/validate` 明確通過，衝堂／重複班次／API 失敗皆不得 fail-open。
+- 搜尋卡片加退選 A/B：未加入時顯示藍色「加入課表」；成功加入後同一卡片改為紅色「取消加選」，點擊後課程立即從共用草稿課表移除。
+- 關注清單持久化 A/B：未關注課程不出現在「❤️ 我的關注」；關注後以後端保存的 section ID 還原完整課程卡，重新整理仍存在，取消關注後立即移出清單。
+- 兩種搜尋表單的重設按鈕只清除可編輯條件；依系所查詢保留 Profile 派生的系所、年級與班級。
+- 登入送出期間學號、密碼、密碼顯示與提交控制皆停用，提交按鈕具有 loading 狀態；密碼顯示按鈕可由鍵盤操作並有動態 accessible name。
+- Dashboard、排課、搜尋及畢業進度的使用者選單，點擊選單外或按 Escape 後關閉；點擊選單內功能仍正常執行。
+- 課表只在使用者按下「儲存課表」時呼叫 `/api/schedule/save`；重新整理後載入最新已存版本，未儲存的畫面修改不冒充持久化資料。
+- 登出或切換帳號時先清空共用課表與關注狀態；舊帳號尚未完成的非同步回應不得覆寫新帳號狀態。
 - 儀表板可產生課表。
 - 課表格可顯示不同星期與節次。
 - 畢業學分頁可顯示缺口。

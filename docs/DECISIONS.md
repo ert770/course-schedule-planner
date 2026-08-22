@@ -525,3 +525,90 @@ Consequences:
 - Deploying this branch to any environment that sets `NODE_ENV=production` without also setting a
   sufficiently long `SESSION_SECRET` will now fail to start — this is a deliberate breaking change
   for that specific misconfiguration, not a regression to work around.
+
+## ADR-016: Define Interaction Events Before Collecting Them
+
+Date: 2026-08-21
+
+Context:
+Roadmap #29 must define enough event semantics to distinguish a course the user never saw from one
+they rejected, and a required-course acceptance or time-conflict removal from genuine preference
+feedback. However, roadmap #2 is the task that instruments the product, and #33 must first define
+consent, pseudonymization, retention, deletion, and research-export rules. Persisting real events
+inside #29 would bypass both dependencies and create a user-linked dataset before its privacy rules
+exist.
+
+Decision:
+
+1. `interactionEventSchema.js` is a pure, versioned contract only. It normalizes, migrates,
+   validates, creates server-authoritative event envelopes, derives idempotency keys, and resolves
+   append/duplicate/conflict outcomes against an injected array. It exposes no Express route and
+   writes neither MySQL nor `server/data/*.json`.
+2. `userId`, `eventId`, `timestamp`, `schemaVersion`, and `idempotencyKey` are server-owned.
+   `createInteractionEvent()` always overwrites same-named client input with authenticated identity
+   and server-generated values. #33 will decide how the canonical ID becomes a pseudonymous
+   analytics ID before #2 persists anything.
+3. Idempotency is scoped by `(userId, idempotencyKey)`. The SHA-256 key is derived from
+   `requestId + actionId + eventType + plan/course subject`; it deliberately excludes `eventId` and
+   `timestamp`, which legitimately change when the same React action is retried. A matching key and
+   matching logical payload returns the original event; a matching key with changed context is a
+   conflict, not an overwrite.
+4. Exposure records both the ordered candidate set and the actually displayed subset, using only
+   stable course/section identifiers. Required, explicit, system-recommended, and exploration
+   sources stay distinct. Removal/withdrawal reasons use a fixed enum and do not accept free text.
+
+Rejected alternative — immediately add an interaction-events API and local JSON collection:
+rejected because it would be roadmap #2 data collection before roadmap #33 consent and retention
+rules. A local file is not harmless: the existing chat-history incident showed that runtime JSON
+can accumulate real student-linked content and accidentally enter Git history.
+
+Consequences:
+
+- Roadmap #29 can be completed and unit-tested without collecting a single real interaction.
+- Roadmap #33 is now unblocked and owns the privacy/pseudonymization boundary; roadmap #2 remains
+  blocked until #33 is complete.
+- Current UI operations are not instrumented by this change. Favorite, acceptance, removal,
+  withdrawal, and exploration event types are forward contracts only where the UI does not yet
+  expose those actions.
+- `recommendationReasonVersion` remains explicitly `null` until roadmap #26 defines a versioned
+  reason object; absence is recorded honestly instead of inventing a version.
+
+## ADR-017: Separate Raw Chat, Structured Preferences, and Analytics Consent
+
+Date: 2026-08-22
+
+Context:
+Roadmap #2 cannot collect student-linked interaction data until the product distinguishes data needed
+to provide the service from data used to learn personal weights or conduct research. The existing
+`chat_history.json` stored canonical student IDs and plaintext conversation indefinitely, and Agent
+logs repeated message/profile/thought/tool content. Treating all of this as one generic
+"personalization dataset" would make purpose limitation and deletion impossible.
+
+Decision:
+
+1. Consent is layered into required `service_processing` and two optional, default-off purposes:
+   `personalization_learning` and `aggregate_research`. Consent decisions are append-only and bound
+   to policy version `2026-08-22.v1`.
+2. Raw Chat is encrypted per record with AES-256-GCM and expires after 30 days. It exists only for
+   conversation continuity and is excluded from learning and research. A preference explicitly
+   confirmed in Chat may still be saved through the existing structured Profile tool; clearing Raw
+   Chat therefore does not erase Profile preferences.
+3. Privacy storage uses `v1:HMAC-SHA-256(secret, canonicalId)` subject IDs. The analytics secret and
+   AES key are independent deployment secrets. Persistent analytics records must not store both the
+   canonical ID and subject ID.
+4. Research output is aggregate-only with k ≥ 5. Raw Chat, complete course histories, and row-level
+   interaction events are prohibited from research exports.
+5. Personal endpoints use a current-version service-consent guard when enforcement is enabled.
+   Shared-MySQL migration and destructive legacy-chat cleanup require separate explicit confirmation;
+   neither is performed merely by deploying source code.
+
+Consequences:
+
+- #2 may use the consent guard and subject-ID boundary after migration/config rollout; it still owns
+  actual instrumentation, event persistence, and idempotent append.
+- The runtime no longer reads or writes `server/data/chat_history.json`; the existing file remains
+  untouched until its dry-run report is reviewed and deletion is explicitly approved.
+- AI logs contain operational metadata only. Gemini receives the minimum structured context needed
+  for the response and no display name.
+- Account/data deletion needs a short-lived single-use token and exact confirmation phrase. It deletes
+  service data but retains minimal consent/audit records for 365 days.

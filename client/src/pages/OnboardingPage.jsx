@@ -24,7 +24,7 @@ export default function OnboardingPage() {
             為了幫您量身打造最適合的課表，我們需要了解您的修課背景。
           </p>
           <p className="onboarding-privacy">
-            本系統僅將資料用於排課推薦，絕不外洩。
+            你的資料會依隱私中心中已同意的用途處理；可選的個人化學習與研究預設關閉。
           </p>
         </div>
 

@@ -52,6 +52,51 @@ describe('課程搜尋的班級範圍', () => {
   });
 });
 
+describe('多時段課程搜尋', () => {
+  const timedCourses = [
+    {
+      id: 201,
+      name: '跨日課程',
+      timeBlocks: [
+        { dayOfWeek: 1, startPeriod: 2, endPeriod: 3 },
+        { dayOfWeek: 3, startPeriod: 7, endPeriod: 8 },
+      ],
+      // 舊欄位只保留第一個區塊，測試必須證明搜尋不再只看這裡。
+      dayOfWeek: 1,
+      startPeriod: 2,
+      endPeriod: 3,
+    },
+    {
+      id: 202,
+      name: '單日時段',
+      timeBlocks: [{ dayOfWeek: 3, startPeriod: 2, endPeriod: 3 }],
+      dayOfWeek: 3,
+      startPeriod: 2,
+      endPeriod: 3,
+    },
+    { id: 203, name: '時間未定' },
+  ];
+
+  test('星期條件可命中第二個 time block', () => {
+    assert.deepEqual(filterCourses(timedCourses, { dayOfWeek: 3 }).map(course => course.id), [201, 202]);
+  });
+
+  test('星期與節次必須命中同一個 time block', () => {
+    assert.deepEqual(
+      filterCourses(timedCourses, { dayOfWeek: 3, period: 7 }).map(course => course.id),
+      [201]
+    );
+    assert.deepEqual(
+      filterCourses(timedCourses, { dayOfWeek: 1, period: 7 }).map(course => course.id),
+      []
+    );
+  });
+
+  test('有時段篩選時不回傳時間未定課程', () => {
+    assert.equal(filterCourses(timedCourses, { period: 2 }).some(course => course.id === 203), false);
+  });
+});
+
 const categorizedCourses = [
   { id: 11, name: '計算機演算法', catalogCourseCode: 'IECS3002', department: '資訊三乙', category: '必修' },
   { id: 12, name: '人工智慧導論', catalogCourseCode: 'IECS3059', department: '資訊三合', category: '選修' },

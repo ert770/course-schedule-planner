@@ -4,10 +4,12 @@ on:
   pull_request:
     branches:
       - main
+      - backend
   push:
     branches:
       - main
       - backend
+  workflow_dispatch:
 
 permissions:
   contents: read

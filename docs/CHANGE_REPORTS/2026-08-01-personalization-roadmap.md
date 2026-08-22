@@ -10,19 +10,29 @@
 
 ## 最後更新
 
-2026-08-20（#15 的 Codex adversarial review 修復：多候選實習班次逐一重試互相污染、
+2026-08-22（完成 #33：`002_privacy-foundation` 已套用 shared MySQL 並確認五張表存在；
+本機已產生獨立 secrets、使用 MySQL privacy store 並啟用 enforcement；Privacy Center 人工 A/B
+確認只同意必要用途即可使用，兩項可選用途維持關閉。#2 的前置相依已滿足，可開始實作；正式網站另由
+#39 追蹤 Production hosting）
+
+前次更新：2026-08-21（完成 #29：建立 versioned `InteractionEvent v1`、event/source/reason enums、
+server-authoritative envelope、v0 migration、完整 validator 與 storage-agnostic idempotency
+append／duplicate／conflict 純邏輯；10 項新測試、後端 471/471 全數通過。依 #33→#2 相依
+邊界不新增 API、不持久化真實互動，也不修改前端）
+
+再前次：2026-08-20（#15 的 Codex adversarial review 修復：多候選實習班次逐一重試互相污染、
 不及格必修重補修漏接配對邏輯、`/validate` 端點繞過新規則，3 項發現全數修復，三個
 排入路徑統一共用 `placeCourseWithCorequisite()`，新增 Y10-Y12 與路由層級測試，
 461/461 通過）
 
-前次更新：2026-08-20（完成 #15：實習課程與同名正課的共同必修排入——配對推導、原子排入、獨立 validator
+再前次：2026-08-20（完成 #15：實習課程與同名正課的共同必修排入——配對推導、原子排入、獨立 validator
 複查配對完整性，已用真實 MySQL 資料驗證例外清單；順手修正 #35 兩項已由 #21 解決的過期缺口記錄）
 
-再前次：2026-08-20（#21 大部分完成：建立正式 hard/soft constraint schema、與方案產生器分離的獨立
+更早：2026-08-20（#21 大部分完成：建立正式 hard/soft constraint schema、與方案產生器分離的獨立
 validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修／共修強制執行，卡在 roadmap #8
 尚未開始的資料模型）
 
-再前次：2026-08-19（完成 #3：8 個內容偏好從硬過濾改成軟懲罰，並回填 #21「開始前必須具備」欄位）
+更早：2026-08-19（完成 #3：8 個內容偏好從硬過濾改成軟懲罰，並回填 #21「開始前必須具備」欄位）
 
 更早：2026-08-19（統一 #31、#35、#36 的總覽與詳細章節狀態為「部分完成」；#13D 因 #18 已完成，改為
 「工程可開始、正式驗收等待特殊身分資料」）
@@ -67,11 +77,11 @@ validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修
 | # | 任務 | 狀態 | 相依 |
 | ---: | --- | --- | --- |
 | 1 | 修掉方案排序的自相矛盾：用偏好符合度決定 `plans[0]` | ✅ 已完成 | 無 |
-| 2 | 埋互動 log：記錄推薦清單、最終選擇、加選後退選 | ⬜ 未開始 | #18、#29、#33 |
+| 2 | 埋互動 log：記錄推薦清單、最終選擇、加選後退選 | ⬜ 可開始（前置相依已完成） | #18、#29、#33（均已完成） |
 | 3 | 偏好從硬過濾改成軟懲罰 | ✅ 已完成（2026-08-19） | 無 |
 | 4 | 把評分方式結構化：新增課程欄位並從 reviews 聚合難度甜度 | ✅ 已完成（2026-08-17） | 無（DDL 欄位另列 D 類） |
 | 5A | 結構化評價分數接進 `scoreCourse`（母體共用） | ✅ 已完成（2026-08-17） | #4 |
-| 5B | per-user 加權方向（同一分數對不同使用者相反符號） | ⛔ 等待 #29、#33、#2、#30 | #5A；#29→#33→#2→#30 依序完成 |
+| 5B | per-user 加權方向（同一分數對不同使用者相反符號） | ⛔ 等待 #2、#30 | #5A、#29、#33（已完成）；#2→#30 依序完成 |
 | 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⬜ 未開始 | #2、#29、#31；另需足夠互動樣本 |
 | 7 | 以個人化權重向量取代 5 個固定 variant | ⬜ 未開始 | #2、#5A、#30 |
 | 8 | 先修關係與多學期路徑規劃 | ⬜ 未開始 | #19、#20、#21、#23 |
@@ -98,16 +108,17 @@ validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修
 | 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成 | #4、#5A、#21、#22 |
 | 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ 未開始 | #10、#26 |
 | 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成 | 無（#18 已完成；雙帳號完整驗收待補） |
-| 29 | 定義 interaction event schema 與回饋原因 | ⬜ 未開始 | #18 |
+| 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ⬜ 未開始 | #2、#5A、#29 |
 | 31 | 建立冷啟動、偏好重設、時間衰減與資料不足策略 | 🟡 部分完成 | #18、#30 |
 | 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | ⬜ 未開始 | #6、#7、#31、#36；另需足夠互動樣本 |
-| 33 | 建立互動資料隱私、匿名化、consent 與保存規則 | ⬜ 未開始 | #18、#29 |
+| 33 | 建立互動資料隱私、匿名化、consent 與保存規則 | ✅ 已完成（2026-08-22） | #18、#29（均已完成） |
 | 34 | 建立 Agent 自然語言需求理解 eval | ⬜ 未開始 | #24、#25 |
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成 | #15、#21、#22 |
 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成 | #5B、#7、#30、#31 |
 | 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ 未開始 | #25、#26 |
 | 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始 | #27、#28、#33、#34、#35、#36、#37 |
+| 39 | 架設正式網站與 Production rollout | ⬜ 未開始 | #33；另需選定部署平台、網域與 secret store |
 
 ## 任務相依的閱讀方式
 
@@ -290,9 +301,9 @@ flowchart LR
 
 ## #2 埋互動 log
 
-**狀態**：⬜ 未開始
+**狀態**：⬜ 可開始（2026-08-22：#18、#29、#33 前置相依均已完成）
 
-**相依**：#18、#29、#33
+**相依**：#18、#29、#33（均已完成）
 
 **開始前必須具備**：使用者已有唯一 canonical ID；互動事件已定義曝光、接受、移除、退選及原因；隱私、consent 與保存期限已確認。不得先把未定義、不可追溯的 click/chat log 大量寫入正式資料。
 
@@ -360,13 +371,13 @@ flowchart LR
 原 #5 已於 2026-08-17 拆成 #5A～#5B。拆分理由：「把結構化評價分數接進 `scoreCourse()`」與「加權方向
 依使用者而異」原本混在同一個 🟡「部分完成」底下，但兩者是**完全不同性質**的工作——前者是 2026-08-17
 隨 #4 一併完成、可立即驗收的接線工作；後者是「真正的個人化」，會被一條明確、有順序的相依鏈卡住
-（#29 → #33 → #2 → #30），在鏈上任一環完成前**技術上做不到**，不是尚未安排時間去做。混在一起會讓
+（原始順序為 #29 → #33 → #2 → #30；#29 已於 2026-08-21 完成），其餘鏈上任一環完成前**技術上做不到**，不是尚未安排時間去做。混在一起會讓
 「#5 到底還缺什麼」與「為什麼缺」都無法判讀——這正是本次拆分要解決的問題。
 
 | 子項 | 範圍 | 狀態 | 阻塞原因 |
 | --- | --- | --- | --- |
 | #5A | 結構化評價分數接進 `scoreCourse()`（母體共用，非個人化） | ✅ 已完成（2026-08-17） | 無 |
-| #5B | per-user 加權方向（同一評價分數對不同使用者要有相反符號） | ⛔ 阻塞 | 需 #29 → #33 → #2 → #30 依序完成 |
+| #5B | per-user 加權方向（同一評價分數對不同使用者要有相反符號） | ⛔ 阻塞 | #29 已完成；仍需 #33 → #2 → #30 依序完成 |
 
 ---
 
@@ -386,9 +397,9 @@ flowchart LR
 
 ## #5B per-user 加權方向
 
-**狀態**：⛔ 阻塞——**等待 #29 → #33 → #2 → #30 依序完成**
+**狀態**：⛔ 阻塞——**#29、#33 已完成；等待 #2 → #30 依序完成**
 
-**相依**：#5A（已完成）；外部條件為 #29、#33、#2、#30 這條相依鏈本身
+**相依**：#5A、#29、#33（均已完成）；外部條件為 #2、#30 這條相依鏈本身
 
 **開始前必須具備**：#29 已定義互動事件語意（曝光、選課、退選及原因）；#33 已確認隱私、consent、
 保存規則；#2 已依前兩項實際開始記錄互動；#30 已把記錄下來的事件轉成可重播、可解釋的 per-user
@@ -1457,13 +1468,13 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 
 - 尚未建立兩個可登入測試帳號，在同一瀏覽器依序完成登入、Profile 更新、Chat、儲存課表、登出、切換及重新載入，證明所有資料均不交叉。
 - 現有瀏覽器 A/B fixture 驗證的是「失敗必修／通過／未開課」排課差異，不等同雙帳號切換驗收，不能拿來宣稱 #28 完成。
-- interaction event schema 尚未實作（#29），因此「互動事件不交叉」這條驗收目前無法執行；完成 #29 後須補回 #28 的跨帳號驗證。
+- interaction event schema 已由 #29 完成，但實際產品埋點仍須等待 #33、#2；因此「互動事件不交叉」這條驗收目前仍無事件可測，#2 完成後須補回 #28 的跨帳號驗證。
 
 ---
 
 ## #29 定義 interaction event schema 與回饋原因
 
-**狀態**：⬜ 未開始（卡 #18）
+**狀態**：✅ 已完成（2026-08-21）——完成 v1 schema、event/source/reason enums、server-authoritative envelope、v0 migration、validator 與 storage-agnostic idempotency 純邏輯；依相依邊界不建立 API、不持久化真實事件
 
 **相依**：#18
 
@@ -1487,6 +1498,23 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 - 能由事件重建「顯示了什麼、使用者選了什麼、為何改變」。
 - 必修接受不會被直接當成興趣正回饋；衝堂移除不會被當成討厭課程。
 - Schema 有版本與 migration 測試。
+
+### 完成內容（2026-08-21）
+
+- `server/src/data/interactionEventSchema.js` 定義 `InteractionEvent v1`：event／user／course／section／term／plan／position／timestamp／request/action ID、exposure context、Profile／model／recommendation reason version 均有固定 shape 與驗證。
+- event type 涵蓋曝光、查看、收藏／取消收藏、選擇／取消選擇、接受推薦、移除、退選及重新規劃；目前 UI 尚不存在的操作只是 forward contract，不宣稱已埋點。
+- `source` 固定區分 `explicit_selection`、`required`、`system_recommendation`、`exploration`；移除／退選原因固定為 `time`、`content`、`instructor`、`workload`、`full`、`eligibility`、`other`，不收自由文字。
+- `createInteractionEvent()` 從 authenticated identity 寫入 canonical `userId`，並由 server 產生 `eventId`／`timestamp`／`schemaVersion`／`idempotencyKey`；同名 client input 一律覆寫。
+- idempotency key 由 request/action/event/plan/course subject 的 canonical payload 計算 SHA-256，不含重送時本來就會改變的 `eventId`／`timestamp`。`resolveIdempotentAppend()` 區分 append、duplicate、conflict，且只操作傳入陣列、不寫 runtime store。
+- 曝光同時保存 ordered `candidateSet` 與 `displayedSet`，validator 要求後者為前者子集，避免把「未顯示」錯當成「看過但拒絕」。
+- 缺 `schemaVersion` 的無版本 flat draft 可經 `migrateInteractionEventV0ToV1()` 轉成 v1；未知未來版本明確拒絕。
+
+### 明確不含
+
+- 不新增 Express route、MySQL table 或 `server/data/interaction_events.json`，也不修改前端。#33 必須先定義 consent、pseudonymous ID 與保存／刪除規則，之後才由 #2 接上正式埋點。
+- `recommendationReasonVersion` 在 #26 完成前允許且應保持 `null`，不捏造不存在的理由版本。
+
+詳見 `docs/CHANGE_REPORTS/2026-08-21-interaction-event-schema.md`。
 
 ---
 
@@ -1561,7 +1589,7 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 
 **尚未完成**
 
-- **只有「零偏好」一種冷啟動判定**，沒有「少量互動」與「長期未使用」的門檻——因為互動事件本身還沒開始記錄（#2、#29）。
+- **只有「零偏好」一種冷啟動判定**，沒有「少量互動」與「長期未使用」的門檻——#29 已定義事件契約，但互動事件仍未開始記錄（#2）。
 - **沒有 learned weights**，所以也沒有重設機制與快取清除。目前偏好 100% 來自使用者顯式填寫。
 - **沒有時間衰減**。`courseHistory` 已含學年度與學期欄位，具備做衰減的資料基礎，但沒有任何程式使用。
 - 使用者看不到「目前用的是顯式、學習還是 fallback」——因為只有顯式一種來源，UI 也沒有這個標示。
@@ -1599,9 +1627,9 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 
 ## #33 建立互動資料隱私、匿名化、consent 與保存規則
 
-**狀態**：⬜ 未開始（卡 #18、#29）
+**狀態**：✅ 已完成（2026-08-22）；正式網站與平台 Production secrets 另由 #39 追蹤
 
-**相依**：#18、#29
+**相依**：#18、#29（均已完成）
 
 **開始前必須具備**：已知道要記錄哪些事件及欄位；canonical identity 能分離登入識別與研究分析 ID；確認專題是否會收集真實學生資料。
 
@@ -1623,6 +1651,16 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 - 可依單一使用者要求刪除或匯出其 Profile、事件與 learned weights。
 - 分析資料無法直接還原 student ID，repository 不追蹤 runtime 個資。
 - 資料保存與清理有自動測試或可稽核紀錄。
+
+### 完成內容（2026-08-22）
+
+- 三層、版本化 consent 與 HTTP 428 guard；選擇性用途預設關閉。
+- HMAC pseudonymous subject ID、AES-256-GCM Raw Chat、30 天期限與 metadata-only Agent log。
+- Privacy Center、資料串流匯出、清除 Chat、短效單次 token 的完整帳號／資料刪除。
+- MySQL migration 與 retention／legacy cleanup CLI；所有破壞性操作均需額外確認。
+- #33 原始碼、自動測試、shared MySQL migration、本機 secrets 與 enforcement 已完成。
+- Privacy Center 實機 A/B 已完成：未同意時受保護 API 回 `428 CONSENT_REQUIRED`；只同意必要用途後 `requiresAction=false`、核心頁面可使用，同一 API 進入一般輸入驗證而回 400；`personalization_learning` 與 `aggregate_research` 均維持 `false`。
+- #2 的前置相依已全部完成，可開始本機埋點；正式網站與平台 secrets 改由 #39 獨立追蹤。
 
 ---
 
@@ -1750,7 +1788,7 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 
 - **沒有 baseline**。無法回答「個人化方案比不使用個人資料好多少」，因為沒有定義 baseline solver 或 baseline 排序。
 - **沒有量化指標**，只有「`plans[0]` 是不是興趣方案」這種布林判斷。
-- **無法做「表單相同但行為不同」的 personas**——行為資料尚未記錄（#2、#29），目前兩位表單填寫相同的學生仍會得到完全相同的課表，這正是本 roadmap 開頭的判定依據。
+- **無法做「表單相同但行為不同」的 personas**——#29 已定義事件契約，但行為資料尚未記錄（#2），目前兩位表單填寫相同的學生仍會得到完全相同的課表，這正是本 roadmap 開頭的判定依據。
 - **A/B 條件無法固定**：沒有 active term（#20）、沒有 solver version 標記，因此無法保證差異不是來自資料或版本不同。
 - 實測顯示 5 個 variant 最後只得到 2 個不同方案（#10），在方案塌縮修好前，敏感度量測的解析度不足。
 
@@ -1813,9 +1851,39 @@ LLM 能寫出流暢理由不代表理由正確。需要驗證每個課名、教�
 
 ---
 
+## #39 架設正式網站與 Production rollout
+
+**狀態**：⬜ 未開始（目前只有本機前後端與 shared MySQL，尚無正式網站）
+
+**相依**：#33；外部條件為選定部署平台、網域、HTTPS 與平台 secret store
+
+**開始前必須具備**：Privacy migration、consent A/B 與 production startup checks 均已通過；確認前後端要部署在同網域或跨網域，並決定 session cookie／CORS 策略。
+
+### 問題與目的
+
+目前只能在開發機啟動，沒有可供目標使用者透過 HTTPS 存取的正式前端／後端，也沒有平台層級的 secrets、部署 migration、監控、備份與回滾流程。本機 `.env` rollout 不能冒充 Production。
+
+### 實作範圍
+
+- 選定並建立前端與 Node.js 後端 hosting，設定正式網域與 HTTPS。
+- 在平台 secret store 設定 DB、Gemini、session 與 privacy secrets，不提交 `.env`。
+- 設定 `NODE_ENV=production`、`CLIENT_ORIGIN`、Secure cookie、CORS 與 health check。
+- 建立 deploy 前 migration、失敗回滾、資料庫備份、retention job 與最小權限 DB 帳號。
+- 驗證 production log 不含 Raw Chat、學號、完整 Profile、model thought 或 secret。
+
+### 驗收標準
+
+- 正式 HTTPS URL 可載入前端並連到正確後端，health check 與 session cookie 正常。
+- Production 使用平台 secrets；repository、build artifact 與 browser bundle 都不含秘密。
+- 未 consent／必要 consent／可選 consent 的 production A/B 與本機結果一致。
+- Migration 可重複 dry-run，部署失敗有可驗證的 rollback／restore 流程。
+- 監控、資料保存清理與告警已啟用，且不把個人資料寫入 log。
+
+---
+
 ## AI 個人化課程規劃 Agent 的最終完成 Gate
 
-不得以「#1～#38 都有程式檔案」作為完成判定。只有同時具備以下證據，才可宣稱達到「能理解學生需求、學習個人偏好、處理複雜限制、產生可行課表並解釋推薦理由」：
+不得以「#1～#39 都有程式檔案」作為完成判定。只有同時具備以下證據，才可宣稱達到「能理解學生需求、學習個人偏好、處理複雜限制、產生可行課表並解釋推薦理由」：
 
 - #34 證明 Agent 能正確抽取需求，缺資料或矛盾時會澄清。
 - #30、#31、#36 證明互動會以合理、可重現方式改變個人權重，且優於非個人化 baseline。
@@ -1823,5 +1891,6 @@ LLM 能寫出流暢理由不代表理由正確。需要驗證每個課名、教�
 - #20、#23 證明候選資格與畢業判斷有明確適用範圍；未知資料不被臆測。
 - #26、#37 證明每項推薦理由有 evidence，無資料與工具失敗時不編造。
 - #27、#38 證明學生能比較方案、理解理由，且個人化對實際使用有可觀察價值。
+- #39 證明正式網站在 HTTPS、secrets、migration、監控與回滾條件下可安全運行。
 
 協同過濾 #6、hybrid 比較 #32 與探索 #9 屬資料量足夠後的進階研究。若專題期限內樣本不足，可用通過 #30、#31、#36 的 content-based per-user learning 達成「學習個人偏好」的最低可驗證版本，但必須在報告中明確說明未完成跨使用者學習與探索機制。

@@ -1,28 +1,6 @@
 import { getAll, insert, upsertByField, clearCollection } from '../db/database.js';
 import { normalizeProfile } from '../data/profileSchema.js';
-
-export async function getChatHistory(userId, limit = 20) {
-  const all = (await getAll('chat_history')).filter(message => String(message.userId) === String(userId));
-  return all.slice(-limit);
-}
-
-export async function addChatMessage(userId, role, content) {
-  return insert('chat_history', {
-    userId,
-    role,
-    content,
-    createdAt: new Date().toISOString(),
-  });
-}
-
-export async function clearChatHistory(userId) {
-  const all = await getAll('chat_history');
-  const filtered = all.filter(message => String(message.userId) !== String(userId));
-  await clearCollection('chat_history');
-  for (const message of filtered) {
-    await insert('chat_history', message);
-  }
-}
+import { queryRows } from '../db/mysql.js';
 
 // 沒有 profile 時的骨架。
 //
@@ -142,12 +120,40 @@ export async function saveSchedule(userId, name, scheduleData, totalCredits) {
   });
 }
 
+async function replaceJsonCollection(collection, rows) {
+  await clearCollection(collection);
+  for (const row of rows) await insert(collection, row);
+}
+
+// 這是「刪除整個服務帳號與資料」，不是只清偏好。需要 privacy route 的短效
+// 單次 token 與固定確認詞才可呼叫。先刪 shared MySQL profile，再刪本機課表與
+// 登入列；每一步都是 idempotent，若中途失敗可由受控清理程序重試。
+export async function deleteUserServiceData(identity) {
+  if (!identity.numericId) throw new Error('缺少 User_Profiles numeric ID，無法執行完整刪除');
+
+  const profileResult = await queryRows('DELETE FROM `User_Profiles` WHERE `user_id` = ?', [identity.numericId]);
+  const savedSchedules = await getAll('saved_schedules');
+  const remainingSchedules = savedSchedules.filter(row => String(row.userId) !== String(identity.canonicalId));
+  await replaceJsonCollection('saved_schedules', remainingSchedules);
+
+  const users = await getAll('users');
+  const remainingUsers = users.filter(row => (
+    String(row.studentId) !== String(identity.studentId)
+    && String(row.id) !== String(identity.numericId)
+  ));
+  await replaceJsonCollection('users', remainingUsers);
+
+  return {
+    profileRowsDeleted: Number(profileResult.affectedRows || 0),
+    savedSchedulesDeleted: savedSchedules.length - remainingSchedules.length,
+    accountRowsDeleted: users.length - remainingUsers.length,
+  };
+}
+
 export default {
-  getChatHistory,
-  addChatMessage,
-  clearChatHistory,
   getUserPreferences,
   updateUserPreferences,
   getSavedSchedules,
   saveSchedule,
+  deleteUserServiceData,
 };

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { clearCollection, getAll, insert } from '../db/database.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
+import { requireServiceConsent } from '../middleware/requireConsent.js';
 import { buildClearSessionCookie, buildSessionCookie } from '../services/sessionService.js';
 
 const router = Router();
@@ -51,7 +52,7 @@ router.get('/me', requireIdentity, async (req, res) => {
   }
 });
 
-router.post('/update-watchlist', requireIdentity, async (req, res) => {
+router.post('/update-watchlist', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
     const { watchlist } = req.body;
     const users = await getAll('users');

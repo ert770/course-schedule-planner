@@ -10,7 +10,9 @@ import profileRoutes from './routes/profile.js';
 import reviewRoutes from './routes/reviews.js';
 import authRoutes from './routes/auth.js';
 import graduationRoutes from './routes/graduation.js';
+import privacyRoutes from './routes/privacy.js';
 import { assertSessionSecretConfigured } from './services/sessionService.js';
+import { assertPrivacyConfigured } from './services/privacyService.js';
 
 dotenv.config({ quiet: true });
 const __filename = fileURLToPath(import.meta.url);
@@ -29,6 +31,7 @@ app.use(express.json());
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/privacy', privacyRoutes);
 app.use('/api/graduation', graduationRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/courses', courseRoutes);
@@ -47,6 +50,7 @@ export function startServer(port = PORT) {
   // 登入 session 失效，多台 replica 之間也互相拒絕彼此簽的 cookie，而且
   // 症狀是隨機、難以重現的認證失敗，不是一個清楚可診斷的啟動錯誤。
   assertSessionSecretConfigured();
+  assertPrivacyConfigured();
 
   return app.listen(port, () => {
     console.log(`\n🚀 課表規劃推薦系統後端已啟動`);

@@ -5,6 +5,7 @@ import { normalizeDepartment } from '../utils/text.js';
 import { parseClassName } from '../skills/courseScope.js';
 import { getUserPreferences } from '../services/memoryService.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
+import { requireServiceConsent } from '../middleware/requireConsent.js';
 import {
   getPassedCourseCodes,
   getEarnedCredits,
@@ -157,7 +158,7 @@ async function handleGraduation(req, res) {
   }
 }
 
-router.get('/me', requireIdentity, handleGraduation);
-router.get('/:studentId', requireIdentity, handleGraduation);
+router.get('/me', requireIdentity, requireServiceConsent, handleGraduation);
+router.get('/:studentId', requireIdentity, requireServiceConsent, handleGraduation);
 
 export default router;
