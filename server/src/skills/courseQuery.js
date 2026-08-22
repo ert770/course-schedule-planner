@@ -33,6 +33,19 @@ function textIncludes(value, keyword) {
   return String(value || '').toLowerCase().includes(keyword);
 }
 
+function getCourseTimeBlocks(course) {
+  if (Array.isArray(course.timeBlocks) && course.timeBlocks.length > 0) {
+    return course.timeBlocks;
+  }
+
+  if (course.dayOfWeek === null || course.dayOfWeek === undefined) return [];
+  return [{
+    dayOfWeek: course.dayOfWeek,
+    startPeriod: course.startPeriod,
+    endPeriod: course.endPeriod,
+  }];
+}
+
 function applyCommonFilters(courseList, filters = {}, { filterCategory = true } = {}) {
   let courses = courseList;
 
@@ -53,8 +66,18 @@ function applyCommonFilters(courseList, filters = {}, { filterCategory = true } 
     courses = courses.filter(course => course.category === filters.category);
   }
 
-  if (filters.dayOfWeek) {
-    courses = courses.filter(course => course.dayOfWeek === Number(filters.dayOfWeek));
+  // 一門 section 可能有多個上課區塊（例如正課分布在週一與週三）。星期與
+  // 節次必須由同一個區塊同時命中，不能只看為相容舊資料保留的第一組欄位，
+  // 也不能讓星期在區塊 A、節次在區塊 B 時形成假命中。
+  if (filters.dayOfWeek || filters.period) {
+    const dayOfWeek = filters.dayOfWeek ? Number(filters.dayOfWeek) : null;
+    const period = filters.period ? Number(filters.period) : null;
+    courses = courses.filter(course => getCourseTimeBlocks(course).some(block => (
+      (dayOfWeek === null || Number(block.dayOfWeek) === dayOfWeek)
+      && (period === null || (
+        Number(block.startPeriod) <= period && period <= Number(block.endPeriod)
+      ))
+    )));
   }
 
   if (filters.credits) {
@@ -77,13 +100,6 @@ function applyCommonFilters(courseList, filters = {}, { filterCategory = true } 
   if (filters.code) {
     const codeSearch = String(filters.code).toLowerCase();
     courses = courses.filter(course => String(course.code || '').toLowerCase() === codeSearch);
-  }
-
-  if (filters.period) {
-    const period = Number(filters.period);
-    courses = courses.filter(course =>
-      Number(course.startPeriod) <= period && period <= Number(course.endPeriod)
-    );
   }
 
   if (filters.language && filters.language !== 'All' && filters.language !== '全部') {
