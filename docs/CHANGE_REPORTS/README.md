@@ -4,7 +4,8 @@
 
 ## 2026-08-23
 
-1. [補齊 PR #3 的加退選、持久化關注、搜尋重設與登入／選單 UI/UX](./2026-08-23-pr3-ui-ux-alignment.md)
+1. [讓 PR #11 與後續 backend pull request 執行 GitHub Actions CI](./2026-08-23-pr11-backend-ci.md)
+2. [補齊 PR #3 的加退選、持久化關注、搜尋重設與登入／選單 UI/UX](./2026-08-23-pr3-ui-ux-alignment.md)
 
 ## 2026-08-22
 
