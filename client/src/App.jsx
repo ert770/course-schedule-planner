@@ -7,6 +7,7 @@ import OnboardingPage from './pages/OnboardingPage';
 import SetupPage from './pages/SetupPage';
 import DashboardPage from './pages/DashboardPage';
 import GraduationPage from './pages/GraduationPage';
+import PrivacyPage from './pages/PrivacyPage';
 import SearchPage from './pages/SearchPage';
 import SchedulePage from './pages/SchedulePage';
 import './App.css';
@@ -14,12 +15,18 @@ import './App.css';
 import { useLocation } from 'react-router-dom';
 
 function ProtectedRoute({ children }) {
-  const { isLoggedIn, isSetupDone } = useAuth();
+  const { isLoggedIn, isSetupDone, privacyStatus, privacyLoading } = useAuth();
   const location = useLocation();
 
   if (!isLoggedIn) return <Navigate to="/login" replace />;
 
-  if (!isSetupDone() && location.pathname !== '/onboarding' && location.pathname !== '/setup') {
+  if (privacyLoading) return <div className="route-loading">正在確認資料使用設定…</div>;
+
+  if (privacyStatus?.requiresAction && location.pathname !== '/privacy') {
+    return <Navigate to="/privacy" replace />;
+  }
+
+  if (!isSetupDone() && !['/privacy', '/onboarding', '/setup'].includes(location.pathname)) {
     return <Navigate to="/onboarding" replace />;
   }
 
@@ -27,7 +34,7 @@ function ProtectedRoute({ children }) {
 }
 
 function AppRoutes() {
-  const { isLoggedIn, isSetupDone } = useAuth();
+  const { isLoggedIn, isSetupDone, privacyStatus } = useAuth();
 
   return (
     <Routes>
@@ -35,10 +42,18 @@ function AppRoutes() {
         path="/login"
         element={
           isLoggedIn ? (
-            <Navigate to={isSetupDone() ? "/" : "/onboarding"} replace />
+            <Navigate to={privacyStatus?.requiresAction ? '/privacy' : (isSetupDone() ? '/' : '/onboarding')} replace />
           ) : (
             <LoginPage />
           )
+        }
+      />
+      <Route
+        path="/privacy"
+        element={
+          <ProtectedRoute>
+            <PrivacyPage />
+          </ProtectedRoute>
         }
       />
       <Route

@@ -572,3 +572,43 @@ Consequences:
   expose those actions.
 - `recommendationReasonVersion` remains explicitly `null` until roadmap #26 defines a versioned
   reason object; absence is recorded honestly instead of inventing a version.
+
+## ADR-017: Separate Raw Chat, Structured Preferences, and Analytics Consent
+
+Date: 2026-08-22
+
+Context:
+Roadmap #2 cannot collect student-linked interaction data until the product distinguishes data needed
+to provide the service from data used to learn personal weights or conduct research. The existing
+`chat_history.json` stored canonical student IDs and plaintext conversation indefinitely, and Agent
+logs repeated message/profile/thought/tool content. Treating all of this as one generic
+"personalization dataset" would make purpose limitation and deletion impossible.
+
+Decision:
+
+1. Consent is layered into required `service_processing` and two optional, default-off purposes:
+   `personalization_learning` and `aggregate_research`. Consent decisions are append-only and bound
+   to policy version `2026-08-22.v1`.
+2. Raw Chat is encrypted per record with AES-256-GCM and expires after 30 days. It exists only for
+   conversation continuity and is excluded from learning and research. A preference explicitly
+   confirmed in Chat may still be saved through the existing structured Profile tool; clearing Raw
+   Chat therefore does not erase Profile preferences.
+3. Privacy storage uses `v1:HMAC-SHA-256(secret, canonicalId)` subject IDs. The analytics secret and
+   AES key are independent deployment secrets. Persistent analytics records must not store both the
+   canonical ID and subject ID.
+4. Research output is aggregate-only with k ≥ 5. Raw Chat, complete course histories, and row-level
+   interaction events are prohibited from research exports.
+5. Personal endpoints use a current-version service-consent guard when enforcement is enabled.
+   Shared-MySQL migration and destructive legacy-chat cleanup require separate explicit confirmation;
+   neither is performed merely by deploying source code.
+
+Consequences:
+
+- #2 may use the consent guard and subject-ID boundary after migration/config rollout; it still owns
+  actual instrumentation, event persistence, and idempotent append.
+- The runtime no longer reads or writes `server/data/chat_history.json`; the existing file remains
+  untouched until its dry-run report is reviewed and deletion is explicitly approved.
+- AI logs contain operational metadata only. Gemini receives the minimum structured context needed
+  for the response and no display name.
+- Account/data deletion needs a short-lived single-use token and exact confirmation phrase. It deletes
+  service data but retains minimal consent/audit records for 365 days.

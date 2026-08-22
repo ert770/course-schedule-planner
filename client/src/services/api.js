@@ -16,7 +16,10 @@ async function request(endpoint, options = {}) {
         localStorage.removeItem('fcu_user');
         if (window.location.pathname !== '/login') window.location.assign('/login');
       }
-      throw new Error(err.error || `HTTP ${res.status}`);
+      const error = new Error(err.error || `HTTP ${res.status}`);
+      error.status = res.status;
+      error.code = err.code;
+      throw error;
     }
     return await res.json();
   } catch (err) {
@@ -53,6 +56,23 @@ export const chatAPI = {
       method: 'POST',
       body: JSON.stringify({ message }),
     }),
+};
+
+// Privacy API。server consent 是唯一真相來源；localStorage 不代表法律同意。
+export const privacyAPI = {
+  getPolicy: () => request('/privacy/policy'),
+  getConsents: () => request('/privacy/consents'),
+  updateConsents: (consents) => request('/privacy/consents', {
+    method: 'PUT',
+    body: JSON.stringify({ consents }),
+  }),
+  exportData: () => request('/privacy/export'),
+  clearChat: () => request('/privacy/chat', { method: 'DELETE' }),
+  createDeletionIntent: () => request('/privacy/deletion-intents', { method: 'POST' }),
+  deleteData: (payload) => request('/privacy/data', {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+  }),
 };
 
 // Courses API

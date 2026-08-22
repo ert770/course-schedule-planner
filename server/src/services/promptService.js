@@ -71,8 +71,7 @@ export function buildSystemPrompt(userPrefs = {}) {
 ToolCall 範例：
 {"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":25,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
 
-目前使用者偏好：
-- 顯示名稱：${userPrefs.displayName || '未設定'}
+目前使用者偏好（不含可直接識別身分的欄位）：
 - 目標學分：${userPrefs.targetCreditsMin || 12} ~ ${userPrefs.targetCreditsMax || 25}
 - 不排早八：${userPrefs.noMorningClasses ? '是' : '否'}
 - 不排晚間：${userPrefs.noEveningClasses ? '是' : '否'}

@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-22
+
+1. [建立互動資料隱私、匿名化、consent 與保存規則（Roadmap #33）](./2026-08-22-interaction-data-privacy.md)
+
 ## 2026-08-21
 
 1. [定義 InteractionEvent schema 與回饋原因（Roadmap #29）](./2026-08-21-interaction-event-schema.md)

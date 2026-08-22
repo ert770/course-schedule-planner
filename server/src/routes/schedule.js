@@ -4,10 +4,11 @@ import { validateScheduleAgainstConstraints } from '../skills/scheduleValidator.
 import { saveSchedule, getSavedSchedules } from '../services/memoryService.js';
 import { generateForUser } from '../services/scheduleService.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
+import { requireServiceConsent } from '../middleware/requireConsent.js';
 
 const router = Router();
 
-router.post('/generate', requireIdentity, async (req, res) => {
+router.post('/generate', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
     const { userId, courseIds = [], filters = {}, constraints = {} } = req.body;
 
@@ -46,7 +47,7 @@ router.post('/validate', (req, res) => {
   }
 });
 
-router.post('/save', requireIdentity, async (req, res) => {
+router.post('/save', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
     const { userId, name = '我的課表', schedule, totalCredits } = req.body;
     const saved = await saveSchedule(req.identity.canonicalId, name, schedule, totalCredits);
@@ -56,7 +57,7 @@ router.post('/save', requireIdentity, async (req, res) => {
   }
 });
 
-router.get('/saved', requireIdentity, async (req, res) => {
+router.get('/saved', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
     const schedules = await getSavedSchedules(req.identity.canonicalId);
     res.json({ schedules });

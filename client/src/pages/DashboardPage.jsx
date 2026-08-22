@@ -292,6 +292,9 @@ export default function DashboardPage() {
                 <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
                   <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
                 </button>
+                <button className="user-dropdown-item" onClick={() => navigate('/privacy')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 隱私與資料
+                </button>
                 <button className="user-dropdown-item" onClick={toggleTheme}>
                   {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 
                   切換主題 ({theme === 'dark' ? '淺色' : '深色'})

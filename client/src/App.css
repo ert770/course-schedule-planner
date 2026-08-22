@@ -879,3 +879,22 @@
 .score-value { color: var(--accent-blue); font-size: 1.1rem; font-weight: 700; }
 .overall-bar { margin-top: 8px; }
 
+/* #33 Privacy Center */
+.route-loading, .privacy-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px; background: var(--bg-primary); color: var(--text-primary); }
+.privacy-card { width: min(760px, 100%); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 28px; box-shadow: var(--shadow-sm); }
+.privacy-heading { display: flex; gap: 14px; align-items: center; margin-bottom: 24px; color: var(--accent-blue); }
+.privacy-heading h1 { margin: 0; color: var(--text-primary); }
+.privacy-heading p { margin: 4px 0 0; color: var(--text-muted); font-size: .85rem; }
+.privacy-purpose { display: flex; gap: 12px; padding: 16px; margin: 10px 0; border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; }
+.privacy-purpose input { width: 20px; height: 20px; accent-color: var(--accent-blue); flex: 0 0 auto; }
+.privacy-purpose span { display: flex; flex-direction: column; gap: 6px; }
+.privacy-purpose small, .privacy-facts { color: var(--text-secondary); line-height: 1.55; }
+.privacy-facts { margin: 18px 0; padding: 14px 18px; background: var(--bg-primary); border-radius: var(--radius-md); font-size: .9rem; }
+.privacy-facts p { margin: 6px 0; }
+.privacy-message { margin: 12px 0; padding: 10px 12px; background: rgba(74, 124, 247, .1); border-radius: var(--radius-sm); }
+.privacy-primary { width: 100%; padding: 12px; border: 0; border-radius: var(--radius-md); background: var(--accent-blue); color: white; font-weight: 700; }
+.privacy-primary:disabled { opacity: .5; cursor: not-allowed; }
+.privacy-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.privacy-actions button { display: flex; align-items: center; gap: 6px; padding: 9px 12px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
+.privacy-actions .privacy-danger { color: var(--accent-red); border-color: var(--accent-red); }
+

@@ -388,10 +388,27 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | `/api/reviews/easy` | limit 正常運作 |
 | `/api/graduation/me` | 學分缺口與推薦 |
 | `/api/chat` | 無 message、正常 message、無 API key |
+| `/api/privacy/policy` | 公開政策含三用途、Raw Chat 30 天與研究 k≥5 |
+| `/api/privacy/consents` | 未同意預設拒絕；必要同意後可用；兩個可選用途維持 false；政策改版要求重同意 |
+| `/api/privacy/chat` | 只刪登入者 Raw Chat，不影響他人與結構化 Profile |
+| `/api/privacy/deletion-intents` | token 短效、subject scoped、單次使用，錯誤確認詞不得刪除 |
+
+## #33 隱私與加密測試
+
+| 編號 | 情境 | 預期 |
+| --- | --- | --- |
+| PR1 | canonical ID 經 HMAC | 固定為 `v1:<64 hex>`，輸出不含學號，不同學生不同值 |
+| PR2 | AES-256-GCM round-trip | 密文不含明文且可正確還原 |
+| PR3 | ciphertext／auth tag 被竄改 | 以 `CHAT_INTEGRITY_ERROR` 拒絕，不回傳部分明文 |
+| PR4 | 兩位已同意使用者各有聊天 | 歷史完全隔離，清除 A 不影響 B |
+| PR5 | 未同意呼叫個人 Chat API | HTTP 428 `CONSENT_REQUIRED`；同意必要用途後才通過 middleware |
+| PR6 | 選擇性同意未勾 | 核心服務仍可使用，不產生可學習／研究資料 |
+| PR7 | legacy chat cleanup 不帶 apply | 只回報筆數與日期區間，不顯示內容或 ID，也不刪檔 |
 
 ## 前端操作測試
 
 - 登入後導向 onboarding 或 dashboard。
+- 啟用 privacy enforcement 時，未同意先導向 Privacy Center；必要用途同意後才能進入 onboarding/dashboard，兩個可選項保持未勾仍可使用核心服務（A/B）。
 - 初始偏好可儲存。
 - 課程搜尋可查詢並顯示結果；通識篩選需顯示四領域，並與一般分類搜尋做 A/B。
 - 儀表板可產生課表。

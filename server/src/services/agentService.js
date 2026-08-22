@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { buildSystemPrompt } from './promptService.js';
-import { getChatHistory, addChatMessage, getUserPreferences, updateUserPreferences } from './memoryService.js';
+import { getUserPreferences, updateUserPreferences } from './memoryService.js';
+import { getChatHistory, saveChatExchange } from './privacyService.js';
 import { searchCoursesForAgent, getCourseDetail } from '../skills/courseQuery.js';
 import { getEasyCourses, getSentimentSummary, searchReviews } from '../skills/reviewSearch.js';
 import { generateForUser } from './scheduleService.js';
@@ -20,31 +21,26 @@ function getAIClient() {
 // 聊天記憶與偏好更新都以 canonical ID（學號）為鍵，避免同一位學生的對話
 // 依前端送的是學號還是 numeric id 而分裂成兩份。
 export async function handleChat(identity, message) {
-  const userId = identity.canonicalId;
-  logger.info(`收到使用者輸入："${message}"`, { label: 'AgentCore' });
-
-  // 1. 記錄使用者訊息
-  await addChatMessage(userId, 'user', message);
+  logger.info('收到已驗證的聊天請求', { label: 'AgentCore', messageLength: message.length });
 
   // 2. 初始化 API
   const client = getAIClient();
   if (!client) {
     const errorMsg = '系統發生錯誤：伺服器未設定 GEMINI_API_KEY。';
     logger.error('遺失 GEMINI_API_KEY', { label: 'AgentCore' });
-    await addChatMessage(userId, 'assistant', errorMsg);
     return { reply: errorMsg, intent: 'error', data: null };
   }
 
   // 3. 取得偏好與歷史紀錄
   const prefs = await getUserPreferences(identity);
   const studentScope = buildStudentScope(prefs);
-  logger.debug(`已載入使用者限制條件：${JSON.stringify(prefs)}`, { label: 'Memory' });
+  logger.debug('已載入使用者限制條件（內容不記錄）', { label: 'Memory' });
   
   const systemInstruction = buildSystemPrompt(prefs);
   logger.info(`組合 Prompt 中。System prompt 長度：${systemInstruction.length} 字元。`, { label: 'Context' });
 
   // 整理 Gemini 需要的歷史紀錄格式
-  const rawHistory = await getChatHistory(userId, 20);
+  const rawHistory = await getChatHistory(identity, 20);
   const contents = rawHistory.map(m => ({
     role: m.role === 'assistant' ? 'model' : m.role,
     parts: [{ text: m.content || '' }]
@@ -80,7 +76,7 @@ export async function handleChat(identity, message) {
       const toolCallMatch = responseText.match(/\[ToolCall\]:\s*(\{[\s\S]*\})/);
 
       if (thoughtMatch) {
-        logger.trace(`\n[LLM_Thought]:\n${thoughtMatch[1].trim()}`, { label: 'LLM_Stream' });
+        logger.trace('模型回傳內部推理區塊（內容不記錄）', { label: 'LLM_Stream' });
       }
 
       if (toolCallMatch) {
@@ -91,7 +87,7 @@ export async function handleChat(identity, message) {
           detectedIntent = fnName;
           
           logger.info(`LLM 請求呼叫工具：\`${fnName}\``, { label: 'ToolCall' });
-          logger.debug(`參數：${JSON.stringify(args)}`, { label: 'ToolCall' });
+          logger.debug('工具參數已解析（內容不記錄）', { label: 'ToolCall' });
 
           if (fnName === 'final_answer') {
              finalReply = args.reply_text || "排課任務已完成。";
@@ -148,7 +144,7 @@ export async function handleChat(identity, message) {
           }
           
           const outputStr = JSON.stringify(result);
-          logger.info(`執行結束代碼：0。\n輸出結果：${outputStr.substring(0, 100)}${outputStr.length > 100 ? '...' : ''}`, { label: 'ToolCall_Result' });
+          logger.info('工具執行完成', { label: 'ToolCall_Result', outputLength: outputStr.length });
 
           // Format next message as Observation
           currentMessage = `[Observation]:\n${outputStr}`;
@@ -168,7 +164,8 @@ export async function handleChat(identity, message) {
       finalReply = "任務過於複雜，已達最大思考步數。請嘗試簡化您的需求。";
     }
 
-    await addChatMessage(userId, 'assistant', finalReply);
+    // 只有整次處理成功才原子保存 user/assistant 一對加密訊息。
+    await saveChatExchange(identity, message, finalReply);
 
     return {
       reply: finalReply,
@@ -179,7 +176,6 @@ export async function handleChat(identity, message) {
   } catch (error) {
     logger.error(`Agent 聊天發生錯誤：${error.message}`, { label: 'AgentCore' });
     const errReply = '很抱歉，處理您的請求時發生錯誤。請確認後端金鑰是否設定正確，或稍後再試。';
-    await addChatMessage(userId, 'assistant', errReply);
     return {
       reply: errReply,
       intent: 'error',

@@ -50,15 +50,6 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- 對話歷史 (短期記憶)
-CREATE TABLE IF NOT EXISTS chat_history (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
-  content TEXT NOT NULL,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
 -- 已儲存的課表
 CREATE TABLE IF NOT EXISTS saved_schedules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,5 +65,4 @@ CREATE INDEX IF NOT EXISTS idx_courses_department ON courses(department);
 CREATE INDEX IF NOT EXISTS idx_courses_day ON courses(day_of_week);
 CREATE INDEX IF NOT EXISTS idx_courses_category ON courses(category);
 CREATE INDEX IF NOT EXISTS idx_reviews_course ON reviews(course_id);
-CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_user ON saved_schedules(user_id);

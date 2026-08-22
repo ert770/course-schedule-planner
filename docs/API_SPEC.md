@@ -27,7 +27,63 @@ Course, section, review, and numeric user profile data are read from MySQL datab
 - API `course.catalogCourseCode` is MySQL `Courses.subid3`, the stable catalog course code.
   API course objects no longer expose the database-oriented name `subid3`.
 - Review lookups use `Course_Reviews.selection_code` joined to `Course_Sections.selection_code`; API responses expose the joined `section_id` as `review.courseId`.
-- Demo auth users, chat history, and saved schedules remain backed by `server/data/*.json`.
+- Demo auth users and saved schedules remain backed by `server/data/*.json`. Raw Chat 不再讀寫
+  `chat_history.json`；啟用 #33 後只寫入 MySQL `Chat_Messages` 的 AES-256-GCM 密文。
+
+## Privacy and consent
+
+啟用 `PRIVACY_ENFORCEMENT_ENABLED=true` 後，Profile、Schedule、Chat、Graduation 與
+watchlist 等個人資料端點除了 session，還需要目前政策版本的 `service_processing`
+同意。缺少同意回 `428`：
+
+```json
+{ "error": "尚未同意目前版本所需的資料用途", "code": "CONSENT_REQUIRED" }
+```
+
+政策版本過期時 `code` 為 `CONSENT_VERSION_OUTDATED`。`personalization_learning` 與
+`aggregate_research` 都是選擇性且預設 false，不影響核心服務。
+
+### `GET /api/privacy/policy`
+
+公開回傳政策版本、三種用途、processor 與保存期限，不需要登入。
+
+### `GET /api/privacy/consents`
+
+回傳登入者目前各用途的最新 append-only 決定、`requiresAction` 與政策內容。回應不含
+canonical ID 或 pseudonymous subject ID。
+
+### `PUT /api/privacy/consents`
+
+```json
+{
+  "consents": {
+    "service_processing": true,
+    "personalization_learning": false,
+    "aggregate_research": false
+  }
+}
+```
+
+必要用途必須為 true 才能開始服務；三個值會以同一時間點原子寫入。
+
+### `GET /api/privacy/export`
+
+以 attachment JSON 串流登入者的可攜 Profile、已存課表與同意決定。不包含密碼、內部
+subject ID、Raw Chat 明文、模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
+
+### `DELETE /api/privacy/chat`
+
+刪除登入者全部加密 Raw Chat，不影響已寫入 Profile 的結構化偏好。
+
+### `POST /api/privacy/deletion-intents`
+
+建立 10 分鐘有效、單次使用且只屬於登入者的刪除 token。
+
+### `DELETE /api/privacy/data`
+
+Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: "刪除我的資料"`。
+成功後刪除服務帳號、Profile、修課歷史、已存課表與 Raw Chat，清除 session；最小同意與
+稽核記錄依政策保留 365 天。
 
 ## Health
 

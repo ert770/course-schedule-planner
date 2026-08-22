@@ -1,6 +1,6 @@
 # Data Schema
 
-目前後端主要課程資料來源為 MySQL database `defaultdb`。`server/data/*.json` 仍保留給 demo 登入、聊天紀錄、已儲存課表，以及沒有對應 MySQL 表的本機資料。
+目前後端主要課程資料來源為 MySQL database `defaultdb`。`server/data/*.json` 仍保留給 demo 登入與已儲存課表。Raw Chat 不再使用 JSON；舊 `chat_history.json` 只等待經確認的清理，不是 runtime 資料源。
 
 ## 未設定 `DB_*` 時的行為
 
@@ -16,6 +16,26 @@
 ## MySQL Tables
 
 SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小寫或特殊字元欄位。
+
+### #33 Privacy foundation
+
+分析與聊天表只使用 `subject_id = "v1:" + HMAC-SHA-256(ANALYTICS_ID_SECRET, canonicalId)`，
+不存學號，且刻意不對 `User_Profiles` 建 FK。HMAC secret 只存在環境／密鑰管理系統。
+
+| Table | 主要欄位 | 用途 |
+| --- | --- | --- |
+| `Privacy_Subject_State` | `subject_id`, `last_active_at`, `service_withdrawn_at` | 保存期限與撤回狀態 |
+| `Privacy_Consents` | `recorded_sequence`, `consent_id`, `subject_id`, `purpose`, `granted`, `policy_version`, `decided_at`, `source`, `request_id` | append-only 同意決定；sequence 決定同毫秒寫入的先後 |
+| `Privacy_Audit_Log` | `audit_id`, `subject_id`, `action`, `resource_type`, `outcome`, `request_id`, `occurred_at`, `metadata_json` | 不含 payload 的稽核紀錄 |
+| `Privacy_Data_Requests` | `request_id`, `subject_id`, `request_type`, `token_hash`, `expires_at`, `completed_at`, `status` | 短效、單次刪除確認；只存 token hash |
+| `Chat_Messages` | `message_id`, `subject_id`, `role`, `ciphertext`, `iv`, `auth_tag`, `key_version`, `created_at`, `expires_at` | AES-256-GCM Raw Chat，30 天到期 |
+
+`ciphertext`、每筆獨立 96-bit `iv` 與 `auth_tag` 缺一不可；解密驗證失敗必須拒絕資料，
+不得回傳部分內容。`key_version` 讓未來金鑰輪替可辨識資料使用哪一版金鑰。
+
+三種 `purpose`：`service_processing`（必要）、`personalization_learning`（可選）、
+`aggregate_research`（可選）。#2 寫 interaction event 前必須檢查第二項，並將 #29 envelope
+中的 canonical `userId` 換成 `subject_id`；不得將兩者一起持久化。
 
 ### `Courses`
 
@@ -249,8 +269,10 @@ ALTER TABLE `User_Profiles` ADD COLUMN `class_name` varchar(45) NULL;
 The following collections remain file-backed in `server/data/*.json` because the provided MySQL schema does not include equivalent tables:
 
 - `users`
-- `chat_history`
 - `saved_schedules`
+
+`chat_history` **不在此列**。舊 `server/data/chat_history.json` 只供經確認的清理工具
+辨識，不得再由 runtime 讀取；新 Raw Chat 只存在 MySQL `Chat_Messages` 密文表。
 
 `user_preferences` **不在此列**。`server/data/user_preferences.json` 已於 2026-08-11
 刪除，profile 的唯一儲存體是 `User_Profiles`；未設定資料庫連線時
@@ -479,7 +501,7 @@ JSON collection 會持久化這些事件**：#29 只固定事件語意；必須�
 | `schemaVersion` | `1` | 事件契約版本；缺版本的 flat draft 經明確 migration 轉成 v1，未知未來版本拒絕讀取 |
 | `eventId` | UUID | 單筆 event envelope 的唯一 ID，由 server 產生 |
 | `eventType` | enum | 曝光、查看、收藏、選擇、接受、移除、退選或重新規劃 |
-| `userId` | string | authenticated identity 的 canonical ID；不得由 client 決定。#33 會在持久化前定義分析用 pseudonymous ID |
+| `userId` | string | #29 純 schema 建立時是 authenticated canonical ID；#2 持久化前必須經 #33 boundary 換成 HMAC `subject_id`，持久層不得同時保存 canonical ID |
 | `timestamp` | UTC ISO 8601 | server 認定的事件發生時間，不接受 client 覆寫 |
 | `requestId` | UUID | 一次搜尋／推薦／排課請求；同一 response 產生的事件共用 |
 | `actionId` | UUID | 一次 logical UI action；React 重送同一操作時沿用 |
