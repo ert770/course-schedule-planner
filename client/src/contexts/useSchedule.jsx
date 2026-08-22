@@ -8,15 +8,18 @@ export function ScheduleProvider({ children }) {
   const [schedule, setSchedule] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
 
-  // 1. 登入或整理網頁時，瞬間從 LocalStorage 讀取草稿
+  // 1. 登入或整理網頁時，瞬間從 LocalStorage 讀取草稿 (符合 React ESLint 規範)
   useEffect(() => {
     if (user?.studentId) {
-      // 依據學號存取，確保不同帳號不會混在一起
       const localSchedule = localStorage.getItem(`fcu_schedule_${user.studentId}`);
       const localWatchlist = localStorage.getItem(`fcu_watchlist_${user.studentId}`);
       
-      if (localSchedule) setSchedule(JSON.parse(localSchedule));
-      if (localWatchlist) setWatchlist(JSON.parse(localWatchlist));
+      // 先準備好要更新的資料，最後一次性設定狀態，避免多次同步呼叫 setState
+      const nextSchedule = localSchedule ? JSON.parse(localSchedule) : [];
+      const nextWatchlist = localWatchlist ? JSON.parse(localWatchlist) : [];
+
+      setSchedule(nextSchedule);
+      setWatchlist(nextWatchlist);
     } else {
       setSchedule([]);
       setWatchlist([]);
