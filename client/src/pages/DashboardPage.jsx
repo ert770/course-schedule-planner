@@ -38,7 +38,6 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   
-  
   const { schedule, setSchedule } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
   
@@ -68,6 +67,14 @@ export default function DashboardPage() {
   }, [chatHistory, chatLoading]); 
 
   const generateInitialSchedule = useCallback(async () => {
+    // 🌟 終極保護機制：直接檢查 LocalStorage 有沒有草稿，無視 React 的非同步時間差！
+    if (user?.studentId) {
+      const localSchedule = localStorage.getItem(`fcu_schedule_${user.studentId}`);
+      if (localSchedule && JSON.parse(localSchedule).length > 0) {
+        return; // 有草稿就直接退出，絕對不打 API 覆蓋！
+      }
+    }
+    
     if (schedule.length > 0) return; 
 
     setIsScheduling(true);

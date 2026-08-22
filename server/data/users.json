@@ -698,22 +698,129 @@
     ],
     "watchlist": [
       {
-        "id": 101,
-        "name": "密碼學",
-        "category": "選修",
-        "credits": 3
+        "id": 1283,
+        "sectionId": 1283,
+        "courseId": "CE07132-28010",
+        "code": "CE07132-28010",
+        "name": "計算機演算法",
+        "instructor": "黃秀芬",
+        "teacher": "黃秀芬",
+        "department": "資訊三乙",
+        "credits": 3,
+        "dayOfWeek": 2,
+        "timeBlocks": [
+          {
+            "dayOfWeek": 2,
+            "startPeriod": 8,
+            "endPeriod": 9
+          },
+          {
+            "dayOfWeek": 3,
+            "startPeriod": 7,
+            "endPeriod": 7
+          }
+        ],
+        "startPeriod": 8,
+        "endPeriod": 9,
+        "location": "資電403",
+        "room": "資電403",
+        "capacity": null,
+        "currentAmount": 0,
+        "category": "必修",
+        "type": "必修",
+        "description": "課程：計算機演算法。本課程專注於計算機演算法的設計技巧，幫助學生掌握解決問題的基礎，並深入理解複雜度理論。適合對計算機科學、數據結構及演算法有興趣的學生，課程以理論與實作相結合的方式進行，涵蓋了如排序演算法、動態規劃及圖論等核心技能，並適用於軟體開發、數據分析及優化問題等多個應用領域。",
+        "syllabus": "課程：計算機演算法。本課程專注於計算機演算法的設計技巧，幫助學生掌握解決問題的基礎，並深入理解複雜度理論。適合對計算機科學、數據結構及演算法有興趣的學生，課程以理論與實作相結合的方式進行，涵蓋了如排序演算法、動態規劃及圖論等核心技能，並適用於軟體開發、數據分析及優化問題等多個應用領域。",
+        "catalogCourseCode": "IECS3002",
+        "year": 114,
+        "semester": "下學期",
+        "timeStr": "(二)08-09 (三)07",
+        "timeBitmask": "274903072768",
+        "ragTag": [
+          "Algorithm",
+          "演算法",
+          "計算機科學",
+          "Complexity Theory",
+          "複雜度理論",
+          "Sorting Algorithms",
+          "排序演算法",
+          "Dynamic Programming",
+          "動態規劃",
+          "Graph Theory"
+        ],
+        "selectionCode": "1298",
+        "sourceCategory": "必修",
+        "classificationSource": "mysql",
+        "track": null,
+        "classGroup": "A",
+        "classKind": "department",
+        "eligibility": "eligible",
+        "eligibilityReason": "班級系所、學制、年級及班別符合目前學生資料。",
+        "eligibilitySource": "department-required-table",
+        "term": {
+          "academicYear": 114,
+          "semester": "下學期",
+          "isActiveTerm": true
+        },
+        "scopeReason": "本人必修：班級系所、學制、年級及班別符合目前學生資料。"
       },
       {
-        "id": 102,
-        "name": "人工智慧自然語言導論",
-        "category": "選修",
-        "credits": 3
-      },
-      {
-        "id": 103,
-        "name": "資訊實務案例探討",
-        "category": "選修",
-        "credits": 2
+        "id": 1293,
+        "sectionId": 1293,
+        "courseId": "CE07139-00028",
+        "code": "CE07139-00028",
+        "name": "人工智慧導論",
+        "instructor": "張哲誠",
+        "teacher": "張哲誠",
+        "department": "資訊三合",
+        "credits": 3,
+        "dayOfWeek": 5,
+        "timeBlocks": [
+          {
+            "dayOfWeek": 5,
+            "startPeriod": 2,
+            "endPeriod": 4
+          }
+        ],
+        "startPeriod": 2,
+        "endPeriod": 4,
+        "location": "資電234(電腦實習室)",
+        "room": "資電234(電腦實習室)",
+        "capacity": null,
+        "currentAmount": 0,
+        "category": "核心選修",
+        "type": "選修",
+        "description": "課程：人工智慧導論。本課程《人工智慧導論》專注於人工智慧及大數據的基礎理論與實作，適合對資料科學有興趣的學生。課程將使用 Python 和 Spark 等工具，幫助學生深入理解人工智慧的原理及其在各行各業的應用，如金融、醫療、製造等領域。透過實作，學生將能夠掌握核心技能，為未來的職業生涯奠定堅實的基礎。",
+        "syllabus": "課程：人工智慧導論。本課程《人工智慧導論》專注於人工智慧及大數據的基礎理論與實作，適合對資料科學有興趣的學生。課程將使用 Python 和 Spark 等工具，幫助學生深入理解人工智慧的原理及其在各行各業的應用，如金融、醫療、製造等領域。透過實作，學生將能夠掌握核心技能，為未來的職業生涯奠定堅實的基礎。",
+        "catalogCourseCode": "IECS3059",
+        "year": 114,
+        "semester": "下學期",
+        "timeStr": "(五)02-04",
+        "timeBitmask": "258254417031933722624",
+        "ragTag": [
+          "Python",
+          "Spark",
+          "人工智慧",
+          "大數據",
+          "資料科學",
+          "金融科技",
+          "醫療科技",
+          "製造業"
+        ],
+        "selectionCode": "1308",
+        "sourceCategory": "選修",
+        "classificationSource": "cs_curriculum",
+        "track": "技術應用類",
+        "classGroup": "A",
+        "classKind": "department",
+        "eligibility": "eligible",
+        "eligibilityReason": "已辨識為 A 類系所班級；其他選修限制仍依既有候選規則判定。",
+        "eligibilitySource": "department-required-table:elective-default",
+        "term": {
+          "academicYear": 114,
+          "semester": "下學期",
+          "isActiveTerm": true
+        },
+        "scopeReason": "一般選修，可搜尋與加選。"
       }
     ],
     "skillTree": [

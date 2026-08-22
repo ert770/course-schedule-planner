@@ -1,63 +1,67 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth } from './useAuth';
 
 const ScheduleContext = createContext();
 
 export function ScheduleProvider({ children }) {
+  const { user } = useAuth();
   const [schedule, setSchedule] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
 
-  const checkConflict = async (courseToAdd) => {
-  try {
-    const proposedSchedule = [...schedule, courseToAdd];
-
-    const response = await fetch('/api/schedule/validate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schedule: proposedSchedule })
-    });
-
-    const data = await response.json();
-
-    if (data.conflicts?.length > 0 || data.duplicates?.length > 0) {
-      console.warn("衝堂或重複選課警告:", data);
-      return true; // 告知有衝突
+  // 1. 登入或整理網頁時，瞬間從 LocalStorage 讀取草稿
+  useEffect(() => {
+    if (user?.studentId) {
+      // 依據學號存取，確保不同帳號不會混在一起
+      const localSchedule = localStorage.getItem(`fcu_schedule_${user.studentId}`);
+      const localWatchlist = localStorage.getItem(`fcu_watchlist_${user.studentId}`);
+      
+      if (localSchedule) setSchedule(JSON.parse(localSchedule));
+      if (localWatchlist) setWatchlist(JSON.parse(localWatchlist));
+    } else {
+      setSchedule([]);
+      setWatchlist([]);
     }
+  }, [user?.studentId]);
 
-    return false; // 安全過關
-  } catch (error) {
-    console.error("驗證課表失敗:", error);
-    return false; 
-  }
-};
+  // 2. 存檔邏輯 (純前端 LocalStorage，不發送 API、不塞爆資料庫)
+  const saveScheduleToLocal = (newSchedule) => {
+    if (!user?.studentId) return;
+    localStorage.setItem(`fcu_schedule_${user.studentId}`, JSON.stringify(newSchedule));
+  };
 
-  const addCourse = (newCourse) => {
+  const saveWatchlistToLocal = (newWatchlist) => {
+    if (!user?.studentId) return;
+    localStorage.setItem(`fcu_watchlist_${user.studentId}`, JSON.stringify(newWatchlist));
+  };
+
+  // 3. 加退選邏輯
+  const addCourse = async (newCourse) => {
     if (schedule.some(c => c.id === newCourse.id)) {
       return { success: false, message: '此課程已在您的課表中。' };
     }
-    const conflictCourse = checkConflict(newCourse);
-    if (conflictCourse) {
-      return { success: false, message: `衝堂警告！與已選的【${conflictCourse.name}】時間重疊。` };
-    }
-    setSchedule([...schedule, newCourse]);
+    const newSchedule = [...schedule, newCourse];
+    setSchedule(newSchedule);
+    saveScheduleToLocal(newSchedule); // 異動後立刻寫入瀏覽器
     return { success: true, message: `成功將【${newCourse.name}】加入課表！` };
   };
 
-  // 🌟 新增：移除課程的函式
   const removeCourse = (courseId) => {
-    setSchedule(schedule.filter(c => c.id !== courseId));
+    const newSchedule = schedule.filter(c => c.id !== courseId);
+    setSchedule(newSchedule);
+    saveScheduleToLocal(newSchedule);
   };
 
   const toggleWatchlist = (course) => {
     const isWatched = watchlist.some(c => c.id === course.id);
-    if (isWatched) {
-      setWatchlist(watchlist.filter(c => c.id !== course.id));
-    } else {
-      setWatchlist([...watchlist, course]);
-    }
+    const newWatchlist = isWatched 
+      ? watchlist.filter(c => c.id !== course.id)
+      : [...watchlist, course];
+      
+    setWatchlist(newWatchlist);
+    saveWatchlistToLocal(newWatchlist);
   };
 
   return (
-    // 🌟 將 removeCourse 也暴露出去給其他元件使用
     <ScheduleContext.Provider value={{ schedule, setSchedule, watchlist, addCourse, removeCourse, toggleWatchlist }}>
       {children}
     </ScheduleContext.Provider>
@@ -66,4 +70,3 @@ export function ScheduleProvider({ children }) {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const useSchedule = () => useContext(ScheduleContext);
-
