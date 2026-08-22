@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { scheduleAPI, chatAPI, profileAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import { formatCourseTime } from '../utils/courseTime';
@@ -81,6 +82,9 @@ export default function DashboardPage() {
   const chatInputRef = useRef(null);
   const chatScrollRef = useRef(null);
   const initialGenerationUserRef = useRef(null);
+  const userMenuRef = useRef(null);
+
+  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   useEffect(() => {
     // Scroll chat to bottom
@@ -306,7 +310,7 @@ export default function DashboardPage() {
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
         </div>
         <div className="nav-actions">
-          <div className="nav-user" onClick={() => setShowUserMenu(!showUserMenu)}>
+          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
             <div className="avatar">{(user?.name || '同')[0]}</div>
             <span>{user?.name || '同學'}</span>
             

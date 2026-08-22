@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, Sun, Save } from 'lucide-react';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ChatPanel from '../components/Chat/ChatPanel';
@@ -33,6 +34,9 @@ export default function SchedulePage() {
   const [detailCourse, setDetailCourse] = useState(null);
   const [notice, setNotice] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef(null);
+
+  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,7 +163,7 @@ export default function SchedulePage() {
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
         </div>
         <div className="nav-actions">
-          <div className="nav-user" onClick={() => setShowUserMenu(!showUserMenu)}>
+          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
             <div className="avatar">{(user?.name || '同')[0]}</div>
             <span>{user?.name || '同學'}</span>
 
