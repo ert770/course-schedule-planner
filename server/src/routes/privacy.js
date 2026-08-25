@@ -5,6 +5,7 @@ import {
   deriveSubjectId, getConsentStatus, getPrivacyPolicy, markServiceWithdrawn, recordConsentChoices, writeAudit,
 } from '../services/privacyService.js';
 import { deleteUserServiceData, getSavedSchedules, getUserPreferences } from '../services/memoryService.js';
+import { deleteInteractionEvents, getInteractionEventsForExport } from '../services/interactionEventService.js';
 import { buildClearSessionCookie } from '../services/sessionService.js';
 
 const router = Router();
@@ -30,8 +31,9 @@ router.put('/consents', requireIdentity, async (req, res) => {
 
 router.get('/export', requireIdentity, async (req, res) => {
   try {
-    const [profile, schedules, privacy] = await Promise.all([
+    const [profile, schedules, privacy, interactionEvents] = await Promise.all([
       getUserPreferences(req.identity), getSavedSchedules(req.identity.canonicalId), getConsentStatus(req.identity),
+      getInteractionEventsForExport(req.identity),
     ]);
     const { userId: _userId, studentId: _studentId, displayName: _displayName, ...portableProfile } = profile;
     const payload = {
@@ -41,6 +43,9 @@ router.get('/export', requireIdentity, async (req, res) => {
         profile: portableProfile,
         savedSchedules: schedules.map(({ userId: _scheduleUserId, ...schedule }) => schedule),
         consents: privacy.consents,
+        // roadmap #2：本人可取回自己的互動事件。刻意不含 subject ID——
+        // 匯出它等於把假名與本人身分綁在同一份檔案裡。
+        interactionEvents,
       },
       excluded: ['password', 'internal subject ID', 'Raw Chat plaintext', 'model thought', 'research event rows'],
     };
@@ -71,16 +76,21 @@ router.delete('/data', requireIdentity, async (req, res) => {
     await consumeDeletionIntent(req.identity, req.body?.requestId, req.body?.token);
     const subjectId = deriveSubjectId(req.identity.canonicalId);
     await writeAudit(subjectId, 'delete', 'service_data', 'started', {}, requestId(req));
-    await clearChatHistory(req.identity);
-    const deleted = await deleteUserServiceData(req.identity);
+    // **撤回必須在刪除之前。** 這個順序不是風格問題：一個已經通過 consent 檢查、
+    // 正在執行中的 `POST /api/interactions` 可以在刪除跑完之後才落地，讓刪除
+    // 回報成功卻仍留下個人資料。先標記撤回，並行的寫入就只剩兩種結局——
+    // 搶在撤回前落地（隨後被下面的刪除清掉），或看到已撤回而被拒絕。
     await markServiceWithdrawn(req.identity);
+    await clearChatHistory(req.identity);
+    const interactionsDeleted = await deleteInteractionEvents(subjectId);
+    const deleted = { ...(await deleteUserServiceData(req.identity)), ...interactionsDeleted };
     await writeAudit(subjectId, 'delete', 'service_data', 'success', deleted, requestId(req));
     res.setHeader('Clear-Site-Data', '"cache", "storage"');
     res.setHeader('Set-Cookie', buildClearSessionCookie());
     res.json({
       success: true,
       status: 'deleted',
-      message: '服務帳號、Profile、修課歷史、已存課表與 Raw Chat 已刪除；最小同意／稽核記錄依政策保留。',
+      message: '服務帳號、Profile、修課歷史、已存課表、互動事件與 Raw Chat 已刪除；最小同意／稽核記錄依政策保留。',
       deleted,
     });
   } catch (err) { sendPrivacyError(res, err); }

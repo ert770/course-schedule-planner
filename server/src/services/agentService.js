@@ -5,6 +5,7 @@ import { getChatHistory, saveChatExchange } from './privacyService.js';
 import { searchCoursesForAgent, getCourseDetail } from '../skills/courseQuery.js';
 import { getEasyCourses, getSentimentSummary, searchReviews } from '../skills/reviewSearch.js';
 import { generateForUser } from './scheduleService.js';
+import { recordScheduleFeedback } from './scheduleFeedbackService.js';
 import { logger } from '../utils/logger.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 
@@ -122,6 +123,13 @@ export async function handleChat(identity, message) {
                 // 先前這裡自己組一份，只要 REST 那條加了前置條件就會靜默落後。
                 result = await generateForUser(identity, { constraints: args }, { prefs });
                 responseData = result;
+                break;
+              }
+
+              case 'record_schedule_feedback': {
+                // roadmap #2：排課後的確認就是「使用者最終選擇」。模型只轉述
+                // 使用者說了什麼，欄位長相與合法性由 service 決定。
+                result = await recordScheduleFeedback(identity, args);
                 break;
               }
 

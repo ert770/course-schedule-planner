@@ -6,6 +6,8 @@ import { useSchedule } from '../contexts/useSchedule';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { scheduleAPI, chatAPI, profileAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
+import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
+import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
 import { formatCourseTime } from '../utils/courseTime';
 import { X, Send, Search, Download, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, AlertTriangle } from 'lucide-react';
 
@@ -59,6 +61,12 @@ export default function DashboardPage() {
     replaceSchedule,
     removeCourse,
     saveCurrentSchedule,
+    buildRecommendation,
+    logCourseViewed,
+    logRecommendationExposed,
+    logScheduleRegenerated,
+    acceptRecommendation,
+    personalizationEnabled,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
@@ -77,6 +85,9 @@ export default function DashboardPage() {
     { role: 'bot', text: '你好！我是課表規劃助手，用自然語言告訴我你的需求吧！' }
   ]);
   const [detailCourse, setDetailCourse] = useState(null);
+  // roadmap #2：排課只是推薦，使用者是否覺得符合需求才是最終選擇。
+  const [confirmation, setConfirmation] = useState(null);
+  const [removalCandidate, setRemovalCandidate] = useState(null);
   
   const [showUserMenu, setShowUserMenu] = useState(false);
   const chatInputRef = useRef(null);
@@ -102,7 +113,7 @@ export default function DashboardPage() {
   );
   const hasNonGraduationCredits = graduationCredits !== totalCredits;
 
-  const generateInitialSchedule = useCallback(async () => {
+  const generateInitialSchedule = useCallback(async (trigger = 'initial_load') => {
     setIsScheduling(true);
     try {
       // **偏好不由前端重送。**
@@ -141,8 +152,14 @@ export default function DashboardPage() {
       // 全部丟棄會讓失敗變成無聲失敗，使用者只看到空白課表。
       setScheduleNotice(buildScheduleNotice(data));
 
+      if (trigger !== 'initial_load') {
+        logScheduleRegenerated(data.requestId, { surface: 'dashboard', trigger });
+      }
+
       if (data.success) {
-        replaceSchedule(data.schedule);
+        replaceSchedule(data.schedule, buildRecommendation(data));
+        logRecommendationExposed(data, { surface: 'dashboard', trigger });
+        setConfirmation(data.requestId ? { state: 'pending' } : null);
       } else {
         setChatHistory(prev => [...prev, {
           role: 'bot',
@@ -160,7 +177,10 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [replaceSchedule, user?.studentId]);
+  }, [
+    buildRecommendation, logRecommendationExposed, logScheduleRegenerated,
+    replaceSchedule, user?.studentId,
+  ]);
 
   useEffect(() => {
     if (scheduleLoading || !user?.studentId) return;
@@ -233,7 +253,7 @@ export default function DashboardPage() {
   };
 
   const handleRegenerate = () => {
-    generateInitialSchedule();
+    generateInitialSchedule('preference_regenerate');
   };
 
   const handleChatSend = async (overrideMsg) => {
@@ -256,7 +276,8 @@ export default function DashboardPage() {
     try {
       const res = await chatAPI.send(msg);
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
-        replaceSchedule(res.data.schedule);
+        replaceSchedule(res.data.schedule, buildRecommendation(res.data));
+        logRecommendationExposed(res.data, { surface: 'chat', trigger: 'chat_tool' });
         setChatHistory(prev => [...prev, { 
           role: 'bot', 
           text: `成功生成課表！共 ${res.data.schedule.length} 門課，${res.data.totalCredits} 學分。`,
@@ -286,6 +307,33 @@ export default function DashboardPage() {
     a.download = '預排課表.txt';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // roadmap #2：明確回答「符合」才算接受。儲存課表刻意不算——存草稿也會按儲存。
+  const handleConfirmFit = async () => {
+    const outcome = await acceptRecommendation();
+    setConfirmation({ state: 'accepted', outcome });
+  };
+
+  // 未同意個人化學習時不問原因，直接移除。不同意的人不該被問。
+  const handleRemoveClick = (course) => {
+    if (!personalizationEnabled) {
+      removeCourse(course.id);
+      setDetailCourse(null);
+      return;
+    }
+    setRemovalCandidate(course);
+  };
+
+  const handleRemoveConfirmed = (feedbackReason) => {
+    if (removalCandidate) removeCourse(removalCandidate.id, { feedbackReason });
+    setRemovalCandidate(null);
+    setDetailCourse(null);
+  };
+
+  const handleOpenDetail = (course) => {
+    setDetailCourse(course);
+    logCourseViewed(course);
   };
 
   const handleSave = async () => {
@@ -431,6 +479,14 @@ export default function DashboardPage() {
             </div>
           </div>
           
+          <ScheduleConfirmationBar
+            confirmation={confirmation}
+            personalizationEnabled={personalizationEnabled}
+            onConfirmFit={handleConfirmFit}
+            onRequestAdjust={() => setConfirmation({ state: 'adjusting' })}
+            onDismiss={() => setConfirmation(null)}
+          />
+
           {scheduleNotice && (
             <div className={`schedule-notice ${scheduleNotice.level}`} id="schedule-notice">
               <div className="schedule-notice-head">
@@ -499,7 +555,7 @@ export default function DashboardPage() {
                 <p>Agent 正在呼叫排課演算法...</p>
               </div>
             )}
-            <ScheduleGrid courses={schedule} onCourseClick={setDetailCourse} />
+            <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} />
           </div>
         </div>
 
@@ -575,6 +631,12 @@ export default function DashboardPage() {
         </aside>
       </div>
 
+      <RemoveReasonDialog
+        course={removalCandidate}
+        onCancel={() => setRemovalCandidate(null)}
+        onConfirm={handleRemoveConfirmed}
+      />
+
       {/* Modal is same as before */}
       {detailCourse && (
         <div className="modal-overlay" onClick={() => setDetailCourse(null)}>
@@ -594,10 +656,7 @@ export default function DashboardPage() {
             )}
             <button
               className="action-btn secondary modal-remove-course"
-              onClick={() => {
-                removeCourse(detailCourse.id);
-                setDetailCourse(null);
-              }}
+              onClick={() => handleRemoveClick(detailCourse)}
             >
               從課表移除
             </button>

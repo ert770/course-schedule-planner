@@ -43,6 +43,7 @@ System prompt 必須讓 Agent：
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
+| `record_schedule_feedback` | 記錄使用者對已產生課表的最終評價（roadmap #2） |
 | `final_answer` | 輸出最終回答 |
 
 `query_course_db` 由後端依目前 `userId` 的 profile 建立班級範圍，Agent 不傳入或猜測
@@ -136,6 +137,48 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 ### 陣列參數語意
 
 陣列型參數送空陣列 `[]` 視同「未指定」，會退回使用者已儲存的偏好。要覆蓋已儲存值必須送入非空陣列。
+
+## 排課後的確認與 `record_schedule_feedback`（Roadmap #2）
+
+排課只是推薦。**使用者是否覺得這份課表符合需求，才是「最終選擇」**，而系統原本
+排完課就結束，完全沒有取得這個訊號。因此：
+
+- `run_csp_scheduler` 成功後，`final_answer` 的 `reply_text` **必須**詢問這份課表是否符合需求，
+  並說明若有不適合的課，請指出是哪一門以及原因。
+- 使用者回答之後，先呼叫 `record_schedule_feedback` 記錄，再用 `final_answer` 回覆。
+- 使用者沒有回答時**不得**代為假設他接受了這份課表。
+
+參數：
+
+| 參數 | 說明 |
+| --- | --- |
+| `requestId` | 上一次 `run_csp_scheduler` 回傳的 `requestId`，必填，不可自行編造 |
+| `planId` | 接受課表時必填，使用排課結果中的 `planId`（格式 `requestId:variantId`）；`variantId` 由後端反推 |
+| `accepted` | 布林值，使用者表示符合需求時為 `true` |
+| `rejectedCourses` | `[{ "sectionId": 數字, "reason": 原因 }]` |
+
+`reason` 只接受 `time`、`content`、`instructor`、`workload`、`full`、`eligibility`、`other`
+七個值，**不收自由文字**。使用者沒說明原因時填 `other`，不得自行猜測理由。
+
+後端會把 `accepted` 記成 `recommendation_accepted`、每筆 `rejectedCourses` 記成
+`course_withdrawn`；欄位長相與合法性由 `services/scheduleFeedbackService.js` 決定，
+模型只轉述使用者說了什麼。
+
+**來源驗證**：後端會對照該次推薦的 `recommendation_exposed` 紀錄，確認
+`requestId` 確實屬於這位使用者、`planId` 是實際顯示過的方案、每個 `sectionId` 都在
+當時真的排進課表的課程裡。編造的識別碼、別人的 requestId、只出現在候選但沒顯示的課，
+全部會被拒絕並回傳說明——不要嘗試補值或改用相近的值繞過，直接照實回覆使用者。
+
+```json
+{
+  "tool": "record_schedule_feedback",
+  "parameters": {
+    "requestId": "上一次排課回傳的 requestId",
+    "accepted": false,
+    "rejectedCourses": [{ "sectionId": 101, "reason": "time" }]
+  }
+}
+```
 
 ## Observation 格式
 

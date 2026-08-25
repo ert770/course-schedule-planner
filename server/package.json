@@ -10,6 +10,7 @@
     "test": "node --test \"test/**/*.test.js\"",
     "migrate:profile": "node scripts/profileSchemaMigration.js",
     "migrate:privacy": "node scripts/privacyMigration.js",
+    "migrate:interactions": "node scripts/interactionEventsMigration.js",
     "configure:privacy": "node scripts/configurePrivacyEnvironment.js",
     "cleanup:privacy": "node scripts/privacyCleanup.js",
     "cleanup:legacy-chat": "node scripts/legacyChatCleanup.js"

@@ -5,6 +5,7 @@ import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { coursesAPI, profileAPI } from '../services/api';
+import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X } from 'lucide-react';
 import '../App.css'; // Reuse some layout styles
 import { formatCourseTime } from '../utils/courseTime';
@@ -15,7 +16,10 @@ export default function SearchPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist } = useSchedule();
+  const {
+    schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed,
+    personalizationEnabled,
+  } = useSchedule();
   
   const [activeTab, setActiveTab] = useState('dept');
   const [searchResults, setSearchResults] = useState([]);
@@ -30,6 +34,7 @@ export default function SearchPage() {
   const [watchlistCourses, setWatchlistCourses] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [watchlistError, setWatchlistError] = useState('');
+  const [removalCandidate, setRemovalCandidate] = useState(null);
   const userMenuRef = useRef(null);
 
   useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
@@ -196,11 +201,30 @@ export default function SearchPage() {
     event.stopPropagation();
     const isAdded = schedule.some(item => String(item.id) === String(course.id));
     if (isAdded) {
-      removeCourse(course.id);
-      setActionNotice({ level: 'success', text: `已將「${course.name}」從課表移除。` });
+      // roadmap #2：移除前先問原因，`time`／`full` 與「不喜歡內容」才分得開。
+      // 未同意個人化學習時不問——問了也不會記錄。
+      if (!personalizationEnabled) {
+        removeCourse(course.id);
+        setActionNotice({ level: 'success', text: `已將「${course.name}」從課表移除。` });
+        return;
+      }
+      setRemovalCandidate(course);
       return;
     }
     await handleAddCourse(event, course);
+  };
+
+  const handleOpenDetail = (course) => {
+    setDetailCourse(course);
+    logCourseViewed(course);
+  };
+
+  const handleRemoveConfirmed = (feedbackReason) => {
+    const course = removalCandidate;
+    setRemovalCandidate(null);
+    if (!course) return;
+    removeCourse(course.id, { feedbackReason });
+    setActionNotice({ level: 'success', text: `已將「${course.name}」從課表移除。` });
   };
 
   const handleToggleWatchlist = async (event, course) => {
@@ -491,7 +515,7 @@ export default function SearchPage() {
           ) : displayCourses.length > 0 ? (
             <div className="results-grid">
               {displayCourses.map(course => (
-                <div key={course.id} className="course-card" onClick={() => setDetailCourse(course)}>
+                <div key={course.id} className="course-card" onClick={() => handleOpenDetail(course)}>
                   <div className="course-card-header">
                     <h4>{course.name}</h4>
                     <span className="course-code">{course.code}</span>
@@ -557,6 +581,12 @@ export default function SearchPage() {
       </div>
 
       {/* Course Detail Modal */}
+      <RemoveReasonDialog
+        course={removalCandidate}
+        onCancel={() => setRemovalCandidate(null)}
+        onConfirm={handleRemoveConfirmed}
+      />
+
       {detailCourse && (
         <div className="modal-overlay" onClick={() => setDetailCourse(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>

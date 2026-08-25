@@ -324,7 +324,7 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 ## #29 InteractionEvent schema 測試
 
 `server/test/interactionEventSchema.test.js`。這組測試只操作 pure functions，不連 MySQL、
-不建立 runtime JSON，也不代表 #2 的前端埋點或 #33 的 consent 已完成。
+不建立 runtime JSON。實際埋點與持久化由下方 IL 系列（#2）涵蓋。
 
 | 編號 | 情境 | 預期結果 |
 | --- | --- | --- |
@@ -338,6 +338,42 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | I29-8 | actionId 不同 | 產生不同 key，可 append 為獨立操作 |
 | I29-9 | 無版本 flat draft | migration 轉為合法 v1 nested shape |
 | I29-10 | 未知未來版本、未知 event type、無身分、非法順位 | 明確拒絕，不補猜值 |
+
+## IL #2 互動 log 埋點與持久化測試
+
+`server/test/interactionEvents.test.js`。使用記憶體 privacy store，不需 MySQL。
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| IL-1 | 未同意 `personalization_learning` 時上報 | `recorded:false`、`reason=CONSENT_NOT_GRANTED`，DB 零列 |
+| IL-1b | 同上，經 `POST /api/interactions` | 回 **200 而非 428**——可選用途不該把使用者推到同意牆 |
+| IL-2 | 同意後上報曝光 | 寫入一列；序列化後不含學號、不含 subject ID；版本快照由 server 填入 |
+| IL-3 | 同一 `actionId` 重送 | `duplicate`，仍只有一列 |
+| IL-3b | 不同 `actionId` | 視為兩次操作，各自 append |
+| IL-4 | 相同 key 但 payload 改變 | `conflict`，不覆寫既有事件 |
+| IL-5 | `displayedSet` 不是 `candidateSet` 子集 | `rejected` 並回報錯誤，不寫入 |
+| IL-6 | 必修被選入 | `source=required` 保留，不混成興趣正回饋 |
+| IL-7 | 七個 `feedbackReason` 全數上報；非移除事件夾帶原因 | 前者逐一保存、後者拒絕 |
+| IL-7b | 使用者略過原因 | `feedbackReason` 為 `null`，不猜一個值 |
+| IL-8 | 未登入 | 401，不寫入 |
+| IL-9 | 兩個帳號 | 事件完全隔離 |
+| IL-10 | 保存期限清理 | 只刪過期資料，未到期保留 |
+| IL-11 | 帳號刪除 | 該 `subject_id` 事件歸零 |
+| IL-12 | 排課回應 | 帶 `requestId`；每個方案帶 `planId`／`variantId`，成功與失敗路徑皆然 |
+| IL-13 | `record_schedule_feedback` | `accepted` → plan 層級 `recommendation_accepted`；`rejectedCourses` → 逐筆 `course_withdrawn` + 原因 |
+| IL-13b | 重送同一份確認 | `duplicate`，不重複計為兩次接受 |
+| IL-13c | requestId 造假或原因不合法 | 明確回報，不寫入 |
+| IL-13d | 使用者尚未回答 | 拒絕代為記錄 |
+| IL-13e | requestId 沒有對應的曝光紀錄 | 拒絕——模型可以編出格式合法但從未存在的推薦 |
+| IL-13f | 拿別人的 requestId 當自己的回饋來源 | 拒絕；曝光查詢以 subject 為範圍 |
+| IL-13g | 捏造的 variant、或只進候選但未顯示過的課程 | 兩者皆拒絕；使用者不可能退掉沒看過的課 |
+| IL-14 | 已撤回服務的 subject 再寫入 | `rejected`，不寫入 |
+| IL-14b | 寫入與帳號刪除並行 | 無論搶先落地或被拒絕，最終皆為零列 |
+
+IL-13e～g 與 IL-14 來自對抗式審查：前三項封住「模型捏造回饋來源」，後者封住
+「刪除帳號後並行寫入仍落地」。兩者都不是實作瑕疵，是原本設計就沒有涵蓋的情境。
+
+修改互動埋點時，另須確認 P 系列的 prompt 契約（排課後確認章節與七個原因 enum）仍通過。
 
 ## 資料庫契約測試
 

@@ -612,3 +612,89 @@ Consequences:
   for the response and no display name.
 - Account/data deletion needs a short-lived single-use token and exact confirmation phrase. It deletes
   service data but retains minimal consent/audit records for 365 days.
+
+## ADR-018: Instrument Interactions Without Creating a Consent Wall or a Re-identifiable Dataset
+
+Date: 2026-08-26
+
+Context:
+Roadmap #2 must actually record what the system showed, what the user chose, and why they dropped
+courses — the data prerequisite for #30, #5B, #6, #7, #9 and #32. #29 fixed the event contract and
+#33 fixed consent, pseudonymization and retention, so the remaining decisions are about how
+instrumentation behaves in the product: what happens when the optional consent is off, what the
+storage layer is allowed to hold, how duplicates are prevented, and what counts as acceptance.
+
+Decision:
+
+1. `personalization_learning` is an **optional** purpose that defaults to off. `POST /api/interactions`
+   therefore does **not** use the `requireConsent` middleware. Without consent it returns
+   `200 { recorded: false, reason: 'CONSENT_NOT_GRANTED' }` and writes nothing, instead of the
+   `428 CONSENT_REQUIRED` used for the required `service_processing` purpose. A 428 means "the user
+   must go deal with this first", which would turn an optional analytics choice into a consent wall.
+   The removal-reason dialog is likewise not shown to users who have not opted in: asking a question
+   whose answer is discarded wastes the user's time.
+2. The storage layer holds `subject_id` only. `createInteractionEvent()` produces an envelope with the
+   canonical student ID per #29, but it is swapped for the #33 HMAC subject ID before the INSERT and
+   never persisted. `versionSnapshot.profileSchemaVersion` and `modelVersion` are overwritten with the
+   server's current values — a version snapshot is a fact about the system, not something a caller
+   may declare.
+3. Idempotency is enforced twice: `resolveIdempotentAppend()` in the application layer, and a
+   `(subject_id, idempotency_key)` UNIQUE index in MySQL. The application check alone loses races
+   between concurrent retries of the same action; a duplicate-key error is reported as `duplicate`,
+   never retried or overwritten.
+4. Interaction logging is a side channel. Failure to record must never fail an add, a removal, a
+   schedule generation or a chat turn. The client is fire-and-forget and swallows errors into a
+   console warning. **But a side channel may not lie about its own outcome**: `logInteraction()`
+   returns a never-rejecting promise carrying the real result, and the post-schedule confirmation
+   bar words itself from that result. Consent-off and write-failure both say the feedback was not
+   stored, instead of claiming it will shape future recommendations.
+5. `recommendation_accepted` comes only from an explicit confirmation — the "符合" button, or the
+   Agent's `record_schedule_feedback` after the user answered. **Saving a schedule is not treated as
+   acceptance**: saving a draft is ambiguous. No answer is recorded as no acceptance, not as a
+   negative. The schedule's contents are already covered by `course_selected`, so nothing is lost.
+6. This product maps `course_withdrawn` to "dropping a course that was on the schedule". There is no
+   integration with the university's enrolment system, so #29's literal "withdrew after formally
+   enrolling" has no observable counterpart; roadmap #2's 「加選後退選」 is carried by this event.
+   `course_removed` stays an unused forward contract for "rejecting a recommendation without it ever
+   entering the schedule", which no current screen offers.
+
+7. Writing an event is guarded by the subject's withdrawal state, checked under
+   `SELECT ... FOR UPDATE` in the same transaction as the INSERT, and `DELETE /api/privacy/data`
+   marks the subject withdrawn **before** deleting anything. Consent rows are retained for 365 days
+   after deletion, so a consent check alone still passes post-deletion: an in-flight request that
+   had already passed it could otherwise land after the delete completed, recreate the subject row,
+   and leave personal data behind an endpoint that reported success. With this ordering a concurrent
+   write either commits before the withdrawal (and is removed by the delete that follows) or blocks
+   on the row lock and is rejected.
+8. Feedback provenance is validated against the recorded `recommendation_exposed` event, not against
+   string shape. The Agent is a language model and will fabricate plausible identifiers; checking
+   only "is this a UUID", "does planId have the right prefix" and "does this section exist somewhere
+   in the catalog" is not validation. A `requestId` must belong to this subject, an accepted `planId`
+   must be the plan that was actually shown, and every rejected section must appear in that
+   exposure's `displayedSet` — a user cannot reject a course they were never shown.
+
+Rejected alternative — a separate recommendation-snapshot table for provenance: rejected because
+`recommendation_exposed` already records the subject, requestId, plan and displayed courses. A second
+copy of the same fact drifts, and it would create new personal records for users who never opted in
+to personalization.
+
+Rejected alternative — guard the endpoint with `requireConsent(PERSONALIZATION_LEARNING)`: rejected
+because the resulting 428 is indistinguishable, to the client, from the service-consent wall, and the
+UI would have to special-case an error path for a state that is entirely legitimate.
+
+Rejected alternative — emit `recommendation_accepted` on save as well as on confirmation: rejected
+because the same plan would then be counted twice by #30 through two different actions, and a saved
+draft would be scored as an endorsement.
+
+Consequences:
+
+- #2 is complete; #30 is unblocked and now owns turning these events into weights.
+- Schedule responses gained `requestId` and per-plan `planId`/`variantId`. Without them a
+  `recommendation_exposed` event could not identify which recommendation it described, since
+  `plan.id` is only a variant name reused across every generation.
+- Exposure stores 227 candidates against 8 displayed courses in the demo account's real data; the
+  difference is exactly what stops #30 from reading "never shown" as "seen and rejected".
+- Users who never opt in generate no rows at all, and are never shown the reason dialog.
+- Feedback now requires a prior exposure event. Legitimate feedback is rejected if the client never
+  reported the exposure (e.g. a network failure). That is the safe direction: a missing label costs
+  #30 one data point, a fabricated label corrupts what it learns.

@@ -68,8 +68,12 @@ canonical ID 或 pseudonymous subject ID。
 
 ### `GET /api/privacy/export`
 
-以 attachment JSON 串流登入者的可攜 Profile、已存課表與同意決定。不包含密碼、內部
-subject ID、Raw Chat 明文、模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
+以 attachment JSON 串流登入者的可攜 Profile、已存課表、同意決定與**自己的互動事件**
+（`data.interactionEvents`，Roadmap #2）。不包含密碼、內部 subject ID、Raw Chat 明文、
+模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
+
+匯出的事件刻意不含 `subject_id` 與 `idempotencyKey`：前者是分析用的內部假名，匯出它
+等於把假名與本人身分綁在同一份檔案裡；後者是去重用的實作細節。
 
 ### `DELETE /api/privacy/chat`
 
@@ -82,8 +86,13 @@ subject ID、Raw Chat 明文、模型 thought 或研究逐筆事件；回應使�
 ### `DELETE /api/privacy/data`
 
 Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: "刪除我的資料"`。
-成功後刪除服務帳號、Profile、修課歷史、已存課表與 Raw Chat，清除 session；最小同意與
-稽核記錄依政策保留 365 天。
+成功後刪除服務帳號、Profile、修課歷史、已存課表、互動事件與 Raw Chat，清除 session；
+最小同意與稽核記錄依政策保留 365 天。回應的 `deleted` 含 `interactionEventsDeleted`。
+
+**執行順序：先標記撤回，再刪除。** 同意紀錄依政策保留 365 天，因此刪除後 consent 檢查
+仍會通過；若不先撤回，一個已通過檢查、正在執行中的 `POST /api/interactions` 可以在刪除
+完成之後才落地，讓這支 API 回報成功卻仍留下個人資料。互動事件的寫入會在同一個交易裡以
+`SELECT ... FOR UPDATE` 檢查撤回狀態，已撤回的 subject 一律回 `rejected`。
 
 ## Health
 
@@ -415,6 +424,14 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 永遠不會被這個機制放寬。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema
 （Roadmap #21）」。
 
+Response 頂層額外回傳 `requestId`（本次排課請求的 UUID），每個 `plans[i]` 額外回傳
+`planId`（格式 `requestId:variantId`）與 `variantId`（`required_first` 等產生策略）。
+這是 Roadmap #2 的曝光事件用來指認「哪一次推薦的哪一個方案」的依據——先前只有
+`plan.id`（variant 名稱），五個方案在不同次排課之間無法區分。識別碼由
+`services/scheduleService.js` 的 `annotateScheduleIdentifiers()` 於請求層附加，
+`skills/scheduler.js` 不參與；REST 與 Chat 兩條路徑共用同一份結果物件。
+成功與失敗回應都帶識別碼。屬向後相容的欄位新增，既有欄位語意不變。
+
 Response 除既有欄位外，無解時額外回傳 `conflictSet`（結構化的限制違規清單，取代「只回傳
 第一個錯誤字串」），格式為 `[{ constraintId, severity, relaxable, source, courses, reason }]`，
 附加於 `message`／`warnings` 之外，不取代它們；透過放寬階梯成功時額外回傳
@@ -710,6 +727,46 @@ Response:
   }
 }
 ```
+
+## Interactions
+
+### `POST /api/interactions`
+
+批次上報互動事件（Roadmap #2）。需要登入身分。
+
+Request：
+
+```json
+{ "events": [ { "eventType": "recommendation_exposed", "requestId": "...", "actionId": "...", "term": { "academicYear": 114, "semester": "下學期" }, "exposureContext": { "surface": "dashboard", "trigger": "initial_load", "candidateSet": [], "displayedSet": [] } } ] }
+```
+
+事件本體為 `InteractionEvent v1`（見 `docs/DATA_SCHEMA.md`）。`userId`、`eventId`、
+`timestamp`、`schemaVersion`、`idempotencyKey` 與 `versionSnapshot` 的
+`profileSchemaVersion`／`modelVersion` 一律由 server 產生，client 送同名欄位會被覆寫。
+單次最多 50 筆。
+
+Response：
+
+```json
+{ "recorded": 2, "results": [ { "actionId": "...", "eventType": "course_withdrawn", "status": "append" } ] }
+```
+
+`status` 為 `append`｜`duplicate`｜`conflict`｜`rejected`（`rejected` 另帶 `errors`）。
+
+**未同意 `personalization_learning` 時回 `200 { "recorded": false, "reason": "CONSENT_NOT_GRANTED" }`，
+不是 `428`。** 這是可選用途，預設關閉是完全合法的狀態，回 428 等於把使用者推到同意牆前面。
+此時**一列都不會寫入**，滿足 #33 的驗收標準。詳見 `docs/DECISIONS.md` ADR-018。
+
+| 狀態碼 | 情境 |
+| --- | --- |
+| 200 | 已處理（含未同意而未記錄） |
+| 400 | `events` 不是陣列或超過 50 筆 |
+| 401 | 未登入 |
+| 403 | 嘗試操作其他使用者的資料 |
+| 500 | 儲存體暫時無法使用 |
+
+呼叫端必須把這支端點視為**旁路**：失敗時不得影響加選、移除、排課或聊天。
+前端 `client/src/services/interactionLog.js` 一律 fire-and-forget 並吞掉錯誤。
 
 ## Graduation
 

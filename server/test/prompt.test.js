@@ -37,9 +37,27 @@ describe('P1 system prompt 含所有排課參數', () => {
       'get_easy_courses',
       'run_csp_scheduler',
       'update_preferences',
+      'record_schedule_feedback',
       'final_answer',
     ]) {
       assert.ok(prompt.includes(tool), `system prompt 缺少工具 ${tool}`);
+    }
+  });
+
+  // roadmap #2：排課只是推薦，使用者是否覺得符合需求才是「最終選擇」。
+  // 沒有問，系統就無從得知這份推薦好不好，#30 也就少了最關鍵的一個訊號。
+  test('要求排課後必須確認課表是否符合需求', () => {
+    assert.ok(prompt.includes('排課後的確認'), 'system prompt 缺少排課後確認章節');
+    assert.ok(prompt.includes('是否符合需求'), 'system prompt 未要求詢問是否符合需求');
+    assert.ok(
+      prompt.includes('不得自行假設他接受了這份課表'),
+      'system prompt 未禁止代替使用者回答'
+    );
+  });
+
+  test('移除原因只接受七個 enum，不收自由文字', () => {
+    for (const reason of ['time', 'content', 'instructor', 'workload', 'full', 'eligibility', 'other']) {
+      assert.ok(prompt.includes(reason), `system prompt 缺少回饋原因 ${reason}`);
     }
   });
 

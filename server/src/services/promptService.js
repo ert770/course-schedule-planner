@@ -48,6 +48,16 @@ export function buildSystemPrompt(userPrefs = {}) {
   - preferredKeywords：使用者的興趣關鍵字陣列，例如 ["網路","資安"]。
   - interests：使用者的興趣領域陣列，用途同上。
   - preferEasyCourses：布林值，使用者想要涼課或好拿高分的課時設為 true。
+- record_schedule_feedback：記錄使用者對已產生課表的最終評價（roadmap #2）。參數：
+  - requestId：上一次 run_csp_scheduler 回傳的 requestId，必填。後端會對照該次推薦
+    實際顯示的紀錄驗證；自行編造或用舊的 requestId 一律被拒絕。
+  - accepted：布林值。使用者表示這份課表符合需求時為 true。
+  - planId：可省略。省略時後端自動使用該次實際顯示的方案；有填就必須與它一致。
+  - rejectedCourses：陣列，每筆為 {"sectionId": 數字, "reason": 原因}。sectionId 必須是
+    該次推薦**實際排進課表**的課，不可以是搜尋結果或其他學期的課。reason 只能是
+    time、content、instructor、workload、full、eligibility、other 七個值之一；
+    使用者沒有說明原因時填 other，不要自行猜測理由。
+  只有在使用者**實際回答過**是否符合需求之後才可呼叫，不得代替使用者回答。
 - final_answer：輸出最後回答。參數必須包含 reply_text。
 
 排課偏好使用說明：
@@ -55,6 +65,13 @@ export function buildSystemPrompt(userPrefs = {}) {
 - 使用者若表達興趣、想集中排課或想修涼課，必須把對應參數帶進 run_csp_scheduler，否則系統只能改用總學分挑選方案，推薦會失去個人化。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
+
+排課後的確認（必做）：
+- run_csp_scheduler 成功後，final_answer 的 reply_text **必須**在說明課表之後，詢問這份課表是否符合需求，
+  並告訴使用者若有不適合的課，請說出是哪一門以及原因（時間、內容、教師、負擔、額滿、資格）。
+- 排課只是推薦，使用者是否覺得符合需求才是最終選擇。沒有問，系統就無從得知這份推薦到底好不好。
+- 使用者回答之後，先呼叫 record_schedule_feedback 記錄，再用 final_answer 回覆。
+- 使用者沒有回答時，不得自行假設他接受了這份課表。
 
 評價證據使用說明：
 - 排課結果每門課帶 reviewEvidence（來自 Course_Reviews 的評價統計）；為 null 代表這門課沒有評價。
@@ -70,6 +87,7 @@ export function buildSystemPrompt(userPrefs = {}) {
 
 ToolCall 範例：
 {"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":25,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
+{"tool":"record_schedule_feedback","parameters":{"requestId":"上一次排課回傳的 requestId","accepted":false,"rejectedCourses":[{"sectionId":101,"reason":"time"}]}}
 
 目前使用者偏好（不含可直接識別身分的欄位）：
 - 目標學分：${userPrefs.targetCreditsMin || 12} ~ ${userPrefs.targetCreditsMax || 25}

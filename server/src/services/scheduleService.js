@@ -14,6 +14,7 @@
 // **Chat 只是讓使用者用自然語言表達需求與條件的介面，不該是另一套排課實作。**
 // 它與 REST 的唯一差別是 input 從哪裡來：HTTP body 還是模型參數。
 
+import crypto from 'node:crypto';
 import { generateSchedule } from '../skills/scheduler.js';
 import { searchCoursesForSchedule } from '../skills/courseQuery.js';
 import { getUserPreferences } from './memoryService.js';
@@ -22,6 +23,29 @@ import { buildStudentScope } from '../skills/courseScope.js';
 import { getAll } from '../db/database.js';
 import { getFailedRequiredCourseCodes } from '../data/courseHistory.js';
 import { logger } from '../utils/logger.js';
+
+// Roadmap #2：讓「這一次推薦」可以被指認。
+//
+// 排課回應原本沒有任何請求識別碼，`plan.id` 又只是 variant 名稱
+// （`required_first` 等），因此五個方案在**不同次**排課之間完全無法區分——
+// 曝光事件記下 `required_first` 也說不出那是哪一次推薦的 `required_first`。
+//
+// 識別碼屬於請求層，不屬於排課演算法，所以加在這裡而不是 `skills/scheduler.js`。
+// `planId` 用 `${requestId}:${variantId}` 組合而非另一個 UUID，是為了從 planId
+// 本身就能反推是哪一次請求的哪一個 variant，不必再做一次 join。
+//
+// 這是向後相容的欄位新增，既有欄位語意不變。
+export function annotateScheduleIdentifiers(result, requestId) {
+  if (!result || typeof result !== 'object') return result;
+  result.requestId = requestId;
+  if (Array.isArray(result.plans)) {
+    for (const plan of result.plans) {
+      plan.variantId = plan.id;
+      plan.planId = `${requestId}:${plan.id}`;
+    }
+  }
+  return result;
+}
 
 export function buildNoCandidatesResult(reviewDataLoaded) {
   return {
@@ -60,6 +84,7 @@ export async function loadCourseReviewsSafely(loadReviews) {
  */
 export async function generateForUser(identity, input = {}, options = {}) {
   const { courseIds = [], filters = {}, constraints = {} } = input;
+  const requestId = options.requestId || crypto.randomUUID();
 
   const prefs = options.prefs ?? await getUserPreferences(identity);
 
@@ -106,10 +131,15 @@ export async function generateForUser(identity, input = {}, options = {}) {
   }
 
   if (candidates.length === 0) {
-    return buildNoCandidatesResult(reviewDataLoaded);
+    return annotateScheduleIdentifiers(buildNoCandidatesResult(reviewDataLoaded), requestId);
   }
 
-  return generateSchedule(candidates, mergedConstraints);
+  return annotateScheduleIdentifiers(generateSchedule(candidates, mergedConstraints), requestId);
 }
 
-export default { generateForUser, loadCourseReviewsSafely, buildNoCandidatesResult };
+export default {
+  generateForUser,
+  loadCourseReviewsSafely,
+  buildNoCandidatesResult,
+  annotateScheduleIdentifiers,
+};

@@ -30,7 +30,9 @@ export function isPrivacyEnforcementEnabled() {
   return process.env.PRIVACY_ENFORCEMENT_ENABLED === 'true' || process.env.NODE_ENV === 'production';
 }
 
-function useMemoryStore() {
+// Roadmap #2 的 interaction event store 必須套用**同一條**「何時使用記憶體」規則。
+// 複製一份到另一個模組就是必然漂移的開始，因此在這裡匯出而不是各寫各的。
+export function useMemoryStore() {
   if (process.env.PRIVACY_STORE === 'memory') {
     if (process.env.NODE_ENV === 'production') {
       throw new PrivacyError('production 不可使用記憶體 privacy store', { code: 'PRIVACY_STORE_UNSAFE' });
@@ -129,7 +131,7 @@ function nowDate() {
   return new Date();
 }
 
-function toMysqlDate(value) {
+export function toMysqlDate(value) {
   return new Date(value).toISOString().slice(0, 23).replace('T', ' ');
 }
 
@@ -148,7 +150,7 @@ function latestByPurpose(rows) {
   return latest;
 }
 
-async function touchSubject(subjectId, connection = null, at = nowDate()) {
+export async function touchSubject(subjectId, connection = null, at = nowDate()) {
   if (useMemoryStore()) {
     const existing = memoryStore.subjects.get(subjectId);
     memoryStore.subjects.set(subjectId, {
@@ -168,6 +170,34 @@ async function touchSubject(subjectId, connection = null, at = nowDate()) {
      ON DUPLICATE KEY UPDATE last_active_at = VALUES(last_active_at), updated_at = VALUES(updated_at)`,
     [subjectId, toMysqlDate(at), toMysqlDate(at), toMysqlDate(at)]
   );
+}
+
+// 讀取 subject 的撤回狀態。
+//
+// 傳入 `connection` 時使用 `FOR UPDATE`：呼叫端要在**同一個交易**裡先鎖住這一列、
+// 確認未撤回、再寫入，否則「檢查」與「寫入」之間存在空隙，帳號刪除可以整個插進去，
+// 刪完之後那筆寫入才落地——刪除 API 回報成功，個人資料卻還在。
+//
+// 回傳 `null` 代表這個 subject 從來沒有出現過（沒有任何 consent 紀錄）。
+export async function readSubjectState(subjectId, connection = null) {
+  if (useMemoryStore()) {
+    return memoryStore.subjects.get(subjectId) ?? null;
+  }
+  const sql = `SELECT subject_id, last_active_at, service_withdrawn_at
+                 FROM Privacy_Subject_State
+                WHERE subject_id = ?${connection ? ' FOR UPDATE' : ''}`;
+  const rows = connection
+    ? (await connection.execute(sql, [subjectId]))[0]
+    : await queryRows(sql, [subjectId]);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    subjectId: row.subject_id,
+    lastActiveAt: row.last_active_at ? new Date(row.last_active_at).toISOString() : null,
+    serviceWithdrawnAt: row.service_withdrawn_at
+      ? new Date(row.service_withdrawn_at).toISOString()
+      : null,
+  };
 }
 
 async function loadConsentRows(subjectId) {
@@ -498,6 +528,10 @@ export function getPrivacyPolicy() {
 
 export default {
   assertPrivacyConfigured,
+  useMemoryStore,
+  readSubjectState,
+  toMysqlDate,
+  touchSubject,
   deriveSubjectId,
   encryptChatContent,
   decryptChatContent,

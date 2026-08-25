@@ -928,3 +928,64 @@
 .privacy-actions button { display: flex; align-items: center; gap: 6px; padding: 9px 12px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
 .privacy-actions .privacy-danger { color: var(--accent-red); border-color: var(--accent-red); }
 
+
+/* Roadmap #2：排課後的確認列。排課只是推薦，使用者是否覺得符合需求才是最終選擇。 */
+.schedule-confirmation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 20px 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.schedule-confirmation > span { flex: 1; }
+.schedule-confirmation-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Roadmap #2：移除原因選單。不問原因就分不出「排不進去」與「不喜歡」。 */
+.remove-reason-dialog { max-width: 420px; }
+.remove-reason-hint {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.remove-reason-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.remove-reason-option {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.remove-reason-option:hover {
+  border-color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.1);
+}
+.remove-reason-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .schedule-confirmation { flex-wrap: wrap; }
+  .remove-reason-options { grid-template-columns: 1fr; }
+}

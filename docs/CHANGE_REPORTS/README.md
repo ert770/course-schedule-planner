@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-26
+
+1. [埋互動 log：推薦曝光、最終選擇與退選原因（Roadmap #2）](./2026-08-26-interaction-logging.md)
+
 ## 2026-08-23
 
 1. [讓 PR #11 與後續 backend pull request 執行 GitHub Actions CI](./2026-08-23-pr11-backend-ci.md)
