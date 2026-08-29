@@ -537,13 +537,13 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 
 | `eventType` | 意義 |
 | --- | --- |
-| `recommendation_exposed` | 推薦清單或方案已實際顯示；必須帶 `exposureContext` |
+| `recommendation_exposed` | 推薦清單或方案已實際顯示；必須帶 `exposureContext`。**只能由伺服器在 `services/scheduleService.js` 產生排課結果時自己寫入**（Roadmap #2 對抗式審查修正），任何呼叫端經 `POST /api/interactions` 提交一律拒絕，即使格式合法——client 自己說「系統顯示了什麼」等於自己發證明給自己驗證 |
 | `course_viewed` | 開啟課程詳情 |
 | `course_favorited`／`course_unfavorited` | 加入／移出收藏或關注 |
 | `course_selected`／`course_deselected` | 手動加入／移出排課輸入 |
-| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan` |
+| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan`；`plan.planId` 必須對得上該 `requestId` 實際寫過的曝光紀錄，對不上一律拒絕 |
 | `course_removed` | 在課表之外拒絕一個推薦。**本系統目前沒有這個介面，維持 forward contract，不埋** |
-| `course_withdrawn` | **退掉課表上的課**。本專案不連學校正式選課系統，沒有「已正式選上」這個外部狀態，因此以「課已進入使用者的課表、之後又被拿掉」對應之——roadmap #2 的「加選後退選」由這個事件承接 |
+| `course_withdrawn` | **退掉課表上的課**。本專案不連學校正式選課系統，沒有「已正式選上」這個外部狀態，因此以「課已進入使用者的課表、之後又被拿掉」對應之——roadmap #2 的「加選後退選」由這個事件承接。`source: "system_recommendation"` 時同樣要對得上曝光紀錄的 `displayedSet`，`explicit_selection`／`required` 沒有可驗證的曝光對象，維持格式驗證 |
 | `schedule_regenerated` | 修改條件後要求重新產生課表 |
 
 `candidateSet` 與 `displayedSet` 必須分開，後者也必須是前者的子集；未顯示的候選

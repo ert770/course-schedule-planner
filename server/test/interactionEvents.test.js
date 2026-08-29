@@ -5,17 +5,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app } from '../src/app.js';
 import {
+  hasCurrentPurposeConsent,
   markServiceWithdrawn,
   recordConsentChoices,
   resetPrivacyMemoryStoreForTests,
+  seedOutdatedConsentForTests,
 } from '../src/services/privacyService.js';
 import {
   cleanupExpiredInteractionEvents,
+  countRecentEvents,
   deleteInteractionEvents,
   getInteractionEventsForExport,
   recordInteractionEvents,
   resetInteractionEventStoreForTests,
+  wouldExceedDailyQuota,
 } from '../src/services/interactionEventService.js';
+import { resetRateLimiterForTests } from '../src/utils/rateLimiter.js';
 import { recordScheduleFeedback } from '../src/services/scheduleFeedbackService.js';
 import { annotateScheduleIdentifiers } from '../src/services/scheduleService.js';
 import { deriveSubjectId } from '../src/services/privacyService.js';
@@ -33,6 +38,11 @@ let server;
 let baseUrl;
 let cookie;
 
+// `source` 預設為 explicit_selection，不是 system_recommendation：對抗式審查
+// 之後，`system_recommendation` 來源的 course_withdrawn／recommendation_accepted
+// 都要對照一次真實曝光紀錄（見 IL-13e～g、IL-17），大多數這裡的測試測的是
+// 完全無關的行為（去重、原因、保存期限、刪除隔離），不該每個都得先造一筆
+// 曝光才能測——真正要測 system_recommendation 來源驗證的測試會自己覆寫。
 function baseDraft(overrides = {}) {
   return {
     eventType: 'course_withdrawn',
@@ -40,7 +50,7 @@ function baseDraft(overrides = {}) {
     actionId: ACTION_ID,
     course: { catalogCourseCode: 'IECS3002', sectionId: 101 },
     term: { academicYear: 114, semester: '下學期' },
-    source: 'system_recommendation',
+    source: 'explicit_selection',
     feedbackReason: 'time',
     versionSnapshot: { recommendationReasonVersion: null },
     ...overrides,
@@ -49,6 +59,10 @@ function baseDraft(overrides = {}) {
 
 // 回饋的來源驗證改為對照曝光事件，因此每個 feedback 測試都要先有一次真實曝光。
 // `displayedSet` 只含 101——102 是「有進候選但沒顯示」，正是不能被退選的那一種。
+// 對抗式審查修正後，`recommendation_exposed` 只有伺服器自己（帶
+// `allowExposureWrite:true`）能寫入——這裡模擬的正是「伺服器在產生推薦時
+// 自己寫的那一筆」，不是「client 宣稱看過推薦」，因此仍要帶這個旗標，
+// 否則連測試 fixture 都會被剛加上的來源限制擋下。
 async function recordExposure(identity = identityA) {
   return recordInteractionEvents(identity, [baseDraft({
     eventType: 'recommendation_exposed',
@@ -66,7 +80,7 @@ async function recordExposure(identity = identityA) {
       ],
       displayedSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
     },
-  })]);
+  })], { allowExposureWrite: true });
 }
 
 async function feedbackEventCount() {
@@ -131,21 +145,7 @@ describe('#2 consent boundary', () => {
 
   test('IL-2 同意後寫入，且儲存的資料完全不含學號', async () => {
     await grantPersonalization(identityA);
-    const exposure = baseDraft({
-      eventType: 'recommendation_exposed',
-      course: null,
-      feedbackReason: null,
-      exposureContext: {
-        surface: 'dashboard',
-        trigger: 'initial_load',
-        candidateSet: [
-          { catalogCourseCode: 'IECS3002', sectionId: 101 },
-          { catalogCourseCode: 'IECS3059', sectionId: 102 },
-        ],
-        displayedSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
-      },
-    });
-    const result = await recordInteractionEvents(identityA, [exposure]);
+    const result = await recordInteractionEvents(identityA, [baseDraft()]);
     assert.equal(result.recorded, 1);
     assert.equal(result.results[0].status, 'append');
 
@@ -155,9 +155,19 @@ describe('#2 consent boundary', () => {
     const serialized = JSON.stringify(stored);
     assert.equal(serialized.includes(demo.studentId), false);
     assert.equal(serialized.includes(deriveSubjectId(identityA.canonicalId)), false);
-    assert.equal(stored[0].exposureContext.displayedSet.length, 1);
     assert.equal(stored[0].versionSnapshot.modelVersion, 'scheduler-greedy-v1');
     assert.equal(stored[0].versionSnapshot.recommendationReasonVersion, null);
+  });
+
+  test('IL-2b 曝光事件的資料一樣完全不含學號（伺服器寫入路徑）', async () => {
+    await grantPersonalization(identityA);
+    await recordExposure();
+    const stored = await getInteractionEventsForExport(identityA);
+    const serialized = JSON.stringify(stored);
+    assert.equal(serialized.includes(demo.studentId), false);
+    assert.equal(serialized.includes(deriveSubjectId(identityA.canonicalId)), false);
+    const exposureRow = stored.find(event => event.eventType === 'recommendation_exposed');
+    assert.equal(exposureRow.exposureContext.displayedSet.length, 1);
   });
 });
 
@@ -307,6 +317,123 @@ describe('#2 identity, retention and deletion', () => {
     // 無論那筆寫入搶在撤回之前落地（被刪除清掉）或之後被拒絕，結果都是零列。
     assert.equal((await getInteractionEventsForExport(identityA)).length, 0);
   });
+
+  // 對抗式審查發現：consent 檢查原本只查 `granted`，沒比對 `policyVersion`——
+  // 舊版政策下同意過一次，換了新版政策也不會被要求重新同意。
+  test('IL-15 舊版政策下的同意不算目前有效同意，不寫入任何事件', async () => {
+    const subjectId = deriveSubjectId(identityA.canonicalId);
+    seedOutdatedConsentForTests(subjectId, 'personalization_learning', {
+      granted: true, policyVersion: '2020-01-01.v0',
+    });
+    assert.equal(
+      await hasCurrentPurposeConsent(subjectId, 'personalization_learning'), false,
+      '舊版政策同意不應被視為目前有效'
+    );
+
+    const result = await recordInteractionEvents(identityA, [baseDraft()]);
+    assert.equal(result.recorded, false);
+    assert.equal(result.reason, 'CONSENT_NOT_GRANTED');
+    assert.equal((await getInteractionEventsForExport(identityA)).length, 0);
+  });
+
+  test('IL-15b 目前版本、granted:false 的同意同樣不算有效', async () => {
+    const subjectId = deriveSubjectId(identityA.canonicalId);
+    seedOutdatedConsentForTests(subjectId, 'personalization_learning', {
+      granted: false, policyVersion: '2026-08-22.v1',
+    });
+    assert.equal(await hasCurrentPurposeConsent(subjectId, 'personalization_learning'), false);
+  });
+
+  // 對抗式審查發現：撞到 UNIQUE 索引時原本一律回 duplicate，沒有重新讀出
+  // 真正寫進去的那筆比對。兩個並行請求用同一個 idempotency key 但內容不同
+  // （這裡是不同的 feedbackReason）都可能通過「檢查時還不存在」的前置判定，
+  // 只有一個能真的寫入；輸的那個必須被回報成 conflict，不能被誤報成
+  // 「內容跟你送的一樣，已經記過了」。記憶體 store 現在也模擬 UNIQUE 索引
+  // （見 `interactionEventService.js` 的 `insertEvent()`），這裡才測得到
+  // 真正的撞鍵路徑，不只是預先檢查那一層。
+  test('IL-18 並行請求撞上相同 key 但內容不同時回 conflict，不誤報 duplicate', async () => {
+    await grantPersonalization(identityA);
+    const [a, b] = await Promise.all([
+      recordInteractionEvents(identityA, [baseDraft({ feedbackReason: 'time' })]),
+      recordInteractionEvents(identityA, [baseDraft({ feedbackReason: 'content' })]),
+    ]);
+    const statuses = [a.results[0].status, b.results[0].status].sort();
+    assert.deepEqual(statuses, ['append', 'conflict']);
+    assert.equal((await getInteractionEventsForExport(identityA)).length, 1);
+  });
+
+  test('IL-18b 並行請求撞上相同 key 且內容也相同時才回 duplicate', async () => {
+    await grantPersonalization(identityA);
+    const [a, b] = await Promise.all([
+      recordInteractionEvents(identityA, [baseDraft()]),
+      recordInteractionEvents(identityA, [baseDraft()]),
+    ]);
+    const statuses = [a.results[0].status, b.results[0].status].sort();
+    assert.deepEqual(statuses, ['append', 'duplicate']);
+    assert.equal((await getInteractionEventsForExport(identityA)).length, 1);
+  });
+});
+
+describe('#2 provenance enforced at the single write path (not just the Agent tool)', () => {
+  // 對抗式審查的核心發現：確認列的「符合」按鈕與移除原因選單原本直接打
+  // `/api/interactions`，完全繞過 `scheduleFeedbackService` 的來源驗證——
+  // 上一輪只把驗證接到 Agent tool 一條路徑，真正常用的非 Chat 路徑反而
+  // 不設防。修法是把驗證搬進 `recordInteractionEvents()` 本身，讓它對
+  // **任何**呼叫端都生效，不必知道呼叫端是誰。這裡直接呼叫
+  // `recordInteractionEvents()`（confirm bar／removal dialog 實際呼叫的
+  // 那一層），不經過 scheduleFeedbackService，證明繞不過去。
+  test('IL-17 client 自己捏一組 recommendation_exposed 一律拒絕，即使格式完全合法', async () => {
+    await grantPersonalization(identityA);
+    const result = await recordInteractionEvents(identityA, [baseDraft({
+      eventType: 'recommendation_exposed',
+      course: null,
+      feedbackReason: null,
+      source: 'system_recommendation',
+      exposureContext: {
+        surface: 'dashboard',
+        trigger: 'initial_load',
+        candidateSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
+        displayedSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
+      },
+    })]);
+    assert.equal(result.results[0].status, 'rejected');
+    assert.match(result.results[0].errors[0], /只能由伺服器/u);
+    assert.equal((await getInteractionEventsForExport(identityA)).length, 0);
+  });
+
+  test('IL-17b 直接呼叫 recordInteractionEvents 送出 system_recommendation 來源的 course_withdrawn，沒有曝光紀錄一律拒絕', async () => {
+    await grantPersonalization(identityA);
+    // 刻意不呼叫 recordExposure()：模擬確認列／移除選單直接打
+    // /api/interactions、繞過 scheduleFeedbackService 的情境。
+    const result = await recordInteractionEvents(identityA, [baseDraft({ source: 'system_recommendation' })]);
+    assert.equal(result.results[0].status, 'rejected');
+    assert.match(result.results[0].errors[0], /沒有對應的推薦曝光紀錄/u);
+    assert.equal((await getInteractionEventsForExport(identityA)).length, 0);
+  });
+
+  test('IL-17c 曝光紀錄存在且班次確實顯示過時，直接呼叫 recordInteractionEvents 就能成功——不必經過 Agent tool', async () => {
+    await grantPersonalization(identityA);
+    await recordExposure();
+    const result = await recordInteractionEvents(identityA, [baseDraft({ source: 'system_recommendation' })]);
+    assert.equal(result.results[0].status, 'append');
+  });
+
+  test('IL-17d 允許伺服器自己寫曝光事件（allowExposureWrite:true），且此時不做來源驗證', async () => {
+    await grantPersonalization(identityA);
+    const result = await recordInteractionEvents(identityA, [baseDraft({
+      eventType: 'recommendation_exposed',
+      course: null,
+      feedbackReason: null,
+      source: 'system_recommendation',
+      exposureContext: {
+        surface: 'dashboard',
+        trigger: 'initial_load',
+        candidateSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
+        displayedSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
+      },
+    })], { allowExposureWrite: true });
+    assert.equal(result.results[0].status, 'append');
+  });
 });
 
 describe('#2 recommendation identifiers and post-schedule confirmation', () => {
@@ -428,5 +555,47 @@ describe('#2 recommendation identifiers and post-schedule confirmation', () => {
     })).error, /不在該次推薦實際顯示的課表中/u);
 
     assert.equal(await feedbackEventCount(), 0);
+  });
+});
+
+// 對抗式審查發現：`/api/interactions` 除了 50 筆／請求的批次上限，沒有任何
+// 節流——同一個帳號可以無限次呼叫，造成資料庫無界成長。這裡在 HTTP 層驗證
+// 節流真的生效，不只是單元測試那個節流器函式本身。
+describe('#2 /api/interactions rate limiting and daily quota', () => {
+  test('IL-19 每分鐘請求數超過上限回 429，不繼續寫入', async () => {
+    resetRateLimiterForTests();
+    await grantPersonalization(identityA);
+    let lastStatus = 200;
+    for (let i = 0; i < 25; i++) {
+      const response = await fetch(`${baseUrl}/interactions`, {
+        method: 'POST',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: [] }),
+      });
+      lastStatus = response.status;
+      if (lastStatus === 429) {
+        const body = await response.json();
+        assert.equal(body.code, 'RATE_LIMITED');
+        break;
+      }
+    }
+    assert.equal(lastStatus, 429, '20 次以內應該要觸發節流，實際沒有觸發');
+    resetRateLimiterForTests();
+  });
+
+  // `wouldExceedDailyQuota()` 的 `limit` 由呼叫端傳入（見
+  // `interactionEventService.js`），不用真的塞到 2000 筆才測得到「超過」
+  // 這個分支——路由層用的就是同一支函式，只是把 2000 換成一個小數字。
+  test('IL-20 每日事件量配額：未超過時允許，超過時擋下', async () => {
+    await grantPersonalization(identityA);
+    const many = Array.from({ length: 3 }, (_, i) => baseDraft({
+      actionId: `99999999-9999-4999-8999-${String(i).padStart(12, '0')}`,
+      course: { catalogCourseCode: 'IECS3002', sectionId: 200 + i },
+    }));
+    await recordInteractionEvents(identityA, many);
+    assert.equal(await countRecentEvents(identityA, 24), 3);
+
+    assert.equal(await wouldExceedDailyQuota(identityA, 2, 5), false, '3+2=5，剛好等於上限不算超過');
+    assert.equal(await wouldExceedDailyQuota(identityA, 3, 5), true, '3+3=6，超過上限 5');
   });
 });

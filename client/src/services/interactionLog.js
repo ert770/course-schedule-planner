@@ -93,8 +93,20 @@ export function courseTerm(course) {
 
 // 這門課在課表裡是「系統推薦」「使用者自己加的」還是「必修」。
 // 標錯就等於 label 錯，#30 會往相反方向學。
+//
+// 對抗式審查發現：原本用 `course.category === '必修'` 判定，但那個欄位代表
+// 「某個系所的必修」，不是「這位學生的必修」——`server/src/skills/scheduler.js`
+// 自己就有 `isRequiredForStudent()` 這道判定，並在 `CATEGORY_PRIORITY` 那裡
+// 明講：非本人系所年級的必修要降級成一般選修。跨系必修、或使用者手動加選的
+// 課，只因為 catalog 分類剛好是「必修」就被誤標成 `source=required`，會把
+// 不是「不得不接受」的課也算進必修訊號，正是 #29 驗收標準要避免的那種混淆。
+//
+// 改讀 `course.formallyRequired`——這是 `scheduler.js` 的 `addCourseToPlan()`
+// 已經算好、隨每門排入課表的課一起回傳的欄位，值就是 `isRequiredForStudent()`
+// 的結果。只有排課引擎親自產生的課表才有這個欄位；使用者從搜尋手動加入的課
+// 沒有（`undefined`），自然落到後面的判定，不會被誤標。
 export function courseSource(course, { systemRecommendedIds } = {}) {
-  if (course?.category === '必修') return INTERACTION_SOURCES.REQUIRED;
+  if (course?.formallyRequired === true) return INTERACTION_SOURCES.REQUIRED;
   const id = String(course?.sectionId ?? course?.id ?? '');
   if (systemRecommendedIds?.has(id)) return INTERACTION_SOURCES.SYSTEM_RECOMMENDATION;
   return INTERACTION_SOURCES.EXPLICIT_SELECTION;

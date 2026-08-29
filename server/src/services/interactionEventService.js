@@ -17,7 +17,7 @@ import { PRIVACY_PURPOSES, PRIVACY_RETENTION } from '../data/privacyPolicy.js';
 import { PROFILE_SCHEMA_VERSION } from '../data/profileSchema.js';
 import {
   deriveSubjectId,
-  getConsentStatus,
+  hasCurrentPurposeConsent,
   isPrivacyEnforcementEnabled,
   readSubjectState,
   toMysqlDate,
@@ -25,6 +25,8 @@ import {
 } from './privacyService.js';
 import {
   createInteractionEvent,
+  INTERACTION_EVENT_TYPES,
+  INTERACTION_SOURCES,
   resolveIdempotentAppend,
 } from '../data/interactionEventSchema.js';
 import { logger } from '../utils/logger.js';
@@ -110,9 +112,27 @@ class SubjectWithdrawnError extends Error {
   }
 }
 
+// 對抗式審查發現：`personalization_learning` 的同意檢查原本只在交易**之外**
+// 做一次，跟撤回服務不共用同一把鎖——一個已經讀到「同意」的請求，可以在
+// 使用者按下「取消同意」之後才真正寫入。這裡在拿到 `Privacy_Subject_State`
+// 的列鎖之後**重新確認**一次，讀到的必然是鎖釋放前最後一次撤回之後的狀態。
+class ConsentRevokedError extends Error {
+  constructor() {
+    super('個人化學習的同意已撤回或不是目前版本，寫入前重新確認未通過');
+    this.name = 'ConsentRevokedError';
+  }
+}
+
 function assertWritable(state) {
   // 沒有 subject 列代表從來沒有記錄過 consent；有 `serviceWithdrawnAt` 代表帳號已刪除。
   if (!state || state.serviceWithdrawnAt) throw new SubjectWithdrawnError();
+}
+
+async function assertCurrentlyConsented(subjectId, connection = null) {
+  const consented = await hasCurrentPurposeConsent(
+    subjectId, PRIVACY_PURPOSES.PERSONALIZATION_LEARNING, connection
+  );
+  if (!consented) throw new ConsentRevokedError();
 }
 
 function memoryEventRow(subjectId, event, occurredAt, expiresAt) {
@@ -166,28 +186,45 @@ function insertParams(subjectId, event, occurredAt, expiresAt) {
   ];
 }
 
-// 「確認未撤回」與「寫入」必須在同一個交易、同一把列鎖底下完成。
+// 「確認未撤回、確認仍同意」與「寫入」必須在同一個交易、同一把列鎖底下完成。
 //
-// 先前的寫法是 `touchSubject()` 直接 upsert 再 insert，兩者各自 autocommit：
-// 一個已通過 consent 檢查、正在執行中的請求，可以在帳號刪除**跑完之後**才落地，
-// 甚至把已被刪掉的 subject 列重新建回來——刪除 API 回報成功，資料卻還在。
+// 先前的寫法是 `touchSubject()` 直接 upsert 再 insert，兩者各自 autocommit，
+// 而且 consent 只在交易**之外**查過一次：
 //
-// 現在流程固定為 SELECT ... FOR UPDATE → 檢查 `service_withdrawn_at` → 更新
-// `last_active_at` → INSERT。刪除端則先 `markServiceWithdrawn()` 再刪資料，
-// 因此並行的寫入只有兩種結局：搶在撤回之前落地（隨後被刪除清掉），
-// 或是等到鎖釋放後看到已撤回而被拒絕。兩者都不會留下殘存資料。
+//   1. 一個已通過檢查、正在執行中的請求，可以在帳號刪除**跑完之後**才落地，
+//      甚至把已被刪掉的 subject 列重新建回來——刪除 API 回報成功，資料卻還在。
+//   2. `personalization_learning` 被撤回，跟寫入事件不共用任何鎖，因此
+//      「讀到同意」與「真正寫入」之間可以夾進一次撤回而完全不會被發現。
+//
+// 現在流程固定為 SELECT ... FOR UPDATE 鎖住 `Privacy_Subject_State` 那一列
+// → 檢查 `service_withdrawn_at` → **在鎖底下重新查一次 consent** → 更新
+// `last_active_at` → INSERT。`markServiceWithdrawn()`／`recordConsentChoices()`
+// 的寫入（撤回帳號／撤回同意）都會先取得同一把列鎖才能真正生效，因此並行的
+// 寫入只有兩種結局：搶在撤回之前落地（帳號刪除的情況會隨後被清掉），
+// 或是等到鎖釋放後看到已撤回而被拒絕。不會有「consent 顯示已撤回、
+// 資料庫卻還在累積」這種狀態。
 async function insertEvent(subjectId, event) {
   const occurredAt = new Date(event.timestamp);
   const expiresAt = expiryFrom(event.timestamp);
 
   if (useMemoryStore()) {
     assertWritable(await readSubjectState(subjectId));
+    await assertCurrentlyConsented(subjectId);
+    // 模擬 MySQL 的 `(subject_id, idempotency_key)` UNIQUE 索引，讓記憶體
+    // store 在測試裡也能重現「並行請求都通過檢查、只有一個真的寫得進去」
+    // 的競態，兩種儲存體對這個不變量的行為才一致。
+    if (memoryStore.events.some(row => row.subjectId === subjectId && row.idempotencyKey === event.idempotencyKey)) {
+      const dup = new Error('ER_DUP_ENTRY (memory store simulation)');
+      dup.code = 'ER_DUP_ENTRY';
+      throw dup;
+    }
     memoryStore.events.push(memoryEventRow(subjectId, event, occurredAt, expiresAt));
     return;
   }
 
   await withTransaction(async connection => {
     assertWritable(await readSubjectState(subjectId, connection));
+    await assertCurrentlyConsented(subjectId, connection);
     await connection.execute(
       'UPDATE Privacy_Subject_State SET last_active_at = ?, updated_at = ? WHERE subject_id = ?',
       [toMysqlDate(occurredAt), toMysqlDate(occurredAt), subjectId]
@@ -201,8 +238,68 @@ export async function hasPersonalizationConsent(identity) {
   // 沒有同意」一致——寧可少一批開發期的雜訊事件，也不要累積無法追溯 consent
   // 依據的資料。
   if (!isPrivacyEnforcementEnabled()) return false;
-  const status = await getConsentStatus(identity);
-  return status.consents?.[PRIVACY_PURPOSES.PERSONALIZATION_LEARNING]?.granted === true;
+  // 對抗式審查發現：這裡原本只查 `granted`，沒有比對 `policyVersion`——
+  // 使用者在舊版政策下同意過一次，換了新版政策也不會被要求重新同意。
+  // `hasCurrentPurposeConsent()` 同時檢查兩者，跟 `service_processing`
+  // （見 `getConsentStatus()`）用的標準一致。這裡只是快速前置過濾；
+  // 真正權威的判定在 `insertEvent()` 的交易鎖底下重新做一次。
+  return hasCurrentPurposeConsent(
+    deriveSubjectId(identity.canonicalId), PRIVACY_PURPOSES.PERSONALIZATION_LEARNING
+  );
+}
+
+// 需要對照曝光紀錄驗證來源的事件：宣稱「這是系統推薦的」就必須真的對得上
+// 系統實際產生、實際顯示過的那一次推薦，不能只看格式合不合法。
+//
+// 對抗式審查發現：`/api/interactions` 原本把 client 送的 draft 直接丟進
+// `createInteractionEvent()`，格式驗證只檢查 UUID、enum、`displayedSet ⊆
+// candidateSet` 這類**內部一致性**，從未確認「這個 requestId 真的是伺服器
+// 產生過的一次推薦」。任何登入帳號都能自己捏一組`recommendation_exposed`，
+// 再捏一組`recommendation_accepted`／`course_withdrawn`對上它——等於自己發
+// 證明、自己拿證明驗證自己。#2 的資料會直接餵給 #30 的偏好學習，這種資料
+// 不誠實比沒有資料更糟。
+function requiresExposureProof(event) {
+  if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED) return true;
+  return event.eventType === INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN
+    && event.source === INTERACTION_SOURCES.SYSTEM_RECOMMENDATION;
+}
+
+// `exposureCache` 是單次批次呼叫內的記憶——同一批事件常常共用同一個
+// requestId（例如「接受方案」+「順便退掉其中一門」），沒必要查兩次。
+async function assertProvenance(identity, event, exposureCache) {
+  if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED) {
+    // `recommendation_exposed` 只由伺服器在產生推薦的當下寫入（見
+    // `services/scheduleService.js`），一般呼叫端一律拒絕——即使格式完全
+    // 合法。這是唯一真正權威的曝光紀錄來源，不能讓 client 自己宣稱。
+    throw new Error('recommendation_exposed 只能由伺服器在產生推薦時寫入，不接受用戶端提交。');
+  }
+  if (!requiresExposureProof(event)) return;
+
+  let exposure = exposureCache.get(event.requestId);
+  if (exposure === undefined) {
+    exposure = await findExposure(identity, event.requestId);
+    exposureCache.set(event.requestId, exposure);
+  }
+  if (!exposure) {
+    throw new Error(
+      `requestId ${event.requestId} 沒有對應的推薦曝光紀錄，無法確認這是系統實際顯示過的推薦。`
+    );
+  }
+
+  if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED) {
+    if (!exposure.planId || event.plan?.planId !== exposure.planId) {
+      throw new Error(
+        `planId 不是該次推薦實際顯示的方案（應為 ${exposure.planId ?? '無可接受方案'}）。`
+      );
+    }
+    return;
+  }
+
+  if (!exposure.displayedSectionIds.has(event.course?.sectionId)) {
+    throw new Error(
+      `班次 ${event.course?.sectionId} 不在該次推薦實際顯示的課表中，不能標記為系統推薦來源的退選。`
+    );
+  }
 }
 
 /**
@@ -210,10 +307,14 @@ export async function hasPersonalizationConsent(identity) {
  *
  * @param identity `resolveIdentity()` 的結果。
  * @param inputs   #29 shape 的 event draft 陣列；envelope 欄位一律由 server 覆寫。
+ * @param options  `{ allowExposureWrite }`——只有伺服器在產生推薦的當下
+ *                 （`services/scheduleService.js`）才可傳 `true`；一般呼叫端
+ *                 （含 `/api/interactions`）一律不帶，`recommendation_exposed`
+ *                 因此永遠會被拒絕。
  * @returns `{ recorded, reason?, results: [{ actionId, eventType, status, errors? }] }`
  *          `status` 為 append｜duplicate｜conflict｜rejected。
  */
-export async function recordInteractionEvents(identity, inputs = []) {
+export async function recordInteractionEvents(identity, inputs = [], options = {}) {
   const drafts = Array.isArray(inputs) ? inputs : [];
   if (!await hasPersonalizationConsent(identity)) {
     return { recorded: false, reason: 'CONSENT_NOT_GRANTED', results: [] };
@@ -221,6 +322,7 @@ export async function recordInteractionEvents(identity, inputs = []) {
 
   const subjectId = deriveSubjectId(identity.canonicalId);
   const results = [];
+  const exposureCache = new Map();
 
   for (const draft of drafts) {
     let event;
@@ -245,6 +347,19 @@ export async function recordInteractionEvents(identity, inputs = []) {
       continue;
     }
 
+    if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED && options.allowExposureWrite) {
+      // 伺服器自己寫曝光事件時跳過來源驗證——它就是來源本身。
+    } else {
+      try {
+        await assertProvenance(identity, event, exposureCache);
+      } catch (err) {
+        results.push({
+          actionId: event.actionId, eventType: event.eventType, status: 'rejected', errors: [err.message],
+        });
+        continue;
+      }
+    }
+
     const existing = await loadByIdempotencyKey(subjectId, identity.canonicalId, event.idempotencyKey);
     const resolution = resolveIdempotentAppend(existing, event);
     if (resolution.status !== 'append') {
@@ -256,13 +371,25 @@ export async function recordInteractionEvents(identity, inputs = []) {
       await insertEvent(subjectId, event);
       results.push({ actionId: event.actionId, eventType: event.eventType, status: 'append' });
     } catch (err) {
-      // 並行的同一操作可能兩次都通過上面的檢查。UNIQUE 索引是最後一道，
-      // 撞到就是 duplicate——不重試、不覆寫。
       if (isDuplicateKeyError(err)) {
-        results.push({ actionId: event.actionId, eventType: event.eventType, status: 'duplicate' });
+        // 對抗式審查發現：並行的兩個請求可能用同一個 idempotency key
+        // 但內容不同（例如同一次移除，一個填 time、一個填 content）；
+        // 兩者在上面的 `resolveIdempotentAppend()` 檢查時都可能還沒看到
+        // 對方，於是都嘗試 INSERT，UNIQUE 索引只讓一個成功。先前這裡對
+        // 撞鍵一律回 duplicate，完全沒有重新讀出真正寫進去的那筆比對，
+        // 等於把「內容不同、只是撞在一起」錯報成「跟你送的一樣」。
+        // 現在撞鍵後重新查一次、重新跑一次同一套判定，內容不同才回
+        // duplicate 誤報的問題就不會發生。
+        const winner = await loadByIdempotencyKey(subjectId, identity.canonicalId, event.idempotencyKey);
+        const resolved = resolveIdempotentAppend(winner, event);
+        results.push({
+          actionId: event.actionId,
+          eventType: event.eventType,
+          status: resolved.status === 'append' ? 'duplicate' : resolved.status,
+        });
         continue;
       }
-      if (err instanceof SubjectWithdrawnError) {
+      if (err instanceof SubjectWithdrawnError || err instanceof ConsentRevokedError) {
         results.push({
           actionId: event.actionId,
           eventType: event.eventType,
@@ -325,6 +452,33 @@ export async function findExposure(identity, requestId) {
   };
 }
 
+// 每日事件量配額，供 `routes/interactions.js` 擋掉無界成長用（對抗式審查
+// 發現：50 筆／請求的批次上限不是節流，帳號可以無限次呼叫）。用資料庫
+// COUNT 而非行程內計數器，是因為配額必須撐過伺服器重啟——記憶體節流器
+// （見 `utils/rateLimiter.js`）處理的是短時間突發流量，兩者職責不同。
+export async function countRecentEvents(identity, sinceHoursAgo) {
+  const subjectId = deriveSubjectId(identity.canonicalId);
+  const since = new Date(Date.now() - sinceHoursAgo * 3600000);
+  if (useMemoryStore()) {
+    return memoryStore.events.filter(row => (
+      row.subjectId === subjectId && new Date(row.occurredAt) >= since
+    )).length;
+  }
+  if (!isMysqlConfigured()) return 0;
+  const [row] = await queryRows(
+    'SELECT COUNT(*) AS count FROM Interaction_Events WHERE subject_id = ? AND occurred_at >= ?',
+    [subjectId, toMysqlDate(since)]
+  );
+  return Number(row.count);
+}
+
+// `limit` 由呼叫端傳入而非在這裡寫死，讓路由的實際門檻可以測試時用小數字
+// 驗證邊界，不必真的塞幾千筆事件才測得到「超過」的分支。
+export async function wouldExceedDailyQuota(identity, incomingCount, limit) {
+  const recent = await countRecentEvents(identity, 24);
+  return recent + incomingCount > limit;
+}
+
 // 本人匯出。刻意不含 `subject_id` 與 `idempotencyKey`——前者是分析用的內部識別碼，
 // 匯出反而讓假名與本人身分在同一份檔案裡被綁在一起；後者是去重用的實作細節。
 export async function getInteractionEventsForExport(identity) {
@@ -379,6 +533,8 @@ export default {
   hasPersonalizationConsent,
   recordInteractionEvents,
   findExposure,
+  countRecentEvents,
+  wouldExceedDailyQuota,
   getInteractionEventsForExport,
   deleteInteractionEvents,
   cleanupExpiredInteractionEvents,

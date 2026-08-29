@@ -347,7 +347,8 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | --- | --- | --- |
 | IL-1 | 未同意 `personalization_learning` 時上報 | `recorded:false`、`reason=CONSENT_NOT_GRANTED`，DB 零列 |
 | IL-1b | 同上，經 `POST /api/interactions` | 回 **200 而非 428**——可選用途不該把使用者推到同意牆 |
-| IL-2 | 同意後上報曝光 | 寫入一列；序列化後不含學號、不含 subject ID；版本快照由 server 填入 |
+| IL-2 | 同意後寫入一般事件 | 寫入一列；序列化後不含學號、不含 subject ID；版本快照由 server 填入 |
+| IL-2b | 伺服器自己寫入的曝光事件 | 同樣不含學號、不含 subject ID |
 | IL-3 | 同一 `actionId` 重送 | `duplicate`，仍只有一列 |
 | IL-3b | 不同 `actionId` | 視為兩次操作，各自 append |
 | IL-4 | 相同 key 但 payload 改變 | `conflict`，不覆寫既有事件 |
@@ -369,9 +370,24 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | IL-13g | 捏造的 variant、或只進候選但未顯示過的課程 | 兩者皆拒絕；使用者不可能退掉沒看過的課 |
 | IL-14 | 已撤回服務的 subject 再寫入 | `rejected`，不寫入 |
 | IL-14b | 寫入與帳號刪除並行 | 無論搶先落地或被拒絕，最終皆為零列 |
+| IL-15 | 舊版政策下的 consent（`granted:true` 但 `policyVersion` 過期） | 不算目前有效同意，`recorded:false` |
+| IL-15b | 目前版本但 `granted:false` | 同樣不算有效同意 |
+| IL-17 | client 自己捏一組格式合法的 `recommendation_exposed` | 一律拒絕，不因格式合法而放行 |
+| IL-17b | 直接呼叫 `recordInteractionEvents` 送出 `system_recommendation` 來源退選，未先造曝光 | 拒絕；證明繞過 `scheduleFeedbackService` 也擋得住 |
+| IL-17c | 曝光紀錄存在且班次確實顯示過，直接呼叫 `recordInteractionEvents` | 成功，不必經過 Agent tool |
+| IL-17d | 伺服器帶 `allowExposureWrite:true` 寫入曝光 | 成功，且不做來源驗證（它就是來源本身） |
+| IL-18 | 並行請求撞上相同 idempotency key 但內容不同 | 一個 `append`、一個 `conflict`，不誤報成 `duplicate` |
+| IL-18b | 並行請求撞上相同 key 且內容也相同 | 才回 `duplicate` |
+| IL-19 | `/api/interactions` 每分鐘請求數超過上限 | HTTP 429、`code=RATE_LIMITED` |
+| IL-20 | 每日事件量配額 `wouldExceedDailyQuota()` | 未超過時 false，超過時 true |
 
-IL-13e～g 與 IL-14 來自對抗式審查：前三項封住「模型捏造回饋來源」，後者封住
-「刪除帳號後並行寫入仍落地」。兩者都不是實作瑕疵，是原本設計就沒有涵蓋的情境。
+`server/test/rateLimiter.test.js`（RL-1～RL-3）：固定視窗節流器本身的單元測試——
+視窗內第 limit 次仍允許、第 limit+1 次起拒絕、不同 key 互不影響、limit 為 0 時全擋。
+
+IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1～3 來自第二輪
+（針對 `98bf7ac..218358a` 的再次審查），修的是 consent 版本檢查與撤回競態、
+`/api/interactions` 完全信任 client 宣稱的曝光來源、並行撞鍵誤報 duplicate、
+以及節流／配額完全缺席。全部都不是實作瑕疵，是原本設計沒有涵蓋的情境。
 
 修改互動埋點時，另須確認 P 系列的 prompt 契約（排課後確認章節與七個原因 enum）仍通過。
 

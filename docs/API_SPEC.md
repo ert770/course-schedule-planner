@@ -360,9 +360,18 @@ Request:
     "department": "資訊工程學系",
     "gradeLevel": 3,
     "className": "資訊三甲"
-  }
+  },
+  "surface": "dashboard",
+  "trigger": "manual_generate"
 }
 ```
+
+`surface`（`dashboard`｜`schedule`｜`search`｜`chat`）與 `trigger`（`initial_load`｜
+`manual_generate`｜`preference_regenerate`｜`chat_tool`｜`course_search`）標記這次排課
+在哪個畫面、被什麼動作觸發，只用來寫入 `recommendation_exposed` 互動事件
+（Roadmap #2），**不參與候選池或排課邏輯**。省略或值不在列舉清單中時，伺服器單純
+不記錄這次曝光，不會因此讓排課失敗，也不會用猜的值頂替。Chat 路徑（`run_csp_scheduler`）
+固定由伺服器帶入 `surface:"chat"`／`trigger:"chat_tool"`，不接受模型指定。
 
 `department`、`gradeLevel`、`className` 決定必修範圍。`className` 為班別——
 系上不接受必修換班，未提供時必修只收斂到系所與年級，並在 `warnings` 提醒。
@@ -431,6 +440,13 @@ Response 頂層額外回傳 `requestId`（本次排課請求的 UUID），每個
 `services/scheduleService.js` 的 `annotateScheduleIdentifiers()` 於請求層附加，
 `skills/scheduler.js` 不參與；REST 與 Chat 兩條路徑共用同一份結果物件。
 成功與失敗回應都帶識別碼。屬向後相容的欄位新增，既有欄位語意不變。
+
+**成功時，伺服器會在回應之前自己寫入一筆 `recommendation_exposed` 互動事件**
+（Roadmap #2 對抗式審查修正）——用的是伺服器剛算出來的 `schedule`／`excludedCourses`，
+不是事後由 client 回報。這是唯一合法的曝光寫入點：`POST /api/interactions`
+一律拒絕 client 提交這個事件類型，即使格式完全合法。寫入前會檢查
+`personalization_learning` consent，未同意時單純不記錄，不影響排課回應；
+寫入失敗同樣不影響排課回應（fail-open，比照評價查詢失敗的既有處理方式）。
 
 Response 除既有欄位外，無解時額外回傳 `conflictSet`（結構化的限制違規清單，取代「只回傳
 第一個錯誤字串」），格式為 `[{ constraintId, severity, relaxable, source, courses, reason }]`，
@@ -737,13 +753,27 @@ Response:
 Request：
 
 ```json
-{ "events": [ { "eventType": "recommendation_exposed", "requestId": "...", "actionId": "...", "term": { "academicYear": 114, "semester": "下學期" }, "exposureContext": { "surface": "dashboard", "trigger": "initial_load", "candidateSet": [], "displayedSet": [] } } ] }
+{ "events": [ { "eventType": "course_withdrawn", "requestId": "...", "actionId": "...", "course": { "catalogCourseCode": "IECS3002", "sectionId": 101 }, "term": { "academicYear": 114, "semester": "下學期" }, "source": "explicit_selection", "feedbackReason": "time" } ] }
 ```
 
 事件本體為 `InteractionEvent v1`（見 `docs/DATA_SCHEMA.md`）。`userId`、`eventId`、
 `timestamp`、`schemaVersion`、`idempotencyKey` 與 `versionSnapshot` 的
 `profileSchemaVersion`／`modelVersion` 一律由 server 產生，client 送同名欄位會被覆寫。
 單次最多 50 筆。
+
+**來源驗證（Roadmap #2 對抗式審查修正）**：
+
+- `eventType: "recommendation_exposed"` **一律拒絕**，即使格式完全合法——這個事件類型
+  只由伺服器在產生排課結果時自己寫入（見 `POST /api/schedule/generate`），不接受這支
+  端點提交，回 `rejected` 並附錯誤訊息，不寫入。
+- `eventType: "recommendation_accepted"`，以及 `source: "system_recommendation"` 的
+  `course_withdrawn`，會對照這位使用者、這個 `requestId` 底下伺服器實際寫過的曝光紀錄：
+  接受的 `plan.planId` 必須是當時真的顯示過的方案，退選的 `course.sectionId` 必須出現在
+  當時曝光的 `displayedSet` 裡。對不上（含 `requestId` 查無曝光紀錄）一律回 `rejected`。
+  格式驗證只證明「像一個事件」，不證明「這件事真的發生過」——這個檢查固定在
+  `recordInteractionEvents()` 本身，任何呼叫端都繞不過去，不只是 Agent tool 那條路徑。
+- 其餘 event type（`course_viewed`／`course_favorited`／`course_selected` 等）沒有可對照的
+  伺服器端事實可驗證，維持格式驗證即可寫入。
 
 Response：
 
@@ -763,10 +793,13 @@ Response：
 | 400 | `events` 不是陣列或超過 50 筆 |
 | 401 | 未登入 |
 | 403 | 嘗試操作其他使用者的資料 |
+| 429 | 節流（`RATE_LIMITED`，每分鐘超過 20 次）或每日事件量配額（`DAILY_QUOTA_EXCEEDED`，24 小時內超過 2000 筆） |
 | 500 | 儲存體暫時無法使用 |
 
 呼叫端必須把這支端點視為**旁路**：失敗時不得影響加選、移除、排課或聊天。
-前端 `client/src/services/interactionLog.js` 一律 fire-and-forget 並吞掉錯誤。
+前端 `client/src/services/interactionLog.js` 一律 fire-and-forget 並吞掉錯誤，
+`logInteraction()` 回傳的 promise 永不 reject，只在結果裡帶真實狀態
+（確認列會依此決定文案，不會謊報「已記錄」）。
 
 ## Graduation
 

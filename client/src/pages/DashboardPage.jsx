@@ -63,7 +63,6 @@ export default function DashboardPage() {
     saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
-    logRecommendationExposed,
     logScheduleRegenerated,
     acceptRecommendation,
     personalizationEnabled,
@@ -144,8 +143,14 @@ export default function DashboardPage() {
         return;
       }
 
+      // `surface`／`trigger` 讓伺服器知道這次曝光要記在哪個畫面、被什麼觸發
+      // （roadmap #2）；曝光事件本身現在由伺服器在算出結果時直接寫入，
+      // 前端不再事後回報「系統顯示了什麼」——那份宣稱是使用者瀏覽器自己說的，
+      // 無法作為可信的訓練資料來源。
       const data = await scheduleAPI.generate({
         constraints,
+        surface: 'dashboard',
+        trigger,
       });
 
       // 後端會回傳 message / warnings / excludedCourses 說明排課結果，
@@ -158,7 +163,6 @@ export default function DashboardPage() {
 
       if (data.success) {
         replaceSchedule(data.schedule, buildRecommendation(data));
-        logRecommendationExposed(data, { surface: 'dashboard', trigger });
         setConfirmation(data.requestId ? { state: 'pending' } : null);
       } else {
         setChatHistory(prev => [...prev, {
@@ -177,10 +181,7 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [
-    buildRecommendation, logRecommendationExposed, logScheduleRegenerated,
-    replaceSchedule, user?.studentId,
-  ]);
+  }, [buildRecommendation, logScheduleRegenerated, replaceSchedule, user?.studentId]);
 
   useEffect(() => {
     if (scheduleLoading || !user?.studentId) return;
@@ -276,8 +277,10 @@ export default function DashboardPage() {
     try {
       const res = await chatAPI.send(msg);
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
+        // Chat 路徑同樣不再由前端回報曝光——`agentService.js` 呼叫
+        // `generateForUser()` 時已經固定帶 `surface:'chat', trigger:'chat_tool'`，
+        // 伺服器在算出結果時就直接寫入了。
         replaceSchedule(res.data.schedule, buildRecommendation(res.data));
-        logRecommendationExposed(res.data, { surface: 'chat', trigger: 'chat_tool' });
         setChatHistory(prev => [...prev, { 
           role: 'bot', 
           text: `成功生成課表！共 ${res.data.schedule.length} 門課，${res.data.totalCredits} 學分。`,

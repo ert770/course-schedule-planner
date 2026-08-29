@@ -32,18 +32,23 @@
 - `server/test/interactionEvents.test.js`
 - `client/src/services/interactionLog.js`
 - `client/src/components/Schedule/RemoveReasonDialog.jsx`
+- `client/src/components/Schedule/ScheduleConfirmationBar.jsx`（第一輪對抗式審查修正）
+- `server/src/utils/rateLimiter.js`、`server/test/rateLimiter.test.js`（第二輪對抗式審查修正）
 - `docs/CHANGE_REPORTS/2026-08-26-interaction-logging.md`（本檔）
 
 **修改**：
 
-- 後端：`app.js`、`routes/privacy.js`、`services/privacyService.js`（匯出共用 helper）、
-  `services/scheduleService.js`、`services/agentService.js`、`services/promptService.js`、
-  `scripts/privacyCleanup.js`、`test/prompt.test.js`
+- 後端：`app.js`、`routes/privacy.js`、`routes/schedule.js`、`routes/interactions.js`
+  （第二輪加上節流與配額檢查）、`services/privacyService.js`、`services/scheduleService.js`、
+  `services/agentService.js`、`services/promptService.js`、`scripts/privacyCleanup.js`、
+  `test/prompt.test.js`
+  （`services/scheduleFeedbackService.js` 是第一輪新增，第二輪未再修改——它原有的
+  來源驗證保留作為給模型更友善錯誤訊息的第一層，權威判定已統一搬進
+  `interactionEventService.recordInteractionEvents()`）
 - 前端：`services/api.js`、`contexts/ScheduleContext.jsx`、`components/Chat/ChatPanel.jsx`、
   `pages/DashboardPage.jsx`、`pages/SchedulePage.jsx`、`pages/SearchPage.jsx`、`App.css`
-  （另新增 `components/Schedule/ScheduleConfirmationBar.jsx`，見對抗式審查修正）
 - 文件：`docs/API_SPEC.md`、`docs/DATA_SCHEMA.md`、`docs/PROMPT_DESIGN.md`、
-  `docs/DECISIONS.md`（ADR-018）、`docs/TEST_PLAN.md`、個人化 roadmap
+  `docs/DECISIONS.md`（ADR-018、ADR-019）、`docs/TEST_PLAN.md`、個人化 roadmap
 
 ## 主要改動內容
 
@@ -270,7 +275,106 @@ Google 已下架 `gemini-2.5-pro`，**Chat 整條路徑在本次改動之前就�
 - 瀏覽器逐一驗證三種確認列文案：未同意 → 「不會被儲存」；同意但端點回 500 → 「沒有送出
   成功」；正常 → 「已記錄」。三種情況下課表都照常產生，`/api/interactions` 無 401。
 
+## 對抗式審查修正（第二輪，2026-08-26 追加）
+
+第一輪修正（見上）已 commit（`218358a`）並推上 `origin backend`。之後對
+`98bf7ac..218358a` 再跑一次 `/codex:adversarial-review`，提出四項發現，兩項 high、
+兩項 medium，四項均成立且均已處理。詳見 `docs/DECISIONS.md` ADR-019。
+
+### 發現一（high）：consent 撤回有自己的競態，跟帳號刪除的競態是兩回事
+
+第一輪只把「撤回帳號」與「寫入事件」放進同一把鎖；「撤回 `personalization_learning`
+這個可選用途」完全沒有共用任何鎖，而且 `hasPersonalizationConsent()` 原本只查
+`granted`，沒比對 `policyVersion`——舊版政策下同意過一次，換了新版政策也不會被要求
+重新同意，跟 `service_processing`（`getConsentStatus()`）用的標準不一致。
+
+處置：`hasCurrentPurposeConsent()` 同時檢查兩者；`insertEvent()` 在拿到
+`Privacy_Subject_State` 的列鎖之後**重新查一次** consent。`recordConsentChoices()`
+本來就會透過 `touchSubject()` 的 `INSERT ... ON DUPLICATE KEY UPDATE` 取得同一把鎖，
+不需要另外改動撤回流程本身。
+
+**以真實 MySQL 兩個並行連線反覆驗證**（`Promise.all` 讓寫入與撤回同時發生，重試到兩種
+交錯順序都出現過為止）：寫入永遠只有兩種結局——搶在撤回真正生效之前落地（合法的
+序列化順序），或看到已撤回而被拒絕。從未出現「撤回已經回報成功、事件卻還在累積」。
+
+### 發現二（high）：`/api/interactions` 完全信任 client 宣稱的「系統顯示了什麼」
+
+格式驗證（UUID、enum、`displayedSet ⊆ candidateSet`）只證明「像一個事件」，不證明
+「這件事真的發生過」。任何登入帳號都能自己捏一組 `recommendation_exposed`，再捏一組
+`recommendation_accepted`／`course_withdrawn` 對上它——上一輪的來源驗證只對照
+`recommendation_exposed`，但那筆紀錄本身也是同一個呼叫端自己寫的，等於自己發證明給
+自己驗證。
+
+處置：`recommendation_exposed` 改成**只由伺服器自己寫入**。`services/scheduleService.js`
+算出排課結果後立刻用剛算出來的 `schedule`／`excludedCourses` 自己呼叫
+`recordInteractionEvents(identity, [draft], { allowExposureWrite: true })`；一般呼叫端
+（含 `POST /api/interactions` 本身）沒有這個旗標，一律拒絕，格式再合法也一樣。
+
+刻意**不另建推薦快照表**：`recommendation_exposed` 本來就是 #30 要留著的訓練資料，
+另存一份必然漂移，理由與 ADR-018 否決推薦快照表完全相同。
+
+連帶影響：前端不再回報曝光。`ScheduleContext` 移除 `logRecommendationExposed`；
+Dashboard／SchedulePage 改成在 `POST /api/schedule/generate` 的 request body 帶
+`surface`／`trigger`，由伺服器寫進它自己產生的曝光事件；Chat 路徑的 `surface:'chat'`／
+`trigger:'chat_tool'` 固定寫死在 `agentService.js`，不讓模型決定。
+
+### 發現三（high 的另一半）：來源驗證只接到 Agent tool，真正常用的路徑反而不設防
+
+上一輪把來源驗證做進 `scheduleFeedbackService.js`，只有 Agent 的 `record_schedule_feedback`
+tool 會走到。但確認列的「符合」按鈕與移除原因選單**直接打 `/api/interactions`**，完全
+繞過那層驗證——而 Chat 目前因為 Gemini 模型下架整條路徑都用不了，等於真正在用的介面
+反而是沒驗證的那一條。
+
+處置：把驗證從 `scheduleFeedbackService` 搬進 `recordInteractionEvents()` 本身。
+`recommendation_accepted`、以及 `source=system_recommendation` 的 `course_withdrawn`，
+一律對照該 `requestId` 底下伺服器實際寫過的曝光紀錄；不管呼叫端是 Agent tool 還是
+確認列直接呼叫，都繞不過去。新增 IL-17～17d 直接呼叫 `recordInteractionEvents()`
+（不經 `scheduleFeedbackService`）驗證這一點。
+
+### 發現四（medium）：並行撞鍵時一律回報 duplicate，蓋掉真正的衝突
+
+`resolveIdempotentAppend()` 的預檢查發生在 INSERT 之前；兩個並行請求用同一個
+idempotency key 但內容不同（例如同一次移除，一個填 `time`、一個填 `content`）可能都
+通過預檢查、都嘗試 INSERT，UNIQUE 索引只讓一個成功。輸的那個原本被回報成
+`duplicate`——暗示「內容跟你送的一樣，已經記過了」，但實際上內容不同，只是撞在一起。
+
+處置：撞到 `ER_DUP_ENTRY` 時重新讀出真正寫進去的那一列，重跑一次
+`resolveIdempotentAppend()` 比對；內容不同才回 `conflict`。記憶體 store 也補上跟 MySQL
+一樣的 `(subject, idempotencyKey)` 唯一性模擬，讓自動化測試（`Promise.all` 製造真正的
+競態）測得到這條路徑，不必每次都手動連真實資料庫驗證；另外仍用真實 MySQL 跑過一次
+確認行為一致（`a: append | b: conflict`，資料庫裡只留贏家那筆內容）。
+
+### 發現五（medium）：`courseSource()` 拿系所必修欄位當「這位學生的必修」用
+
+`interactionLog.js` 的 `courseSource()` 原本用 `course.category === '必修'` 判定，但
+`scheduler.js` 自己的 `CATEGORY_PRIORITY` 邏輯與 `isRequiredForStudent()` 就是為了
+糾正這件事而存在——跨系必修在排課時會被降級，卻仍被互動記錄誤標成
+`source=required`，混進「不得不接受」的訊號，正是 #29 驗收標準要避免的混淆。
+
+處置：改讀 `course.formallyRequired`——`addCourseToPlan()` 已經幫每一門透過學生真正
+必修迴圈排入的課算好這個欄位（`isRequiredForStudent()` 的結果）並回傳給前端；使用者
+手動從搜尋加選的課沒有這個欄位，自然落到 `explicit_selection`，不會被誤標。
+
+（額外一併補上 Codex 提到但非本次四項發現核心的節流缺口：`/api/interactions` 新增
+每分鐘 20 次的節流與每日 2000 筆的事件量配額，理由與實作見 ADR-019 第 6 點。）
+
+### 追加驗證（第二輪）
+
+- 新增 IL-15／IL-15b（consent 版本檢查）、IL-17～17d（來源驗證單一入口）、
+  IL-18／IL-18b（並行撞鍵 conflict／duplicate）、IL-20（每日配額邊界）共 10 項，另加
+  `rateLimiter.test.js` RL-1～3 共 3 項；`npm test` 由 508 增至 522，全數通過。
+- consent 撤回競態、並行撞鍵行為皆另以**真實 MySQL** 手動驗證（見上），非僅記憶體 store。
+- 瀏覽器重新走過完整流程：`POST /api/schedule/generate` 不再有任何
+  `POST /api/interactions`（曝光改由伺服器直接寫入 DB，查得到 227 候選／8 顯示、
+  `surface=dashboard`／`trigger=initial_load`）；確認列「符合」正確對到伺服器寫的曝光
+  （`planId` 相符）；移除課程正確驗證通過（`section` 在 `displayedSet` 內）；consent 關閉
+  時整批操作正常完成且零寫入、不出現原因選單；`/api/interactions` 強制回 500 時排課、
+  移除、確認列文案皆正確降級，無白畫面或錯誤。Chat 路徑（因 Gemini 模型下架無法在瀏覽器
+  操作）改用直接呼叫 `generateForUser({surface:'chat', trigger:'chat_tool'})` 驗證，
+  確認曝光正確寫入且 `surface`／`trigger` 正確。
+- 驗收後已清空 shared MySQL 測試殘留列，並將 demo 帳號 consent 還原為同意狀態。
+
 ## 是否 commit 與 push
 
-- 未 commit。
-- 未 push。
+- 第一輪修正已 commit `218358a` 並推上 `origin backend`。
+- 第二輪修正（本節）尚未 commit。

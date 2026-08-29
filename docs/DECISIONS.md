@@ -698,3 +698,107 @@ Consequences:
 - Feedback now requires a prior exposure event. Legitimate feedback is rejected if the client never
   reported the exposure (e.g. a network failure). That is the safe direction: a missing label costs
   #30 one data point, a fabricated label corrupts what it learns.
+
+## ADR-019: Server-Authoritative Exposure, Consent Race Closure, and Honest Duplicate Reporting
+
+Date: 2026-08-26 (second adversarial review round)
+
+Context:
+A second `/codex:adversarial-review` pass against `98bf7ac..218358a` (the roadmap #2 commit, itself
+already a first-round adversarial-review fix) found four further issues, two rated high enough to
+recommend not shipping: consent enforcement had its own unguarded race (distinct from the account
+deletion race ADR-018 already closed), the entire ingestion boundary trusted client-asserted
+recommendation provenance rather than validating it, concurrent conflicting writes were silently
+misreported as harmless duplicates, and a client-only signal was used to label courses as
+curriculum-required. All four are confirmed against the actual code paths, not assumed from the
+review text.
+
+Decision:
+
+1. **Consent has its own race, independent of account deletion.** `hasPersonalizationConsent()`
+   checked `granted` but not `policyVersion`, so consent recorded under a retired policy version
+   remained valid forever — inconsistent with `service_processing`, which `getConsentStatus()`
+   already treats as outdated once the policy version changes.
+   `hasCurrentPurposeConsent(subjectId, purpose, connection)` now checks both, and `insertEvent()`
+   re-checks it a second time inside the same transaction and row lock already used for the
+   withdrawal check (`SELECT ... FOR UPDATE` on `Privacy_Subject_State`). `recordConsentChoices()`
+   already acquires that same lock via `touchSubject()`'s `INSERT ... ON DUPLICATE KEY UPDATE`
+   before writing new consent rows, so a write and a revoke on the same subject now always
+   serialize: whichever transaction's lock acquisition happens second necessarily observes the
+   other's already-committed result. Verified against real MySQL with genuinely concurrent
+   connections (`Promise.all` racing a write against a revoke, repeated until both interleavings were
+   observed) — every trial resolved to either a clean `append` (write legitimately preceded the
+   revoke) or a clean rejection (write correctly saw the revoked state), never a write landing after
+   a revoke had already returned to its caller.
+2. **Client-submitted exposure is not exposure.** `POST /api/interactions` passed caller-controlled
+   drafts straight into storage; format validation (UUID shape, enum membership, `displayedSet ⊆
+   candidateSet`) is not proof that a recommendation was ever generated or shown. Any authenticated
+   account could submit a fabricated `recommendation_exposed` row and then reference it from
+   `recommendation_accepted` / `course_withdrawn`, satisfying the round-one `findExposure()` check
+   against data the same caller invented. `recommendation_exposed` is now written only by
+   `services/scheduleService.js`, at the moment it computes a schedule, from the schedule it actually
+   produced — `recordInteractionEvents()` accepts this event type solely when called with
+   `{ allowExposureWrite: true }`, a flag no route ever passes through from client input. A second,
+   separate table for this was considered and rejected for the same reason ADR-018 rejected a
+   recommendation-snapshot table: `recommendation_exposed` is already the record #30 needs to keep,
+   and a parallel copy only drifts.
+3. **Provenance validation moved from one caller into the write path itself.** The first review round
+   added exposure-provenance checking only to `scheduleFeedbackService` (the Agent tool's path). The
+   confirmation bar's "符合" button and the removal-reason dialog call `POST /api/interactions`
+   directly and were completely unvalidated — the far more used, non-Chat surface was the one left
+   unguarded. `recordInteractionEvents()` itself now requires, for `recommendation_accepted` and for
+   `course_withdrawn` sourced as `system_recommendation`, a matching `recommendation_exposed` row for
+   that subject and `requestId`, with the accepted `planId` matching the one actually shown and any
+   withdrawn `sectionId` present in that exposure's `displayedSet`. This applies uniformly regardless
+   of caller, so no future write path can reintroduce this gap by skipping a helper function.
+4. **Duplicate-key collisions are re-verified, not assumed harmless.** `resolveIdempotentAppend()`'s
+   pre-insert check can be raced: two requests sharing an idempotency key but differing in
+   `feedbackReason` (or other fields excluded from the key) can both observe "not yet present" and
+   both attempt to insert; only one wins the UNIQUE constraint. The loser was previously reported as
+   `duplicate` unconditionally, implying its payload matched what got stored, when it did not. The
+   `ER_DUP_ENTRY` handler now reloads the winning row and re-runs `resolveIdempotentAppend()` against
+   it, reporting `conflict` when the payloads differ. The memory store used in tests now enforces the
+   same `(subject, idempotencyKey)` uniqueness MySQL does, so this path is exercised by an actual
+   race (`Promise.all`) in the automated suite, not only by a real-MySQL manual check (which also
+   confirmed the same behavior).
+5. **`course.category === '必修'` is not "required for this student."** `interactionLog.js`'s
+   `courseSource()` used exactly the field `scheduler.js`'s own `CATEGORY_PRIORITY` logic and
+   `isRequiredForStudent()` exist to correct — a cross-department 必修 course is demoted for
+   scheduling purposes but was still being labeled `source: required` for interaction logging,
+   contaminating exactly the signal #29's `source` enum exists to keep clean. `courseSource()` now
+   reads `course.formallyRequired`, the field `addCourseToPlan()` already attaches to every course
+   placed via the student's actual required-course loop (`skipTimePreferences`, driven by
+   `isRequiredForStudent()`). Manually-selected courses (never processed by the scheduler) carry no
+   such field and correctly fall through to `explicit_selection`.
+6. **Ingestion gained a rate limit and a daily quota.** The 50-events-per-request cap bounds a single
+   call, not an account. `utils/rateLimiter.js` adds an in-process fixed-window throttle (20
+   requests/minute/subject) for burst protection, and `wouldExceedDailyQuota()` adds a MySQL-backed
+   count (2000 events/day/subject) that survives a process restart. No new infrastructure (Redis, a
+   dependency) was introduced — the project runs as a single Node process and the existing
+   `Interaction_Events` table already answers the quota query.
+
+Rejected alternative — a full server-side provenance system for every event type (`course_viewed`,
+`course_favorited`, `course_selected`, `schedule_regenerated`): rejected as disproportionate to what
+was found. These event types have no server-side "ground truth" to validate against in the first
+place — a user can view or favorite any catalog course, recommended or not — so a provenance check
+there would only be able to confirm catalog existence, not intent. The two event types where a false
+claim of system origin actually corrupts a downstream training signal (`recommendation_accepted`,
+`system_recommendation`-sourced `course_withdrawn`) are covered.
+
+Consequences:
+
+- `ScheduleContext.jsx` no longer exposes `logRecommendationExposed`; `DashboardPage`/`SchedulePage`
+  pass `surface`/`trigger` in the `POST /api/schedule/generate` request body instead, and the server
+  includes them in the exposure event it writes itself.
+- `POST /api/schedule/generate` and the `run_csp_scheduler` Agent tool both flow through
+  `scheduleService.generateForUser()`, so both surfaces get server-written exposure through the same
+  code path with no duplicated logic; Chat's `surface`/`trigger` are hardcoded server-side rather than
+  left to the model.
+- A consenting account generating a schedule now incurs one additional MySQL write (the exposure
+  event) inside the synchronous `/api/schedule/generate` request; this is wrapped fail-open, matching
+  `loadCourseReviewsSafely()`'s existing pattern in the same file — a write failure logs a warning and
+  the schedule response is unaffected.
+- Legitimate feedback is now rejected if the corresponding exposure write failed or never happened
+  (e.g. the user was not consented at generation time but consents before responding to the
+  confirmation bar). This is the same accepted tradeoff as point 4 above: a missing label costs one
+  data point, a fabricated one corrupts what #30 learns from it.

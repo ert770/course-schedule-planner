@@ -200,15 +200,29 @@ export async function readSubjectState(subjectId, connection = null) {
   };
 }
 
-async function loadConsentRows(subjectId) {
+// `connection` 讓呼叫端在自己開的交易裡讀取——這是撤回競態修正的關鍵：
+// 在 `insertEvent()` 已經對 `Privacy_Subject_State` 取得列鎖之後才讀 consent，
+// 讀到的必然是「鎖釋放前最後一次撤回」之後的狀態，不會是請求剛進來時的舊快照。
+async function loadConsentRows(subjectId, connection = null) {
   if (useMemoryStore()) return memoryStore.consents.filter(row => row.subjectId === subjectId).reverse();
-  return queryRows(
-    `SELECT purpose, granted, policy_version, decided_at, recorded_sequence
-       FROM Privacy_Consents
-      WHERE subject_id = ?
-      ORDER BY recorded_sequence DESC`,
-    [subjectId]
-  );
+  const sql = `SELECT purpose, granted, policy_version, decided_at, recorded_sequence
+                 FROM Privacy_Consents
+                WHERE subject_id = ?
+                ORDER BY recorded_sequence DESC`;
+  if (connection) {
+    const [rows] = await connection.execute(sql, [subjectId]);
+    return rows;
+  }
+  return queryRows(sql, [subjectId]);
+}
+
+// 單一用途是否「同意且未過期版本」。對抗式審查發現原本的
+// `hasPersonalizationConsent()` 只查 `granted`，不查 `policyVersion`——
+// 使用者在舊版政策下同意過一次，換了新版政策也不會被要求重新同意，
+// 跟 `service_processing`（見 `getConsentStatus()`）用的標準不一致。
+export async function hasCurrentPurposeConsent(subjectId, purpose, connection = null) {
+  const latest = latestByPurpose(await loadConsentRows(subjectId, connection))[purpose];
+  return Boolean(latest?.granted && latest.policyVersion === PRIVACY_POLICY_VERSION);
 }
 
 export async function getConsentStatus(identity) {
@@ -522,6 +536,26 @@ export function resetPrivacyMemoryStoreForTests() {
   memoryStore.subjects = new Map();
 }
 
+// 測試專用：直接寫入一筆任意 `policyVersion` 的 consent 列，繞過
+// `recordConsentChoices()` 一律蓋上 `PRIVACY_POLICY_VERSION` 的行為。
+// 用來驗證「舊版政策下同意過」不能被當成「現在仍然同意」（對抗式審查發現）。
+export function seedOutdatedConsentForTests(subjectId, purpose, { granted = true, policyVersion } = {}) {
+  memoryStore.subjects.set(subjectId, memoryStore.subjects.get(subjectId) ?? {
+    subjectId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    lastActiveAt: new Date().toISOString(), serviceWithdrawnAt: null,
+  });
+  memoryStore.consents.push({
+    consentId: `test-seed-${subjectId}-${purpose}`,
+    subjectId,
+    purpose,
+    granted,
+    policyVersion,
+    decidedAt: new Date().toISOString(),
+    source: 'test',
+    requestId: null,
+  });
+}
+
 export function getPrivacyPolicy() {
   return PRIVACY_POLICY;
 }
@@ -530,6 +564,7 @@ export default {
   assertPrivacyConfigured,
   useMemoryStore,
   readSubjectState,
+  hasCurrentPurposeConsent,
   toMysqlDate,
   touchSubject,
   deriveSubjectId,

@@ -10,11 +10,13 @@ const router = Router();
 
 router.post('/generate', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
-    const { userId, courseIds = [], filters = {}, constraints = {} } = req.body;
+    const { userId, courseIds = [], filters = {}, constraints = {}, surface, trigger } = req.body;
 
     // 排課流程只有一份實作，與 AI Agent 的 `run_csp_scheduler` 共用
     // （見 `services/scheduleService.js`），避免兩條路徑各自漂移。
-    const result = await generateForUser(req.identity, { courseIds, filters, constraints });
+    // `surface`／`trigger` 是哪個畫面、哪個動作觸發了這次排課——只用來標記
+    // 曝光事件（roadmap #2），不影響候選池或排課結果。
+    const result = await generateForUser(req.identity, { courseIds, filters, constraints, surface, trigger });
     res.json(result);
   } catch (err) {
     if (!err.status) console.error('Schedule error:', err);

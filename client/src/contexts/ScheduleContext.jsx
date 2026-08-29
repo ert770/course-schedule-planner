@@ -276,35 +276,13 @@ export function ScheduleProvider({ children }) {
     }));
   }, [emit, requestIdForAction]);
 
-  // 推薦清單「實際被顯示」。candidateSet 是系統算出來的候選，displayedSet 是
-  // 畫面真的渲染出來的；兩者分開，未顯示的課才不會被誤讀成「看過但拒絕」。
-  const logRecommendationExposed = useCallback((result, { surface, trigger }) => {
-    if (!result?.requestId) return;
-    const displayed = (result.schedule || []).map(courseRef).filter(Boolean);
-    const excluded = (result.excludedCourses || [])
-      .map(item => courseRef(item?.course))
-      .filter(Boolean);
-    const seen = new Set();
-    const candidateSet = [...displayed, ...excluded].filter(ref => {
-      if (seen.has(ref.sectionId)) return false;
-      seen.add(ref.sectionId);
-      return true;
-    });
-    if (candidateSet.length === 0) return;
-
-    const primary = Array.isArray(result.plans) ? result.plans[0] : null;
-    emit({
-      eventType: INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED,
-      requestId: result.requestId,
-      actionId: newActionId(),
-      term: firstTerm(result.schedule) || firstTerm((result.excludedCourses || []).map(i => i?.course)),
-      plan: primary?.planId ? { planId: primary.planId, variantId: primary.variantId } : null,
-      position: { planRank: primary?.planId ? 1 : null, courseRank: null },
-      exposureContext: { surface, trigger, candidateSet, displayedSet: displayed },
-      source: INTERACTION_SOURCES.SYSTEM_RECOMMENDATION,
-      versionSnapshot: { recommendationReasonVersion: null },
-    });
-  }, [emit]);
+  // `recommendation_exposed` 不再由前端回報。
+  //
+  // 對抗式審查發現：由使用者的瀏覽器自己說「系統顯示了什麼」，等於任何登入
+  // 帳號都能捏一組假的曝光紀錄，再讓後續的接受／退選對上它。現在改由伺服器
+  // 在 `services/scheduleService.js` 算出排課結果的當下自己寫入；後端也已把
+  // 這個事件類型從一般寫入路徑擋掉（見 `interactionEventService.js` 的
+  // `allowExposureWrite`），前端送了也不會被接受。
 
   const logScheduleRegenerated = useCallback((requestId, { surface, trigger }) => {
     emit({
@@ -352,11 +330,10 @@ export function ScheduleProvider({ children }) {
     saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
-    logRecommendationExposed,
     logScheduleRegenerated,
     acceptRecommendation,
   }), [
-    acceptRecommendation, addCourse, loading, logCourseViewed, logRecommendationExposed,
+    acceptRecommendation, addCourse, loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, removeCourse, replaceSchedule,
     saveCurrentSchedule, saving, schedule, toggleWatchlist, validating, watchlist,
   ]);

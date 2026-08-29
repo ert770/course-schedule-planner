@@ -27,7 +27,6 @@ export default function SchedulePage() {
     saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
-    logRecommendationExposed,
     logScheduleRegenerated,
     acceptRecommendation,
     personalizationEnabled,
@@ -112,16 +111,19 @@ export default function SchedulePage() {
 
     setLoading(true);
     try {
+      // 曝光事件現在由伺服器在算出結果時直接寫入（roadmap #2 對抗式審查修正）；
+      // 前端只送 `surface`／`trigger` 標記這次排課在哪個畫面、被什麼觸發。
       const data = await scheduleAPI.generate({
         courseIds: selectedCourses.map(c => c.id),
         constraints: {},
+        surface: 'schedule',
+        trigger: 'manual_generate',
       });
 
       logScheduleRegenerated(data.requestId, { surface: 'schedule', trigger: 'manual_generate' });
 
       if (data.success) {
         replaceSchedule(data.schedule, buildRecommendation(data));
-        logRecommendationExposed(data, { surface: 'schedule', trigger: 'manual_generate' });
         setConfirmation(data.requestId ? { state: 'pending' } : null);
         setShowCourses(false);
         const warnings = data.warnings || [];
@@ -140,11 +142,11 @@ export default function SchedulePage() {
     }
   };
 
-  // ChatPanel 只回傳課表陣列；帶得到完整結果時一併記錄曝光與確認提示。
+  // ChatPanel 只回傳課表陣列；帶得到完整結果時一併顯示確認提示。曝光事件
+  // 已由伺服器在 `agentService.js` 呼叫排課時直接寫入，前端不用也不能回報。
   const handleScheduleFromChat = (newSchedule, result = null) => {
     replaceSchedule(newSchedule, result ? buildRecommendation(result) : null);
     if (result) {
-      logRecommendationExposed(result, { surface: 'chat', trigger: 'chat_tool' });
       setConfirmation(result.requestId ? { state: 'pending' } : null);
     }
     setShowCourses(false);

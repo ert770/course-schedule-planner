@@ -121,7 +121,13 @@ export async function handleChat(identity, message) {
                 // 與 `POST /api/schedule/generate` **走同一條路徑**。
                 // Chat 只是讓使用者用自然語言表達需求與條件的介面，不是另一套排課實作；
                 // 先前這裡自己組一份，只要 REST 那條加了前置條件就會靜默落後。
-                result = await generateForUser(identity, { constraints: args }, { prefs });
+                //
+                // `surface`／`trigger` 在這裡固定寫死，不讓模型決定——這次推薦
+                // 曝光在哪個畫面、被什麼觸發是系統事實（Chat 介面本身），不是
+                // 模型需要理解或可能講錯的東西。
+                result = await generateForUser(
+                  identity, { constraints: args, surface: 'chat', trigger: 'chat_tool' }, { prefs }
+                );
                 responseData = result;
                 break;
               }
