@@ -113,10 +113,56 @@ async function recordExposureSafely(identity, result, requestId, surfaceOptions)
 }
 
 export function buildNoCandidatesResult(reviewDataLoaded) {
+  const unmetRequirements = [{
+    type: 'required-course',
+    courseIds: [],
+    constraintIds: [],
+    reason: '沒有可用的候選課程資料',
+    adjustable: true,
+  }];
   return {
     success: false,
     schedule: [],
+    plans: [],
     totalCredits: 0,
+    graduationCredits: 0,
+    nonGraduationCredits: 0,
+    courseCount: 0,
+    excludedCourses: [],
+    watchedCourses: [],
+    unscheduledCourses: [],
+    draftSchedule: [],
+    draftUnscheduledCourses: [],
+    isDraft: false,
+    unmetRequirements,
+    clarification: {
+      required: true,
+      reason: 'data-insufficient',
+      questions: [{
+        id: 'describe-target-schedule',
+        type: 'schedule-goal',
+        prompt: '請告訴我你一定要修的課程、期望學分，以及不能上課的日期與節次，我會依這些條件重新排課。',
+        courseIds: [],
+        constraintIds: [],
+      }],
+      adjustableConstraintIds: [],
+      relatedCourseIds: [],
+    },
+    solver: {
+      status: 'data-insufficient',
+      repairAttempted: false,
+      resultSource: 'none',
+      fallbackUsed: false,
+      timeoutMs: 2000,
+      elapsedMs: 0,
+      nodesVisited: 0,
+      prunedNodes: 0,
+      seed: 0,
+      baseline: null,
+      improved: false,
+      optimizationComplete: true,
+    },
+    warnings: ['沒有可用的候選課程'],
     message: '找不到符合條件的課程，請調整篩選條件。',
     // #4 的回應契約要求成功與失敗路徑都帶 reviewDataLoaded；這條早退路徑
     // 先前遺漏了這個欄位，讓呼叫端無法分辨「false」與「欄位不存在」。

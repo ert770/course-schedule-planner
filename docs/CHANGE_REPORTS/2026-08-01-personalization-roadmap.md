@@ -10,12 +10,19 @@
 
 ## 最後更新
 
-2026-08-26（完成 #2：`Interaction_Events` 表、`POST /api/interactions`、排課回應的
+2026-08-30（完成 #22：保留五個 greedy baseline，新增 2 秒 bounded backtracking repair、
+deterministic seed、validator gate、四態 solver 結果、合法 fallback、草稿隔離與結構化 Chat 澄清契約）
+
+前次更新：2026-08-29（移除退課原因對話框的「略過，直接移除」；重新劃分 #21 的責任邊界並標記完成：
+廣義先修／共修的資料模型與強制執行歸 #8，`scoreCourse()` 動態讀取 schema 歸 #7，偏好型
+每日課程數上限的需求定義歸 #24）
+
+前次更新：2026-08-26（完成 #2：`Interaction_Events` 表、`POST /api/interactions`、排課回應的
 `requestId`／`planId`／`variantId`、Agent 排課後確認與 `record_schedule_feedback`、
 前端全事件埋點與移除原因選單。19 項新測試、後端 501/501 通過；瀏覽器 A/B 實機驗收
 完成（未同意 0 列、同意後 8 種事件與 7 個原因逐一驗到）。#30 的阻塞解除）
 
-前次更新：2026-08-22（完成 #33：`002_privacy-foundation` 已套用 shared MySQL 並確認五張表存在；
+更早：2026-08-22（完成 #33：`002_privacy-foundation` 已套用 shared MySQL 並確認五張表存在；
 本機已產生獨立 secrets、使用 MySQL privacy store 並啟用 enforcement；Privacy Center 人工 A/B
 確認只同意必要用途即可使用，兩項可選用途維持關閉。#2 的前置相依已滿足，可開始實作；正式網站另由
 #39 追蹤 Production hosting）
@@ -105,10 +112,10 @@ validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修
 | 18 | 統一 user identity、Profile、歷史修課與偏好資料來源 | ✅ 已完成（shared MySQL rollout 另列 D 類） | 無（新增任務的資料基礎） |
 | 19 | 以穩定 course code 建立歷史修課、重修與跨學期對應 | ✅ 已完成 | #18 |
 | 20 | 建立 active term 與完整 candidate eligibility 規則 | 🟡 部分完成 | #12、#13A、#13B、#18、#19 |
-| 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | 🟡 部分完成（2026-08-20） | #3（已完成）、#19、#20 |
-| 22 | 為 greedy 排課加入 repair／backtracking 或 constraint solver | ⬜ 未開始 | #21 |
+| 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | ✅ 已完成（2026-08-29 確認責任邊界） | #3、#19（已完成）、#20（已提供本任務所需能力） |
+| 22 | 為 greedy 排課加入 repair／backtracking 或 constraint solver | ✅ 已完成（2026-08-30） | #21（已完成） |
 | 23 | 建立版本化且可追溯的畢業規則引擎 | 🟡 部分完成 | #12、#19；另需校方正式規則 |
-| 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ⬜ 未開始 | #18、#21 |
+| 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ⬜ 可開始（#18、#21 已完成） | #18、#21（均已完成） |
 | 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ⬜ 未開始 | #20、#21、#24 |
 | 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成 | #4、#5A、#21、#22 |
 | 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ 未開始 | #10、#26 |
@@ -329,7 +336,8 @@ flowchart LR
   `record_schedule_feedback` 轉成結構化事件；非 Chat 使用者則有確認列。**儲存課表刻意不算接受**
   ——存草稿也會按儲存，語意含糊；沒回答就是沒接受。
 - **前端埋點**：曝光、查看、收藏／取消收藏、選擇、接受、退選、重新排課全部埋齊，集中在
-  `ScheduleContext` 而非各頁自己記一套。移除時提供 7 個原因選單 + 略過（記 `null`，不猜）。
+  `ScheduleContext` 而非各頁自己記一套。移除時提供 7 個原因選單；2026-08-29 起不再提供略過
+  按鈕。底層仍接受 `null`，供未啟用個人化或舊呼叫端表示「未蒐集原因」，不猜測原因。
 - **失敗隔離**：互動記錄是旁路，fire-and-forget 且吞掉錯誤；實機把端點打成 500 後，加選、移除、
   排課、聊天全部照常完成，只有 console 一則警告。
 - 測試：`npm test` 由 481 增至 522，全數通過（含兩輪對抗式審查追加的測試）。
@@ -500,6 +508,11 @@ flowchart LR
 **開始前必須具備**：已有可信課程 feature／review score，互動事件可轉成訓練訊號，且 per-user preference update 能重播得到相同權重。需先定義權重範圍、正規化、版本與回復預設值的方法。
 
 將離散 variant 選擇改為連續權重空間，並在 log 累積後由資料學習權重。
+
+**由 #21 交接的評分接線**：#21 已完成描述性的 constraint schema，但目前
+`scoreCourse()` 的內建評分算式仍直接使用既有常數。#7 重構 scorer／objective 時，應讓可執行的
+軟性偏好權重由正式 schema／版本化權重向量提供，避免 schema 的 `weight` 與實際評分再次漂移。
+這項工作不屬於 #30；#30 負責產生可重播的 per-user 權重，#7 才負責讓排課器消費它們。
 
 ---
 
@@ -1177,17 +1190,21 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 ## #21 建立 hard／soft constraint schema、validator 與放寬策略
 
-**狀態**：🟡 部分完成（2026-08-20 更新）——正式 `hard`／`soft` schema（`weight`／`relaxable`／`source`／`confidence` 欄位）、與方案產生器分離的完整 validator、opt-in 放寬階梯、結構化 conflict set 均已交付；唯一剩餘缺口是先修／共修（prerequisite/co-requisite）的**強制執行**——schema 已定義這個層級，但完全沒有資料來源可查，validator 誠實回報 `unchecked`，屬 roadmap #8（尚未開始）的負責範圍
+**狀態**：✅ 已完成（2026-08-29 確認責任邊界）——正式 `hard`／`soft` schema
+（`weight`／`relaxable`／`source`／`confidence` 欄位）、與方案產生器分離的完整 validator、
+opt-in 放寬階梯與結構化 conflict set 均已交付。
 
-**相依**：#3（已完成）、#19（已完成）、#20（部分完成）
+> #21 已完成所有既定架構與驗收項目。廣義先修／共修已在 schema 中建模，但資料來源與強制執行由
+> #8 負責；在 #8 完成前，validator 持續回報 `unchecked`。
 
-**開始前必須具備**：所有現有偏好已分類成 hard constraint 或 soft preference——**這條已由 #3 滿足**：
+**相依**：#3、#19（已完成）、#20（已提供本任務所需能力）
+
+**開始前必須具備（均已滿足）**：所有現有偏好已分類成 hard constraint 或 soft preference——
+**這條已由 #3 滿足**：
 8 個內容偏好旗標已從硬性排除改成軟性加分，剩下的 4 個時段類檢查（早八／晚課／封鎖時段／午休）與
-其餘既有硬性條件（衝堂／資格／已修／學分上限／必修）維持硬性，分類已明確。**尚未滿足的是**：這
-只是「行為分類正確」，還沒有 #21 自己要求的正式 `hard`／`soft` schema（`weight`／`relaxable`／
-`source`／`confidence` 欄位）、獨立於方案產生器的完整 validator（現有 `validateSchedule()` 只驗
-衝堂與重複班次）、逐級放寬機制與結構化 conflict set——這些仍是 #21 自己要做的工作，不隨 #3 完成。
-candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判定兩項則由 #19、#20 提供。
+其餘既有硬性條件（衝堂／資格／已修／學分上限／必修）維持硬性，分類已明確。正式 schema、獨立
+validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付；candidate 與歷史修課使用
+一致 ID、可修資格在排課前判定則由 #19、#20 提供。
 
 ### 問題與目的
 
@@ -1208,9 +1225,7 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 - 必修與 soft preference 衝突時，結果與警告符合規格。
 - 無解回應列出互相衝突的課程／條件與可放寬選項。
 
-### 目前進度（2026-08-20 更新）
-
-**已完成（本輪新增）**
+### 完成內容（2026-08-29 責任邊界確認）
 
 - **正式 schema**：`server/src/data/constraintSchema.js` 的 `CONSTRAINTS` 表，每個既有限制類型一筆，含 `category`／`relaxable`／`weight`／`source`／`confidence`／`exemptForRequiredCourses`／`enforced` 完整欄位。純資料表，不改變任何現行排除／評分行為。
 - **各層級的 relaxable 分類**：3 個時段類舒適偏好（不排早八／午休保留／不排晚課）標為可放寬；封鎖時段與其餘既有硬性條件（衝堂、資格、已修、學分上限、他班必修、非本學期、系外選修不符、每日上限）標為不可放寬，符合驗收標準「盡量不排早八可放寬、週一絕對不能上課不可放寬」的例子。explicit selection 的既有繞過機制正式化為 `overridableBy` 欄位。
@@ -1221,11 +1236,16 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 - 附帶修復：每日課程數上限排除必排課時，先前不會回報失敗原因而靜默消失，本次一併修復。
 - 限制合併已集中在單一模組、合併語意已測試、與方案產生器分離的基礎 validator（`validateSchedule()`）、校規上下限實作——以上延續先前盤點的既有基礎，本輪未變動。
 
-**尚未完成**
+### 責任邊界與後續交接
 
-- **先修／共修的強制執行**。schema 已定義這個層級（`enforced:false`），但完全沒有資料來源可查（已用 grep 確認 `server/src` 與 `docs/DB_AUDIT_REPORT_2026-08-05.md` 皆無先修表），validator 誠實回報 `unchecked`，不強制執行。資料模型屬 roadmap #8（尚未開始）的負責範圍。
-- `scoreCourse()` 尚未動態讀取 schema 表——內建評分算式維持逐位元組不變，`weight` 欄位目前僅供文件說明。
-- `maxCoursesPerDay`（每日課程數上限）尚未重新分類為可放寬——沒有明確需求驅動，維持現行 `relaxable:false`，不在本次範圍內。
+- **廣義先修／共修**：#21 已在 schema 定義 `PREREQUISITE`／`COREQUISITE`，並以
+  `enforced:false`、`confidence:0` 和 `unchecked` 誠實表示目前沒有資料可檢查。建立可信資料來源、
+  資料模型與強制執行屬 #8；在 #8 完成前，不得宣稱系統已檢查廣義先修／共修。
+- **schema 驅動評分**：`scoreCourse()` 動態讀取正式 schema／版本化權重的工作交由 #7，配合個人化
+  權重向量與 scorer／objective 重構一次完成；不是 #21 的未完成項目。
+- **每日課程數上限**：現行 `maxCoursesPerDay` 是 `relaxable:false` 的硬上限，分類已完成。若未來有
+  「希望每天不超過 N 門、必要時可超過」的需求，由 #24 先建模為獨立的偏好型限制並完成澄清語意，
+  再另行開發；不得直接把現有硬上限改成可放寬。
 
 詳見 `docs/CHANGE_REPORTS/2026-08-20-hard-soft-constraint-schema.md`。
 
@@ -1233,7 +1253,7 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 
 ## #22 為 greedy 排課加入 repair／backtracking 或 constraint solver
 
-**狀態**：⬜ 未開始（卡 #21）
+**狀態**：✅ 已完成（2026-08-30）
 
 **相依**：#21
 
@@ -1257,6 +1277,24 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 - 確實無解的案例不虛構結果，並回傳可驗證 conflict explanation。
 - timeout 時不把未驗證的部分方案標成成功。
 - 同一 deterministic 設定可重現相同結果，所有結果通過 #21 validator。
+
+### 完成內容（2026-08-30）
+
+- 新增 `server/src/skills/scheduleSolver.js` 的通用 bounded DFS 搜尋核心；一次 repair 的決策組
+  前處理與搜尋共用 2 秒總預算，另有 50,000 nodes 上限，固定 seed `0` 與 seeded stable hash。
+- 保留五個 greedy variant。主推 baseline 未通過 validator，或所有合法 baseline 低於
+  `minCredits` 時才進 repair；已有合法且達標方案時不增加搜尋成本。
+- 同課不同 section 建成互斥決策組；Roadmap #15 的正課／實習共同必修建成原子 option。
+  所有 branch 仍呼叫 `scheduler.js` 的同一套 placement 規則，最後再由 #21 validator 複查。
+- 回應區分 `solved`／`infeasible`／`timeout`／`data-insufficient`，並附上搜尋耗時、nodes、seed、
+  baseline、結果來源與 fallback 狀態；timeout 不會被說成無解。
+- timeout 若已有合法 baseline，回傳該 baseline；沒有完整合法解時，正式 `schedule` 固定為空，
+  最佳部分組合只放 `draftSchedule`，搭配 `isDraft`、`unmetRequirements`、`conflictSet` 與
+  `clarification.questions` 供 Chat 問具體必要課、目標學分、不可上課時段或課程取捨。
+- `promptService.js` 已限制 Agent 不得把草稿說成成功、不得把 timeout 說成 infeasible，也不得
+  建議放寬衝堂、重複班次、學分硬上限或封鎖時段。structured/native tool calling 仍屬 #25。
+- 新增 Z1–Z7 與 service／prompt 契約測試，涵蓋 greedy trap、真正無解、兩種 timeout、資料不足、
+  deterministic 結果及正課／實習原子性。完整量化 benchmark 與比較報告仍由 #35 負責。
 
 ---
 
@@ -1339,9 +1377,9 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 
 ## #24 建立結構化需求模型、矛盾偵測與澄清對話
 
-**狀態**：⬜ 未開始（卡 #18、#21）
+**狀態**：⬜ 可開始（#18、#21 已完成）
 
-**相依**：#18、#21
+**相依**：#18、#21（均已完成）
 
 **開始前必須具備**：Profile 欄位與 constraint schema 已穩定；列出排課前必要欄位、可選欄位、允許預設值與不得猜測的欄位。
 
@@ -1354,6 +1392,8 @@ candidate 與歷史修課使用一致 ID、可修資格已在排課前完成判�
 - 定義需求物件：intent、hard constraints、soft preferences、weights、explicit courses、missing fields、conflicts。
 - 建立常見同義詞、否定、程度詞與時間表達的正規化。
 - 偵測「絕對不上早八」與「必要時可早八」等強度差異。
+- 釐清每日課程數是不可超過的 `maxCoursesPerDay` 硬上限，或只是「希望每天不超過 N 門」的
+  偏好型限制；只有使用者提出後者需求時才建立獨立欄位與後續開發，不直接放寬現有硬上限。
 - 必要 Profile 缺漏、課程名稱歧義或條件互斥時產生澄清問題。
 - 使用者確認前不得永久更新偏好或執行高影響排課。
 
@@ -1751,7 +1791,7 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 
 ## #35 建立 feasibility、constraint violation 與 solver benchmark
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——已有 feasibility 單元測試骨架；完整 benchmark、constraint violation 指標與 conflict set 仍卡 #15、#21、#22
+**狀態**：🟡 部分完成（2026-08-30 更新）——greedy 與 repair 的 golden fixtures 已建立；完整量化 benchmark、跨 scope 資料集與比較報告仍未完成
 
 **相依**：#15、#21、#22
 
@@ -1799,9 +1839,15 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 
 - **沒有 benchmark**，只有單元測試。沒有固定的 golden case 資料集、沒有量化指標、沒有比較報告，也無法在固定環境重現。
 - 測試資料仍以少量手寫 fixture 為主，未涵蓋不同科系、年級、班級、學期與歷史狀態的組合。
-- `#22`（repair／backtracking／constraint solver）仍未開始，因此無法比較 greedy 與其他解法的可行率、品質與執行時間差異——這才是 benchmark 真正的比較對象。
+- #22 已提供 greedy trap、infeasible、timeout、data-insufficient 的固定 fixtures 與 solver
+  搜尋統計，但尚未整理成可重複執行的正式 benchmark runner、量化指標與比較報告。
 
 **2026-08-20 更新**：「成功方案 hard violation count 為 0」與「無解回傳 conflict set」兩項已由 #21 交付（`scheduleValidator.js` 的獨立 validator 自我檢查、`generateSchedule()` 的結構化 `conflictSet`）；co-requisite（#15，正課/實習配對）也已交付。以上三項不再是 #35 的缺口，但仍未組成正式 benchmark（無 golden case、無量化指標），故 #35 狀態維持部分完成。
+
+**2026-08-30 更新**：#22 已交付可比較的 greedy baseline 與 bounded backtracking repair，並以
+Z1–Z7 固定最小 golden cases；因此「沒有 solver 比較對象」不再是缺口。#35 仍需擴充跨科系／年級／
+班級／學期／歷史狀態的資料集，建立 runner 並輸出 feasible-solution rate、hard violation count、
+soft utility、runtime 與 timeout rate 的正式報告。
 
 ---
 

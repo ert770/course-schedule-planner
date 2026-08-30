@@ -5,8 +5,6 @@ import { REMOVAL_REASONS } from '../../services/interactionLog';
 // 為什麼要問：`time`（衝堂）、`full`（額滿）、`eligibility`（不符資格）對「課程
 // 內容偏好」是**中性**訊號，只有 `content`／`workload`／`instructor` 才是真正的
 // 負回饋。不問就無從區分，#30 會把「排不進去」學成「不喜歡」。
-//
-// 「略過」送出的是 null，不是猜一個值——沒說就是沒說。
 export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
   if (!course) return null;
 
@@ -42,14 +40,6 @@ export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
         </div>
 
         <div className="remove-reason-actions">
-          <button
-            type="button"
-            className="action-btn secondary"
-            id="remove-reason-skip"
-            onClick={() => onConfirm(null)}
-          >
-            略過，直接移除
-          </button>
           <button type="button" className="action-btn secondary" onClick={onCancel}>
             取消
           </button>

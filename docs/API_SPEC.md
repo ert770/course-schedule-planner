@@ -453,6 +453,31 @@ Response 除既有欄位外，無解時額外回傳 `conflictSet`（結構化的
 附加於 `message`／`warnings` 之外，不取代它們；透過放寬階梯成功時額外回傳
 `relaxedConstraints: [{ constraintId, reason, order }]`。
 
+Roadmap #22 的 bounded backtracking repair 會在主推 greedy baseline 未通過 validator，或所有
+合法 baseline 都低於最低學分時啟動。預設總預算為 2 秒（包含決策組前處理），並回傳下列附加欄位：
+
+| 欄位 | 語意 |
+| --- | --- |
+| `solver.status` | `solved`／`infeasible`／`timeout`／`data-insufficient`；`timeout` 不代表已證明無解 |
+| `solver.repairAttempted` | 本次是否真的啟動 repair |
+| `solver.resultSource` | 正式結果來自 `greedy`、`repair`，或沒有正式結果的 `none` |
+| `solver.fallbackUsed` | repair 未完成時是否退回已經 validator 驗證的 greedy baseline |
+| `solver.timeoutMs`／`elapsedMs` | repair 預算與實際耗時（毫秒） |
+| `solver.nodesVisited`／`prunedNodes`／`seed` | 搜尋統計與可重現 seed |
+| `solver.baseline` | repair 前主推 baseline 的成功、最低學分與偏好摘要；無 baseline 時為 `null` |
+| `solver.improved` | 主推正式結果是否由 repair 取代 baseline |
+| `solver.optimizationComplete` | 是否完整探索所有分支；找到第一個目標解時可能為 `false`，不表示結果未驗證 |
+| `draftSchedule`／`draftUnscheduledCourses` | 沒有完整合法解時供澄清用的最佳部分組合；永遠不是正式成功課表 |
+| `isDraft` | 是否存在上述草稿 |
+| `unmetRequirements` | 未滿足項目，含 `type`、`courseIds`、`constraintIds`、`reason`、`adjustable` |
+| `clarification` | `{ required, reason, questions, adjustableConstraintIds, relatedCourseIds }`，供 Chat 逐項追問 |
+
+若 `success:false`，正式 `schedule` 與正式學分統計維持空／零；部分結果只能讀取
+`draftSchedule`。若 repair timeout 但有通過 validator 的低學分 baseline，回應仍可
+`success:true` 並以 `solver.fallbackUsed:true` 揭露，`unmetRequirements`／`clarification`
+則保留最低學分缺口。沒有候選或指定必要課程 ID 不存在時使用 `data-insufficient`，不得誤報
+`infeasible`。
+
 ### 限制條件合併語意
 
 request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
@@ -488,7 +513,32 @@ Response:
   "watchOnly": false,
   "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
   "hasExpressedPreference": true,
-  "reviewDataLoaded": true
+  "reviewDataLoaded": true,
+  "draftSchedule": [],
+  "draftUnscheduledCourses": [],
+  "isDraft": false,
+  "unmetRequirements": [],
+  "clarification": {
+    "required": false,
+    "reason": null,
+    "questions": [],
+    "adjustableConstraintIds": [],
+    "relatedCourseIds": []
+  },
+  "solver": {
+    "status": "solved",
+    "repairAttempted": false,
+    "resultSource": "greedy",
+    "fallbackUsed": false,
+    "timeoutMs": 2000,
+    "elapsedMs": 0,
+    "nodesVisited": 0,
+    "prunedNodes": 0,
+    "seed": 0,
+    "baseline": {},
+    "improved": false,
+    "optimizationComplete": true
+  }
 }
 ```
 

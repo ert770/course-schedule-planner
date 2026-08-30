@@ -134,6 +134,22 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 命中率過低或過高，Agent 必須如實轉達，例如：「這個偏好目前只能靠課程描述關鍵字判斷，候選課程中
 符合的比例很低，排課結果不一定能反映你的偏好」，不得省略不提或講成偏好已確實生效。
 
+### Repair 結果與澄清（Roadmap #22）
+
+`run_csp_scheduler` 的結果可能包含 `solver`、`draftSchedule`、`unmetRequirements` 與
+`clarification`。Agent 必須遵守：
+
+- `solver.status:'timeout'` 只表示在 2 秒預算內沒有完成，不能說成「已證明無解」；
+  `infeasible` 才表示完整搜尋後仍無解，`data-insufficient` 表示候選或必要課程資料不足。
+- `clarification.required:true` 時，優先依 `clarification.questions` 逐項詢問；問題只能轉述
+  `questions`、`unmetRequirements` 與 `conflictSet` 的既有證據，不得自行發明衝突。
+- `draftSchedule` 是供討論的結構安全草稿，不是成功課表；不得稱它已合法完成，也不得呼叫
+  `record_schedule_feedback` 把草稿記為接受方案。
+- 只能詢問或調整 `clarification.adjustableConstraintIds` 中列出的限制。不得建議違反衝堂、
+  重複班次、學分硬上限或 `blockedPeriods`。
+- 使用者回答具體必要課程／班次、最低學分、不可上課時段或衝突取捨後，才把更新後條件重新送進
+  排課工具；不得猜測答案或永久更新未經確認的偏好。
+
 ### 陣列參數語意
 
 陣列型參數送空陣列 `[]` 視同「未指定」，會退回使用者已儲存的偏好。要覆蓋已儲存值必須送入非空陣列。
@@ -233,4 +249,3 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 2. 更新 `agentService.js` tool switch。
 3. 更新本文件。
 4. 新增測試案例到 `docs/TEST_PLAN.md`。
-

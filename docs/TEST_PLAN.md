@@ -137,6 +137,13 @@ node --check src/app.js
 | X12 | 正式必修（`isRequiredForStudent()===true`）違反 `noMorningClasses` | 仍被排入，`warnings` 含「必修優先」與偏好名稱的揭露訊息 |
 | X13 | 同一門正式必修改為違反 `blockedPeriods` | 仍會被排除（必修豁免不適用於 `BLOCKED_PERIODS`） |
 | X14 | `mustTakeCourseIds`（非正式必修）違反 `noMorningClasses` | 仍受排除，行為與 S10 一致（確認豁免範圍夠窄） |
+| Z1 | 同時段 3 學分高分課會讓 greedy 錯過兩門合計 6 學分課 | baseline 未達最低學分後啟動 repair，撤銷早期選擇並找到 6 學分合法解 |
+| Z2 | 兩門互相衝堂且都列為必要課程 | 完整搜尋回 `infeasible`；正式 `schedule` 為空，草稿與 conflict evidence 可驗證 |
+| Z3 | 將 node budget 壓到 1，greedy baseline 合法但低於最低學分 | 回 `timeout` 且使用經 validator 驗證的 greedy fallback，不把部分搜尋結果冒充正式課表 |
+| Z4 | 將 node budget 壓到 2，必要課程衝突且沒有合法 baseline | 回 `timeout`、正式 `schedule` 為空，最佳部分組合只出現在 `draftSchedule` |
+| Z5 | `mustTakeCourseIds` 指向候選資料不存在的 ID | 回 `data-insufficient` 與澄清問題，不誤報 `infeasible` |
+| Z6 | 相同候選、constraints、seed 重跑 repair | 課程、solver status 與節點統計一致 |
+| Z7 | repair 候選包含需共同必修的正課與實習 | 兩者以原子決策同進同退，結果通過 validator |
 
 ### 班別收斂（必修不得換班）
 
@@ -500,4 +507,3 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 4. 確認 `.env` 與 `node_modules/` 沒有被加入 Git。
 5. 若修改排課邏輯，至少執行排課測試案例 S1-S10；若修改的是
    `scheduler.js`／`scheduleValidator.js`／`constraintSchema.js`，一併執行 N1-N15 與 X1-X14。
-

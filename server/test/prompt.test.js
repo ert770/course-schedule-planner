@@ -112,4 +112,18 @@ describe('P3 排課結果欄位有告知模型', () => {
     assert.ok(prompt.includes('資格待確認'));
     assert.ok(prompt.includes('不得宣稱使用者確定可修'));
   });
+
+  test('Roadmap #22：clarification.required 時必須依證據追問，草稿不得冒充成功', () => {
+    const prompt = buildSystemPrompt({});
+
+    for (const field of [
+      'solver.status', 'clarification.required', 'clarification.questions',
+      'unmetRequirements', 'conflictSet', 'draftSchedule', 'adjustableConstraintIds',
+    ]) {
+      assert.ok(prompt.includes(field), `system prompt 缺少 #22 回應欄位 ${field}`);
+    }
+    assert.ok(prompt.includes('timeout 不等於無解'));
+    assert.ok(prompt.includes('不能稱為成功或合法完成的課表'));
+    assert.ok(prompt.includes('不得自行發明衝突'));
+  });
 });

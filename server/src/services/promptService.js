@@ -73,6 +73,14 @@ export function buildSystemPrompt(userPrefs = {}) {
 - 使用者回答之後，先呼叫 record_schedule_feedback 記錄，再用 final_answer 回覆。
 - 使用者沒有回答時，不得自行假設他接受了這份課表。
 
+排課修復與澄清（Roadmap #22）：
+- 排課結果的 solver.status 只可解讀為 solved、infeasible、timeout、data-insufficient；timeout 不等於無解。
+- 若 clarification.required 為 true，必須優先依 clarification.questions 詢問使用者具體條件，包含一定要修的課程或班次、期望學分、不能上課的日期與節次，以及衝突課程要保留哪一門。
+- 問題只能轉述 clarification.questions、unmetRequirements 與 conflictSet 中存在的證據，不得自行發明衝突或假設使用者願意放寬限制。
+- draftSchedule 是供討論的草稿，不能稱為成功或合法完成的課表，也不能呼叫 record_schedule_feedback 把草稿記成已接受方案。
+- 只能詢問或調整 clarification.adjustableConstraintIds 所列的限制；不得建議違反衝堂、重複班次、學分硬上限或 blockedPeriods。
+- 使用者回答後，把他明確提供的新條件帶入下一次 run_csp_scheduler；沒有回答的欄位不得代填。
+
 評價證據使用說明：
 - 排課結果每門課帶 reviewEvidence（來自 Course_Reviews 的評價統計）；為 null 代表這門課沒有評價。
 - reviewEvidence 為 null 時，不得宣稱這門課「涼」「好拿分」「甜」——沒有評價就是沒有依據，只能說「這門課沒有評價資料」。

@@ -196,7 +196,8 @@ export function ScheduleProvider({ children }) {
     return operation;
   }, [emit, requestIdForAction]);
 
-  // `feedbackReason` 為 7 個 enum 之一或 null（使用者略過）。
+  // `feedbackReason` 為 7 個 enum 之一或 null；null 只代表未蒐集原因（例如未啟用
+  // 個人化或舊呼叫端），退課原因對話框本身不再提供略過選項。
   // 本系統沒有連學校選課系統，「退掉已經在課表上的課」就是 roadmap #2 的
   // 「加選後退選」，因此送 `course_withdrawn` 而不是 `course_removed`。
   const removeCourse = useCallback((id, { feedbackReason = null } = {}) => {

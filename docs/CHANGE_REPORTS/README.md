@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-29
+
+1. [移除退課原因略過選項並完成 Roadmap #21 責任交接](./2026-08-29-remove-withdrawal-skip-option.md)
+
 ## 2026-08-26
 
 1. [埋互動 log：推薦曝光、最終選擇與退選原因（Roadmap #2）](./2026-08-26-interaction-logging.md)

@@ -564,6 +564,29 @@ Constraint Schema（Roadmap #21）」一節。
 `{ constraintId, severity, relaxable, source, courses, reason }`，取代「無解時只
 回傳第一個錯誤字串」的舊行為。
 
+### Bounded backtracking repair（Roadmap #22）
+
+系統保留五個既有 greedy variant 作為 baseline。主推 baseline 未通過獨立 validator，或
+所有通過 validator 的 baseline 都低於 `minCredits` 時，才啟動 repair；已合法且達最低學分
+的 baseline 不額外搜尋。
+
+- **決策組**：同一正式課號的不同 section 互斥；正課與實習共同必修以一個原子 option
+  加入或回滾，不允許只留下其中一門。所有實際放置仍走 `scheduler.js` 的既有 hard-rule
+  判定，搜尋器不複製另一套限制。
+- **界限與可重現性**：一次 repair 的決策組前處理加搜尋共用 **2 秒**預算，另有
+  50,000 nodes 上限；預設 seed 為 `0`，同分候選使用 seeded stable hash 決定固定順序。
+- **狀態**：`solved` 表示找到經 validator 驗證的完整課表；`infeasible` 只在預算內完整
+  搜尋後仍無解時使用；`timeout` 不等同無解；必要課程 ID 不在候選資料或沒有候選資料時
+  回 `data-insufficient`。
+- **fallback 與草稿隔離**：timeout 時若已有通過 validator 的 greedy baseline，即回傳該
+  baseline，並標記 `resultSource:'greedy'`、`fallbackUsed:true`。若沒有完整合法方案，正式
+  `schedule` 必須為空；最佳結構安全的部分組合只放在 `draftSchedule`／
+  `draftUnscheduledCourses`，並以 `isDraft:true`、`unmetRequirements` 與 `clarification`
+  明確標示仍需討論，不得冒充排課成功。
+- **Chat 澄清**：`clarification.questions` 只依實際缺口與 conflict evidence 產生，詢問
+  必要課程／班次、最低學分、不能上課的日期節次或互斥課程取捨；只允許建議調整
+  `adjustableConstraintIds`，不得建議違反衝堂、重複班次、學分上限或封鎖時段。
+
 **範圍界定**：先修／共修只定義層級、不強制執行（見上方 `enforced`）；`scoreCourse()`
 的內建評分算式維持逐位元組不變，不會動態讀這張表；`maxCoursesPerDay`（每日課程數
 上限）維持非 `relaxable`，不在本次調整範圍內。詳見 `docs/DECISIONS.md` ADR-012～014
