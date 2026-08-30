@@ -75,6 +75,16 @@ export const privacyAPI = {
   }),
 };
 
+// Interaction log API（roadmap #2）。
+// 未同意 personalization_learning 時後端回 200 + recorded:false，不是錯誤——
+// 這是可選用途，預設關閉是合法狀態，不該把使用者推到同意牆。
+export const interactionsAPI = {
+  record: (events) => request('/interactions', {
+    method: 'POST',
+    body: JSON.stringify({ events }),
+  }),
+};
+
 // Courses API
 export const coursesAPI = {
   search: (filters = {}) => {

@@ -1,4 +1,16 @@
-// Prompt builder for the course recommendation AI Agent.
+// Prompt builder + tool schema for the course recommendation AI Agent。
+//
+// **為什麼工具定義在這裡而不是 agentService**：`agentService` 負責「怎麼跟模型
+// 對話、怎麼派工具」，這裡負責「模型看得到什麼」。兩者分開，contract 測試
+// （`server/test/prompt.test.js`）才可以完全不碰網路就驗證模型被告知了哪些
+// 參數——那正是這份測試存在的原因（曾經新增排課參數卻忘了同步 prompt，
+// 個人化在 `/api/chat` 這條路徑上整個沒生效）。
+//
+// **格式歷史**：先前用的是文字 ReAct 協定——要求模型輸出 `[LLM_Thought]:` 與
+// `[ToolCall]: {json}`，再用 regex 撈出來。那等於把「參數合法性」完全交給模型
+// 的自律：它可以把 reason 填成 `太難`、把 requestId 亂編、把 JSON 寫壞。
+// 現在改用 OpenAI 原生 tool calling，參數由下面的 JSON Schema 約束，
+// enum 與必填欄位在 API 層就被擋下，不再是 prompt 裡的一句叮嚀。
 
 // 把已儲存的興趣偏好攤平成一行，讓模型知道有哪些值可以帶進 run_csp_scheduler。
 function formatList(...sources) {
@@ -10,7 +22,252 @@ function formatList(...sources) {
   return values.length > 0 ? [...new Set(values)].join('、') : '未設定';
 }
 
-export function buildSystemPrompt(userPrefs = {}) {
+const COURSE_CATEGORIES = ['必修', '核心選修', '一般選修', '通識', '系外選修'];
+
+// #29 的七個回饋原因。**這是 enum 不是自由文字**：`time`（衝堂）、`full`
+// （額滿）、`eligibility`（不符資格）對「課程內容偏好」是中性訊號，只有
+// `content`／`workload`／`instructor` 才是真正的負回饋。混成一團的話，
+// #30 會把「排不進去」學成「不喜歡」。
+const FEEDBACK_REASONS = ['time', 'content', 'instructor', 'workload', 'full', 'eligibility', 'other'];
+
+const COURSE_ID_ARRAY = {
+  type: 'array',
+  items: { type: 'integer' },
+};
+
+// `run_csp_scheduler` 的參數表。
+//
+// 這裡**沒有**修課歷史、已修課號、重補修課號或課程評價，而且不是漏寫：
+// 那些是伺服器自己從 profile 與資料庫推導的事實，不是模型可以提供的輸入。
+// 開放給模型填，等於開一個讓它塞造假修課紀錄的入口（見 `constraintService.js`
+// 對 `courseHistory` 與 `courseReviews` 直通不合併的說明）。
+const SCHEDULER_PARAMETERS = {
+  minCredits: { type: 'integer', description: '學分下限。校規下限 12（四年級 9）。' },
+  maxCredits: { type: 'integer', description: '學分上限。校規上限 25，超修申請後 30。' },
+  allowCreditOverload: { type: 'boolean', description: '使用者已申請超修時為 true。' },
+  department: { type: 'string', description: '系所名稱。用於收斂必修範圍，未提及就不要填。' },
+  gradeLevel: { type: 'integer', description: '年級。用於收斂必修範圍，未提及就不要填。' },
+
+  blockedPeriods: {
+    type: 'array',
+    description: '不能上課的時段。',
+    items: {
+      type: 'object',
+      properties: {
+        day: { type: 'integer', description: '星期幾，1=週一 … 5=週五。' },
+        period: { type: 'integer', description: '第幾節。' },
+      },
+      required: ['day', 'period'],
+    },
+  },
+  mondayFree: { type: 'boolean', description: '週一整天不排課。' },
+  noMorningClasses: { type: 'boolean', description: '不排早八。' },
+  noEveningClasses: { type: 'boolean', description: '不排晚間時段。' },
+  lunchBreakFree: { type: 'boolean', description: '午休時段不排課。' },
+
+  mustTakeCourseIds: { ...COURSE_ID_ARRAY, description: '使用者指名一定要修的課程 id。' },
+  selectedCourseIds: { ...COURSE_ID_ARRAY, description: '使用者目前「已選」的課程 id，會佔用時段並計入學分。' },
+  watchingCourseIds: {
+    ...COURSE_ID_ARRAY,
+    description: '使用者「關注」的課程 id。只用於追蹤與比較，不計入學分，也不代表已排入課表。',
+  },
+  courseStates: {
+    type: 'object',
+    description: '課程 id 對應的當下選課狀態，僅在使用者明確說明時填寫。',
+    additionalProperties: { type: 'string' },
+  },
+
+  preferCompact: { type: 'boolean', description: '偏好把課集中在少數幾天。' },
+  maxCoursesPerDay: { type: 'integer', description: '每天最多幾門課。沒有校方依據，使用者沒說就不要填。' },
+
+  noMidterm: { type: 'boolean', description: '偏好沒有期中考的課。' },
+  noGroupReport: { type: 'boolean', description: '偏好沒有分組報告的課。' },
+  discussion: { type: 'boolean', description: '偏好有討論的課。' },
+  learnMore: { type: 'boolean', description: '偏好能學到較多東西的課。' },
+  weightDaily: { type: 'boolean', description: '偏好平時成績占比高的課。' },
+  practicalExam: { type: 'boolean', description: '偏好有實作考試的課。' },
+  finalReport: { type: 'boolean', description: '偏好以期末報告評分的課。' },
+  englishTaught: { type: 'boolean', description: '偏好英語授課。' },
+
+  preferredTrack: { type: 'string', description: '修課路徑，例如「網路安全類」。' },
+  preferredKeywords: {
+    type: 'array',
+    items: { type: 'string' },
+    description: '使用者的興趣關鍵字，例如 ["網路","資安"]。',
+  },
+  interests: {
+    type: 'array',
+    items: { type: 'string' },
+    description: '使用者的興趣領域，用途同 preferredKeywords。',
+  },
+  preferEasyCourses: { type: 'boolean', description: '使用者想要涼課或好拿高分的課時設為 true。' },
+  digitalCreditsNeeded: { type: 'boolean', description: '使用者還需要數位學分時為 true。' },
+};
+
+/**
+ * OpenAI Responses API 的工具定義。
+ *
+ * **形狀**：Responses API 的工具是扁平的 `{ type, name, description, parameters }`，
+ * 不像 Chat Completions 再包一層 `function`。這裡直接以最終形狀撰寫，不做轉接層。
+ *
+ * **沒有 final_answer**：原生 tool calling 的自然終止就是「模型回一則沒有
+ * function_call 的訊息」。留一個 final_answer 工具是在跟 API 對打，
+ * 而且會讓模型多繞一步、多一次出錯機會。
+ */
+export function getAgentTools() {
+  return [
+    {
+      type: 'function',
+      name: 'query_course_db',
+      description:
+        '依目前使用者的後端 profile 查詢課程資料。'
+        + '通識領域以工具回傳的 generalEducationDomain 為準，不得由課號前綴猜測，也不得自行傳入班級。'
+        + '若課程 eligibility 為 unknown，只能說「資格待確認」並附上 eligibilityReason，不得宣稱使用者確定可修。',
+      parameters: {
+        type: 'object',
+        properties: {
+          keyword: { type: 'string', description: '課程名稱或關鍵字。' },
+          category: { type: 'string', enum: COURSE_CATEGORIES, description: '課程類別。' },
+          dayOfWeek: { type: 'integer', description: '星期幾，1=週一 … 5=週五。' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'search_dcard_reviews',
+      description: '查詢單一課程的評價摘要。沒有評價資料時會回傳 error，不可自行補一個評價。',
+      parameters: {
+        type: 'object',
+        properties: {
+          keyword: { type: 'string', description: '課程名稱或關鍵字。' },
+        },
+        required: ['keyword'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'get_easy_courses',
+      description:
+        '查詢涼課或高分課程。排序依據是收縮後的 adjustedEasiness（樣本數少的課會被拉向全體平均），'
+        + '不是未收縮的 easiness；向使用者說明時以 adjustedEasiness 為準。',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', description: '回傳筆數，預設 10。' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'update_preferences',
+      description:
+        '更新使用者長期偏好。只在使用者明確表達要「以後都這樣」時呼叫，'
+        + '單次排課條件請直接帶進 run_csp_scheduler。',
+      parameters: {
+        type: 'object',
+        properties: {
+          noMorningClasses: { type: 'boolean' },
+          noEveningClasses: { type: 'boolean' },
+          preferCompact: { type: 'boolean' },
+          targetCreditsMin: { type: 'integer' },
+          targetCreditsMax: { type: 'integer' },
+          blockedPeriods: SCHEDULER_PARAMETERS.blockedPeriods,
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'run_csp_scheduler',
+      description:
+        '產生推薦課表。使用者若表達了興趣、想集中排課或想修涼課，必須把對應參數帶進來，'
+        + '否則系統只能改用總學分挑選方案，推薦會失去個人化。',
+      parameters: {
+        type: 'object',
+        properties: SCHEDULER_PARAMETERS,
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'record_schedule_feedback',
+      description:
+        '記錄使用者對已產生課表的最終評價（roadmap #2）。'
+        + '只有在使用者**實際回答過**這份課表是否符合需求之後才可呼叫，不得代替使用者回答。'
+        + '呼叫時 accepted 必須為 true，或 rejectedCourses 至少有一筆——'
+        + '兩者皆空的呼叫沒有記錄到任何東西，會被拒絕。'
+        + 'draftSchedule 是供討論的草稿，不可用這個工具把草稿記成已接受的方案。',
+      parameters: {
+        type: 'object',
+        properties: {
+          requestId: {
+            type: 'string',
+            description:
+              '上一次 run_csp_scheduler 回傳的 requestId。後端會對照該次推薦實際顯示的紀錄驗證；'
+              + '自行編造或使用舊的 requestId 一律被拒絕。',
+          },
+          accepted: { type: 'boolean', description: '使用者表示這份課表符合需求時為 true。' },
+          planId: {
+            type: 'string',
+            description: '可省略。省略時後端自動使用該次實際顯示的方案；有填就必須與它一致。',
+          },
+          rejectedCourses: {
+            type: 'array',
+            description:
+              '使用者指出不適合的課。sectionId 必須是該次推薦**實際排進課表**的課，'
+              + '不可以是搜尋結果或其他學期的課。',
+            items: {
+              type: 'object',
+              properties: {
+                sectionId: { type: 'integer' },
+                reason: {
+                  type: 'string',
+                  enum: FEEDBACK_REASONS,
+                  description: '使用者沒有說明原因時填 other，不要自行猜測理由。',
+                },
+              },
+              required: ['sectionId', 'reason'],
+            },
+          },
+        },
+        required: ['requestId'],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
+export function buildSystemPrompt(userPrefs = {}, context = {}) {
+  // 最近一次推薦的 requestId 與課程 sectionId 由伺服器提供。
+  //
+  // 模型看不到上一輪的 tool 結果——`saveChatExchange()` 只保存使用者訊息與最終
+  // 文字回覆——所以下一回合它手上既沒有合法的 requestId，也沒有課程 sectionId，
+  // 只記得自己寫過的課名。少了這一段，`record_schedule_feedback` 實際上永遠
+  // 呼叫不成功：Agent 問了「這份課表符合需求嗎」，使用者答了，訊號卻無處可記。
+  const latest = context.latestExposure;
+  const displayed = latest?.displayedSet ?? [];
+  const latestRecommendation = latest?.requestId
+    ? [
+      '',
+      '最近一次推薦（使用者目前看到的那一份課表）：',
+      `- requestId：${latest.requestId}`,
+      `- planId：${latest.planId ?? '（未指定，可省略）'}`,
+      ...(displayed.length > 0
+        ? [
+          '- 這份課表包含的課，record_schedule_feedback 的 sectionId 只能從這裡挑：',
+          ...displayed.map(course => (
+            `  - sectionId ${course.sectionId}：${course.name ?? course.catalogCourseCode}`
+          )),
+        ]
+        : []),
+      '- 使用者對這份課表的回饋一律用上面的 requestId 與 sectionId 呼叫'
+        + ' record_schedule_feedback，不要自行編造，也不要說找不到識別資料。',
+    ].join('\n')
+    : '\n最近一次推薦：目前沒有推薦紀錄，尚不可呼叫 record_schedule_feedback。';
+
   return `你是「課程推薦系統」的 AI Agent，負責協助學生查詢課程、理解偏好，並在資料足夠時呼叫工具產生課表。
 
 工作原則：
@@ -21,55 +278,51 @@ export function buildSystemPrompt(userPrefs = {}) {
 5. 遇到衝堂、學分不足、學分超過上限或硬性條件無法滿足時，要明確說明原因。
 6. 回答語氣保持清楚、務實、簡短，避免保證一定能畢業或一定搶得到課。
 
-回覆流程：
-每一步都使用以下 ReAct 格式。
-
-[LLM_Thought]:
-用一小段話判斷現在需要查資料、排課、更新偏好，或直接回答。
-
-[ToolCall]:
-只輸出一個 JSON 物件，不要在 JSON 外加解釋。
-
-可用工具：
-- query_course_db：依目前使用者的後端 profile 查詢課程資料。參數可包含 keyword, category, dayOfWeek；category 只可使用必修、核心選修、一般選修、通識、系外選修。通識領域以工具回傳的 generalEducationDomain 為準，不得由課號前綴猜測，也不得自行傳入班級。若課程 eligibility 為 unknown，只能說「資格待確認」並附 eligibilityReason，不得宣稱使用者確定可修。
-- search_dcard_reviews：查詢課程評價摘要。參數可包含 keyword。
-- get_easy_courses：查詢涼課或高分課程。參數可包含 limit。
-- update_preferences：更新使用者偏好。參數可包含 noMorningClasses, noEveningClasses, preferCompact, targetCreditsMin, targetCreditsMax, blockedPeriods。
-- run_csp_scheduler：產生推薦課表。參數可包含：
-  - minCredits, maxCredits, allowCreditOverload
-  - department, gradeLevel
-  - blockedPeriods, mondayFree, noMorningClasses, noEveningClasses, lunchBreakFree
-  - mustTakeCourseIds
-  - selectedCourseIds, watchingCourseIds, courseStates
-  - preferCompact, maxCoursesPerDay
-  - noMidterm, noGroupReport, discussion, learnMore
-  - weightDaily, practicalExam, finalReport, englishTaught
-  - preferredTrack, digitalCreditsNeeded
-  - preferredKeywords：使用者的興趣關鍵字陣列，例如 ["網路","資安"]。
-  - interests：使用者的興趣領域陣列，用途同上。
-  - preferEasyCourses：布林值，使用者想要涼課或好拿高分的課時設為 true。
-- final_answer：輸出最後回答。參數必須包含 reply_text。
+工具使用方式：
+- 需要資料或要產生課表時，直接呼叫對應的工具；每個工具的參數說明寫在工具定義裡，以那份定義為準。
+- 工具回傳結果之後，若已足以回答，就直接用一般文字回覆使用者，不需要再呼叫任何工具。
+- 不要把工具回傳的原始 JSON 貼給使用者，要用中文說明重點。
 
 排課偏好使用說明：
 - preferredKeywords、interests、preferCompact、preferEasyCourses 會決定多個課表方案中要主推哪一個。
-- 使用者若表達興趣、想集中排課或想修涼課，必須把對應參數帶進 run_csp_scheduler，否則系統只能改用總學分挑選方案，推薦會失去個人化。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
+
+排課後的確認（必做）：
+- run_csp_scheduler 成功後，你給使用者的那則回覆**必須**在說明課表之後，詢問這份課表是否符合需求，
+  並告訴使用者若有不適合的課，請說出是哪一門以及原因（時間、內容、教師、負擔、額滿、資格）。
+- 排課只是推薦，使用者是否覺得符合需求才是最終選擇。沒有問，系統就無從得知這份推薦到底好不好。
+- 使用者一旦說出「這份可以」或「哪一門不適合」，**那一回合的第一個工具呼叫必須是
+  record_schedule_feedback**，記錄完成之後才可以重新排課、追問或回覆。這個訊號沒有
+  第二次機會，漏記就永久遺失。
+- 記錄時 requestId 用下方「最近一次推薦」給的值，rejectedCourses 的 sectionId 只能是
+  **那一份課表裡的課**（也就是使用者實際看過的那一份）。不要先重新排課再拿新課表的
+  sectionId 去記錄——那些課使用者根本還沒看過，後端會拒絕。
+- 使用者說某門課不適合但沒講明原因時，reason 填 other；講了時間衝突就填 time，
+  依此類推，不要因為「還要再問細節」而跳過記錄。
+- 使用者沒有回答時，不得自行假設他接受了這份課表。
+
+排課修復與澄清（Roadmap #22）：
+- 排課結果的 solver.status 只可解讀為 solved、infeasible、timeout、data-insufficient；timeout 不等於無解。
+- 若 clarification.required 為 true，必須優先依 clarification.questions 詢問使用者具體條件，包含一定要修的課程或班次、期望學分、不能上課的日期與節次，以及衝突課程要保留哪一門。
+- 問題只能轉述 clarification.questions、unmetRequirements 與 conflictSet 中存在的證據，不得自行發明衝突或假設使用者願意放寬限制。
+- draftSchedule 是供討論的草稿，不能稱為成功或合法完成的課表，也不能呼叫 record_schedule_feedback 把草稿記成已接受方案。
+- 只能詢問或調整 clarification.adjustableConstraintIds 所列的限制；不得建議違反衝堂、重複班次、學分硬上限或 blockedPeriods。
+- 使用者回答後，把他明確提供的新條件帶入下一次 run_csp_scheduler；沒有回答的欄位不得代填。
 
 評價證據使用說明：
 - 排課結果每門課帶 reviewEvidence（來自 Course_Reviews 的評價統計）；為 null 代表這門課沒有評價。
 - reviewEvidence 為 null 時，不得宣稱這門課「涼」「好拿分」「甜」——沒有評價就是沒有依據，只能說「這門課沒有評價資料」。
 - 方案的 preferenceBreakdown.easy 可能為 null（代表排入的課全部沒有評價可評分），請改讀該方案的 reviewCoverage（rated/total/ratio）向使用者說明證據有多少，不要把 null 講成 0%。
 - 若回傳 reviewDataLoaded 為 false，代表本次排課完全沒有取得評價資料，涼度是以中性值計算，應照實告知使用者，不可宣稱已依評價排序。
-- get_easy_courses 的排序依據是收縮後的 adjustedEasiness（樣本數少的課會被拉向全體平均），不是未收縮的 easiness；兩者皆會回傳，說明時以 adjustedEasiness 為準。
 
 內容偏好使用說明：
 - noMidterm、noGroupReport、discussion、weightDaily、practicalExam、finalReport、englishTaught、learnMore 是軟性偏好，判定依據是課程描述的關鍵字比對，不保證真的滿足——關鍵字沒出現在描述裡不代表課程真的沒有這個特徵。
 - 不得因為使用者設定了 noMidterm 就宣稱「已排除所有有期中考的課」，只能說「已依這個偏好調整排序」。
 - 若 warnings 出現「訊號極弱」或「無法有效區分課程」字樣，代表這個偏好在候選課程中的關鍵字命中率過低或過高，必須照實轉達給使用者，不得省略。
 
-ToolCall 範例：
-{"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"maxCredits":25,"preferredKeywords":["網路","資安"],"preferCompact":true,"watchingCourseIds":[12],"selectedCourseIds":[3,8]}}
+課程資格說明：
+- 課程的 eligibility 為 unknown 時只能說「資格待確認」並附上 eligibilityReason，不得宣稱使用者確定可修。
 
 目前使用者偏好（不含可直接識別身分的欄位）：
 - 目標學分：${userPrefs.targetCreditsMin || 12} ~ ${userPrefs.targetCreditsMax || 25}
@@ -78,11 +331,5 @@ ToolCall 範例：
 - 偏好集中排課：${userPrefs.preferCompact ? '是' : '否'}
 - 偏好涼課：${(userPrefs.preferEasyCourses ?? userPrefs.preferEasy) ? '是' : '否'}
 - 興趣關鍵字：${formatList(userPrefs.preferredKeywords, userPrefs.interests, userPrefs.preferenceTags)}
-- 修課路徑：${userPrefs.preferredTrack || '未設定'}
-
-如果你已經得到工具回傳的 Observation，而且足以回答，請呼叫 final_answer。`;
-}
-
-export function getAgentTools() {
-  return [];
+- 修課路徑：${userPrefs.preferredTrack || '未設定'}${latestRecommendation}`;
 }

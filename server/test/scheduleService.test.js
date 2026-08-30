@@ -54,4 +54,16 @@ describe('buildNoCandidatesResult：無候選課的回應必須帶 reviewDataLoa
     assert.equal(result.reviewDataLoaded, false);
     assert.ok('reviewDataLoaded' in result, '欄位必須存在，呼叫端才能分辨 false 與欄位不存在');
   });
+
+  test('Roadmap #22：標記 data-insufficient 並提供可直接交給 Chat 的澄清問題', () => {
+    const result = buildNoCandidatesResult(false);
+
+    assert.equal(result.solver.status, 'data-insufficient');
+    assert.equal(result.solver.repairAttempted, false);
+    assert.deepEqual(result.draftSchedule, []);
+    assert.equal(result.isDraft, false);
+    assert.equal(result.clarification.required, true);
+    assert.equal(result.clarification.reason, 'data-insufficient');
+    assert.ok(result.clarification.questions.some(question => question.type === 'schedule-goal'));
+  });
 });

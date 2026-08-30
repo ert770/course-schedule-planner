@@ -137,6 +137,13 @@ node --check src/app.js
 | X12 | 正式必修（`isRequiredForStudent()===true`）違反 `noMorningClasses` | 仍被排入，`warnings` 含「必修優先」與偏好名稱的揭露訊息 |
 | X13 | 同一門正式必修改為違反 `blockedPeriods` | 仍會被排除（必修豁免不適用於 `BLOCKED_PERIODS`） |
 | X14 | `mustTakeCourseIds`（非正式必修）違反 `noMorningClasses` | 仍受排除，行為與 S10 一致（確認豁免範圍夠窄） |
+| Z1 | 同時段 3 學分高分課會讓 greedy 錯過兩門合計 6 學分課 | baseline 未達最低學分後啟動 repair，撤銷早期選擇並找到 6 學分合法解 |
+| Z2 | 兩門互相衝堂且都列為必要課程 | 完整搜尋回 `infeasible`；正式 `schedule` 為空，草稿與 conflict evidence 可驗證 |
+| Z3 | 將 node budget 壓到 1，greedy baseline 合法但低於最低學分 | 回 `timeout` 且使用經 validator 驗證的 greedy fallback，不把部分搜尋結果冒充正式課表 |
+| Z4 | 將 node budget 壓到 2，必要課程衝突且沒有合法 baseline | 回 `timeout`、正式 `schedule` 為空，最佳部分組合只出現在 `draftSchedule` |
+| Z5 | `mustTakeCourseIds` 指向候選資料不存在的 ID | 回 `data-insufficient` 與澄清問題，不誤報 `infeasible` |
+| Z6 | 相同候選、constraints、seed 重跑 repair | 課程、solver status 與節點統計一致 |
+| Z7 | repair 候選包含需共同必修的正課與實習 | 兩者以原子決策同進同退，結果通過 validator |
 
 ### 班別收斂（必修不得換班）
 
@@ -324,7 +331,7 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 ## #29 InteractionEvent schema 測試
 
 `server/test/interactionEventSchema.test.js`。這組測試只操作 pure functions，不連 MySQL、
-不建立 runtime JSON，也不代表 #2 的前端埋點或 #33 的 consent 已完成。
+不建立 runtime JSON。實際埋點與持久化由下方 IL 系列（#2）涵蓋。
 
 | 編號 | 情境 | 預期結果 |
 | --- | --- | --- |
@@ -338,6 +345,58 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 | I29-8 | actionId 不同 | 產生不同 key，可 append 為獨立操作 |
 | I29-9 | 無版本 flat draft | migration 轉為合法 v1 nested shape |
 | I29-10 | 未知未來版本、未知 event type、無身分、非法順位 | 明確拒絕，不補猜值 |
+
+## IL #2 互動 log 埋點與持久化測試
+
+`server/test/interactionEvents.test.js`。使用記憶體 privacy store，不需 MySQL。
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| IL-1 | 未同意 `personalization_learning` 時上報 | `recorded:false`、`reason=CONSENT_NOT_GRANTED`，DB 零列 |
+| IL-1b | 同上，經 `POST /api/interactions` | 回 **200 而非 428**——可選用途不該把使用者推到同意牆 |
+| IL-2 | 同意後寫入一般事件 | 寫入一列；序列化後不含學號、不含 subject ID；版本快照由 server 填入 |
+| IL-2b | 伺服器自己寫入的曝光事件 | 同樣不含學號、不含 subject ID |
+| IL-3 | 同一 `actionId` 重送 | `duplicate`，仍只有一列 |
+| IL-3b | 不同 `actionId` | 視為兩次操作，各自 append |
+| IL-4 | 相同 key 但 payload 改變 | `conflict`，不覆寫既有事件 |
+| IL-5 | `displayedSet` 不是 `candidateSet` 子集 | `rejected` 並回報錯誤，不寫入 |
+| IL-6 | 必修被選入 | `source=required` 保留，不混成興趣正回饋 |
+| IL-7 | 七個 `feedbackReason` 全數上報；非移除事件夾帶原因 | 前者逐一保存、後者拒絕 |
+| IL-7b | 使用者略過原因 | `feedbackReason` 為 `null`，不猜一個值 |
+| IL-8 | 未登入 | 401，不寫入 |
+| IL-9 | 兩個帳號 | 事件完全隔離 |
+| IL-10 | 保存期限清理 | 只刪過期資料，未到期保留 |
+| IL-11 | 帳號刪除 | 該 `subject_id` 事件歸零 |
+| IL-12 | 排課回應 | 帶 `requestId`；每個方案帶 `planId`／`variantId`，成功與失敗路徑皆然 |
+| IL-13 | `record_schedule_feedback` | `accepted` → plan 層級 `recommendation_accepted`；`rejectedCourses` → 逐筆 `course_withdrawn` + 原因 |
+| IL-13b | 重送同一份確認 | `duplicate`，不重複計為兩次接受 |
+| IL-13c | requestId 造假或原因不合法 | 明確回報，不寫入 |
+| IL-13d | 使用者尚未回答 | 拒絕代為記錄 |
+| IL-13e | requestId 沒有對應的曝光紀錄 | 拒絕——模型可以編出格式合法但從未存在的推薦 |
+| IL-13f | 拿別人的 requestId 當自己的回饋來源 | 拒絕；曝光查詢以 subject 為範圍 |
+| IL-13g | 捏造的 variant、或只進候選但未顯示過的課程 | 兩者皆拒絕；使用者不可能退掉沒看過的課 |
+| IL-14 | 已撤回服務的 subject 再寫入 | `rejected`，不寫入 |
+| IL-14b | 寫入與帳號刪除並行 | 無論搶先落地或被拒絕，最終皆為零列 |
+| IL-15 | 舊版政策下的 consent（`granted:true` 但 `policyVersion` 過期） | 不算目前有效同意，`recorded:false` |
+| IL-15b | 目前版本但 `granted:false` | 同樣不算有效同意 |
+| IL-17 | client 自己捏一組格式合法的 `recommendation_exposed` | 一律拒絕，不因格式合法而放行 |
+| IL-17b | 直接呼叫 `recordInteractionEvents` 送出 `system_recommendation` 來源退選，未先造曝光 | 拒絕；證明繞過 `scheduleFeedbackService` 也擋得住 |
+| IL-17c | 曝光紀錄存在且班次確實顯示過，直接呼叫 `recordInteractionEvents` | 成功，不必經過 Agent tool |
+| IL-17d | 伺服器帶 `allowExposureWrite:true` 寫入曝光 | 成功，且不做來源驗證（它就是來源本身） |
+| IL-18 | 並行請求撞上相同 idempotency key 但內容不同 | 一個 `append`、一個 `conflict`，不誤報成 `duplicate` |
+| IL-18b | 並行請求撞上相同 key 且內容也相同 | 才回 `duplicate` |
+| IL-19 | `/api/interactions` 每分鐘請求數超過上限 | HTTP 429、`code=RATE_LIMITED` |
+| IL-20 | 每日事件量配額 `wouldExceedDailyQuota()` | 未超過時 false，超過時 true |
+
+`server/test/rateLimiter.test.js`（RL-1～RL-3）：固定視窗節流器本身的單元測試——
+視窗內第 limit 次仍允許、第 limit+1 次起拒絕、不同 key 互不影響、limit 為 0 時全擋。
+
+IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1～3 來自第二輪
+（針對 `98bf7ac..218358a` 的再次審查），修的是 consent 版本檢查與撤回競態、
+`/api/interactions` 完全信任 client 宣稱的曝光來源、並行撞鍵誤報 duplicate、
+以及節流／配額完全缺席。全部都不是實作瑕疵，是原本設計沒有涵蓋的情境。
+
+修改互動埋點時，另須確認 P 系列的 prompt 契約（排課後確認章節與七個原因 enum）仍通過。
 
 ## 資料庫契約測試
 
@@ -448,4 +507,3 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 4. 確認 `.env` 與 `node_modules/` 沒有被加入 Git。
 5. 若修改排課邏輯，至少執行排課測試案例 S1-S10；若修改的是
    `scheduler.js`／`scheduleValidator.js`／`constraintSchema.js`，一併執行 N1-N15 與 X1-X14。
-

@@ -2,6 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authAPI, scheduleAPI } from '../services/api';
 import { useAuth } from './useAuth';
 import { ScheduleContext } from './ScheduleContextValue';
+import {
+  INTERACTION_EVENT_TYPES,
+  INTERACTION_SOURCES,
+  courseRef,
+  buildRecommendation,
+  courseSource,
+  courseTerm,
+  hasPersonalizationConsent,
+  logInteraction,
+  newActionId,
+  newUuid,
+} from '../services/interactionLog';
 
 function courseId(course) {
   return String(course?.id ?? course?.sectionId ?? '');
@@ -74,10 +86,28 @@ export function ScheduleProvider({ children }) {
   const scheduleRef = useRef([]);
   const addQueueRef = useRef(Promise.resolve());
   const accountGenerationRef = useRef(0);
+  // 目前畫面上這份課表來自哪一次推薦。從 saved_schedules 載回時為 null——
+  // 那份課表確實不屬於任何一次推薦曝光，不偽造關聯。
+  const recommendationRef = useRef(null);
+  const privacyRef = useRef(privacyStatus);
+  privacyRef.current = privacyStatus;
 
-  const replaceSchedule = useCallback((nextSchedule) => {
+  // 回傳 promise 供需要知道結果的呼叫端使用（目前只有確認列）。
+  // 其餘埋點一律忽略回傳值，維持 fire-and-forget。
+  const emit = useCallback((events) => (
+    logInteraction(events, privacyRef.current)
+  ), []);
+
+  // 屬於某次推薦的操作沿用該次的 requestId；不屬於任何推薦的操作自己開一個，
+  // 讓「這個操作不來自推薦」本身成為可讀的資訊。
+  const requestIdForAction = useCallback(() => (
+    recommendationRef.current?.requestId || newUuid()
+  ), []);
+
+  const replaceSchedule = useCallback((nextSchedule, recommendation = null) => {
     const normalized = Array.isArray(nextSchedule) ? nextSchedule : [];
     scheduleRef.current = normalized;
+    recommendationRef.current = recommendation;
     setSchedule(normalized);
   }, []);
 
@@ -141,7 +171,15 @@ export function ScheduleProvider({ children }) {
         if (requestedGeneration !== accountGenerationRef.current) {
           return { success: false, code: 'ACCOUNT_CHANGED', message: '登入帳號已變更，未加入課程。' };
         }
-        replaceSchedule(proposed);
+        // 加入後才記錄。驗證沒過的課從來沒有進過課表，記成「使用者選了」是錯的。
+        scheduleRef.current = proposed;
+        setSchedule(proposed);
+        emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, course, {
+          requestId: requestIdForAction(),
+          source: courseSource(course, {
+            systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
+          }),
+        }));
         return { success: true, course, validation: result };
       } catch (err) {
         return {
@@ -156,11 +194,28 @@ export function ScheduleProvider({ children }) {
 
     addQueueRef.current = operation.catch(() => undefined);
     return operation;
-  }, [replaceSchedule]);
+  }, [emit, requestIdForAction]);
 
-  const removeCourse = useCallback((id) => {
-    replaceSchedule(scheduleRef.current.filter(course => courseId(course) !== String(id)));
-  }, [replaceSchedule]);
+  // `feedbackReason` 為 7 個 enum 之一或 null；null 只代表未蒐集原因（例如未啟用
+  // 個人化或舊呼叫端），退課原因對話框本身不再提供略過選項。
+  // 本系統沒有連學校選課系統，「退掉已經在課表上的課」就是 roadmap #2 的
+  // 「加選後退選」，因此送 `course_withdrawn` 而不是 `course_removed`。
+  const removeCourse = useCallback((id, { feedbackReason = null } = {}) => {
+    const removed = scheduleRef.current.find(course => courseId(course) === String(id));
+    const next = scheduleRef.current.filter(course => courseId(course) !== String(id));
+    scheduleRef.current = next;
+    setSchedule(next);
+
+    if (removed) {
+      emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN, removed, {
+        requestId: requestIdForAction(),
+        source: courseSource(removed, {
+          systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
+        }),
+        feedbackReason,
+      }));
+    }
+  }, [emit, requestIdForAction]);
 
   const toggleWatchlist = useCallback(async (course) => {
     const requestedGeneration = accountGenerationRef.current;
@@ -178,11 +233,24 @@ export function ScheduleProvider({ children }) {
         return { success: false, message: '登入帳號已變更，未更新畫面上的關注清單。' };
       }
       setWatchlist(normalizeWatchlist(result?.watchlist ?? next));
-      return { success: true, watching: next.includes(id) };
+      const watching = next.includes(id);
+      emit(buildCourseEvent(
+        watching
+          ? INTERACTION_EVENT_TYPES.COURSE_FAVORITED
+          : INTERACTION_EVENT_TYPES.COURSE_UNFAVORITED,
+        course,
+        {
+          requestId: requestIdForAction(),
+          source: courseSource(course, {
+            systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
+          }),
+        }
+      ));
+      return { success: true, watching };
     } catch (err) {
       return { success: false, message: `關注清單更新失敗：${err.message}` };
     }
-  }, [watchlist]);
+  }, [emit, requestIdForAction, watchlist]);
 
   const saveCurrentSchedule = useCallback(async (name = '我的課表') => {
     setSaving(true);
@@ -198,21 +266,105 @@ export function ScheduleProvider({ children }) {
     }
   }, []);
 
+  // 開啟課程詳情。放在 context 而不是各頁自己送，兩個頁面才不會各記一套。
+  const logCourseViewed = useCallback((course) => {
+    if (!course) return;
+    emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_VIEWED, course, {
+      requestId: requestIdForAction(),
+      source: courseSource(course, {
+        systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
+      }),
+    }));
+  }, [emit, requestIdForAction]);
+
+  // `recommendation_exposed` 不再由前端回報。
+  //
+  // 對抗式審查發現：由使用者的瀏覽器自己說「系統顯示了什麼」，等於任何登入
+  // 帳號都能捏一組假的曝光紀錄，再讓後續的接受／退選對上它。現在改由伺服器
+  // 在 `services/scheduleService.js` 算出排課結果的當下自己寫入；後端也已把
+  // 這個事件類型從一般寫入路徑擋掉（見 `interactionEventService.js` 的
+  // `allowExposureWrite`），前端送了也不會被接受。
+
+  const logScheduleRegenerated = useCallback((requestId, { surface, trigger }) => {
+    emit({
+      eventType: INTERACTION_EVENT_TYPES.SCHEDULE_REGENERATED,
+      requestId: requestId || newUuid(),
+      actionId: newActionId(),
+      term: firstTerm(scheduleRef.current) || { academicYear: 114, semester: '下學期' },
+      exposureContext: { surface, trigger, candidateSet: [], displayedSet: [] },
+      versionSnapshot: { recommendationReasonVersion: null },
+    });
+  }, [emit]);
+
+  // 「這份課表符合我的需求」——roadmap #2 的「使用者最終選擇」。
+  // 儲存課表刻意**不**視為接受：存草稿也會按儲存，語意含糊。
+  const acceptRecommendation = useCallback(async () => {
+    const recommendation = recommendationRef.current;
+    // 這份課表不是本次推薦產生的（例如從已存課表載回），沒有方案可以接受。
+    if (!recommendation?.planId) return { recorded: false, reason: 'NO_PLAN' };
+    return emit({
+      eventType: INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED,
+      requestId: recommendation.requestId,
+      actionId: newActionId(),
+      term: firstTerm(scheduleRef.current) || { academicYear: 114, semester: '下學期' },
+      plan: { planId: recommendation.planId, variantId: recommendation.variantId },
+      position: { planRank: 1, courseRank: null },
+      source: INTERACTION_SOURCES.SYSTEM_RECOMMENDATION,
+      versionSnapshot: { recommendationReasonVersion: null },
+    });
+  }, [emit]);
+
+  // 沒同意個人化學習的人不該被問移除原因——問了也不會記錄，只是白白多一步。
+  const personalizationEnabled = hasPersonalizationConsent(privacyStatus);
+
   const value = useMemo(() => ({
     schedule,
     watchlist,
     loading,
     saving,
     validating,
+    personalizationEnabled,
     replaceSchedule,
     addCourse,
     removeCourse,
     toggleWatchlist,
     saveCurrentSchedule,
+    buildRecommendation,
+    logCourseViewed,
+    logScheduleRegenerated,
+    acceptRecommendation,
   }), [
-    addCourse, loading, removeCourse, replaceSchedule, saveCurrentSchedule,
-    saving, schedule, toggleWatchlist, validating, watchlist,
+    acceptRecommendation, addCourse, loading, logCourseViewed,
+    logScheduleRegenerated, personalizationEnabled, removeCourse, replaceSchedule,
+    saveCurrentSchedule, saving, schedule, toggleWatchlist, validating, watchlist,
   ]);
 
   return <ScheduleContext.Provider value={value}>{children}</ScheduleContext.Provider>;
+}
+
+// 事件需要學年學期，但學期屬於課程而不是使用者。取候選課程中第一個有值的，
+// 全部都沒有就回 null，由呼叫端決定要不要送。
+function firstTerm(courses) {
+  for (const course of courses || []) {
+    const term = courseTerm(course);
+    if (term) return term;
+  }
+  return null;
+}
+
+function buildCourseEvent(eventType, course, { requestId, source, feedbackReason = null }) {
+  const ref = courseRef(course);
+  const term = courseTerm(course);
+  // 缺穩定課號或學期就不送。補空值上去只會產生一筆無法解讀的事件。
+  if (!ref || !term) return null;
+  return {
+    eventType,
+    requestId,
+    actionId: newActionId(),
+    course: ref,
+    term,
+    source,
+    ...(feedbackReason ? { feedbackReason } : {}),
+    versionSnapshot: { recommendationReasonVersion: null },
+  };
 }

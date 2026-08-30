@@ -11,6 +11,7 @@ import reviewRoutes from './routes/reviews.js';
 import authRoutes from './routes/auth.js';
 import graduationRoutes from './routes/graduation.js';
 import privacyRoutes from './routes/privacy.js';
+import interactionRoutes from './routes/interactions.js';
 import { assertSessionSecretConfigured } from './services/sessionService.js';
 import { assertPrivacyConfigured } from './services/privacyService.js';
 
@@ -38,6 +39,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/schedule', scheduleRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/interactions', interactionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

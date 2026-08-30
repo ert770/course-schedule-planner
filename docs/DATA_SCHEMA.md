@@ -29,6 +29,7 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `Privacy_Audit_Log` | `audit_id`, `subject_id`, `action`, `resource_type`, `outcome`, `request_id`, `occurred_at`, `metadata_json` | 不含 payload 的稽核紀錄 |
 | `Privacy_Data_Requests` | `request_id`, `subject_id`, `request_type`, `token_hash`, `expires_at`, `completed_at`, `status` | 短效、單次刪除確認；只存 token hash |
 | `Chat_Messages` | `message_id`, `subject_id`, `role`, `ciphertext`, `iv`, `auth_tag`, `key_version`, `created_at`, `expires_at` | AES-256-GCM Raw Chat，30 天到期 |
+| `Interaction_Events` | `event_id`, `subject_id`, `event_type`, `occurred_at`, `expires_at`, `idempotency_key`, `catalog_course_code`, `section_id`, `plan_id`, `variant_id`, `source`, `feedback_reason`, `exposure_json` | Roadmap #2 互動事件，180 天到期 |
 
 `ciphertext`、每筆獨立 96-bit `iv` 與 `auth_tag` 缺一不可；解密驗證失敗必須拒絕資料，
 不得回傳部分內容。`key_version` 讓未來金鑰輪替可辨識資料使用哪一版金鑰。
@@ -36,6 +37,20 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 三種 `purpose`：`service_processing`（必要）、`personalization_learning`（可選）、
 `aggregate_research`（可選）。#2 寫 interaction event 前必須檢查第二項，並將 #29 envelope
 中的 canonical `userId` 換成 `subject_id`；不得將兩者一起持久化。
+
+### `Interaction_Events`（Roadmap #2）
+
+`server/migrations/003_interaction-events.up.sql`，由
+`server/scripts/interactionEventsMigration.js` 套用（dry-run 為預設，`--apply` 另需
+`--confirm-shared-mysql`）。
+
+- **沒有任何學號欄位。** 只存 `subject_id`，與其他隱私表一致。
+- `(subject_id, idempotency_key)` 為 UNIQUE：去重不只靠應用層純邏輯，並行請求擠過
+  「檢查」與「寫入」之間的空隙時由資料庫擋下。
+- `expires_at` = `occurred_at` + `PRIVACY_RETENTION.interactionEventDays`（180 天），
+  由 `npm run cleanup:privacy` 一併清理。
+- `exposure_json` 存 `surface`／`trigger`／ordered `candidateSet`／`displayedSet`。
+- `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
 
 ### `Courses`
 
@@ -455,9 +470,12 @@ validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。
 ## InteractionEvent Schema v1（Roadmap #29）
 
 `server/src/data/interactionEventSchema.js` 定義互動事件的正式資料契約、正規化、
-validator、v0 draft → v1 migration 與 idempotency 純邏輯。**目前沒有 API、資料表或
-JSON collection 會持久化這些事件**：#29 只固定事件語意；必須先完成 #33 的 consent、
-匿名化與保存規則，才由 #2 把實際產品操作接上儲存層。
+validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純函式。
+
+**持久化由 Roadmap #2 完成**：`services/interactionEventService.js` 是唯一寫入位置，
+`POST /api/interactions` 是唯一入口，`Interaction_Events` 是唯一儲存體。寫入前一律
+檢查 `personalization_learning` consent，並把 canonical `userId` 換成 `subject_id`
+——canonical ID 只存在於記憶體，不進資料庫。
 
 ```json
 {
@@ -519,13 +537,13 @@ JSON collection 會持久化這些事件**：#29 只固定事件語意；必須�
 
 | `eventType` | 意義 |
 | --- | --- |
-| `recommendation_exposed` | 推薦清單或方案已實際顯示；必須帶 `exposureContext` |
+| `recommendation_exposed` | 推薦清單或方案已實際顯示；必須帶 `exposureContext`。**只能由伺服器在 `services/scheduleService.js` 產生排課結果時自己寫入**（Roadmap #2 對抗式審查修正），任何呼叫端經 `POST /api/interactions` 提交一律拒絕，即使格式合法——client 自己說「系統顯示了什麼」等於自己發證明給自己驗證 |
 | `course_viewed` | 開啟課程詳情 |
 | `course_favorited`／`course_unfavorited` | 加入／移出收藏或關注 |
 | `course_selected`／`course_deselected` | 手動加入／移出排課輸入 |
-| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan` |
-| `course_removed` | 從推薦方案或預排課表移除，尚未正式退選 |
-| `course_withdrawn` | 已進入正式選課狀態後退選 |
+| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan`；`plan.planId` 必須對得上該 `requestId` 實際寫過的曝光紀錄，對不上一律拒絕 |
+| `course_removed` | 在課表之外拒絕一個推薦。**本系統目前沒有這個介面，維持 forward contract，不埋** |
+| `course_withdrawn` | **退掉課表上的課**。本專案不連學校正式選課系統，沒有「已正式選上」這個外部狀態，因此以「課已進入使用者的課表、之後又被拿掉」對應之——roadmap #2 的「加選後退選」由這個事件承接。`source: "system_recommendation"` 時同樣要對得上曝光紀錄的 `displayedSet`，`explicit_selection`／`required` 沒有可驗證的曝光對象，維持格式驗證 |
 | `schedule_regenerated` | 修改條件後要求重新產生課表 |
 
 `candidateSet` 與 `displayedSet` 必須分開，後者也必須是前者的子集；未顯示的候選

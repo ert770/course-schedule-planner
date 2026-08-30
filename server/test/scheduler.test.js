@@ -1753,3 +1753,148 @@ describe('X1-X14 Roadmap #21：hard/soft constraint schema、獨立 validator、
     assert.ok(result.message.length > 0);
   });
 });
+
+describe('Z1-Z7 Roadmap #22：bounded backtracking repair、fallback 與澄清', () => {
+  function greedyTrapCourses() {
+    return [
+      makeCourse(901, {
+        name: '高優先單課', catalogCourseCode: 'TRAP-A', category: '核心選修',
+        dayOfWeek: 1, startPeriod: 1, endPeriod: 4,
+      }),
+      makeCourse(902, {
+        name: '可組合課程一', catalogCourseCode: 'TRAP-B',
+        dayOfWeek: 1, startPeriod: 1, endPeriod: 2,
+      }),
+      makeCourse(903, {
+        name: '可組合課程二', catalogCourseCode: 'TRAP-C',
+        dayOfWeek: 1, startPeriod: 3, endPeriod: 4,
+      }),
+    ];
+  }
+
+  test('Z1 greedy trap：baseline 只有 3 學分，repair 撤銷後找到 6 學分合法解', () => {
+    const constraints = { minCredits: 6, maxCredits: 6 };
+    const greedy = generateSchedule(greedyTrapCourses(), constraints, { solverMode: 'greedy' });
+    const repaired = generateSchedule(greedyTrapCourses(), constraints);
+
+    assert.equal(greedy.totalCredits, 3);
+    assert.equal(greedy.solver.repairAttempted, false);
+    assert.equal(repaired.success, true);
+    assert.equal(repaired.totalCredits, 6);
+    assert.deepEqual(repaired.schedule.map(course => course.id).sort(), [902, 903]);
+    assert.equal(repaired.solver.status, 'solved');
+    assert.equal(repaired.solver.resultSource, 'repair');
+    assert.equal(repaired.solver.improved, true);
+    assert.equal(
+      validateScheduleAgainstConstraints(repaired.schedule, constraints).valid,
+      true
+    );
+  });
+
+  test('Z2 真正無解：完整搜尋後回傳 infeasible、草稿與可驗證衝突', () => {
+    const first = makeCourse(911, { catalogCourseCode: 'REQ-A' });
+    const second = makeCourse(912, { catalogCourseCode: 'REQ-B' });
+    const result = generateSchedule([first, second], {
+      mustTakeCourseIds: [911, 912], minCredits: 6, maxCredits: 6,
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.solver.status, 'infeasible');
+    assert.equal(result.solver.optimizationComplete, true);
+    assert.equal(result.isDraft, true);
+    assert.equal(result.schedule.length, 0);
+    assert.equal(result.draftSchedule.length, 1);
+    assert.ok(result.conflictSet.some(item => item.constraintId === 'TIME_CONFLICT'));
+    assert.ok(result.unmetRequirements.some(item => item.type === 'required-course'));
+    assert.equal(result.clarification.required, true);
+  });
+
+  test('Z3 timeout 有合法 baseline：回傳已驗證 fallback，不把部分搜尋結果冒充正式課表', () => {
+    const result = generateSchedule(
+      [makeCourse(921, { catalogCourseCode: 'LOW-CREDIT' })],
+      { minCredits: 6, maxCredits: 6 },
+      { maxNodes: 1 }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.totalCredits, 3);
+    assert.equal(result.solver.status, 'timeout');
+    assert.equal(result.solver.resultSource, 'greedy');
+    assert.equal(result.solver.fallbackUsed, true);
+    assert.equal(result.isDraft, false);
+    assert.deepEqual(result.draftSchedule, []);
+    assert.ok(result.unmetRequirements.some(item => item.type === 'credit-floor'));
+  });
+
+  test('Z4 timeout 無合法完整解：正式 schedule 為空，最佳部分組合只放 draftSchedule', () => {
+    const first = makeCourse(931, { catalogCourseCode: 'TIMEOUT-A' });
+    const second = makeCourse(932, { catalogCourseCode: 'TIMEOUT-B' });
+    const result = generateSchedule(
+      [first, second],
+      { mustTakeCourseIds: [931, 932], minCredits: 6, maxCredits: 6 },
+      { maxNodes: 2 }
+    );
+
+    assert.equal(result.success, false);
+    assert.equal(result.solver.status, 'timeout');
+    assert.deepEqual(result.schedule, []);
+    assert.equal(result.isDraft, true);
+    assert.equal(result.draftSchedule.length, 1);
+    assert.equal(validateSchedule(result.draftSchedule).valid, true);
+    assert.equal(result.clarification.reason, 'timeout');
+  });
+
+  test('Z5 缺少必要課程資料時回傳 data-insufficient，不誤報 infeasible', () => {
+    const result = generateSchedule(
+      [makeCourse(941, { catalogCourseCode: 'AVAILABLE' })],
+      { mustTakeCourseIds: [999999], minCredits: 3, maxCredits: 6 }
+    );
+
+    assert.equal(result.success, false);
+    assert.equal(result.solver.status, 'data-insufficient');
+    assert.equal(result.clarification.reason, 'data-insufficient');
+    assert.ok(result.unmetRequirements.some(item => (
+      item.type === 'required-course' && item.courseIds.includes(999999)
+    )));
+  });
+
+  test('Z6 相同 seed 與輸入可重現相同課程、狀態及探索統計', () => {
+    const options = { seed: 42 };
+    const constraints = { minCredits: 6, maxCredits: 6 };
+    const first = generateSchedule(greedyTrapCourses(), constraints, options);
+    const second = generateSchedule(greedyTrapCourses(), constraints, options);
+
+    assert.deepEqual(first.schedule.map(course => course.id), second.schedule.map(course => course.id));
+    assert.equal(first.solver.status, second.solver.status);
+    assert.equal(first.solver.nodesVisited, second.solver.nodesVisited);
+    assert.equal(first.solver.prunedNodes, second.solver.prunedNodes);
+  });
+
+  test('Z7 repair 的正課與實習決策維持原子性', () => {
+    const blocker = makeCourse(951, {
+      name: '高優先單課', catalogCourseCode: 'PAIR-BLOCK', category: '核心選修',
+      credits: 3, dayOfWeek: 1, startPeriod: 1, endPeriod: 4,
+    });
+    const regular = makeCourse(952, {
+      name: '配對正課', catalogCourseCode: 'PAIR100', credits: 3,
+      dayOfWeek: 1, startPeriod: 1, endPeriod: 2,
+    });
+    const internship = makeCourse(953, {
+      name: '配對實習', catalogCourseCode: 'PAIR100P', credits: 1,
+      dayOfWeek: 1, startPeriod: 3, endPeriod: 4,
+    });
+    const filler = makeCourse(954, {
+      name: '補足學分', catalogCourseCode: 'PAIR-FILL', credits: 2,
+      dayOfWeek: 2, startPeriod: 3, endPeriod: 4,
+    });
+    const result = generateSchedule(
+      [blocker, regular, internship, filler],
+      { minCredits: 6, maxCredits: 6 }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.solver.resultSource, 'repair');
+    assert.equal(result.schedule.some(course => course.id === 952), true);
+    assert.equal(result.schedule.some(course => course.id === 953), true);
+  });
+});

@@ -1,4 +1,4 @@
-export const PRIVACY_POLICY_VERSION = '2026-08-22.v1';
+export const PRIVACY_POLICY_VERSION = '2026-08-30.v2';
 
 export const PRIVACY_PURPOSES = Object.freeze({
   SERVICE_PROCESSING: 'service_processing',
@@ -17,14 +17,14 @@ export const PRIVACY_RETENTION = Object.freeze({
 
 export const PRIVACY_POLICY = Object.freeze({
   version: PRIVACY_POLICY_VERSION,
-  effectiveAt: '2026-08-22T00:00:00+08:00',
+  effectiveAt: '2026-08-30T00:00:00+08:00',
   purposes: [
     {
       id: PRIVACY_PURPOSES.SERVICE_PROCESSING,
       required: true,
       defaultGranted: false,
       title: '提供排課與 AI 對話服務',
-      description: '使用 Profile、修課歷史、偏好、已存課表及近期對話，提供排課、畢業檢核與對話連續性。對話會傳送至 Gemini。',
+      description: '使用 Profile、修課歷史、偏好、已存課表及近期對話，提供排課、畢業檢核與對話連續性。對話會傳送至 OpenAI。',
       data: ['profile', 'course_history', 'preferences', 'saved_schedules', 'encrypted_raw_chat'],
     },
     {
@@ -45,7 +45,7 @@ export const PRIVACY_POLICY = Object.freeze({
     },
   ],
   retention: PRIVACY_RETENTION,
-  processors: [{ name: 'Google Gemini', purpose: 'AI 對話與課程規劃回覆' }],
+  processors: [{ name: 'OpenAI', purpose: 'AI 對話與課程規劃回覆' }],
 });
 
 export function isPrivacyPurpose(value) {

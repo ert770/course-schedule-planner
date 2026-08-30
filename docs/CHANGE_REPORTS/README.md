@@ -2,6 +2,21 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-30
+
+1. [`intent` 不再謊報工具成功，並放寬 Agent 步數上限](./2026-08-30-honest-intent-and-step-limit.md)
+2. [AI Agent 改用 OpenAI 與原生 tool calling](./2026-08-30-openai-native-tool-calling.md)
+3. [Roadmap #22：bounded backtracking 排課修復](./2026-08-30-roadmap-22-bounded-backtracking-repair.md)
+
+## 2026-08-29
+
+1. [移除退課原因略過選項並完成 Roadmap #21 責任交接](./2026-08-29-remove-withdrawal-skip-option.md)
+2. [Roadmap #22 實作計畫文件](./2026-08-29-roadmap-22-plan-documentation.md)
+
+## 2026-08-26
+
+1. [埋互動 log：推薦曝光、最終選擇與退選原因（Roadmap #2）](./2026-08-26-interaction-logging.md)
+
 ## 2026-08-23
 
 1. [讓 PR #11 與後續 backend pull request 執行 GitHub Actions CI](./2026-08-23-pr11-backend-ci.md)

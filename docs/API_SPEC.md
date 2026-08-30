@@ -68,8 +68,12 @@ canonical ID 或 pseudonymous subject ID。
 
 ### `GET /api/privacy/export`
 
-以 attachment JSON 串流登入者的可攜 Profile、已存課表與同意決定。不包含密碼、內部
-subject ID、Raw Chat 明文、模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
+以 attachment JSON 串流登入者的可攜 Profile、已存課表、同意決定與**自己的互動事件**
+（`data.interactionEvents`，Roadmap #2）。不包含密碼、內部 subject ID、Raw Chat 明文、
+模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
+
+匯出的事件刻意不含 `subject_id` 與 `idempotencyKey`：前者是分析用的內部假名，匯出它
+等於把假名與本人身分綁在同一份檔案裡；後者是去重用的實作細節。
 
 ### `DELETE /api/privacy/chat`
 
@@ -82,8 +86,13 @@ subject ID、Raw Chat 明文、模型 thought 或研究逐筆事件；回應使�
 ### `DELETE /api/privacy/data`
 
 Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: "刪除我的資料"`。
-成功後刪除服務帳號、Profile、修課歷史、已存課表與 Raw Chat，清除 session；最小同意與
-稽核記錄依政策保留 365 天。
+成功後刪除服務帳號、Profile、修課歷史、已存課表、互動事件與 Raw Chat，清除 session；
+最小同意與稽核記錄依政策保留 365 天。回應的 `deleted` 含 `interactionEventsDeleted`。
+
+**執行順序：先標記撤回，再刪除。** 同意紀錄依政策保留 365 天，因此刪除後 consent 檢查
+仍會通過；若不先撤回，一個已通過檢查、正在執行中的 `POST /api/interactions` 可以在刪除
+完成之後才落地，讓這支 API 回報成功卻仍留下個人資料。互動事件的寫入會在同一個交易裡以
+`SELECT ... FOR UPDATE` 檢查撤回狀態，已撤回的 subject 一律回 `rejected`。
 
 ## Health
 
@@ -351,9 +360,18 @@ Request:
     "department": "資訊工程學系",
     "gradeLevel": 3,
     "className": "資訊三甲"
-  }
+  },
+  "surface": "dashboard",
+  "trigger": "manual_generate"
 }
 ```
+
+`surface`（`dashboard`｜`schedule`｜`search`｜`chat`）與 `trigger`（`initial_load`｜
+`manual_generate`｜`preference_regenerate`｜`chat_tool`｜`course_search`）標記這次排課
+在哪個畫面、被什麼動作觸發，只用來寫入 `recommendation_exposed` 互動事件
+（Roadmap #2），**不參與候選池或排課邏輯**。省略或值不在列舉清單中時，伺服器單純
+不記錄這次曝光，不會因此讓排課失敗，也不會用猜的值頂替。Chat 路徑（`run_csp_scheduler`）
+固定由伺服器帶入 `surface:"chat"`／`trigger:"chat_tool"`，不接受模型指定。
 
 `department`、`gradeLevel`、`className` 決定必修範圍。`className` 為班別——
 系上不接受必修換班，未提供時必修只收斂到系所與年級，並在 `warnings` 提醒。
@@ -415,10 +433,50 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 永遠不會被這個機制放寬。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema
 （Roadmap #21）」。
 
+Response 頂層額外回傳 `requestId`（本次排課請求的 UUID），每個 `plans[i]` 額外回傳
+`planId`（格式 `requestId:variantId`）與 `variantId`（`required_first` 等產生策略）。
+這是 Roadmap #2 的曝光事件用來指認「哪一次推薦的哪一個方案」的依據——先前只有
+`plan.id`（variant 名稱），五個方案在不同次排課之間無法區分。識別碼由
+`services/scheduleService.js` 的 `annotateScheduleIdentifiers()` 於請求層附加，
+`skills/scheduler.js` 不參與；REST 與 Chat 兩條路徑共用同一份結果物件。
+成功與失敗回應都帶識別碼。屬向後相容的欄位新增，既有欄位語意不變。
+
+**成功時，伺服器會在回應之前自己寫入一筆 `recommendation_exposed` 互動事件**
+（Roadmap #2 對抗式審查修正）——用的是伺服器剛算出來的 `schedule`／`excludedCourses`，
+不是事後由 client 回報。這是唯一合法的曝光寫入點：`POST /api/interactions`
+一律拒絕 client 提交這個事件類型，即使格式完全合法。寫入前會檢查
+`personalization_learning` consent，未同意時單純不記錄，不影響排課回應；
+寫入失敗同樣不影響排課回應（fail-open，比照評價查詢失敗的既有處理方式）。
+
 Response 除既有欄位外，無解時額外回傳 `conflictSet`（結構化的限制違規清單，取代「只回傳
 第一個錯誤字串」），格式為 `[{ constraintId, severity, relaxable, source, courses, reason }]`，
 附加於 `message`／`warnings` 之外，不取代它們；透過放寬階梯成功時額外回傳
 `relaxedConstraints: [{ constraintId, reason, order }]`。
+
+Roadmap #22 的 bounded backtracking repair 會在主推 greedy baseline 未通過 validator，或所有
+合法 baseline 都低於最低學分時啟動。預設總預算為 2 秒（包含決策組前處理），並回傳下列附加欄位：
+
+| 欄位 | 語意 |
+| --- | --- |
+| `solver.status` | `solved`／`infeasible`／`timeout`／`data-insufficient`；`timeout` 不代表已證明無解 |
+| `solver.repairAttempted` | 本次是否真的啟動 repair |
+| `solver.resultSource` | 正式結果來自 `greedy`、`repair`，或沒有正式結果的 `none` |
+| `solver.fallbackUsed` | repair 未完成時是否退回已經 validator 驗證的 greedy baseline |
+| `solver.timeoutMs`／`elapsedMs` | repair 預算與實際耗時（毫秒） |
+| `solver.nodesVisited`／`prunedNodes`／`seed` | 搜尋統計與可重現 seed |
+| `solver.baseline` | repair 前主推 baseline 的成功、最低學分與偏好摘要；無 baseline 時為 `null` |
+| `solver.improved` | 主推正式結果是否由 repair 取代 baseline |
+| `solver.optimizationComplete` | 是否完整探索所有分支；找到第一個目標解時可能為 `false`，不表示結果未驗證 |
+| `draftSchedule`／`draftUnscheduledCourses` | 沒有完整合法解時供澄清用的最佳部分組合；永遠不是正式成功課表 |
+| `isDraft` | 是否存在上述草稿 |
+| `unmetRequirements` | 未滿足項目，含 `type`、`courseIds`、`constraintIds`、`reason`、`adjustable` |
+| `clarification` | `{ required, reason, questions, adjustableConstraintIds, relatedCourseIds }`，供 Chat 逐項追問 |
+
+若 `success:false`，正式 `schedule` 與正式學分統計維持空／零；部分結果只能讀取
+`draftSchedule`。若 repair timeout 但有通過 validator 的低學分 baseline，回應仍可
+`success:true` 並以 `solver.fallbackUsed:true` 揭露，`unmetRequirements`／`clarification`
+則保留最低學分缺口。沒有候選或指定必要課程 ID 不存在時使用 `data-insufficient`，不得誤報
+`infeasible`。
 
 ### 限制條件合併語意
 
@@ -455,7 +513,32 @@ Response:
   "watchOnly": false,
   "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
   "hasExpressedPreference": true,
-  "reviewDataLoaded": true
+  "reviewDataLoaded": true,
+  "draftSchedule": [],
+  "draftUnscheduledCourses": [],
+  "isDraft": false,
+  "unmetRequirements": [],
+  "clarification": {
+    "required": false,
+    "reason": null,
+    "questions": [],
+    "adjustableConstraintIds": [],
+    "relatedCourseIds": []
+  },
+  "solver": {
+    "status": "solved",
+    "repairAttempted": false,
+    "resultSource": "greedy",
+    "fallbackUsed": false,
+    "timeoutMs": 2000,
+    "elapsedMs": 0,
+    "nodesVisited": 0,
+    "prunedNodes": 0,
+    "seed": 0,
+    "baseline": {},
+    "improved": false,
+    "optimizationComplete": true
+  }
 }
 ```
 
@@ -636,6 +719,21 @@ Response:
 }
 ```
 
+| 欄位 | 說明 |
+| --- | --- |
+| `reply` | 要顯示給使用者的文字。 |
+| `intent` | 這次請求中**最後一個成功**的工具名稱；沒有任何工具成功時為 `general_chat`，呼叫模型本身失敗時為 `error`。 |
+| `data` | 最後一個成功的**可渲染**工具結果（`query_course_db`、`search_dcard_reviews`、`run_csp_scheduler`、`get_easy_courses`），否則為 `null`。 |
+
+**工具被拒絕時不會出現在 `intent` 或 `data` 裡。** Agent 的工具有伺服器端驗證
+（例如 `record_schedule_feedback` 會對照推薦曝光紀錄），被拒時只回一個 `{ error }`
+給模型自行修正。若這兩個欄位照樣帶上該工具名稱，等於對呼叫端宣稱一件沒有發生的事
+——例如顯示「已記錄你的回饋」，但資料庫裡一筆都沒有。因此
+`agentService.applyToolOutcome()` 只在工具成功時更新它們。
+
+`data` 帶的是**完整**結果；送進模型的是投影後的精簡版（見 `docs/PROMPT_DESIGN.md`
+的「排課結果必須先投影」）。
+
 ## Profile
 
 ### `GET /api/profile`
@@ -710,6 +808,63 @@ Response:
   }
 }
 ```
+
+## Interactions
+
+### `POST /api/interactions`
+
+批次上報互動事件（Roadmap #2）。需要登入身分。
+
+Request：
+
+```json
+{ "events": [ { "eventType": "course_withdrawn", "requestId": "...", "actionId": "...", "course": { "catalogCourseCode": "IECS3002", "sectionId": 101 }, "term": { "academicYear": 114, "semester": "下學期" }, "source": "explicit_selection", "feedbackReason": "time" } ] }
+```
+
+事件本體為 `InteractionEvent v1`（見 `docs/DATA_SCHEMA.md`）。`userId`、`eventId`、
+`timestamp`、`schemaVersion`、`idempotencyKey` 與 `versionSnapshot` 的
+`profileSchemaVersion`／`modelVersion` 一律由 server 產生，client 送同名欄位會被覆寫。
+單次最多 50 筆。
+
+**來源驗證（Roadmap #2 對抗式審查修正）**：
+
+- `eventType: "recommendation_exposed"` **一律拒絕**，即使格式完全合法——這個事件類型
+  只由伺服器在產生排課結果時自己寫入（見 `POST /api/schedule/generate`），不接受這支
+  端點提交，回 `rejected` 並附錯誤訊息，不寫入。
+- `eventType: "recommendation_accepted"`，以及 `source: "system_recommendation"` 的
+  `course_withdrawn`，會對照這位使用者、這個 `requestId` 底下伺服器實際寫過的曝光紀錄：
+  接受的 `plan.planId` 必須是當時真的顯示過的方案，退選的 `course.sectionId` 必須出現在
+  當時曝光的 `displayedSet` 裡。對不上（含 `requestId` 查無曝光紀錄）一律回 `rejected`。
+  格式驗證只證明「像一個事件」，不證明「這件事真的發生過」——這個檢查固定在
+  `recordInteractionEvents()` 本身，任何呼叫端都繞不過去，不只是 Agent tool 那條路徑。
+- 其餘 event type（`course_viewed`／`course_favorited`／`course_selected` 等）沒有可對照的
+  伺服器端事實可驗證，維持格式驗證即可寫入。
+
+Response：
+
+```json
+{ "recorded": 2, "results": [ { "actionId": "...", "eventType": "course_withdrawn", "status": "append" } ] }
+```
+
+`status` 為 `append`｜`duplicate`｜`conflict`｜`rejected`（`rejected` 另帶 `errors`）。
+
+**未同意 `personalization_learning` 時回 `200 { "recorded": false, "reason": "CONSENT_NOT_GRANTED" }`，
+不是 `428`。** 這是可選用途，預設關閉是完全合法的狀態，回 428 等於把使用者推到同意牆前面。
+此時**一列都不會寫入**，滿足 #33 的驗收標準。詳見 `docs/DECISIONS.md` ADR-018。
+
+| 狀態碼 | 情境 |
+| --- | --- |
+| 200 | 已處理（含未同意而未記錄） |
+| 400 | `events` 不是陣列或超過 50 筆 |
+| 401 | 未登入 |
+| 403 | 嘗試操作其他使用者的資料 |
+| 429 | 節流（`RATE_LIMITED`，每分鐘超過 20 次）或每日事件量配額（`DAILY_QUOTA_EXCEEDED`，24 小時內超過 2000 筆） |
+| 500 | 儲存體暫時無法使用 |
+
+呼叫端必須把這支端點視為**旁路**：失敗時不得影響加選、移除、排課或聊天。
+前端 `client/src/services/interactionLog.js` 一律 fire-and-forget 並吞掉錯誤，
+`logInteraction()` 回傳的 promise 永不 reject，只在結果裡帶真實狀態
+（確認列會依此決定文案，不會謊報「已記錄」）。
 
 ## Graduation
 

@@ -6,6 +6,8 @@ import { useSchedule } from '../contexts/useSchedule';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, Sun, Save } from 'lucide-react';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
+import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
+import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
 import { coursesAPI, profileAPI, scheduleAPI } from '../services/api';
@@ -23,6 +25,11 @@ export default function SchedulePage() {
     replaceSchedule,
     removeCourse,
     saveCurrentSchedule,
+    buildRecommendation,
+    logCourseViewed,
+    logScheduleRegenerated,
+    acceptRecommendation,
+    personalizationEnabled,
   } = useSchedule();
 
   const [courses, setCourses] = useState([]);
@@ -32,6 +39,8 @@ export default function SchedulePage() {
   const [courseSearchScope, setCourseSearchScope] = useState(null);
   const [loading, setLoading] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
+  const [confirmation, setConfirmation] = useState(null);
+  const [removalCandidate, setRemovalCandidate] = useState(null);
   const [notice, setNotice] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
@@ -102,13 +111,20 @@ export default function SchedulePage() {
 
     setLoading(true);
     try {
+      // 曝光事件現在由伺服器在算出結果時直接寫入（roadmap #2 對抗式審查修正）；
+      // 前端只送 `surface`／`trigger` 標記這次排課在哪個畫面、被什麼觸發。
       const data = await scheduleAPI.generate({
         courseIds: selectedCourses.map(c => c.id),
         constraints: {},
+        surface: 'schedule',
+        trigger: 'manual_generate',
       });
 
+      logScheduleRegenerated(data.requestId, { surface: 'schedule', trigger: 'manual_generate' });
+
       if (data.success) {
-        replaceSchedule(data.schedule);
+        replaceSchedule(data.schedule, buildRecommendation(data));
+        setConfirmation(data.requestId ? { state: 'pending' } : null);
         setShowCourses(false);
         const warnings = data.warnings || [];
         setNotice(
@@ -126,10 +142,41 @@ export default function SchedulePage() {
     }
   };
 
-  const handleScheduleFromChat = (newSchedule) => {
-    replaceSchedule(newSchedule);
+  // ChatPanel 只回傳課表陣列；帶得到完整結果時一併顯示確認提示。曝光事件
+  // 已由伺服器在 `agentService.js` 呼叫排課時直接寫入，前端不用也不能回報。
+  const handleScheduleFromChat = (newSchedule, result = null) => {
+    replaceSchedule(newSchedule, result ? buildRecommendation(result) : null);
+    if (result) {
+      setConfirmation(result.requestId ? { state: 'pending' } : null);
+    }
     setShowCourses(false);
     setNotice(null);
+  };
+
+  const handleConfirmFit = async () => {
+    const outcome = await acceptRecommendation();
+    setConfirmation({ state: 'accepted', outcome });
+  };
+
+  // 未同意個人化學習時不問原因，直接移除。不同意的人不該被問。
+  const handleRemoveClick = (course) => {
+    if (!personalizationEnabled) {
+      removeCourse(course.id);
+      setDetailCourse(null);
+      return;
+    }
+    setRemovalCandidate(course);
+  };
+
+  const handleRemoveConfirmed = (feedbackReason) => {
+    if (removalCandidate) removeCourse(removalCandidate.id, { feedbackReason });
+    setRemovalCandidate(null);
+    setDetailCourse(null);
+  };
+
+  const handleOpenDetail = (course) => {
+    setDetailCourse(course);
+    logCourseViewed(course);
   };
 
   const handleSave = async () => {
@@ -230,6 +277,14 @@ export default function SchedulePage() {
             </div>
           </div>
 
+          <ScheduleConfirmationBar
+            confirmation={confirmation}
+            personalizationEnabled={personalizationEnabled}
+            onConfirmFit={handleConfirmFit}
+            onRequestAdjust={() => setConfirmation({ state: 'adjusting' })}
+            onDismiss={() => setConfirmation(null)}
+          />
+
           {notice && (
             <div className={`schedule-notice ${notice.level}`} id="schedule-page-notice">
               <div className="schedule-notice-head">
@@ -313,13 +368,19 @@ export default function SchedulePage() {
           )}
 
           <div className="schedule-wrapper">
-            <ScheduleGrid courses={schedule} onCourseClick={setDetailCourse} />
+            <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} />
           </div>
         </div>
 
         {/* Right: AI chat */}
         <ChatPanel onScheduleGenerated={handleScheduleFromChat} />
       </div>
+
+      <RemoveReasonDialog
+        course={removalCandidate}
+        onCancel={() => setRemovalCandidate(null)}
+        onConfirm={handleRemoveConfirmed}
+      />
 
       {/* Course Detail Modal */}
       {detailCourse && (
@@ -342,10 +403,7 @@ export default function SchedulePage() {
             )}
             <button
               className="action-btn secondary modal-remove-course"
-              onClick={() => {
-                removeCourse(detailCourse.id);
-                setDetailCourse(null);
-              }}
+              onClick={() => handleRemoveClick(detailCourse)}
             >
               從課表移除
             </button>

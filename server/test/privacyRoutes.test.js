@@ -19,6 +19,8 @@ before(async () => {
   process.env.ANALYTICS_ID_SECRET = 'route-test-analytics-secret-32-characters';
   process.env.PRIVACY_DATA_KEY_V1 = Buffer.alloc(32, 9).toString('base64');
   delete process.env.GEMINI_API_KEY;
+  // Chat 必須維持停用狀態才驗得到 consent gate；有 key 就會真的打 OpenAI。
+  delete process.env.OPENAI_API_KEY;
   resetPrivacyMemoryStoreForTests();
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));

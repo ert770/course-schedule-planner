@@ -61,6 +61,8 @@ Consequences:
 
 Date: 2026-06-08
 
+**Superseded by ADR-020 (2026-08-30).**
+
 Decision:
 The AI agent uses `@google/genai` and `GEMINI_API_KEY`.
 
@@ -612,3 +614,269 @@ Consequences:
   for the response and no display name.
 - Account/data deletion needs a short-lived single-use token and exact confirmation phrase. It deletes
   service data but retains minimal consent/audit records for 365 days.
+
+## ADR-018: Instrument Interactions Without Creating a Consent Wall or a Re-identifiable Dataset
+
+Date: 2026-08-26
+
+Context:
+Roadmap #2 must actually record what the system showed, what the user chose, and why they dropped
+courses — the data prerequisite for #30, #5B, #6, #7, #9 and #32. #29 fixed the event contract and
+#33 fixed consent, pseudonymization and retention, so the remaining decisions are about how
+instrumentation behaves in the product: what happens when the optional consent is off, what the
+storage layer is allowed to hold, how duplicates are prevented, and what counts as acceptance.
+
+Decision:
+
+1. `personalization_learning` is an **optional** purpose that defaults to off. `POST /api/interactions`
+   therefore does **not** use the `requireConsent` middleware. Without consent it returns
+   `200 { recorded: false, reason: 'CONSENT_NOT_GRANTED' }` and writes nothing, instead of the
+   `428 CONSENT_REQUIRED` used for the required `service_processing` purpose. A 428 means "the user
+   must go deal with this first", which would turn an optional analytics choice into a consent wall.
+   The removal-reason dialog is likewise not shown to users who have not opted in: asking a question
+   whose answer is discarded wastes the user's time.
+2. The storage layer holds `subject_id` only. `createInteractionEvent()` produces an envelope with the
+   canonical student ID per #29, but it is swapped for the #33 HMAC subject ID before the INSERT and
+   never persisted. `versionSnapshot.profileSchemaVersion` and `modelVersion` are overwritten with the
+   server's current values — a version snapshot is a fact about the system, not something a caller
+   may declare.
+3. Idempotency is enforced twice: `resolveIdempotentAppend()` in the application layer, and a
+   `(subject_id, idempotency_key)` UNIQUE index in MySQL. The application check alone loses races
+   between concurrent retries of the same action; a duplicate-key error is reported as `duplicate`,
+   never retried or overwritten.
+4. Interaction logging is a side channel. Failure to record must never fail an add, a removal, a
+   schedule generation or a chat turn. The client is fire-and-forget and swallows errors into a
+   console warning. **But a side channel may not lie about its own outcome**: `logInteraction()`
+   returns a never-rejecting promise carrying the real result, and the post-schedule confirmation
+   bar words itself from that result. Consent-off and write-failure both say the feedback was not
+   stored, instead of claiming it will shape future recommendations.
+5. `recommendation_accepted` comes only from an explicit confirmation — the "符合" button, or the
+   Agent's `record_schedule_feedback` after the user answered. **Saving a schedule is not treated as
+   acceptance**: saving a draft is ambiguous. No answer is recorded as no acceptance, not as a
+   negative. The schedule's contents are already covered by `course_selected`, so nothing is lost.
+6. This product maps `course_withdrawn` to "dropping a course that was on the schedule". There is no
+   integration with the university's enrolment system, so #29's literal "withdrew after formally
+   enrolling" has no observable counterpart; roadmap #2's 「加選後退選」 is carried by this event.
+   `course_removed` stays an unused forward contract for "rejecting a recommendation without it ever
+   entering the schedule", which no current screen offers.
+
+7. Writing an event is guarded by the subject's withdrawal state, checked under
+   `SELECT ... FOR UPDATE` in the same transaction as the INSERT, and `DELETE /api/privacy/data`
+   marks the subject withdrawn **before** deleting anything. Consent rows are retained for 365 days
+   after deletion, so a consent check alone still passes post-deletion: an in-flight request that
+   had already passed it could otherwise land after the delete completed, recreate the subject row,
+   and leave personal data behind an endpoint that reported success. With this ordering a concurrent
+   write either commits before the withdrawal (and is removed by the delete that follows) or blocks
+   on the row lock and is rejected.
+8. Feedback provenance is validated against the recorded `recommendation_exposed` event, not against
+   string shape. The Agent is a language model and will fabricate plausible identifiers; checking
+   only "is this a UUID", "does planId have the right prefix" and "does this section exist somewhere
+   in the catalog" is not validation. A `requestId` must belong to this subject, an accepted `planId`
+   must be the plan that was actually shown, and every rejected section must appear in that
+   exposure's `displayedSet` — a user cannot reject a course they were never shown.
+
+Rejected alternative — a separate recommendation-snapshot table for provenance: rejected because
+`recommendation_exposed` already records the subject, requestId, plan and displayed courses. A second
+copy of the same fact drifts, and it would create new personal records for users who never opted in
+to personalization.
+
+Rejected alternative — guard the endpoint with `requireConsent(PERSONALIZATION_LEARNING)`: rejected
+because the resulting 428 is indistinguishable, to the client, from the service-consent wall, and the
+UI would have to special-case an error path for a state that is entirely legitimate.
+
+Rejected alternative — emit `recommendation_accepted` on save as well as on confirmation: rejected
+because the same plan would then be counted twice by #30 through two different actions, and a saved
+draft would be scored as an endorsement.
+
+Consequences:
+
+- #2 is complete; #30 is unblocked and now owns turning these events into weights.
+- Schedule responses gained `requestId` and per-plan `planId`/`variantId`. Without them a
+  `recommendation_exposed` event could not identify which recommendation it described, since
+  `plan.id` is only a variant name reused across every generation.
+- Exposure stores 227 candidates against 8 displayed courses in the demo account's real data; the
+  difference is exactly what stops #30 from reading "never shown" as "seen and rejected".
+- Users who never opt in generate no rows at all, and are never shown the reason dialog.
+- Feedback now requires a prior exposure event. Legitimate feedback is rejected if the client never
+  reported the exposure (e.g. a network failure). That is the safe direction: a missing label costs
+  #30 one data point, a fabricated label corrupts what it learns.
+
+## ADR-019: Server-Authoritative Exposure, Consent Race Closure, and Honest Duplicate Reporting
+
+Date: 2026-08-26 (second adversarial review round)
+
+Context:
+A second `/codex:adversarial-review` pass against `98bf7ac..218358a` (the roadmap #2 commit, itself
+already a first-round adversarial-review fix) found four further issues, two rated high enough to
+recommend not shipping: consent enforcement had its own unguarded race (distinct from the account
+deletion race ADR-018 already closed), the entire ingestion boundary trusted client-asserted
+recommendation provenance rather than validating it, concurrent conflicting writes were silently
+misreported as harmless duplicates, and a client-only signal was used to label courses as
+curriculum-required. All four are confirmed against the actual code paths, not assumed from the
+review text.
+
+Decision:
+
+1. **Consent has its own race, independent of account deletion.** `hasPersonalizationConsent()`
+   checked `granted` but not `policyVersion`, so consent recorded under a retired policy version
+   remained valid forever — inconsistent with `service_processing`, which `getConsentStatus()`
+   already treats as outdated once the policy version changes.
+   `hasCurrentPurposeConsent(subjectId, purpose, connection)` now checks both, and `insertEvent()`
+   re-checks it a second time inside the same transaction and row lock already used for the
+   withdrawal check (`SELECT ... FOR UPDATE` on `Privacy_Subject_State`). `recordConsentChoices()`
+   already acquires that same lock via `touchSubject()`'s `INSERT ... ON DUPLICATE KEY UPDATE`
+   before writing new consent rows, so a write and a revoke on the same subject now always
+   serialize: whichever transaction's lock acquisition happens second necessarily observes the
+   other's already-committed result. Verified against real MySQL with genuinely concurrent
+   connections (`Promise.all` racing a write against a revoke, repeated until both interleavings were
+   observed) — every trial resolved to either a clean `append` (write legitimately preceded the
+   revoke) or a clean rejection (write correctly saw the revoked state), never a write landing after
+   a revoke had already returned to its caller.
+2. **Client-submitted exposure is not exposure.** `POST /api/interactions` passed caller-controlled
+   drafts straight into storage; format validation (UUID shape, enum membership, `displayedSet ⊆
+   candidateSet`) is not proof that a recommendation was ever generated or shown. Any authenticated
+   account could submit a fabricated `recommendation_exposed` row and then reference it from
+   `recommendation_accepted` / `course_withdrawn`, satisfying the round-one `findExposure()` check
+   against data the same caller invented. `recommendation_exposed` is now written only by
+   `services/scheduleService.js`, at the moment it computes a schedule, from the schedule it actually
+   produced — `recordInteractionEvents()` accepts this event type solely when called with
+   `{ allowExposureWrite: true }`, a flag no route ever passes through from client input. A second,
+   separate table for this was considered and rejected for the same reason ADR-018 rejected a
+   recommendation-snapshot table: `recommendation_exposed` is already the record #30 needs to keep,
+   and a parallel copy only drifts.
+3. **Provenance validation moved from one caller into the write path itself.** The first review round
+   added exposure-provenance checking only to `scheduleFeedbackService` (the Agent tool's path). The
+   confirmation bar's "符合" button and the removal-reason dialog call `POST /api/interactions`
+   directly and were completely unvalidated — the far more used, non-Chat surface was the one left
+   unguarded. `recordInteractionEvents()` itself now requires, for `recommendation_accepted` and for
+   `course_withdrawn` sourced as `system_recommendation`, a matching `recommendation_exposed` row for
+   that subject and `requestId`, with the accepted `planId` matching the one actually shown and any
+   withdrawn `sectionId` present in that exposure's `displayedSet`. This applies uniformly regardless
+   of caller, so no future write path can reintroduce this gap by skipping a helper function.
+4. **Duplicate-key collisions are re-verified, not assumed harmless.** `resolveIdempotentAppend()`'s
+   pre-insert check can be raced: two requests sharing an idempotency key but differing in
+   `feedbackReason` (or other fields excluded from the key) can both observe "not yet present" and
+   both attempt to insert; only one wins the UNIQUE constraint. The loser was previously reported as
+   `duplicate` unconditionally, implying its payload matched what got stored, when it did not. The
+   `ER_DUP_ENTRY` handler now reloads the winning row and re-runs `resolveIdempotentAppend()` against
+   it, reporting `conflict` when the payloads differ. The memory store used in tests now enforces the
+   same `(subject, idempotencyKey)` uniqueness MySQL does, so this path is exercised by an actual
+   race (`Promise.all`) in the automated suite, not only by a real-MySQL manual check (which also
+   confirmed the same behavior).
+5. **`course.category === '必修'` is not "required for this student."** `interactionLog.js`'s
+   `courseSource()` used exactly the field `scheduler.js`'s own `CATEGORY_PRIORITY` logic and
+   `isRequiredForStudent()` exist to correct — a cross-department 必修 course is demoted for
+   scheduling purposes but was still being labeled `source: required` for interaction logging,
+   contaminating exactly the signal #29's `source` enum exists to keep clean. `courseSource()` now
+   reads `course.formallyRequired`, the field `addCourseToPlan()` already attaches to every course
+   placed via the student's actual required-course loop (`skipTimePreferences`, driven by
+   `isRequiredForStudent()`). Manually-selected courses (never processed by the scheduler) carry no
+   such field and correctly fall through to `explicit_selection`.
+6. **Ingestion gained a rate limit and a daily quota.** The 50-events-per-request cap bounds a single
+   call, not an account. `utils/rateLimiter.js` adds an in-process fixed-window throttle (20
+   requests/minute/subject) for burst protection, and `wouldExceedDailyQuota()` adds a MySQL-backed
+   count (2000 events/day/subject) that survives a process restart. No new infrastructure (Redis, a
+   dependency) was introduced — the project runs as a single Node process and the existing
+   `Interaction_Events` table already answers the quota query.
+
+Rejected alternative — a full server-side provenance system for every event type (`course_viewed`,
+`course_favorited`, `course_selected`, `schedule_regenerated`): rejected as disproportionate to what
+was found. These event types have no server-side "ground truth" to validate against in the first
+place — a user can view or favorite any catalog course, recommended or not — so a provenance check
+there would only be able to confirm catalog existence, not intent. The two event types where a false
+claim of system origin actually corrupts a downstream training signal (`recommendation_accepted`,
+`system_recommendation`-sourced `course_withdrawn`) are covered.
+
+Consequences:
+
+- `ScheduleContext.jsx` no longer exposes `logRecommendationExposed`; `DashboardPage`/`SchedulePage`
+  pass `surface`/`trigger` in the `POST /api/schedule/generate` request body instead, and the server
+  includes them in the exposure event it writes itself.
+- `POST /api/schedule/generate` and the `run_csp_scheduler` Agent tool both flow through
+  `scheduleService.generateForUser()`, so both surfaces get server-written exposure through the same
+  code path with no duplicated logic; Chat's `surface`/`trigger` are hardcoded server-side rather than
+  left to the model.
+- A consenting account generating a schedule now incurs one additional MySQL write (the exposure
+  event) inside the synchronous `/api/schedule/generate` request; this is wrapped fail-open, matching
+  `loadCourseReviewsSafely()`'s existing pattern in the same file — a write failure logs a warning and
+  the schedule response is unaffected.
+- Legitimate feedback is now rejected if the corresponding exposure write failed or never happened
+  (e.g. the user was not consented at generation time but consents before responding to the
+  confirmation bar). This is the same accepted tradeoff as point 4 above: a missing label costs one
+  data point, a fabricated one corrupts what #30 learns from it.
+
+## ADR-020: OpenAI Responses API With Native Tool Calling
+
+Date: 2026-08-30
+
+Supersedes ADR-004.
+
+Context:
+
+`gemini-2.5-pro` was retired by Google for new users, so `/api/chat` had been
+returning `404 ... no longer available to new users` since at least 2026-08-11.
+The whole chat path was dead, which is why roadmap #2's post-scheduling
+confirmation had never once been exercised in a browser. A course-provided
+OpenAI key made the path recoverable.
+
+Decision:
+
+1. The AI agent uses the `openai` SDK with `OPENAI_API_KEY` and `OPENAI_MODEL`.
+   The model id is never hard-coded — swapping models is deployment config.
+2. Tool calling is **native**, not text-parsed. `promptService.getAgentTools()`
+   declares six tools as JSON Schema; the `[LLM_Thought]` / `[ToolCall]` regex
+   protocol and the `final_answer` pseudo-tool are gone.
+3. The transport is the **Responses API** (`/v1/responses`), not Chat
+   Completions. `gpt-5.6-luna` is a reasoning model and rejects function tools
+   on `/v1/chat/completions` unless `reasoning_effort` is `none`; keeping
+   reasoning matters more here than staying on the older endpoint, because the
+   agent's job is multi-step (decide what is missing → query → schedule →
+   follow up on the result).
+
+Consequences:
+
+- Parameter legality is enforced by the API instead of by model self-discipline:
+  `feedbackReason` is an enum, `requestId` is required, unknown properties are
+  rejected. This was previously only a sentence in the prompt.
+- Requests send no `temperature` (reasoning models do not take it).
+- Tool results must be projected before being fed back. The full scheduler
+  result serializes to 838 KB and blew the context window on the second
+  scheduling request; `summarizeScheduleForModel()` cuts it to ~9.7 KB while
+  the frontend still receives the full object.
+- The prompt now carries a server-supplied `requestId` and section-id table for
+  the last chat recommendation. Tool results are not persisted by
+  `saveChatExchange()`, so without this the model has no legal identifiers on
+  the next turn and `record_schedule_feedback` can never succeed. Provenance
+  validation in `scheduleFeedbackService` is unchanged — this only puts facts
+  the database already holds back in the model's view.
+- The privacy policy version was bumped (see ADR-021); users consented to their
+  chat reaching Gemini, not OpenAI.
+- `@google/genai` stays in `package.json` only because `src/testFunc*.js` still
+  import it. The application has a single provider.
+
+## ADR-021: A Change of AI Processor Requires a Policy Version Bump
+
+Date: 2026-08-30
+
+Context:
+
+`privacyPolicy.js` told users 「對話會傳送至 Gemini」 and listed `Google Gemini`
+as the sole processor. Switching providers makes that statement false, and it is
+the statement users consented to under ADR-017's three-tier consent model.
+
+Decision:
+
+Changing which third party receives user conversations bumps
+`PRIVACY_POLICY_VERSION` (`2026-08-22.v1` → `2026-08-30.v2`), not just the
+wording. Editing the text alone would substitute a different processor under an
+unchanged consent record.
+
+Consequences:
+
+- Every existing consent becomes stale; `requireServiceConsent` returns
+  `428 CONSENT_VERSION_OUTDATED` until the user re-consents in the Privacy
+  Center. Verified in the browser on 2026-08-30.
+- Personalization consent is invalidated too, so interaction logging pauses
+  until re-granted. This is the designed behaviour (TEST_PLAN IL-15).
+- No service code changed: the version-comparison machinery from ADR-017 was
+  built for exactly this case.

@@ -697,24 +697,9 @@
       }
     ],
     "watchlist": [
-      {
-        "id": 101,
-        "name": "密碼學",
-        "category": "選修",
-        "credits": 3
-      },
-      {
-        "id": 102,
-        "name": "人工智慧自然語言導論",
-        "category": "選修",
-        "credits": 3
-      },
-      {
-        "id": 103,
-        "name": "資訊實務案例探討",
-        "category": "選修",
-        "credits": 2
-      }
+      101,
+      102,
+      103
     ],
     "skillTree": [
       {

@@ -15,7 +15,7 @@ Express Backend
         +--> MySQL Data Adapter
         +--> Local JSON fallback data
         |
-        +--> Gemini API
+        +--> OpenAI API
 ```
 
 ## Frontend
@@ -102,7 +102,7 @@ The scheduler receives section-level course objects. `watching` courses are only
 POST /api/chat
   -> services/agentService.js
   -> services/promptService.js
-  -> Gemini
+  -> OpenAI
   -> skills/courseQuery.js, reviewSearch.js, scheduler.js
   -> final reply
 ```

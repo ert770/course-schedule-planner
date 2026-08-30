@@ -45,7 +45,8 @@ export default function ChatPanel({ onScheduleGenerated }) {
 
       // intent 為後端 agentService 的 tool 名稱，須與 run_csp_scheduler 完全一致
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
-        onScheduleGenerated?.(res.data.schedule);
+        // 一併帶回完整結果，呼叫端才拿得到 requestId／planId 記錄曝光（roadmap #2）。
+        onScheduleGenerated?.(res.data.schedule, res.data);
       }
     } catch (err) {
       setMessages(prev => [...prev, {
