@@ -415,6 +415,55 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
 // 這個 subject、這個 requestId、主推方案的 planId，以及 ordered candidateSet 與
 // displayedSet。它就是「系統當時對這個人顯示了什麼」的權威紀錄，再存一份等於
 // 同一份事實存兩處，而且會為尚未同意個人化的使用者建立新的個資。
+// 取這位使用者「最近一次」推薦曝光的 requestId。
+//
+// **為什麼需要這個**：`requestId` 只出現在排課那一輪的 tool 結果裡，而
+// `saveChatExchange()` 只保存使用者訊息與最終文字回覆——下一輪重建對話時
+// tool 結果已經不存在，模型手上沒有任何合法的 requestId 可用。結果是
+// `record_schedule_feedback` 實際上永遠呼叫不成功：Agent 問了「這份課表符合
+// 需求嗎」，使用者答了，訊號卻無處可記。
+//
+// 改由伺服器把「最近一次推薦是哪一次」直接告訴模型，而不是讓模型自己記或猜。
+// 這不會鬆動 `scheduleFeedbackService` 的來源驗證——那裡仍然要對照曝光紀錄，
+// 這裡只是把本來就存在資料庫裡的事實補回模型的視野。
+export async function findLatestExposureRequestId(identity, surface = 'chat') {
+  if (!isPrivacyEnforcementEnabled()) return null;
+  const subjectId = deriveSubjectId(identity.canonicalId);
+  let rows;
+  if (useMemoryStore()) {
+    rows = [...memoryStore.events]
+      .filter(item => item.subjectId === subjectId && item.eventType === 'recommendation_exposed')
+      .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
+      .slice(0, 10);
+  } else if (isMysqlConfigured()) {
+    rows = await queryRows(
+      `SELECT * FROM Interaction_Events
+        WHERE subject_id = ? AND event_type = 'recommendation_exposed'
+        ORDER BY occurred_at DESC LIMIT 10`,
+      [subjectId]
+    );
+  }
+  if (!rows?.length) return null;
+
+  // 只認同一個介面產生的推薦。排課頁一載入就會自動排一次課並寫下
+  // `dashboard / initial_load` 曝光，若不分介面地取「最新一筆」，對話中要記錄的
+  // 回饋會對到使用者根本沒在聊天裡看過的那一份課表，sectionId 因此對不上而被拒。
+  const events = rows.map(row => rowToEvent(row, identity.canonicalId));
+  const match = events.find(event => event.exposureContext?.surface === surface) ?? null;
+  if (!match) return null;
+  return {
+    requestId: match.requestId,
+    planId: match.plan?.planId ?? null,
+    // 課程的 sectionId 和 requestId 一樣，只出現在那一輪的 tool 結果裡。模型只記得
+    // 自己寫過的課名，配不出 id，於是 record_schedule_feedback 會帶著空的
+    // rejectedCourses 被後端拒絕。這裡把「那份課表有哪些課」一併帶出去。
+    displayedSet: (match.exposureContext?.displayedSet || []).map(course => ({
+      sectionId: course.sectionId,
+      catalogCourseCode: course.catalogCourseCode,
+    })),
+  };
+}
+
 export async function findExposure(identity, requestId) {
   if (!isPrivacyEnforcementEnabled()) return null;
   const subjectId = deriveSubjectId(identity.canonicalId);

@@ -57,7 +57,15 @@ export async function recordScheduleFeedback(identity, args = {}, options = {}) 
   const accepted = args.accepted === true;
   const rejected = Array.isArray(args.rejectedCourses) ? args.rejectedCourses : [];
   if (!accepted && rejected.length === 0) {
-    return { error: '使用者尚未表達接受或指出不適合的課程，暫時不要呼叫這個工具。' };
+    // 這段文字是要給模型看的**修正指示**，不是給人看的錯誤說明。
+    // 原本只寫「暫時不要呼叫這個工具」，在使用者其實已經指出某門課不適合時
+    // 等於叫模型放棄——瀏覽器驗收時模型就是照做，回饋因此整個沒被記錄。
+    return {
+      error: 'rejectedCourses 是空的，accepted 也不是 true，因此沒有任何可記錄的回饋。'
+        + '使用者若指出某一門課不適合，請帶上該課的 sectionId 與 reason 重新呼叫一次'
+        + '（sectionId 只能取自 system prompt「最近一次推薦」列出的那份課表）；'
+        + '使用者若是接受這份課表，請改送 accepted: true。兩者都不成立時才不要呼叫。',
+    };
   }
 
   // 來源驗證：這個 requestId 必須真的是這位使用者看過的一次推薦。

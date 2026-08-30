@@ -61,6 +61,8 @@ Consequences:
 
 Date: 2026-06-08
 
+**Superseded by ADR-020 (2026-08-30).**
+
 Decision:
 The AI agent uses `@google/genai` and `GEMINI_API_KEY`.
 
@@ -802,3 +804,79 @@ Consequences:
   (e.g. the user was not consented at generation time but consents before responding to the
   confirmation bar). This is the same accepted tradeoff as point 4 above: a missing label costs one
   data point, a fabricated one corrupts what #30 learns from it.
+
+## ADR-020: OpenAI Responses API With Native Tool Calling
+
+Date: 2026-08-30
+
+Supersedes ADR-004.
+
+Context:
+
+`gemini-2.5-pro` was retired by Google for new users, so `/api/chat` had been
+returning `404 ... no longer available to new users` since at least 2026-08-11.
+The whole chat path was dead, which is why roadmap #2's post-scheduling
+confirmation had never once been exercised in a browser. A course-provided
+OpenAI key made the path recoverable.
+
+Decision:
+
+1. The AI agent uses the `openai` SDK with `OPENAI_API_KEY` and `OPENAI_MODEL`.
+   The model id is never hard-coded — swapping models is deployment config.
+2. Tool calling is **native**, not text-parsed. `promptService.getAgentTools()`
+   declares six tools as JSON Schema; the `[LLM_Thought]` / `[ToolCall]` regex
+   protocol and the `final_answer` pseudo-tool are gone.
+3. The transport is the **Responses API** (`/v1/responses`), not Chat
+   Completions. `gpt-5.6-luna` is a reasoning model and rejects function tools
+   on `/v1/chat/completions` unless `reasoning_effort` is `none`; keeping
+   reasoning matters more here than staying on the older endpoint, because the
+   agent's job is multi-step (decide what is missing → query → schedule →
+   follow up on the result).
+
+Consequences:
+
+- Parameter legality is enforced by the API instead of by model self-discipline:
+  `feedbackReason` is an enum, `requestId` is required, unknown properties are
+  rejected. This was previously only a sentence in the prompt.
+- Requests send no `temperature` (reasoning models do not take it).
+- Tool results must be projected before being fed back. The full scheduler
+  result serializes to 838 KB and blew the context window on the second
+  scheduling request; `summarizeScheduleForModel()` cuts it to ~9.7 KB while
+  the frontend still receives the full object.
+- The prompt now carries a server-supplied `requestId` and section-id table for
+  the last chat recommendation. Tool results are not persisted by
+  `saveChatExchange()`, so without this the model has no legal identifiers on
+  the next turn and `record_schedule_feedback` can never succeed. Provenance
+  validation in `scheduleFeedbackService` is unchanged — this only puts facts
+  the database already holds back in the model's view.
+- The privacy policy version was bumped (see ADR-021); users consented to their
+  chat reaching Gemini, not OpenAI.
+- `@google/genai` stays in `package.json` only because `src/testFunc*.js` still
+  import it. The application has a single provider.
+
+## ADR-021: A Change of AI Processor Requires a Policy Version Bump
+
+Date: 2026-08-30
+
+Context:
+
+`privacyPolicy.js` told users 「對話會傳送至 Gemini」 and listed `Google Gemini`
+as the sole processor. Switching providers makes that statement false, and it is
+the statement users consented to under ADR-017's three-tier consent model.
+
+Decision:
+
+Changing which third party receives user conversations bumps
+`PRIVACY_POLICY_VERSION` (`2026-08-22.v1` → `2026-08-30.v2`), not just the
+wording. Editing the text alone would substitute a different processor under an
+unchanged consent record.
+
+Consequences:
+
+- Every existing consent becomes stale; `requireServiceConsent` returns
+  `428 CONSENT_VERSION_OUTDATED` until the user re-consents in the Privacy
+  Center. Verified in the browser on 2026-08-30.
+- Personalization consent is invalidated too, so interaction logging pauses
+  until re-granted. This is the designed behaviour (TEST_PLAN IL-15).
+- No service code changed: the version-comparison machinery from ADR-017 was
+  built for exactly this case.

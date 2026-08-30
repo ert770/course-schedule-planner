@@ -2,15 +2,28 @@
 
 ## 目前實作
 
-Prompt 建構於 `server/src/services/promptService.js`，Agent 執行於 `server/src/services/agentService.js`。
+Prompt 與工具 schema 建構於 `server/src/services/promptService.js`，Agent 執行於
+`server/src/services/agentService.js`。
 
-目前採文字 ReAct 流程：
+**Provider 與協定（2026-08-30 起）**：OpenAI `gpt-5.6-luna`，走 **Responses API**
+（`/v1/responses`）的**原生 tool calling**。
+
+先前採用的是文字 ReAct 協定——要求模型輸出 `[LLM_Thought]:` 與 `[ToolCall]: {json}`
+再用 regex 撈出來。那等於把參數合法性完全交給模型自律：reason 可以填「太難」、
+requestId 可以亂編、JSON 可以寫壞。現在參數由 JSON Schema 約束，enum 與必填欄位
+在 API 層就被擋下。
+
+不用 Chat Completions 是因為 `gpt-5.6-luna` 是推理模型，在 `/v1/chat/completions`
+掛 function tools 會被擋：
 
 ```text
-[LLM_Thought]: ...
-[ToolCall]: {"tool": "...", "parameters": {...}}
-[Observation]: ...
+Function tools with reasoning_effort are not supported for gpt-5.6-luna in
+/v1/chat/completions. To use function tools, use /v1/responses or set
+reasoning_effort to 'none'.
 ```
+
+另一條路要關掉推理，而這個 Agent 要做的正是多步驟推理，因此選 Responses API。
+同理，請求不送 `temperature`（推理模型不吃這個參數）。
 
 ## System Prompt 目標
 
@@ -25,14 +38,23 @@ System prompt 必須讓 Agent：
 
 ## Tool Call 格式
 
-```json
+工具由 `getAgentTools()` 以 Responses API 的扁平形狀宣告，模型透過 API 的
+`function_call` 回傳參數，不再由文字解析：
+
+```js
 {
-  "tool": "query_course_db",
-  "parameters": {
-    "keyword": "人工智慧"
-  }
+  type: 'function',
+  name: 'query_course_db',
+  description: '…',
+  parameters: { type: 'object', properties: { keyword: { type: 'string' }, … } },
 }
 ```
+
+伺服器把每次呼叫的結果以 `function_call_output` 放回 `input`，模型回傳一則
+**沒有 `function_call` 的訊息**時即為最終回答。
+
+推理項目（`reasoning`）也會原樣放回 `input`；少了它，下一輪模型看不到自己上一輪
+的推理，多步驟流程（查課 → 排課 → 記錄回饋）會退化成互不相干的單步呼叫。
 
 ## 可用工具
 
@@ -44,7 +66,10 @@ System prompt 必須讓 Agent：
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
 | `record_schedule_feedback` | 記錄使用者對已產生課表的最終評價（roadmap #2） |
-| `final_answer` | 輸出最終回答 |
+
+**沒有 `final_answer`**：原生 tool calling 的自然終止就是「模型回一則沒有
+`function_call` 的訊息」。留一個 `final_answer` 工具是在跟 API 對打，也讓模型多繞
+一步、多一次出錯機會。
 
 `query_course_db` 由後端依目前 `userId` 的 profile 建立班級範圍，Agent 不傳入或猜測
 `department`、`grade`、`className`。可用 `category` 為 `必修`、`核心選修`、
@@ -159,9 +184,13 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 排課只是推薦。**使用者是否覺得這份課表符合需求，才是「最終選擇」**，而系統原本
 排完課就結束，完全沒有取得這個訊號。因此：
 
-- `run_csp_scheduler` 成功後，`final_answer` 的 `reply_text` **必須**詢問這份課表是否符合需求，
-  並說明若有不適合的課，請指出是哪一門以及原因。
-- 使用者回答之後，先呼叫 `record_schedule_feedback` 記錄，再用 `final_answer` 回覆。
+- `run_csp_scheduler` 成功後，模型給使用者的那則文字回覆**必須**詢問這份課表是否符合
+  需求，並說明若有不適合的課，請指出是哪一門以及原因。
+- 使用者回答之後，**那一回合的第一個工具呼叫必須是 `record_schedule_feedback`**，
+  記錄完成才可以重新排課、追問或回覆。先重排再記錄的話，新課表的 `sectionId` 對不上
+  舊的曝光紀錄，後端會拒絕，訊號就永久遺失（2026-08-30 瀏覽器驗收實際踩到）。
+- `accepted` 為 true，或 `rejectedCourses` 至少一筆——兩者皆空的呼叫沒有記錄到任何
+  東西，會被拒絕。
 - 使用者沒有回答時**不得**代為假設他接受了這份課表。
 
 參數：
@@ -196,56 +225,107 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 }
 ```
 
-## Observation 格式
+## 工具結果（function_call_output）
 
-工具結果應以 JSON 字串送回模型：
+工具結果以 JSON 字串放回 `input`：
+
+```js
+{ type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(result) }
+```
+
+### 排課結果必須先投影
+
+`run_csp_scheduler` 的完整結果實測 **838 KB**——`excludedCourses` 一項就有 200+ 門
+完整課程物件，`plans` 每個方案又各自帶一份完整課表。原封不動送回模型，第二次排課
+就會撞上 `400 Your input exceeds the context window of this model`。
+
+`agentService.summarizeScheduleForModel()` 因此把結果投影成模型真正會用到的欄位
+（約 9.7 KB）：
+
+- 保留：`requestId`、`solver`、`clarification`、`unmetRequirements`、`warnings`、
+  `hasExpressedPreference`、`reviewDataLoaded`、各方案的 `preferenceScore`／
+  `preferenceBreakdown`／`reviewCoverage`。
+- 課程只留 `sectionId`、`catalogCourseCode`、`name`、`teacher`、`credits`、
+  `timeStr`、`category`、`eligibility`／`eligibilityReason`、`reviewEvidence`；
+  `syllabus`、`description`、`timeBitmask` 等長欄位不送。
+- `excludedCourses` 改成 `excludedCourseCount` 加 15 筆樣本。
+- 各方案不再重複攜帶自己那份完整課表。
+
+**完整結果仍原封不動回傳給前端**渲染課表；被裁掉的只有送進模型的那一份。
+
+## 最終回答格式
+
+模型回傳一則沒有 `function_call` 的訊息即為最終回答，內容就是要顯示給使用者的文字。
+不需要（也不應該）再包一層 `final_answer` 工具。
+
+## 伺服器補進 prompt 的推薦上下文
+
+`saveChatExchange()` 只保存使用者訊息與最終文字回覆，**工具結果不會被保存**。
+因此下一回合模型手上既沒有合法的 `requestId`，也沒有課程 `sectionId`，只記得
+自己寫過的課名——`record_schedule_feedback` 實際上永遠呼叫不成功。
+
+`agentService` 每回合會查出這位使用者**最近一次 `surface: "chat"` 的推薦曝光**，
+把下列內容補進 system prompt：
 
 ```text
-[Observation]:
-{"success":true,"schedule":[]}
+最近一次推薦（使用者目前看到的那一份課表）：
+- requestId：<uuid>
+- planId：<uuid>:interest
+- 這份課表包含的課，record_schedule_feedback 的 sectionId 只能從這裡挑：
+  - sectionId 1303：資訊安全管理
+  …
 ```
 
-## Final Answer 格式
+只認 `chat` 這個 surface 是刻意的：排課頁一載入就會自動排一次課並寫下
+`dashboard / initial_load` 曝光，不分介面地取「最新一筆」會讓對話中的回饋對到
+使用者根本沒在聊天裡看過的那一份課表。
 
-```json
-{
-  "tool": "final_answer",
-  "parameters": {
-    "reply_text": "我幫你產生了三個方案..."
-  }
-}
-```
+這**不會**鬆動來源驗證——`scheduleFeedbackService` 仍然對照曝光紀錄檢查
+`requestId` 與 `sectionId`；這裡只是把資料庫裡本來就有的事實放回模型的視野。
 
-## Few-shot Example
+## Few-shot 情境
 
 使用者：
 
 ```text
-幫我排一個不要早八，最好週一空堂的課表
+幫我排一份不要早八的課表，我對網路和資安有興趣。
 ```
 
-模型：
+模型（實際觀察到的 `function_call` 參數）：
 
-```text
-[LLM_Thought]:
-使用者提出排課限制，需要更新偏好並呼叫排課工具。
-[ToolCall]:
-{"tool":"run_csp_scheduler","parameters":{"noMorningClasses":true,"mondayFree":true}}
+```json
+{"noMorningClasses":true,"minCredits":12,"maxCredits":25,
+ "interests":["網路","資安"],"preferredKeywords":["網路","資安"]}
 ```
+
+排課成功後，模型的文字回覆必須以「這份課表是否符合你的需求？」收尾。使用者回答
+「『資訊安全管理』那門時間不行」之後，**那一回合的第一個工具呼叫必須是**：
+
+```json
+{"requestId":"<上面 prompt 給的 requestId>","accepted":false,
+ "rejectedCourses":[{"sectionId":1303,"reason":"time"}]}
+```
+
+記錄完成之後才可以重新排課。先重排再記錄的話，新課表的 `sectionId` 對不上舊的
+曝光紀錄，後端會拒絕，回饋訊號就永久遺失。
 
 ## 禁止事項
 
-- 不得輸出無效 JSON tool call。
 - 不得在沒有工具結果時宣稱查到課程。
-- 不得將內部 `[LLM_Thought]` 顯示給使用者。
+- 不得把工具回傳的原始 JSON 貼給使用者。
 - 不得要求使用者提供 API key。
 - 不得忽略使用者明確限制。
+- 不得自行編造 `requestId` 或 `sectionId`；只能用 prompt 裡「最近一次推薦」給的值。
 
 ## 維護規則
 
 若新增工具：
 
-1. 更新 `promptService.js`。
-2. 更新 `agentService.js` tool switch。
-3. 更新本文件。
+1. 更新 `promptService.js` 的 `getAgentTools()`（JSON Schema）。
+2. 更新 `agentService.js` 的 `executeAgentTool()` dispatch。
+3. 更新 `server/test/prompt.test.js` 的工具清單與 `server/test/agentTools.test.js`。
+4. 更新本文件。
+
+若新增的工具會回傳大型物件，必須一併決定它的投影方式（見「排課結果必須先投影」），
+不要直接把整包 JSON 餵回模型。
 4. 新增測試案例到 `docs/TEST_PLAN.md`。

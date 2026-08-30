@@ -2,6 +2,11 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-30
+
+1. [AI Agent 改用 OpenAI 與原生 tool calling](./2026-08-30-openai-native-tool-calling.md)
+2. [Roadmap #22：bounded backtracking 排課修復](./2026-08-30-roadmap-22-bounded-backtracking-repair.md)
+
 ## 2026-08-29
 
 1. [移除退課原因略過選項並完成 Roadmap #21 責任交接](./2026-08-29-remove-withdrawal-skip-option.md)

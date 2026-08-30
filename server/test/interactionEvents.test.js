@@ -103,6 +103,8 @@ before(async () => {
   process.env.ANALYTICS_ID_SECRET = 'interaction-test-analytics-secret-32-chars';
   process.env.PRIVACY_DATA_KEY_V1 = Buffer.alloc(32, 5).toString('base64');
   delete process.env.GEMINI_API_KEY;
+  // Chat 必須維持停用狀態才驗得到 consent gate；有 key 就會真的打 OpenAI。
+  delete process.env.OPENAI_API_KEY;
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}/api`;
@@ -512,7 +514,11 @@ describe('#2 recommendation identifiers and post-schedule confirmation', () => {
     await grantPersonalization(identityA);
     await recordExposure();
     const result = await recordScheduleFeedback(identityA, { requestId: REQUEST_ID, accepted: false });
-    assert.match(result.error, /尚未表達/u);
+    // 錯誤文字是要給模型看的修正指示（要它補上 sectionId 或改送 accepted:true），
+    // 這裡驗的是行為：沒有任何回饋被記錄，而且模型收到的是 error 而非成功。
+    assert.ok(result.error, '沒有任何回饋內容時必須回傳 error');
+    assert.match(result.error, /rejectedCourses/u);
+    assert.equal(result.success, undefined);
     assert.equal(await feedbackEventCount(), 0);
   });
 

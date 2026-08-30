@@ -2,13 +2,17 @@
 //
 // agentService 曾新增排課參數卻沒有同步 promptService，
 // 模型不知道那些參數存在，/api/chat 路徑的個人化因此完全未生效。
+//
+// 改用 OpenAI 原生 tool calling 之後，「模型知道哪些參數」的真相從 prompt 字串
+// 搬到了 `getAgentTools()` 的 JSON Schema，因此參數與 enum 類的斷言改成對 schema
+// 檢查；行為規範（要問使用者是否符合需求、不得代答）仍然只存在於 prompt。
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildSystemPrompt } from '../src/services/promptService.js';
+import { buildSystemPrompt, getAgentTools } from '../src/services/promptService.js';
 
-// 與 server/src/services/agentService.js 的 run_csp_scheduler 參數保持一致。
+// 與 server/src/services/constraintService.js 接受的欄位保持一致。
 // 新增參數時必須同時更新 promptService 與這份清單，否則本測試會失敗。
 const SCHEDULER_PARAMS = [
   'minCredits', 'maxCredits', 'maxCoursesPerDay',
@@ -21,32 +25,60 @@ const SCHEDULER_PARAMS = [
   'digitalCreditsNeeded',
 ];
 
-describe('P1 system prompt 含所有排課參數', () => {
-  const prompt = buildSystemPrompt({});
+const tools = getAgentTools();
+// Responses API 的工具是扁平的 { type, name, description, parameters }。
+const toolByName = new Map(tools.map(tool => [tool.name, tool]));
+
+describe('P1 tool schema 含所有排課參數', () => {
+  const scheduler = toolByName.get('run_csp_scheduler');
+
+  test('run_csp_scheduler 工具存在', () => {
+    assert.ok(scheduler, '缺少 run_csp_scheduler 工具');
+  });
 
   for (const param of SCHEDULER_PARAMS) {
     test(`列出 ${param}`, () => {
-      assert.ok(prompt.includes(param), `system prompt 缺少參數 ${param}`);
+      assert.ok(
+        Object.hasOwn(scheduler.parameters.properties, param),
+        `run_csp_scheduler schema 缺少參數 ${param}`
+      );
     });
   }
 
   test('列出所有可用工具', () => {
-    for (const tool of [
+    for (const name of [
       'query_course_db',
       'search_dcard_reviews',
       'get_easy_courses',
       'run_csp_scheduler',
       'update_preferences',
       'record_schedule_feedback',
-      'final_answer',
     ]) {
-      assert.ok(prompt.includes(tool), `system prompt 缺少工具 ${tool}`);
+      assert.ok(toolByName.has(name), `缺少工具 ${name}`);
+    }
+  });
+
+  // 原生 tool calling 的終止條件是「模型回一則沒有 tool_calls 的訊息」。
+  // 留著 final_answer 會讓模型多繞一步，也和 API 的語意打架。
+  test('不再有 final_answer 工具', () => {
+    assert.ok(!toolByName.has('final_answer'), 'final_answer 應由純文字回覆取代');
+  });
+
+  test('每個工具都是合法的 OpenAI function tool', () => {
+    for (const tool of tools) {
+      assert.equal(tool.type, 'function');
+      assert.equal(typeof tool.name, 'string');
+      assert.ok(tool.description, `${tool.name} 缺少 description`);
+      assert.equal(tool.parameters.type, 'object');
+      assert.ok(!('function' in tool), 'Responses API 的工具不再包一層 function');
     }
   });
 
   // roadmap #2：排課只是推薦，使用者是否覺得符合需求才是「最終選擇」。
   // 沒有問，系統就無從得知這份推薦好不好，#30 也就少了最關鍵的一個訊號。
   test('要求排課後必須確認課表是否符合需求', () => {
+    const prompt = buildSystemPrompt({});
+
     assert.ok(prompt.includes('排課後的確認'), 'system prompt 缺少排課後確認章節');
     assert.ok(prompt.includes('是否符合需求'), 'system prompt 未要求詢問是否符合需求');
     assert.ok(
@@ -55,17 +87,33 @@ describe('P1 system prompt 含所有排課參數', () => {
     );
   });
 
+  // 這條規則以前只是 prompt 裡的一句叮嚀，模型可以照樣填「太難」；
+  // 現在由 schema 的 enum 在 API 層擋下。
   test('移除原因只接受七個 enum，不收自由文字', () => {
-    for (const reason of ['time', 'content', 'instructor', 'workload', 'full', 'eligibility', 'other']) {
-      assert.ok(prompt.includes(reason), `system prompt 缺少回饋原因 ${reason}`);
-    }
+    const feedback = toolByName.get('record_schedule_feedback');
+    const reason = feedback.parameters.properties.rejectedCourses.items.properties.reason;
+
+    assert.deepEqual(
+      [...reason.enum].sort(),
+      ['content', 'eligibility', 'full', 'instructor', 'other', 'time', 'workload']
+    );
+  });
+
+  test('record_schedule_feedback 必須帶 requestId', () => {
+    const feedback = toolByName.get('record_schedule_feedback');
+    assert.ok(feedback.parameters.required.includes('requestId'));
   });
 
   test('不向模型暴露修課歷史或已修課號參數', () => {
-    assert.ok(!prompt.includes('completedCourseIds'));
-    assert.ok(!prompt.includes('courseHistory'));
-    assert.ok(!prompt.includes('retakeCourseIds'), '重補修只能由 courseHistory 自動推導');
-    assert.ok(!prompt.includes('failedRequiredCourseIds'));
+    // prompt 與 tool schema 兩邊都要檢查——參數搬到 schema 之後，只查 prompt
+    // 會漏掉真正的入口。
+    const surface = buildSystemPrompt({}) + JSON.stringify(tools);
+
+    assert.ok(!surface.includes('completedCourseIds'));
+    assert.ok(!surface.includes('courseHistory'));
+    assert.ok(!surface.includes('retakeCourseIds'), '重補修只能由 courseHistory 自動推導');
+    assert.ok(!surface.includes('failedRequiredCourseIds'));
+    assert.ok(!surface.includes('courseReviews'), '評價由伺服器查詢，不可由模型提供');
   });
 });
 
@@ -106,11 +154,11 @@ describe('P3 排課結果欄位有告知模型', () => {
   });
 
   test('資格 unknown 必須說成資格待確認，不能宣稱可修', () => {
-    const prompt = buildSystemPrompt({});
+    const surface = buildSystemPrompt({}) + JSON.stringify(tools);
 
-    assert.ok(prompt.includes('eligibility'));
-    assert.ok(prompt.includes('資格待確認'));
-    assert.ok(prompt.includes('不得宣稱使用者確定可修'));
+    assert.ok(surface.includes('eligibility'));
+    assert.ok(surface.includes('資格待確認'));
+    assert.ok(surface.includes('不得宣稱使用者確定可修'));
   });
 
   test('Roadmap #22：clarification.required 時必須依證據追問，草稿不得冒充成功', () => {
