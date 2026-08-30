@@ -1574,7 +1574,7 @@ describe('N1-N15 內容偏好從硬過濾改成軟懲罰', () => {
   });
 });
 
-describe('X1-X14 Roadmap #21：hard/soft constraint schema、獨立 validator、放寬階梯、conflict set', () => {
+describe('X1-X16 Roadmap #21（X15-X16 為 #24 的強度區分）：hard/soft constraint schema、獨立 validator、放寬階梯、conflict set', () => {
   test('X1 allowRelaxation:false（預設）：因時段偏好排不出課表時行為與改動前一致', () => {
     const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
     const result = generateSchedule([course], { noMorningClasses: true, minCredits: 0 });
@@ -1602,6 +1602,45 @@ describe('X1-X14 Roadmap #21：hard/soft constraint schema、獨立 validator、
       ['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES']
     );
     assert.ok(result.warnings.some(w => w.includes('不排早八')));
+  });
+
+  // Roadmap #24：「絕對不上早八」與「必要時可早八」的差別。
+  // `constraintSchema.js` 的分類完全沒動——那是「這個限制本質上可不可以放寬」；
+  // 這裡處理的是「這一次使用者允不允許」。
+  test('X15 nonNegotiablePreferenceIds 指名的偏好，即使允許放寬也不會被放寬', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], {
+      noMorningClasses: true,
+      minCredits: 0,
+      allowRelaxation: true,
+      // 排在使用者順序第一位，證明擋下來的是 nonNegotiable 而不是順序沒輪到。
+      timePreferencePriority: ['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES'],
+      nonNegotiablePreferenceIds: ['NO_MORNING_CLASSES'],
+    });
+
+    assert.ok(
+      !(result.relaxedConstraints || []).some(r => r.constraintId === 'NO_MORNING_CLASSES'),
+      '使用者說絕對不行的偏好不得被自動放寬'
+    );
+    assert.ok(!result.schedule.some(c => c.id === 1), '早八的課仍不該被排進來');
+  });
+
+  // 對照：同樣的情境沒有 nonNegotiablePreferenceIds 就會放寬（等同 X2 的行為），
+  // 用來證明 X4 擋下來的確實是新加的過濾，而不是這個情境本來就排不出來。
+  test('X16 未指名時同一情境仍會放寬（與 X15 的對照組）', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], {
+      noMorningClasses: true,
+      minCredits: 0,
+      allowRelaxation: true,
+      timePreferencePriority: ['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES'],
+    });
+
+    assert.ok(
+      result.relaxedConstraints.some(r => r.constraintId === 'NO_MORNING_CLASSES'),
+      '沒有指名時應照既有行為放寬'
+    );
+    assert.ok(result.schedule.some(c => c.id === 1));
   });
 
   test('X3 allowRelaxation:true 但無解原因是 blockedPeriods：放寬階梯不生效，仍然失敗', () => {

@@ -23,6 +23,8 @@ const SCHEDULER_PARAMS = [
   'weightDaily', 'practicalExam', 'finalReport', 'englishTaught',
   'preferCompact', 'preferEasyCourses', 'preferredKeywords', 'interests', 'preferredTrack',
   'digitalCreditsNeeded',
+  // Roadmap #24：接通既有放寬階梯 + 這次不可放寬的指名。
+  'allowRelaxation', 'nonNegotiablePreferenceIds',
 ];
 
 const tools = getAgentTools();
@@ -52,6 +54,7 @@ describe('P1 tool schema 含所有排課參數', () => {
       'get_easy_courses',
       'run_csp_scheduler',
       'update_preferences',
+      'update_student_profile',
       'record_schedule_feedback',
     ]) {
       assert.ok(toolByName.has(name), `缺少工具 ${name}`);
@@ -173,5 +176,62 @@ describe('P3 排課結果欄位有告知模型', () => {
     assert.ok(prompt.includes('timeout 不等於無解'));
     assert.ok(prompt.includes('不能稱為成功或合法完成的課表'));
     assert.ok(prompt.includes('不得自行發明衝突'));
+  });
+});
+
+describe('P4 Roadmap #24：永久寫入的兩段式確認', () => {
+  test('update_preferences 與 update_student_profile 都收 confirmationToken', () => {
+    for (const name of ['update_preferences', 'update_student_profile']) {
+      assert.ok(
+        Object.hasOwn(toolByName.get(name).parameters.properties, 'confirmationToken'),
+        `${name} 缺少 confirmationToken`
+      );
+    }
+  });
+
+  test('update_student_profile 開放系所、年級與班別三個欄位', () => {
+    const props = toolByName.get('update_student_profile').parameters.properties;
+
+    for (const field of ['department', 'gradeLevel', 'className']) {
+      assert.ok(Object.hasOwn(props, field), `缺少 ${field}`);
+    }
+  });
+
+  // 這三個欄位是身分事實，不是排課偏好——不該混進 update_preferences。
+  test('update_preferences 不得同時開放系所年級班別', () => {
+    const props = toolByName.get('update_preferences').parameters.properties;
+
+    for (const field of ['department', 'gradeLevel', 'className']) {
+      assert.ok(!Object.hasOwn(props, field), `${field} 不該出現在 update_preferences`);
+    }
+  });
+
+  test('system prompt 說明兩段式流程且禁止自行編造 token', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('confirmationToken'));
+    assert.ok(prompt.includes('兩段式'));
+    assert.ok(prompt.includes('不得自行編造 token'));
+  });
+});
+
+describe('P5 Roadmap #24：偏好強度的判讀', () => {
+  test('nonNegotiablePreferenceIds 只接受三個可放寬的偏好', () => {
+    const scheduler = toolByName.get('run_csp_scheduler');
+    const { enum: allowed } = scheduler.parameters.properties.nonNegotiablePreferenceIds.items;
+
+    assert.deepEqual(
+      [...allowed].sort(),
+      ['LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES', 'NO_MORNING_CLASSES']
+    );
+  });
+
+  test('system prompt 教模型分辨語氣強弱', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('allowRelaxation'));
+    assert.ok(prompt.includes('nonNegotiablePreferenceIds'));
+    assert.ok(prompt.includes('絕對不要'), 'prompt 需給出強硬語氣的例子');
+    assert.ok(prompt.includes('盡量不要'), 'prompt 需給出彈性語氣的例子');
   });
 });

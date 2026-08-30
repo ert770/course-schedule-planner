@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-08-31
+
+1. [Roadmap #24：永久寫入確認閘門、身分更正與排課前矛盾偵測](./2026-08-31-roadmap-24-requirement-gate.md)
+
 ## 2026-08-30
 
 1. [`intent` 不再謊報工具成功，並放寬 Agent 步數上限](./2026-08-30-honest-intent-and-step-limit.md)

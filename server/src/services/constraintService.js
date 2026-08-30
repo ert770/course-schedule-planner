@@ -124,6 +124,13 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // `['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES', 'NO_EVENING_CLASSES']`）；
     // 未提供時 `scheduler.js` 會退回 `constraintSchema.js` 的預設順序。
     timePreferencePriority: pickList(input.timePreferencePriority, prefs.timePreferencePriority),
+    // Roadmap #24：這次請求中絕對不可被自動放寬的偏好。
+    //
+    // **純 request、不從 prefs 回填**——「這次絕對不行」是當下這句話的語氣，
+    // 不該靜默沉澱成永久設定；使用者要永久固定應該走 update_preferences。
+    nonNegotiablePreferenceIds: Array.isArray(input.nonNegotiablePreferenceIds)
+      ? input.nonNegotiablePreferenceIds
+      : [],
   };
 }
 

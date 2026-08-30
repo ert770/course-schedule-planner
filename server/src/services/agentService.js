@@ -10,6 +10,7 @@
 //
 // 也因為是推理模型，這裡不送 `temperature`：推理模型不吃這個參數。
 
+import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { buildSystemPrompt, getAgentTools } from './promptService.js';
 import { getUserPreferences, updateUserPreferences } from './memoryService.js';
@@ -19,9 +20,14 @@ import { getEasyCourses, getSentimentSummary } from '../skills/reviewSearch.js';
 import { generateForUser } from './scheduleService.js';
 import { recordScheduleFeedback } from './scheduleFeedbackService.js';
 import { findLatestExposureRequestId } from './interactionEventService.js';
+import {
+  stagePendingChange, consumePendingChange, peekPendingChange,
+} from './pendingChangeService.js';
+import { checkPreflightContradictions } from './requirementPreflight.js';
 import { getAll } from '../db/database.js';
 import { logger } from '../utils/logger.js';
 import { buildStudentScope } from '../skills/courseScope.js';
+import { ALL_FLAGS, tagsToFlags, flagsToTags } from '../data/preferenceTags.js';
 
 let ai = null;
 
@@ -168,6 +174,78 @@ export function summarizeScheduleForModel(result) {
   };
 }
 
+// 只撈 `mustTakeCourseIds` 指到的那幾門課，供排課前的矛盾偵測比對時段用。
+// `getAll('courses')` 有 TTL 快取（`database.js`），不會每回合都下全表查詢。
+async function loadCoursesByIds(ids = []) {
+  const wanted = new Set(ids.map(id => String(id)));
+  if (wanted.size === 0) return new Map();
+  const courses = await getAll('courses');
+  const found = new Map();
+  for (const course of courses) {
+    if (wanted.has(String(course.id))) found.set(Number(course.id), course);
+  }
+  return found;
+}
+
+// 偏好旗標寫回時保住使用者沒提到的偏好。
+//
+// **瀏覽器驗收實際踩到的資料遺失**：`update_preferences` 只送了兩個旗標，
+// `database.js` 的 `extractTags()` 找不到明確的標籤陣列就退回
+// `flagsToTags(payload)`，用「這次這批旗標」重建整份 `preference_tags`——
+// demo 帳號的標籤因此從 5 個被砍成 2 個，`#上機實作考試`／`#全英授課`／
+// `#學到許多知識` 三個使用者從沒提過的偏好被靜默刪掉。
+//
+// 這是既有行為（改動前直接寫入時同樣會發生），但 #24 的主旨正是「不要在使用者
+// 沒同意的情況下動他的資料」，因此一併修掉：把現有標籤換算回旗標，疊上這次
+// 真正變更的旗標，再換算成完整標籤陣列明確送出，讓 `extractTags()` 走明確分支。
+const PREFERENCE_FLAG_KEYS = new Set(ALL_FLAGS);
+
+export function mergePreferenceTags(prefs = {}, staged = {}) {
+  const changed = Object.entries(staged)
+    .filter(([key, value]) => PREFERENCE_FLAG_KEYS.has(key) && typeof value === 'boolean');
+  // 這次沒有動到任何旗標就不要碰標籤，避免無關的寫入順手重寫整份清單。
+  if (changed.length === 0) return null;
+
+  const current = tagsToFlags(prefs.preferenceTags ?? prefs.selectedTags ?? []);
+  return flagsToTags({ ...current, ...Object.fromEntries(changed) });
+}
+
+// Roadmap #24：兩段式永久寫入的共用流程。
+//
+// 第一次呼叫（沒有 token）只暫存並把 token 交給模型，**完全不寫入**；模型必須
+// 先把 `proposedChanges` 講給使用者確認，拿到同意後才帶 token 再呼叫一次。
+// 回傳的是當初暫存的內容，因此第二次呼叫夾帶的任何額外欄位都會被忽略。
+async function runConfirmedWrite({
+  identity, args, changeType, stageChange, consumeChange, write, turnId,
+}) {
+  const { confirmationToken, ...changes } = args;
+
+  if (!confirmationToken) {
+    if (Object.keys(changes).length === 0) {
+      return { error: '沒有要變更的欄位，不需要呼叫這個工具。' };
+    }
+    const { token, expiresAt } = stageChange(identity, changeType, changes, { turnId });
+    return {
+      pendingConfirmation: true,
+      confirmationToken: token,
+      expiresAt,
+      proposedChanges: changes,
+      message: '**尚未寫入任何東西。** 請先用中文把以上變更講給使用者聽並詢問是否確認；'
+        + '取得明確同意後，帶著這個 confirmationToken 再呼叫一次才會生效。',
+    };
+  }
+
+  const staged = consumeChange(identity, changeType, confirmationToken, { turnId });
+  if (!staged) {
+    return {
+      error: 'confirmationToken 無效、已過期、已使用過，或你想在提出變更的同一回合就'
+        + '直接確認——使用者必須真的回覆同意（也就是下一則訊息）之後才能確認。'
+        + '請先把變更內容講給使用者聽，等他回覆。',
+    };
+  }
+  return await write(staged);
+}
+
 /**
  * 執行一個工具呼叫，回傳要餵回模型的 Observation 物件。
  *
@@ -194,6 +272,10 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
     recordFeedback = recordScheduleFeedback,
     easyCourses = getEasyCourses,
     updatePreferences = updateUserPreferences,
+    stageChange = stagePendingChange,
+    consumeChange = consumePendingChange,
+    preflight = checkPreflightContradictions,
+    lookupCourses = loadCoursesByIds,
   } = deps;
 
   try {
@@ -217,6 +299,29 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // `surface`／`trigger` 在這裡固定寫死，不讓模型決定——這次推薦
         // 曝光在哪個畫面、被什麼觸發是系統事實（Chat 介面本身），不是
         // 模型需要理解或可能講錯的東西。
+        // Roadmap #24：排課前先做確定性的矛盾與資料不足檢查。
+        //
+        // #22 的 clarification 是「排完發現排不出來」才產生的；有些問題不必真的
+        // 跑一次排課就能斷定——例如系所無法解析（必修判定其實懸空，先前會靜默
+        // 照排），或使用者指名必修的課正好落在他自己設的封鎖時段裡。
+        const contradiction = preflight({
+          constraints: args,
+          studentScope,
+          courseById: args.mustTakeCourseIds?.length
+            ? await lookupCourses(args.mustTakeCourseIds)
+            : new Map(),
+        });
+        if (contradiction.required) {
+          logger.info('排課前偵測到矛盾或資料不足，改為澄清', { label: 'Preflight' });
+          // 沒有真的排課，所以不會寫入曝光事件——畫面上根本沒顯示過任何課表。
+          return {
+            success: false,
+            clarification: contradiction,
+            solver: { status: 'data-insufficient', repairAttempted: false, resultSource: 'none' },
+            message: '需要先確認幾個條件才能排課。',
+          };
+        }
+
         return await generateSchedule(
           identity, { constraints: args, surface: 'chat', trigger: 'chat_tool' }, { prefs }
         );
@@ -231,10 +336,40 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         return await easyCourses(args.limit || 10);
 
       case 'update_preferences':
-        await updatePreferences(identity, args);
-        // 同一次對話後續的排課要看得到剛更新的偏好，否則模型會以為存了卻沒生效。
-        if (prefs) Object.assign(prefs, args);
-        return { success: true, updatedFields: args };
+        // Roadmap #24：先前這裡直接寫進 MySQL，沒有任何確認步驟——唯一的保護是
+        // system prompt 裡一句模型可以無視的叮嚀，違反 #24 自己的「使用者確認前
+        // 不得永久更新偏好」。現在改成兩段式。
+        return await runConfirmedWrite({
+          identity, args, changeType: 'preferences', stageChange, consumeChange, turnId: ctx.turnId,
+          write: async staged => {
+            const mergedTags = mergePreferenceTags(prefs ?? {}, staged);
+            const payload = mergedTags ? { ...staged, preferenceTags: mergedTags } : staged;
+            await updatePreferences(identity, payload);
+            // 同一次對話後續的排課要看得到剛更新的偏好，否則模型會以為存了卻沒生效。
+            if (prefs) Object.assign(prefs, payload);
+            return { success: true, updatedFields: staged };
+          },
+        });
+
+      case 'update_student_profile':
+        // 系所／年級／班別決定「哪些課是你的必修、你能修哪些課」，答錯會讓整份
+        // 推薦失準，因此與偏好同樣走兩段式確認。
+        return await runConfirmedWrite({
+          identity, args, changeType: 'profile-scope', stageChange, consumeChange, turnId: ctx.turnId,
+          write: async staged => {
+            await updatePreferences(identity, staged);
+            if (prefs) Object.assign(prefs, staged);
+            // **寫回 ctx 而不是區域變數**：`ctx` 在同一次 handleChat 迴圈中是同一個
+            // 物件參考，後續的 query_course_db 會重新從 ctx 取值，因此同回合就生效。
+            // 先前 scope 只在回合開始算一次，改完 profile 也不會重算。
+            ctx.studentScope = buildStudentScope(prefs ?? staged);
+            return {
+              success: true,
+              updatedFields: staged,
+              scopeResolved: ctx.studentScope.resolved,
+            };
+          },
+        });
 
       default:
         return { error: `不明的函數呼叫: ${name}` };
@@ -303,7 +438,17 @@ export async function handleChat(identity, message) {
     logger.warn(`查詢最近一次推薦失敗，本回合不提供 requestId：${err.message}`, { label: 'AgentCore' });
   }
 
-  const systemInstruction = buildSystemPrompt(prefs, { latestExposure });
+  // 待確認的變更也必須由伺服器補進 prompt，理由與 latestExposure 完全相同：
+  // 工具結果不跨回合保存，模型下一回合不會記得上一回合拿到的 confirmationToken
+  // ——實測時它因此又重新暫存一次，永遠走不到寫入那一步。
+  const pendingChanges = ['preferences', 'profile-scope']
+    .map(changeType => {
+      const entry = peekPendingChange(identity, changeType);
+      return entry ? { changeType, token: entry.token, changes: entry.changes } : null;
+    })
+    .filter(Boolean);
+
+  const systemInstruction = buildSystemPrompt(prefs, { latestExposure, pendingChanges });
   logger.info(`組合 Prompt 中。System prompt 長度：${systemInstruction.length} 字元。`, { label: 'Context' });
 
   // `getChatHistory()` 已經是時序排好的 user／assistant 交替陣列，可以直接
@@ -319,7 +464,10 @@ export async function handleChat(identity, message) {
     { role: 'user', content: message },
   ];
 
-  const ctx = { identity, prefs, studentScope };
+  // 每一次 HTTP 回合一個 id。`pendingChangeService` 用它擋掉「同一回合內自己
+  // 暫存又自己確認」——使用者在那中間根本沒機會說話。
+  const turnId = crypto.randomUUID();
+  const ctx = { identity, prefs, studentScope, turnId };
   let responseData = null;
   let detectedIntent = 'general_chat';
   let finalReply = '';

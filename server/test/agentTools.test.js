@@ -110,14 +110,19 @@ describe('AG4 評價查詢', () => {
   });
 });
 
-describe('AG5 update_preferences 同步更新這次對話的 prefs', () => {
+describe('AG5 update_preferences 確認後才寫入，並同步這次對話的 prefs', () => {
   // 不同步的話，同一次對話裡「存好偏好後再排課」會用到舊值，
   // 模型會以為存了卻沒生效。
-  test('寫入後端之後也更新記憶體中的 prefs', async () => {
+  //
+  // Roadmap #24 之後，這個工具是兩段式的——本測試驗的是「確認之後」那一段；
+  // 「確認之前不得寫入」由 `requirementGate.test.js` 的 AG9 負責。
+  test('帶著有效 token 時才寫入後端並更新記憶體中的 prefs', async () => {
     const prefs = { noMorningClasses: false };
-    const result = await executeAgentTool('update_preferences', { noMorningClasses: true }, { ...ctx, prefs }, {
-      updatePreferences: async () => {},
-    });
+    const staged = { noMorningClasses: true };
+    const result = await executeAgentTool(
+      'update_preferences', { confirmationToken: 'tok' }, { ...ctx, prefs },
+      { updatePreferences: async () => {}, consumeChange: () => staged }
+    );
 
     assert.equal(prefs.noMorningClasses, true);
     assert.equal(result.success, true);

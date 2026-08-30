@@ -30,6 +30,10 @@ const COURSE_CATEGORIES = ['必修', '核心選修', '一般選修', '通識', '
 // #30 會把「排不進去」學成「不喜歡」。
 const FEEDBACK_REASONS = ['time', 'content', 'instructor', 'workload', 'full', 'eligibility', 'other'];
 
+// `constraintSchema.js` 中僅有的三個 `relaxable: true` 項目。寫成常數是為了讓
+// prompt 契約測試可以直接比對，避免這裡與 constraint schema 日後漂移。
+const RELAXABLE_PREFERENCE_IDS = ['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES'];
+
 const COURSE_ID_ARRAY = {
   type: 'array',
   items: { type: 'integer' },
@@ -102,6 +106,27 @@ const SCHEDULER_PARAMETERS = {
   },
   preferEasyCourses: { type: 'boolean', description: '使用者想要涼課或好拿高分的課時設為 true。' },
   digitalCreditsNeeded: { type: 'boolean', description: '使用者還需要數位學分時為 true。' },
+
+  // Roadmap #24：把既有的放寬階梯接通。
+  //
+  // `allowRelaxation` 與 `tryRelaxationLadder()` 在 `constraintService.js` 與
+  // `scheduler.js` 早就完整接好，但一直沒有出現在這份 schema 裡；而 schema 是
+  // `additionalProperties: false`，模型送不進來的參數等於不存在——換句話說
+  // **chat 這條路的放寬階梯是結構性死碼**。這也是 roadmap #24 點名的
+  // 「絕對不上早八 vs 必要時可早八」至今無從實作的真正原因。
+  allowRelaxation: {
+    type: 'boolean',
+    description: '排課排不出來時，是否允許引擎自動放寬早八／午休／晚課這類舒適偏好。'
+      + '只有使用者表達了彈性（「盡量」「可以的話」「必要時可以」）才設為 true；'
+      + '使用者說「絕對不」「無論如何都不要」時不要設或設為 false。',
+  },
+  nonNegotiablePreferenceIds: {
+    type: 'array',
+    items: { type: 'string', enum: RELAXABLE_PREFERENCE_IDS },
+    description: '即使 allowRelaxation 為 true，這次也絕對不可被自動放寬的偏好。'
+      + '用來表達使用者語氣特別強硬的那一項，例如「絕對不排早八，但午休可以彈性」'
+      + '就填 ["NO_MORNING_CLASSES"]。只作用於這一次請求，不會變成永久設定。',
+  },
 };
 
 /**
@@ -165,7 +190,10 @@ export function getAgentTools() {
       name: 'update_preferences',
       description:
         '更新使用者長期偏好。只在使用者明確表達要「以後都這樣」時呼叫，'
-        + '單次排課條件請直接帶進 run_csp_scheduler。',
+        + '單次排課條件請直接帶進 run_csp_scheduler。'
+        + '**兩段式**：不帶 confirmationToken 呼叫時只會提出變更、不會寫入，'
+        + '你必須把回傳的 proposedChanges 講給使用者確認；'
+        + '取得明確同意後，帶著回傳的 confirmationToken 再呼叫一次才會真的生效。',
       parameters: {
         type: 'object',
         properties: {
@@ -175,6 +203,33 @@ export function getAgentTools() {
           targetCreditsMin: { type: 'integer' },
           targetCreditsMax: { type: 'integer' },
           blockedPeriods: SCHEDULER_PARAMETERS.blockedPeriods,
+          confirmationToken: {
+            type: 'string',
+            description: '上一次呼叫回傳的 token。使用者確認後才帶，不可自行編造。',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'update_student_profile',
+      description:
+        '更正使用者的系所、年級或班別（例如使用者說「我是資工系」「其實我三年級」）。'
+        + '這三個欄位決定哪些課算他的必修、哪些課他可以修，答錯會讓整份推薦失準，'
+        + '因此與 update_preferences 一樣是兩段式：先不帶 confirmationToken 提出變更，'
+        + '講給使用者確認後，再帶 token 呼叫一次才生效。'
+        + '生效後同一次對話後續的課程查詢會立即改用新的範圍。',
+      parameters: {
+        type: 'object',
+        properties: {
+          department: { type: 'string', description: '系所全名，例如「資訊工程學系」。' },
+          gradeLevel: { type: 'integer', description: '年級，1~7。' },
+          className: { type: 'string', description: '班別，例如「資訊三甲」。' },
+          confirmationToken: {
+            type: 'string',
+            description: '上一次呼叫回傳的 token。使用者確認後才帶，不可自行編造。',
+          },
         },
         additionalProperties: false,
       },
@@ -247,6 +302,21 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
   // 文字回覆——所以下一回合它手上既沒有合法的 requestId，也沒有課程 sectionId，
   // 只記得自己寫過的課名。少了這一段，`record_schedule_feedback` 實際上永遠
   // 呼叫不成功：Agent 問了「這份課表符合需求嗎」，使用者答了，訊號卻無處可記。
+  // 待確認的變更：與「最近一次推薦」同一個理由——工具結果不跨回合保存，
+  // 模型下一回合不會記得自己拿過的 confirmationToken，伺服器必須交還給它。
+  const pendingChanges = context.pendingChanges ?? [];
+  const pendingBlock = pendingChanges.length > 0
+    ? [
+      '',
+      '待使用者確認的變更（尚未寫入任何東西）：',
+      ...pendingChanges.flatMap(item => [
+        `- ${item.changeType}：${JSON.stringify(item.changes)}`,
+        `  使用者若已在最新一則訊息同意，就帶 confirmationToken「${item.token}」`
+          + '再呼叫一次對應的工具完成寫入；他還沒回答或表示不要時，不要帶 token。',
+      ]),
+    ].join('\n')
+    : '';
+
   const latest = context.latestExposure;
   const displayed = latest?.displayedSet ?? [];
   const latestRecommendation = latest?.requestId
@@ -287,6 +357,25 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - preferredKeywords、interests、preferCompact、preferEasyCourses 會決定多個課表方案中要主推哪一個。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
+
+永久變更前必須先取得使用者確認（必做）：
+- update_preferences 與 update_student_profile 都是**兩段式**。第一次呼叫（不帶
+  confirmationToken）只會提出變更，不會寫入任何東西，回傳裡會有 proposedChanges
+  與 confirmationToken。
+- 拿到之後，你必須用中文把「要改成什麼」講清楚並詢問使用者，等他明確同意
+  （「好」「確認」「對」）之後，才帶著那個 confirmationToken 再呼叫一次。
+- 使用者沒有明確同意就不要帶 token 呼叫第二次；也不得自行編造 token。
+- 使用者說「這次就這樣」而不是「以後都這樣」時，不要呼叫 update_preferences，
+  直接把條件帶進 run_csp_scheduler 就好。
+
+偏好強度的判讀：
+- 使用者語氣有彈性（「盡量不要」「可以的話」「必要時可以」）時，把
+  allowRelaxation 設為 true，排不出來時引擎才可以自動放寬早八／午休／晚課。
+- 使用者語氣強硬（「絕對不要」「無論如何都不行」）時，不要設 allowRelaxation，
+  或把該項放進 nonNegotiablePreferenceIds，確保它不會被自動放寬。
+- 兩種語氣混在一句話裡時分開處理，例如「絕對不排早八，但午休可以彈性」應該是
+  allowRelaxation: true 加上 nonNegotiablePreferenceIds: ["NO_MORNING_CLASSES"]。
+- 不要把使用者沒表達過的彈性自行補上——沒說可以放寬就是不可以。
 
 排課後的確認（必做）：
 - run_csp_scheduler 成功後，你給使用者的那則回覆**必須**在說明課表之後，詢問這份課表是否符合需求，
@@ -331,5 +420,5 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 偏好集中排課：${userPrefs.preferCompact ? '是' : '否'}
 - 偏好涼課：${(userPrefs.preferEasyCourses ?? userPrefs.preferEasy) ? '是' : '否'}
 - 興趣關鍵字：${formatList(userPrefs.preferredKeywords, userPrefs.interests, userPrefs.preferenceTags)}
-- 修課路徑：${userPrefs.preferredTrack || '未設定'}${latestRecommendation}`;
+- 修課路徑：${userPrefs.preferredTrack || '未設定'}${latestRecommendation}${pendingBlock}`;
 }

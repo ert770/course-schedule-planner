@@ -2090,9 +2090,15 @@ function tryRelaxationLadder(prepared, constraints, variant) {
   let relaxedFlags = constraints;
   const relaxedConstraints = [];
 
+  // Roadmap #24：使用者這次語氣強硬指名不可放寬的偏好，即使 allowRelaxation
+  // 為 true 也跳過。`constraintSchema.js` 的預設分類完全不動——那是「這個限制
+  // 本質上可不可以放寬」，這裡處理的是「這一次使用者允不允許」。
+  const nonNegotiable = new Set(constraints.nonNegotiablePreferenceIds || []);
+
   for (const constraintId of order) {
     const def = CONSTRAINTS[constraintId];
     if (!def || !def.relaxable || !def.flag) continue;
+    if (nonNegotiable.has(constraintId)) continue;
 
     relaxedFlags = { ...relaxedFlags, [def.flag]: false };
     relaxedConstraints.push({
@@ -2526,6 +2532,10 @@ export {
   OVERLOAD_MAX_CREDITS,
   // roadmap #15：供 scheduleValidator.js 的共同必修完整性複查重用。
   deriveBaseCourseCode,
+  // roadmap #24：排課前的 preflight 產生同樣形狀的 clarification，
+  // `requirementPreflight.test.js` 匯入這個函式比對兩者欄位是否一致，
+  // 避免兩個澄清產生器日後各自漂移。
+  buildClarification,
 };
 
 export default { generateSchedule, checkConflict: timeConflict, validateSchedule };

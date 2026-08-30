@@ -65,6 +65,7 @@ System prompt 必須讓 Agent：
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
+| `update_student_profile` | 更正系所／年級／班別（roadmap #24，兩段式確認） |
 | `record_schedule_feedback` | 記錄使用者對已產生課表的最終評價（roadmap #2） |
 
 **沒有 `final_answer`**：原生 tool calling 的自然終止就是「模型回一則沒有
@@ -100,10 +101,11 @@ System prompt 必須讓 Agent：
 `completedCourseIds` 與 `courseHistory` 都不得出現在 `run_csp_scheduler` 的參數中。
 模型無法可靠得知使用者實際修過哪些課，讓模型提供這些值只會誘導它編造資料。
 
-同一次對話開始時，後端已把 profile（含 `courseHistory`）載入 `prefs`；
+同一次對話開始時，後端已從 MySQL `User_Course_History` 把 profile（含 `courseHistory`）載入 `prefs`；
 `agentService.js` 呼叫 `generateForUser(identity, { constraints: args }, { prefs })`，再由
 `buildScheduleConstraints()` 只取 `prefs.courseHistory`。因此已修排除會自動生效，
 即使模型自行在參數中加入 `courseHistory` 也會被忽略。
+資料庫查詢失敗時 Chat 回 `COURSE_HISTORY_UNAVAILABLE`，不得由模型假設為空歷史後繼續排課。
 
 `retakeCourseIds` 與 `failedRequiredCourseIds` 也不得成為工具參數。重補修只由後端讀取
 Profile 的 `courseHistory`，依最新一次修習結果自動推導，避免模型或 client 指定不存在的
@@ -242,6 +244,46 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 耗盡步數時不會丟掉模型沿途寫出來的內容：優先回傳最後一段非空的文字，真的一個字都
 沒有才用「任務過於複雜，已達最大思考步數」這句罐頭訊息，同時在伺服器記一筆
 `logger.warn`。
+
+### 永久寫入的兩段式確認（Roadmap #24）
+
+`update_preferences` 與 `update_student_profile` 的第一次呼叫**不寫入任何東西**，
+只回傳 `proposedChanges` 與 `confirmationToken`；模型必須把內容講給使用者確認，
+取得同意後帶著 token 再呼叫一次才生效。
+
+伺服器端有兩道保證，都不依賴模型自律：
+
+- **跨回合**：`pendingChangeService` 會拒絕「同一回合內自己暫存又自己確認」
+  （`turnId` 比對）。模型可以在同一回合連續呼叫兩次工具，但使用者在那中間根本
+  沒有機會說話；要求跨回合等於要求使用者真的又送出了一則訊息。
+- **只寫暫存內容**：確認時採用當初暫存的欄位，第二次呼叫夾帶的其他欄位一律忽略
+  ——否則模型可以拿一個使用者確認過的 token 偷渡他從沒同意過的變更。
+
+`confirmationToken` 與 `requestId`、`sectionId` 一樣**由伺服器補進 prompt**：工具
+結果不跨回合保存，模型下一回合不會記得自己拿過的 token（實測時它因此又重新暫存
+一次，永遠走不到寫入）。
+
+### 偏好強度：「絕對不」與「盡量不」（Roadmap #24）
+
+`allowRelaxation` 與 `nonNegotiablePreferenceIds` 兩個參數對應這個區分。
+
+`allowRelaxation` 與 `tryRelaxationLadder()` 在 `constraintService.js` 與
+`scheduler.js` 早就完整接好，但一直沒有出現在工具 schema 裡；schema 是
+`additionalProperties: false`，模型送不進來的參數等於不存在——**chat 這條路的
+放寬階梯先前是結構性死碼**，這才是這個區分至今無從實作的真正原因。
+
+`nonNegotiablePreferenceIds` 只作用於單次請求，**不從已儲存偏好回填**：
+「這次絕對不行」是當下這句話的語氣，不該靜默沉澱成永久設定。
+
+### 排課前的矛盾偵測（Roadmap #24）
+
+`requirementPreflight.js` 在進入排課引擎之前檢查兩件不必真的排一次課就能斷定的事：
+系所／年級無法解析（先前會靜默照排，必修判定其實懸空），以及使用者指名必修的課
+正好落在他自己設定的封鎖時段裡。
+
+回傳形狀與 `scheduler.js` 的 `buildClarification()` 完全一致，模型既有的 #22 澄清
+指令因此可以原封不動套用；`requirementPreflight.test.js` 有一項測試專門釘住兩者的
+欄位一致，避免日後漂移。
 
 ### 排課結果必須先投影
 
