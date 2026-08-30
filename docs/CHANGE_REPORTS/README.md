@@ -11,6 +11,7 @@
 ## 2026-08-29
 
 1. [移除退課原因略過選項並完成 Roadmap #21 責任交接](./2026-08-29-remove-withdrawal-skip-option.md)
+2. [Roadmap #22 實作計畫文件](./2026-08-29-roadmap-22-plan-documentation.md)
 
 ## 2026-08-26
 
