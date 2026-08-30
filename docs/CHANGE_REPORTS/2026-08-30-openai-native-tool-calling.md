@@ -160,6 +160,10 @@ service 程式——版本比對機制（#33）就是為這件事蓋的。
   留有數筆 401。重新登入後 `POST /api/schedule/generate` 回 200，非程式缺陷。
 - 聊天面板的輸入框按 Enter 不會送出，必須點送出鍵。這是既有的前端行為，本次未改動。
 - `src/testFunc.js`、`src/testFunc3.js` 仍是 Gemini 實驗檔，未清理。
+- **`intent` 會謊報**：不論工具成功或被拒都照 `call.name` 設定。當時沒有消費端受影響
+  （兩處都額外檢查 `data?.success`），因此本次未動。
+  **已於後續 commit 修正**——見
+  [`2026-08-30-honest-intent-and-step-limit.md`](./2026-08-30-honest-intent-and-step-limit.md)。
 
 ## 7. 是否 commit 與 push
 

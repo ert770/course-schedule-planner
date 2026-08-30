@@ -39,7 +39,17 @@ function getModel() {
   return process.env.OPENAI_MODEL || 'gpt-5.6-luna';
 }
 
-const MAX_STEPS = 8;
+const DEFAULT_MAX_STEPS = 12;
+// 每一步都是一次模型往返，而且 `input` 會持續累積（推理項目 + 工具結果）。
+// 不設天花板的話，一個卡住的模型會把延遲與費用拉到無界，也會重新逼近剛修好的
+// context window 問題——設定值寫錯（AGENT_MAX_STEPS=1000）不該變成一次失控的請求。
+const MAX_STEPS_CEILING = 20;
+
+export function resolveMaxSteps(raw = process.env.AGENT_MAX_STEPS) {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) return DEFAULT_MAX_STEPS;
+  return Math.min(parsed, MAX_STEPS_CEILING);
+}
 
 // 哪些工具的結果要一併回傳給前端渲染。`record_schedule_feedback` 與
 // `update_preferences` 只是確認訊息，讓它們覆蓋 `data` 會把畫面上已經顯示的
@@ -47,6 +57,29 @@ const MAX_STEPS = 8;
 const RENDERABLE_TOOLS = new Set([
   'query_course_db', 'search_dcard_reviews', 'run_csp_scheduler', 'get_easy_courses',
 ]);
+
+/**
+ * 一次工具呼叫的結果，對回應信封（`intent` / `data`）代表什麼。
+ *
+ * **工具回 `{ error }` 代表那件事沒有發生**，`intent` 與 `data` 都不該宣稱它發生了。
+ * 先前這兩個欄位是在工具執行**之前**就無條件設定的：`record_schedule_feedback`
+ * 被驗證擋下時，回應照樣帶 `intent: "record_schedule_feedback"`，但資料庫裡一筆
+ * 回饋都沒有；`data` 更直接被塞進一個錯誤物件。
+ *
+ * 目前兩個消費端（`ChatPanel.jsx`、`DashboardPage.jsx`）都額外檢查
+ * `data?.success` 才躲過這件事，但那是呼叫端在替上游遮錯——一旦有人照字面相信
+ * `intent`（例如顯示「已記錄你的回饋」），就會對使用者說謊。
+ *
+ * 抽成純函式是為了測得到：`handleChat` 需要真的資料庫與真的模型呼叫，整條迴圈
+ * 無法在單元測試裡跑，但這個判斷本身完全不需要 I/O。
+ */
+export function applyToolOutcome(envelope, toolName, result) {
+  if (result && typeof result === 'object' && result.error) return envelope;
+  return {
+    intent: toolName || envelope.intent,
+    data: RENDERABLE_TOOLS.has(toolName) ? result : envelope.data,
+  };
+}
 
 // 模型送來的參數字串不保證是合法 JSON。壞掉時回 null，讓呼叫端把錯誤當成
 // tool result 餵回去讓模型自己修，而不是讓整個請求爆掉。
@@ -291,8 +324,12 @@ export async function handleChat(identity, message) {
   let detectedIntent = 'general_chat';
   let finalReply = '';
 
+  // 耗盡步數時，模型沿途寫出來的內容不該被丟掉換成罐頭訊息。
+  let lastAssistantText = '';
+
   try {
-    for (let step = 0; step < MAX_STEPS; step++) {
+    const maxSteps = resolveMaxSteps();
+    for (let step = 0; step < maxSteps; step++) {
       logger.trace(`傳送訊息至模型，步驟：${step}`, { label: 'LLM_Stream' });
 
       const response = await client.responses.create({
@@ -309,15 +346,16 @@ export async function handleChat(identity, message) {
       input.push(...output);
 
       const toolCalls = output.filter(item => item.type === 'function_call');
+      const text = (response.output_text || '').trim();
+      if (text) lastAssistantText = text;
 
       // 原生 tool calling 的自然終止：這一輪沒有工具呼叫，就是最後的回答。
       if (toolCalls.length === 0) {
-        finalReply = (response.output_text || '').trim();
+        finalReply = text;
         break;
       }
 
       for (const call of toolCalls) {
-        detectedIntent = call.name || detectedIntent;
         logger.info(`LLM 請求呼叫工具：\`${call.name}\``, { label: 'ToolCall' });
 
         const args = parseToolArguments(call.arguments);
@@ -330,9 +368,9 @@ export async function handleChat(identity, message) {
           result = await executeAgentTool(call.name, args, ctx);
         }
 
-        // 課程／評價／排課結果要回傳給前端渲染；回饋記錄與偏好更新只是
-        // 確認訊息，不覆蓋畫面上已有的資料。
-        if (RENDERABLE_TOOLS.has(call.name)) responseData = result;
+        // `intent` 與 `data` 只反映**真正成功**的工具（見 `applyToolOutcome()`）。
+        ({ intent: detectedIntent, data: responseData } =
+          applyToolOutcome({ intent: detectedIntent, data: responseData }, call.name, result));
 
         // 前端拿完整結果渲染課表；模型只拿投影後的版本（見
         // `summarizeScheduleForModel()`：完整結果有 800KB+，會撐爆 context）。
@@ -353,7 +391,11 @@ export async function handleChat(identity, message) {
     }
 
     if (!finalReply) {
-      finalReply = '任務過於複雜，已達最大思考步數。請嘗試簡化您的需求。';
+      // 走到這裡代表迴圈跑滿了步數卻沒有收到「沒有工具呼叫」的那一則訊息。
+      // 這件事先前在伺服器端完全沒有痕跡，跟工具靜默失敗是同一類問題。
+      logger.warn(`已達最大思考步數（${resolveMaxSteps()}），回覆可能不完整`, { label: 'AgentCore' });
+      finalReply = lastAssistantText
+        || '任務過於複雜，已達最大思考步數。請嘗試簡化您的需求。';
     }
 
     // 只有整次處理成功才原子保存 user/assistant 一對加密訊息。

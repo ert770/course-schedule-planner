@@ -233,6 +233,16 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 { type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(result) }
 ```
 
+### 單次請求的步數上限
+
+一步 = 一次模型往返。上限由 `AGENT_MAX_STEPS` 決定，預設 **12**，硬性天花板 **20**
+（`agentService.resolveMaxSteps()`）。設天花板是因為 `input` 會隨每一步累積推理項目
+與工具結果——沒有上限的話，一個卡住的模型會把延遲、費用與 context 用量拉到無界。
+
+耗盡步數時不會丟掉模型沿途寫出來的內容：優先回傳最後一段非空的文字，真的一個字都
+沒有才用「任務過於複雜，已達最大思考步數」這句罐頭訊息，同時在伺服器記一筆
+`logger.warn`。
+
 ### 排課結果必須先投影
 
 `run_csp_scheduler` 的完整結果實測 **838 KB**——`excludedCourses` 一項就有 200+ 門

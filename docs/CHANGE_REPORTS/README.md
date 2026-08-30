@@ -4,8 +4,9 @@
 
 ## 2026-08-30
 
-1. [AI Agent 改用 OpenAI 與原生 tool calling](./2026-08-30-openai-native-tool-calling.md)
-2. [Roadmap #22：bounded backtracking 排課修復](./2026-08-30-roadmap-22-bounded-backtracking-repair.md)
+1. [`intent` 不再謊報工具成功，並放寬 Agent 步數上限](./2026-08-30-honest-intent-and-step-limit.md)
+2. [AI Agent 改用 OpenAI 與原生 tool calling](./2026-08-30-openai-native-tool-calling.md)
+3. [Roadmap #22：bounded backtracking 排課修復](./2026-08-30-roadmap-22-bounded-backtracking-repair.md)
 
 ## 2026-08-29
 

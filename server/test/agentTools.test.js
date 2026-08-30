@@ -7,7 +7,12 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { executeAgentTool, summarizeScheduleForModel } from '../src/services/agentService.js';
+import {
+  applyToolOutcome,
+  executeAgentTool,
+  resolveMaxSteps,
+  summarizeScheduleForModel,
+} from '../src/services/agentService.js';
 
 const identity = { canonicalId: 'S1130001' };
 const ctx = { identity, prefs: {}, studentScope: { department: '資訊工程系' } };
@@ -198,5 +203,72 @@ describe('AG6 排課結果送進模型前要投影', () => {
     const compact = summarizeScheduleForModel(bigResult());
 
     assert.ok(!('schedule' in compact.plans[0]));
+  });
+});
+
+describe('AG7 intent 與 data 只反映真正成功的工具', () => {
+  const start = { intent: 'general_chat', data: null };
+
+  // 這是實際踩到的情境：模型呼叫了 record_schedule_feedback，但 sectionId 不在
+  // 那次推薦顯示過的課表裡，後端拒絕。回應若照樣說 intent 是它，就是在謊報
+  // 「已經記錄了」——資料庫裡其實一筆都沒有。
+  test('工具被拒時 intent 與 data 都不變', () => {
+    const rejected = { error: '班次 999 不在該次推薦實際顯示的課表中，不能記為退選。' };
+    const after = applyToolOutcome(start, 'record_schedule_feedback', rejected);
+
+    assert.deepEqual(after, start);
+  });
+
+  test('可渲染的工具失敗時，data 不會被塞進錯誤物件', () => {
+    const scheduled = { intent: 'run_csp_scheduler', data: { success: true, requestId: 'r-1' } };
+    const after = applyToolOutcome(scheduled, 'query_course_db', { error: '資料庫連線中斷' });
+
+    assert.equal(after.data.success, true, '既有的課表不該被錯誤物件蓋掉');
+    assert.equal(after.intent, 'run_csp_scheduler');
+  });
+
+  test('run_csp_scheduler 成功時同時更新 intent 與 data', () => {
+    const result = { success: true, requestId: 'r-1' };
+    const after = applyToolOutcome(start, 'run_csp_scheduler', result);
+
+    assert.equal(after.intent, 'run_csp_scheduler');
+    assert.equal(after.data, result);
+  });
+
+  // record_schedule_feedback／update_preferences 只是確認訊息；讓它們覆蓋 data
+  // 會把畫面上已經顯示的課表洗掉。
+  test('非渲染型工具成功時更新 intent 但不覆寫 data', () => {
+    const scheduled = { intent: 'run_csp_scheduler', data: { success: true, requestId: 'r-1' } };
+    const after = applyToolOutcome(scheduled, 'record_schedule_feedback', { success: true, recorded: 1 });
+
+    assert.equal(after.intent, 'record_schedule_feedback');
+    assert.deepEqual(after.data, { success: true, requestId: 'r-1' });
+  });
+
+  test('工具名稱缺漏時沿用既有 intent，不寫入 undefined', () => {
+    const after = applyToolOutcome(start, undefined, { ok: true });
+
+    assert.equal(after.intent, 'general_chat');
+  });
+});
+
+describe('AG8 思考步數上限', () => {
+  test('未設定時使用預設 12', () => {
+    assert.equal(resolveMaxSteps(undefined), 12);
+  });
+
+  test('合法設定值照用', () => {
+    assert.equal(resolveMaxSteps('16'), 16);
+  });
+
+  // 每一步都是一次模型往返，input 還會持續累積。設定值寫錯不該變成失控的請求。
+  test('超過天花板被夾到 20', () => {
+    assert.equal(resolveMaxSteps('1000'), 20);
+  });
+
+  test('垃圾值退回預設而不是 NaN', () => {
+    for (const raw of ['abc', '', '0', '-3', null]) {
+      assert.equal(resolveMaxSteps(raw), 12, `${JSON.stringify(raw)} 應退回預設`);
+    }
   });
 });

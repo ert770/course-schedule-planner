@@ -719,6 +719,21 @@ Response:
 }
 ```
 
+| 欄位 | 說明 |
+| --- | --- |
+| `reply` | 要顯示給使用者的文字。 |
+| `intent` | 這次請求中**最後一個成功**的工具名稱；沒有任何工具成功時為 `general_chat`，呼叫模型本身失敗時為 `error`。 |
+| `data` | 最後一個成功的**可渲染**工具結果（`query_course_db`、`search_dcard_reviews`、`run_csp_scheduler`、`get_easy_courses`），否則為 `null`。 |
+
+**工具被拒絕時不會出現在 `intent` 或 `data` 裡。** Agent 的工具有伺服器端驗證
+（例如 `record_schedule_feedback` 會對照推薦曝光紀錄），被拒時只回一個 `{ error }`
+給模型自行修正。若這兩個欄位照樣帶上該工具名稱，等於對呼叫端宣稱一件沒有發生的事
+——例如顯示「已記錄你的回饋」，但資料庫裡一筆都沒有。因此
+`agentService.applyToolOutcome()` 只在工具成功時更新它們。
+
+`data` 帶的是**完整**結果；送進模型的是投影後的精簡版（見 `docs/PROMPT_DESIGN.md`
+的「排課結果必須先投影」）。
+
 ## Profile
 
 ### `GET /api/profile`
