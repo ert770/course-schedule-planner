@@ -75,7 +75,22 @@ const REQUIREMENT_ENTRIES = [
   ['澳洲新南威爾斯大學設計雙學士學位學程', { total: 128, deptRequired: 60, deptElective: 15, outsideElective: 0, generalBasic: 0, generalElective: 0, unspecified: 53 }],
 ];
 
-export const GRADUATION_REQUIREMENTS = new Map(REQUIREMENT_ENTRIES);
+// 這份對照表的規則版本與出處。
+//
+// Roadmap #23 把規則改成版本化之後，「這批數字是哪一版、出自哪裡」必須是資料的一部分，
+// 才能往下傳到每一筆學分認列。版本解析本身在 `graduationRuleVersions.js`，
+// 本檔只負責**這一版的內容**，不處理「該選哪一版」。
+export const GRADUATION_REQUIREMENTS_RULE_VERSION = '114';
+
+export const GRADUATION_REQUIREMENTS_114_SOURCE_URL =
+  'https://registration.fcu.edu.tw/news/114%E5%AD%B8%E5%B9%B4%E5%BA%A6%E6%96%B0%E7%94%9F%E5%BF%85%E9%81%B8%E4%BF%AE%E7%A7%91%E7%9B%AE/';
+
+export const GRADUATION_REQUIREMENTS_114 = new Map(REQUIREMENT_ENTRIES);
+
+// 既有呼叫端（`routes/graduation.js`、`graduation.test.js`）沿用這個名稱。
+// 目前只有 114 一版，因此兩者指向同一個 Map；補進歷史版本時，未指定入學年度的
+// 呼叫端仍會拿到最新一版，行為不變。
+export const GRADUATION_REQUIREMENTS = GRADUATION_REQUIREMENTS_114;
 
 export function getGraduationRequirement(department) {
   return GRADUATION_REQUIREMENTS.get(String(department || '').trim()) || null;
@@ -87,6 +102,9 @@ export function hasGraduationRequirement(department) {
 
 export default {
   GRADUATION_REQUIREMENTS,
+  GRADUATION_REQUIREMENTS_114,
+  GRADUATION_REQUIREMENTS_114_SOURCE_URL,
+  GRADUATION_REQUIREMENTS_RULE_VERSION,
   getGraduationRequirement,
   hasGraduationRequirement,
 };

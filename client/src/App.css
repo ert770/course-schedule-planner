@@ -696,6 +696,30 @@
 .grad-gap-value.green { color: var(--accent-emerald); }
 .grad-gap-unit { font-size: 0.9rem; font-weight: 600; }
 
+/* 逐門認列追溯（roadmap #23）：預設收起，展開後列出湊出這些學分的每一門課。 */
+.grad-attribution { margin-top: 12px; text-align: left; }
+.grad-attribution-summary {
+  cursor: pointer; font-size: 0.78rem; color: var(--text-muted);
+  text-align: center; list-style: none;
+}
+.grad-attribution-summary::-webkit-details-marker { display: none; }
+.grad-attribution-summary::before { content: '▸ '; }
+.grad-attribution[open] .grad-attribution-summary::before { content: '▾ '; }
+.grad-attribution-list {
+  list-style: none; margin: 10px 0 0; padding: 0;
+  max-height: 220px; overflow-y: auto;
+}
+.grad-attribution-list li {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline;
+  padding: 4px 0; font-size: 0.78rem; border-top: 1px solid var(--border-color);
+}
+.grad-attribution-term { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.grad-attribution-name { overflow-wrap: anywhere; }
+.grad-attribution-credits { color: var(--text-muted); white-space: nowrap; }
+.grad-attribution-source {
+  margin: 8px 0 0; font-size: 0.72rem; color: var(--text-muted); text-align: center;
+}
+
 /* Watchlist */
 .grad-watchlist { }
 .grad-watchlist-title { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }

@@ -157,16 +157,43 @@ export default function GraduationPage() {
                 </div>
               </div>
 
-              {/* Gap cards */}
+              {/* Gap cards。每張卡可展開「這些學分是哪些課修來的」（roadmap #23 逐門追溯）。 */}
               <div className="grad-gaps-grid">
-                {Object.entries(data?.gaps || {}).map(([category, gap]) => (
-                  <div key={category} className="grad-card grad-gap-card">
-                    <div className="grad-gap-label">尚缺{CREDIT_CATEGORY_LABELS[category] || category}</div>
-                    <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
-                      {gap} <span className="grad-gap-unit">學分</span>
+                {Object.entries(data?.gaps || {}).map(([category, gap]) => {
+                  const earnedCourses = data?.attribution?.[category]?.courses || [];
+                  const earnedCredits = data?.attribution?.[category]?.credits ?? 0;
+                  return (
+                    <div key={category} className="grad-card grad-gap-card">
+                      <div className="grad-gap-label">尚缺{CREDIT_CATEGORY_LABELS[category] || category}</div>
+                      <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
+                        {gap} <span className="grad-gap-unit">學分</span>
+                      </div>
+                      {earnedCourses.length > 0 && (
+                        <details className="grad-attribution">
+                          <summary className="grad-attribution-summary">
+                            已修 {earnedCredits} 學分（{earnedCourses.length} 門）
+                          </summary>
+                          <ul className="grad-attribution-list">
+                            {earnedCourses.map(item => (
+                              <li key={`${item.courseCode}-${item.academicYear}-${item.semester}`}>
+                                <span className="grad-attribution-term">
+                                  {item.academicYear}-{item.semester}
+                                </span>
+                                <span className="grad-attribution-name">{item.courseName}</span>
+                                <span className="grad-attribution-credits">{item.credits} 學分</span>
+                              </li>
+                            ))}
+                          </ul>
+                          {/* 認列依據要看得到，不能只有一個數字。 */}
+                          <p className="grad-attribution-source">
+                            依 {earnedCourses[0].ruleVersion || '—'} 學年度規則認列
+                            {earnedCourses[0].needsVerification ? '（尚待人工複核）' : ''}
+                          </p>
+                        </details>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
@@ -206,8 +233,15 @@ export default function GraduationPage() {
                   ) : (
                     <Lightbulb size={16} className="rec-icon suggestion" />
                   )}
+                  {/*
+                    先前這裡不論課程實際分類，一律寫死顯示「💡 通識推薦：」——
+                    後端推的 `班級活動` 真實分類是必修，畫面卻標成通識。
+                    現在改用後端算出的 `fillsGap` 標籤（它已驗證這門課補得上該缺口）。
+                  */}
                   <span className="grad-rec-type">
-                    {rec.type === 'warning' ? '⚠️ 必修警告：' : '💡 通識推薦：'}
+                    {rec.type === 'warning'
+                      ? '⚠️ 必修警告：'
+                      : `💡 ${rec.gapLabel || '課程'}推薦：`}
                   </span>
                 </div>
                 <p className="grad-rec-message">{rec.message}</p>

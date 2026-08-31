@@ -25,6 +25,22 @@
 - 本次彙整日期：2026-08-04，涵蓋**日間學士班 49 個單位**（含 8 個雙聯學位學程與 4 個大一共同學士班）。
 - 目前系統只服務學士班，碩、博、進修、在職專班的科目表尚未彙整。
 
+### 規則版本化（Roadmap #23）
+
+畢業規則自 2026-08-31 起以 `program + degree + admissionYear + ruleVersion` 解析
+（`server/src/data/graduationRuleVersions.js`）。**目前只有 `114` 一個版本的真實資料**——
+112／113 學年度的必選修科目表尚未取得。
+
+因此 112／113 入學生會退回 `114` 版，並在 API 回應的 `warnings` 與畫面上明確標示
+「該學年度適用的版本尚未取得，此結果僅供參考」。**這代表「同一位學生在不同 rule
+version 下比較差異」在系所學分維度目前做不到**，取得歷史科目表前不得宣稱該項完成。
+
+通識維度是例外：`generalEducationCatalog.js` 有 `through-111`／`112-114`／`from-115`
+三個真實版本（見第七節與通識教育中心公告），那一維確實可以做版本比較。
+
+補進歷史版本時：在 `GRADUATION_RULE_VERSIONS` 增加一筆並填上該版的 `requirements` Map，
+`graduationRuleVersions.test.js` 的 G9 版本數斷言會失敗以提醒回來更新本節與 roadmap #23。
+
 ## 一、每學期學分上下限
 
 | 項目 | 學分 |

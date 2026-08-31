@@ -65,7 +65,7 @@ System prompt 必須讓 Agent：
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
-| `update_student_profile` | 更正系所／年級／班別（roadmap #24，兩段式確認） |
+| `update_student_profile` | 更正系所／年級／班別／入學年度（roadmap #24 兩段式確認；入學年度為 #23 選擇畢業規則版本用） |
 | `record_schedule_feedback` | 記錄使用者對已產生課表的最終評價（roadmap #2） |
 
 **沒有 `final_answer`**：原生 tool calling 的自然終止就是「模型回一則沒有
@@ -274,6 +274,31 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 
 `nonNegotiablePreferenceIds` 只作用於單次請求，**不從已儲存偏好回填**：
 「這次絕對不行」是當下這句話的語氣，不該靜默沉澱成永久設定。
+
+**語氣強硬時要整個省略 `allowRelaxation`，不是送 `allowRelaxation: false`。**
+`false` 本來就是預設值，多送一次不改變任何行為，卻會讓同一句話每次產生不同的參數
+——determinism 測試實測就抓到這種只有位元差異的不一致（run1/2 沒送、run3 送了
+`false`）。原本 prompt 只寫「不要設 allowRelaxation」，模型有時理解成「設成 false」，
+2026-08-31 起改為明講省略。理由與 `minCredits`／`maxCredits` 不得從偏好摘要抄同一條：
+**輸出空間愈小，同句重跑愈穩定**。
+
+### 選填欄位的兩個陷阱（2026-08-31 實測）
+
+JSON Schema 能表達「這個欄位可以不填」，但表達不了「沒有就別填」。在
+`update_student_profile` 加上 `admissionYear` 之後實測到兩種失敗，兩者都不是假設：
+
+1. **模型改成先追問，不再做該做的事。** 使用者說「我是資訊工程學系三年級、資訊三乙，
+   請幫我更正」，模型卻先問入學年度，不呼叫工具。A/B 確認因果：帶該欄位 **3/3 不呼叫**，
+   移除該欄位 **3/3 正常呼叫**。修法是在工具說明明講「欄位都是選填，只填使用者這次
+   真的講到的，沒講到就省略，**不要為了把欄位填滿而追問**」。
+2. **模型改用佔位值把欄位湊滿**（修好第 1 點後 4/4 都送 `admissionYear: 0`）。
+   prompt 擋不住這個，因此在**程式**裡擋：`agentService.sanitizeProfileScopeArgs()`
+   丟掉空字串與非正整數，`database.js` 的寫入層再拒絕一次不合法年度。
+   這條特別重要——`normalizeNumber(0, null)` 會回傳 `0`，寫進去就把使用者真實的
+   入學年度洗掉了。
+
+通則：**新增選填欄位時，要同時檢查它會不會讓模型改變既有行為。** 只看「新欄位能不能
+填對」會漏掉「加了它之後別的事做不成了」這一整類問題。
 
 ### 結構化理解回講（Roadmap #24）
 

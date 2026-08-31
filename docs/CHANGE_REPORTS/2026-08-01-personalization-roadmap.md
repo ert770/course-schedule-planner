@@ -10,10 +10,30 @@
 
 ## 最後更新
 
-2026-08-30（完成 #22：保留五個 greedy baseline，新增 2 秒 bounded backtracking repair、
+2026-08-31（**#23 第二次更新**：完成版本化規則模型
+（`program + degree + admissionYear + ruleVersion`）、逐門認列追溯、每筆認列的規則來源與
+待確認狀態、以及補學分推薦的 gap 驗證。`User_Profiles` 新增 `admission_year` 欄位並回填
+（migration `005`，兩個來源交叉驗證）。修掉「0 學分的班級活動被當成通識推薦」這個
+已用線上資料重現的 bug。**#23 仍維持部分完成**——系所學分維度只有 114 一版真實資料，
+多版本比較做不出真東西，不宣稱。過程中加欄位引發兩個真實回歸（模型改為追問入學年度
+而不更正、以及送 `admissionYear: 0` 佔位值會洗掉真實資料），皆已用 A/B 確認因果並修復。
+詳見[變更報告](./2026-08-31-roadmap-23-versioned-graduation-rules.md)）
+
+前次更新：2026-08-31（全文重新盤點：逐份重讀 `docs/CHANGE_REPORTS/` 全部報告與現行程式碼後更新進度。
+**#24 由部分完成改判為已完成**——第二輪報告的驗收標準對照表其實已四條全數達成，本文件先前
+沒有同步更新到那一版結論。**#25 由未開始改判為部分完成**——2026-08-30 遷移 OpenAI 原生
+tool calling、`intent`/`data` 誠實化與 2026-08-31 第一輪的同回合 scope 重建，合計已達成該任務
+四條驗收標準中的三條。**#34 由未開始改判為部分完成**——`agentGoldenSet.test.js` 的 8 題
+golden set 已進 `npm test` 每次執行，是一個小規模但真實存在的 Agent 需求理解 eval。同時修正
+#2「已知限制」一節：Chat 排課後確認的瀏覽器端對端驗收已於 2026-08-30 隨 OpenAI 遷移完成，
+先前記錄的「未完成」已過期。另外，工作區原有一條與 #8 資料基礎相關、獨立進行中的
+`courseHistory` → MySQL `User_Course_History` 遷移工作，已於本次一併 commit（`c6da412`）
+並 push 到 `backend` 分支）
+
+前次更新：2026-08-30（完成 #22：保留五個 greedy baseline，新增 2 秒 bounded backtracking repair、
 deterministic seed、validator gate、四態 solver 結果、合法 fallback、草稿隔離與結構化 Chat 澄清契約）
 
-前次更新：2026-08-29（移除退課原因對話框的「略過，直接移除」；重新劃分 #21 的責任邊界並標記完成：
+再前次：2026-08-29（移除退課原因對話框的「略過，直接移除」；重新劃分 #21 的責任邊界並標記完成：
 廣義先修／共修的資料模型與強制執行歸 #8，`scoreCourse()` 動態讀取 schema 歸 #7，偏好型
 每日課程數上限的需求定義歸 #24）
 
@@ -114,9 +134,9 @@ validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修
 | 20 | 建立 active term 與完整 candidate eligibility 規則 | 🟡 部分完成 | #12、#13A、#13B、#18、#19 |
 | 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | ✅ 已完成（2026-08-29 確認責任邊界） | #3、#19（已完成）、#20（已提供本任務所需能力） |
 | 22 | 為 greedy 排課加入 repair／backtracking 或 constraint solver | ✅ 已完成（2026-08-30） | #21（已完成） |
-| 23 | 建立版本化且可追溯的畢業規則引擎 | 🟡 部分完成 | #12、#19；另需校方正式規則 |
-| 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | 🟡 部分完成（2026-08-31 第二輪）——四條驗收標準達成三條；只剩「同句重跑逐字相同」不宣稱 | #18、#21（均已完成） |
-| 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ⬜ 未開始 | #20、#21、#24 |
+| 23 | 建立版本化且可追溯的畢業規則引擎 | 🟡 部分完成（2026-08-31）——版本化架構、逐門認列追溯、規則來源記錄、補學分推薦驗證均完成；系所學分維度只有 114 一版真實資料，多版本比較仍待歷史科目表 | #12、#19；另需校方正式規則 |
+| 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ✅ 已完成（2026-08-31，兩輪）——四條驗收標準全數達成（第 4 條前提為「無歧義的需求」） | #18、#21（均已完成） |
+| 25 | 改用 structured/native tool calling 與輸入輸出驗證 | 🟡 部分完成（2026-08-31）——OpenAI 原生 tool calling／JSON Schema、誠實 intent/data、同回合 scope 重建、矛盾參數排課前擋下均已完成；非法 course ID 邊界驗證與正式 tool allowlist 政策尚未做 | #20、#21、#24（已完成） |
 | 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成 | #4、#5A、#21、#22 |
 | 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ 未開始 | #10、#26 |
 | 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成 | 無（#18 已完成；雙帳號完整驗收待補） |
@@ -125,7 +145,7 @@ validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修
 | 31 | 建立冷啟動、偏好重設、時間衰減與資料不足策略 | 🟡 部分完成 | #18、#30 |
 | 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | ⬜ 未開始 | #6、#7、#31、#36；另需足夠互動樣本 |
 | 33 | 建立互動資料隱私、匿名化、consent 與保存規則 | ✅ 已完成（2026-08-22） | #18、#29（均已完成） |
-| 34 | 建立 Agent 自然語言需求理解 eval | ⬜ 未開始 | #24、#25 |
+| 34 | 建立 Agent 自然語言需求理解 eval | 🟡 部分完成（2026-08-31）——8 題中文 golden set 已進 `npm test` 每次執行；多輪修正、課名同名、越權要求與大規模標註資料集尚未涵蓋 | #24（已完成）、#25 |
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成 | #15、#21、#22 |
 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成 | #5B、#7、#30、#31 |
 | 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ 未開始 | #25、#26 |
@@ -367,11 +387,16 @@ flowchart LR
 - `recommendationReasonVersion` 的真實值（#26 完成前維持 `null`）。
 - 研究用 aggregate export（ADR-017 已禁止 row-level 事件進入研究匯出）。
 
-### 已知限制
+### 已知限制（2026-08-31 更新：以下已解除）
 
-- Agent 排課後確認的**瀏覽器端對端驗收未完成**：`gemini-2.5-pro` 已遭 Google 下架
-  （`404 ... no longer available to new users`），Chat 整條路徑在本次之前就已失效，與 #2 無關。
-  該路徑的邏輯由 IL-13～IL-13d 與 prompt 契約測試涵蓋；模型版本更新另行處理。
+- ~~Agent 排課後確認的**瀏覽器端對端驗收未完成**：`gemini-2.5-pro` 已遭 Google 下架
+  （`404 ... no longer available to new users`），Chat 整條路徑在本次之前就已失效，與 #2 無關。~~
+  **已於 2026-08-30 隨 OpenAI 原生 tool calling 遷移解除**：換成 `gpt-5.6-luna` 後 Chat 恢復可用，
+  `record_schedule_feedback` 完整跑過一次瀏覽器端對端驗收——資料庫落地的 `course_withdrawn`
+  事件與前一筆 `recommendation_exposed` 的 `request_id` 一致、`section_id` 為實際顯示過的課、
+  `feedback_reason` 為 enum `time`，詳見
+  [`2026-08-30-openai-native-tool-calling.md`](./2026-08-30-openai-native-tool-calling.md) 的
+  「A/B 對照 2」。IL-13～IL-13d 與 prompt 契約測試仍涵蓋邏輯層。
 
 ---
 
@@ -537,6 +562,11 @@ flowchart LR
 - 查詢失敗回 `503 COURSE_HISTORY_UNAVAILABLE`，不會把 DB 故障誤當成零筆歷史。
 - `Courses.prerequisites` 目前仍為 3,086/3,086 NULL；資料來源與正式先修／共修強制執行
   尚未完成，validator 繼續回報 `unchecked`。
+- 已於 2026-08-31 commit（`c6da412`）並 push 到 `backend` 分支；瀏覽器實機驗證 demo 帳號
+  正常路徑（118/128 學分，與遷移前迴歸值一致）與失敗路徑（模擬 503 時顯示錯誤畫面而非
+  假資料）。**尚缺**：本次遷移沒有獨立的 `docs/CHANGE_REPORTS/` 變更報告——工作本身在
+  這份文件寫下這段記錄之前就已存在於工作目錄，commit 時補做了驗證但未回頭補一份完整
+  報告，屬本次盤點順手發現的文件缺口，尚待補上。
 
 ---
 
@@ -1312,7 +1342,10 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 
 ## #23 建立版本化且可追溯的畢業規則引擎
 
-**狀態**：🟡 部分完成（2026-08-08 盤點）——正式來源與可疑標記已建立，但沒有多版本並存
+**狀態**：🟡 部分完成（2026-08-31 更新）——版本化架構、逐門認列追溯、規則來源與待確認
+狀態、補學分推薦驗證均已完成；**系所學分維度只有 114 一版真實資料**，多版本比較仍待
+取得歷史科目表。詳見
+[變更報告](./2026-08-31-roadmap-23-versioned-graduation-rules.md)
 
 **相依**：#12、#19；外部相依為系辦或校方正式畢業規則、適用入學年度及學制確認。
 
@@ -1352,13 +1385,43 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 - 通識共同必修 3 學分（軍訓國防科技 1、體育 2、班級活動）不計入畢業學分的規則已實作於 `countsTowardGraduation()`，並反映在 `validateSchedule()` 的 `graduationCredits`。
 - 缺少歷史修課時 `GET /api/graduation/:studentId` 回傳不可計算原因，前端顯示提示而非虛構 fallback。
 
-**尚未完成**
+**尚未完成（2026-08-08 記錄；2026-08-31 逐條複查後更新如下）**
 
-- **沒有版本化**。`GRADUATION_REQUIREMENTS` 是單一 `Map`，只有 114 學年度一個版本，沒有 `admissionYear` 或 `ruleVersion` 維度。同一位學生無法在不同 rule version 下比較差異。
-- 規則模型缺 `program + degree + admissionYear + ruleVersion` 的鍵；目前只以系所全名為鍵。
-- **沒有逐門歷史課程分類**。學分是預先彙整的總數（`completedCredits: 118` 與四個分類小計），不是由 `courseHistory` 逐門推導，因此無法追溯「這 61 學分本系必修是哪些課湊出來的」。
-- 每筆認列沒有記錄規則來源與人工待確認狀態。
-- **補學分推薦仍未驗證能否補足指定 gap**：專題進度報告實測顯示，推薦只取同系第一門未完成課程，甚至把 0 學分的「班級活動」顯示成通識推薦——這條驗收標準明確**未通過**。
+- ~~**沒有版本化**。`GRADUATION_REQUIREMENTS` 是單一 `Map`⋯⋯~~
+  **架構已完成（2026-08-31）**：`server/src/data/graduationRuleVersions.js` 的
+  `resolveGraduationRule({ program, degree, admissionYear })`，寫法沿用
+  `generalEducationCatalog.js` 既有的版本化模式。`User_Profiles.admission_year` 欄位
+  已新增並回填（migration `005_admission-year`）。
+  **但資料仍只有一版**：校方只公布 114 學年度必選修科目表，112／113 尚未取得，
+  因此「同一位學生在不同 rule version 下比較差異」在**系所學分維度依然做不到**——
+  這是本項維持部分完成的唯一原因。112／113 入學生會退回 114 版並明確標示
+  `appliedFallbackVersion` 與警告，不假裝那是他那年的規則。
+  通識維度是例外，`through-111`／`112-114`／`from-115` 三個版本都是真實資料。
+- ~~規則模型缺 `program + degree + admissionYear + ruleVersion` 的鍵~~ → **已完成**。
+- ~~**沒有逐門歷史課程分類**⋯⋯`completedCredits: 118`⋯⋯~~
+  **這條在寫下時就已經過期**：本段標的是 2026-08-08 盤點，但 2026-08-11 起
+  `getEarnedCredits()` 就是由 `courseHistory` 逐門推導，`completedCredits` 已從
+  `users.json` 移除；MySQL `User_Course_History` 每一列也都帶 `graduation_category`。
+  真正缺的只是「把哪些課湊出 61 學分呈現出來」，已由
+  `getEarnedCreditsAttribution()` 與畢業頁的可展開清單完成（2026-08-31）。
+- ~~每筆認列沒有記錄規則來源與人工待確認狀態~~ → **已完成**：每一筆帶
+  `ruleVersion`／`ruleSource`／`needsVerification`／`attributionSource`。
+- ~~**補學分推薦仍未驗證能否補足指定 gap**⋯⋯~~ → **已完成（2026-08-31）**。
+  改動前的行為已用線上資料重現：資訊工程學系 119 門候選裡 `departmentCourses[0]`
+  確實是 0 學分的 `班級活動`，前端再一律標成「通識推薦」。現在推薦會先排除不計入
+  畢業學分的課、算出補到哪個 gap、只留缺口大於 0 者，並附 `fillsGap` 讓前端顯示
+  正確標籤。A/B 實機驗證見變更報告第 6 節。
+
+**仍未完成**
+
+- **系所學分維度的多版本比較**（等 112／113 必選修科目表）。
+- **與系辦確認的 golden student cases**：目前只有 demo 一位，且其分類來自匯入的
+  成績單而非系辦核對，因此該條驗收標準不宣稱。
+- 逐門認列的來源仍是成績單分類，不是官方逐門認列表。
+- `withdrawn`／`transferred`／`exempted` 多狀態模型（需校方對「停修是否計入」的正式規則）。
+- 跨院認抵 6／4 學分上限與 112-1～114-1 舊學期逐門課號比對（缺歷史課程檢索資料）。
+- 補學分推薦目前只從**本系開的課**挑，因此 `general`／`external` 缺口實務上補不到
+  通識或他系的課；缺口分類的對映與驗證已就位，擴大候選範圍屬另一件事。
 
 ### 新增待辦：完整歷史通識畢業認列（由 #12B 移入，2026-08-14）
 
@@ -1389,19 +1452,30 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 
 ## #24 建立結構化需求模型、矛盾偵測與澄清對話
 
-**狀態**：🟡 部分完成（2026-08-31，兩輪）
+**狀態**：✅ 已完成（2026-08-31，兩輪；2026-08-31 盤點時發現第二輪報告本身已達成
+四條驗收標準，本文件先前未同步更新到那一版結論，已更正為已完成）
 
 第一輪補齊四個「系統自己違反本任務規範」的缺口（未確認就永久寫入、無法更正系所
 年級班別、scope 不重建、放寬階梯從 chat 結構性不可達）——見
 [變更報告](./2026-08-31-roadmap-24-requirement-gate.md)。
 
-第二輪把第一輪「不宣稱完成」的三項補上——結構性矛盾擴充到 11 項並宣告完整、
-新增結構化理解回講、golden set 進 `npm test`（實測 8/8）——見
-[第二輪報告](./2026-08-31-roadmap-24-golden-set-and-interpretation.md)。
+第二輪把第一輪「不宣稱完成」的三項補上——結構性矛盾擴充到 12 項並宣告完整、
+新增結構化理解回講、golden set 進 `npm test`（實測 8/8）；同一份報告的第 7 節
+又追加把理解回講改成代號 enum，讓「同句重跑」對無歧義需求也能得到逐位元相同的
+結構化結果（連續四輪、共 12 次呼叫全數一致）——見
+[第二輪報告](./2026-08-31-roadmap-24-golden-set-and-interpretation.md) 第 6、7 節。
 
-**四條驗收標準達成三條**。只剩「同一句需求重跑得到**逐字相同**的結果」不宣稱：
-無法讓模型自身的解析變成確定性的（此模型不吃 `temperature`）。該條原文的後半句
-「或清楚標記 LLM 不確定性」已由理解回講與 golden set 通過率達成。
+**四條驗收標準全數達成**：
+
+| # | 驗收標準 | 結果 |
+| --- | --- | --- |
+| 1 | 自然語言 golden set 可正確轉成結構化需求 | 完成——8 題進 `npm test` 每次執行，實測 8/8 |
+| 2 | 資料不足與矛盾案例會先澄清 | 完成，但有明確界線：**結構性矛盾**（數字、時段、集合互相打架，12 項）宣告完整；**語意矛盾**（如「想輕鬆一點但也想學很多」）取決於語言理解而非數字比對，無法窮舉，明確不宣稱 |
+| 3 | 更正 department／grade／className 後 scope 使用新值 | 完成，同回合與跨回合皆已實機驗證 |
+| 4 | 同一句需求重跑能得到相同結構化結果 | 完成，但有明確前提：僅對**無歧義的需求**成立——句子本身有歧義時（例如「午休可以彈性」可以解讀成兩種相反的意思），不同次解讀不同是合理的，那屬於句子性質而非系統缺陷 |
+
+四條標準均「完成」而非「無條件完成」——每條都附著一個誠實記錄下來的邊界，這是
+刻意的寫法，不是矛盾。
 
 **相依**：#18、#21（均已完成）
 
@@ -1432,9 +1506,10 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 
 ## #25 改用 structured/native tool calling 與輸入輸出驗證
 
-**狀態**：⬜ 未開始（卡 #20、#21、#24）
+**狀態**：🟡 部分完成（2026-08-31 盤點）——四條驗收標準中三條已由 2026-08-30～08-31 的三份
+變更報告合計達成；「非法 course ID」邊界驗證與正式 tool allowlist 政策尚未做
 
-**相依**：#20、#21、#24
+**相依**：#20、#21、#24（已完成）
 
 **開始前必須具備**：course query、schedule 與 preference tools 的輸入輸出 schema 已固定；需求模型能產生 validated parameters；每個 tool 的授權、timeout 與錯誤語意已定義。
 
@@ -1450,12 +1525,30 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 - Tool result 加入 schema version、data source、term、warnings 與 error code。
 - Profile 被工具更新後重新建立 scope，不沿用 Agent turn 開頭的舊 scope。
 
-### 驗收標準
+### 驗收標準對照（2026-08-31 盤點）
 
-- malformed、未知工具、非法 course ID 與矛盾參數不會進入核心 service。
-- Tool schema 與 `PROMPT_DESIGN.md` 有自動契約測試。
-- Agent 修改 Profile 後，同一對話後續查詢使用更新後 scope。
-- Tool 失敗時 final answer 正確轉述錯誤，不宣稱任務成功。
+本任務原文設想的是「換掉 Gemini 的 regex 解析」，實際發生的是**連 provider 一併換成
+OpenAI**（因為 `gemini-2.5-pro` 已被 Google 下架，Chat 整條路徑本來就是壞的，見
+[2026-08-30-openai-native-tool-calling.md](./2026-08-30-openai-native-tool-calling.md)）。
+落點相同：原生 function calling 取代文字協定，用 JSON Schema 而非模型自律保證參數合法性。
+
+| # | 驗收標準 | 結果 |
+| --- | --- | --- |
+| 1 | malformed、未知工具、非法 course ID 與矛盾參數不會進入核心 service | **部分完成**。malformed／未知工具：`getAgentTools()` 六個工具改用 JSON Schema（`enum`／`required`／`additionalProperties:false`），未知工具名稱由 `executeAgentTool()` 攔下回傳 `不明的函數呼叫` 錯誤物件，不拋例外、不進 service（AG1）。矛盾參數：`run_csp_scheduler` 前的 `checkPreflightContradictions()`（#24 第二輪，12 項）在排課引擎執行前擋下，不放行進 `scheduler.js`。**非法 course ID 未做**：目前沒有工具邊界層驗證 `explicitCourseIds`／`selectedCourseIds` 是否為存在的課程，不存在的 ID 會被排課器當成一般候選處理（不會壞掉，但不是「進不了核心 service」） |
+| 2 | Tool schema 與 `PROMPT_DESIGN.md` 有自動契約測試 | **完成**。`server/test/prompt.test.js` 直接對 `getAgentTools()` 的 schema 斷言參數、enum 與必填欄位，不是比對 prompt 字串 |
+| 3 | Agent 修改 Profile 後，同一對話後續查詢使用更新後 scope | **完成**。#24 第一輪新增 `update_student_profile` 確認後寫回 `ctx.studentScope`（物件參考，非區域變數），同回合後續 `query_course_db` 立即使用新範圍；已實機驗證（更正系所後同回合查詢改用新系所的選修課），見 [requirement-gate 報告](./2026-08-31-roadmap-24-requirement-gate.md) 4.2 節與「A/B 對照 2」 |
+| 4 | Tool 失敗時 final answer 正確轉述錯誤，不宣稱任務成功 | **完成**。`applyToolOutcome()`（2026-08-30）讓 `intent`／`data` 只反映**成功**的工具，被拒的工具呼叫不會讓回應宣稱「已記錄」「已更新」，見 [honest-intent-and-step-limit 報告](./2026-08-30-honest-intent-and-step-limit.md) 與 AG7 測試 |
+
+### 尚未涵蓋
+
+- 「非法 course ID 不會進入核心 service」——目前沒有專門的存在性檢查層。
+- 「tool allowlist」目前等於「`getAgentTools()` 回傳的六個工具」這個隱含集合，沒有獨立、
+  可稽核的 allowlist 政策文件或機制；`RENDERABLE_TOOLS` 只解決「哪些工具結果要進
+  `data`」，不是授權層。
+- Tool result 的 `schema version`／`data source`／`term`／`error code` 尚未系統化——目前
+  各工具各自決定回傳形狀，沒有統一的信封規格。
+- 「user scope 不讓模型或 client 任意切換」已由 #18 的 session/identity 機制保證
+  （與本任務無直接關係，但滿足同一句精神）。
 
 ---
 
@@ -1748,7 +1841,7 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 
 ## #33 建立互動資料隱私、匿名化、consent 與保存規則
 
-**狀態**：✅ 已完成（2026-08-22）；正式網站與平台 Production secrets 另由 #39 追蹤
+**狀態**：✅ 已完成（2026-08-22）——詳見 [互動資料隱私、匿名化、consent 與保存規則變更報告](./2026-08-22-interaction-data-privacy.md)；正式網站與平台 Production secrets 另由 #39 追蹤
 
 **相依**：#18、#29（均已完成）
 
@@ -1787,9 +1880,10 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 
 ## #34 建立 Agent 自然語言需求理解 eval
 
-**狀態**：⬜ 未開始（卡 #24、#25）
+**狀態**：🟡 部分完成（2026-08-31 盤點）——#24 第二輪已交付一個小規模但真實存在、
+每次 `npm test` 都會執行的 golden set，具備本任務的雛形；規模與涵蓋面遠不到完整驗收
 
-**相依**：#24、#25
+**相依**：#24（已完成）、#25（部分完成）
 
 **開始前必須具備**：結構化需求 schema 與 tool schema 已固定；建立由人工標註的需求、歧義、否定、修正與矛盾案例。
 
@@ -1810,6 +1904,32 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 - 資訊不足與矛盾案例會進入澄清，不直接排課。
 - Tool call 參數全部通過 schema validation。
 - Prompt 或模型版本變更有 regression report，不只看單一成功對話。
+
+### 目前進度（2026-08-31 盤點）
+
+**已具備的部分**——`server/test/agentGoldenSet.test.js` 與
+`server/test/fixtures/agentGoldenSet.json`（8 題，見
+[#24 第二輪報告](./2026-08-31-roadmap-24-golden-set-and-interpretation.md)）：
+
+- 涵蓋時段偏好（早八）、偏好強度差異（絕對不要 vs 盡量不要）、興趣關鍵字、
+  permanent-vs-once（該走 `update_preferences` 還是只帶進這次排課）、
+  no-invented-constraints（不得自行假設使用者沒提過的限制）、身分更正路由，共 6 種性質。
+- 每次 `npm test` 都會真的呼叫模型，不是一次性人工對話記錄；斷言邏輯
+  （`goldenSetAssertions.js`）與呼叫邏輯分離，前者另有純函式單元測試。
+- 固定 `model=gpt-5.6-luna`（由 `OPENAI_MODEL` 決定，非寫死），未來模型或
+  prompt 版本變更時重跑這 8 題即為最小 regression 訊號。
+
+**尚未具備的部分**（與本任務原文的差距，不宣稱已達成）：
+
+- **規模**：8 題遠小於「建立繁體中文語句集」設想的規模，且非人工標註的系統化資料集，
+  是開發過程中針對已知風險逐一加的案例。
+- **缺覆蓋的類別**：多輪修正（目前每題都是單輪對話）、課名同名歧義、越權要求
+  （例如要求查看其他學生資料）、必修與軟偏好互斥的組合案例、無資料問題（課程資料庫
+  查不到時的行為）均未建立對應測試。
+- **沒有正式 regression report**：目前只有「這次跑 8/8」的通過率輸出，沒有跨模型或
+  跨 prompt 版本的歷史比較報告格式。
+- **schema validation 覆蓋率未量化**：#25 的 JSON Schema 約束了 tool call 的形狀，
+  但沒有針對 golden set 額外做「參數全部通過 schema validation」的專門統計。
 
 ---
 

@@ -191,6 +191,34 @@ node --check src/app.js
 專案沒有 supertest 之類的 HTTP 路由測試設施，因此把判斷抽成純函式
 `resolveRequiredCredits()` 並匯出，不必啟動整個 Express app 就能測。
 
+### 版本化畢業規則與逐門認列（Roadmap #23）
+
+`server/test/graduationRuleVersions.test.js`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| G7 | 114／115 學年度入學生 | 選到 `114` 版，`appliedFallbackVersion` 為 `false`，附 `ruleSource` 與 `coverage` |
+| G8 | 112 學年度入學生 | 退回 `114` 版，`appliedFallbackVersion` 為 `true`，`fallbackReason` 明講「該學年度版本尚未取得…僅供參考」 |
+| G8 | `admissionYear` 為 `null` 或完全不給參數 | 同樣退回並說明，不丟例外 |
+| G9 | 查不到的系所／未支援的學制 | `requirement` 為 `null` 但版本資訊照給；學制無資料時標示退回 |
+| G9 | `normalizeAdmissionYear()` | `0`／負數／小數／超範圍／非數字一律 `null`，不強行轉換 |
+| G9 | 版本清單 | 目前**只有 1 版**真實資料；數量改變時測試失敗以提醒同步更新文件 |
+
+`server/test/graduationAttribution.test.js`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| G10 | 逐門追溯 vs `getEarnedCredits()` | 各分類 `credits` **恆等於**既有計算；逐門加總也等於該分類總數（防止長出第二套算法） |
+| G10 | demo 53 筆分佈 | `61／22／24／11`，總計 `118` |
+| G11 | `nonGraduation`／未通過／重修／未知分類 | 分別為不列入、不列入、只算最新一次、歸入 `unspecified` |
+| G12 | 每一筆認列 | 帶 `ruleVersion`／`ruleSource`／`attributionSource`／`needsVerification`；未傳 rule 時三者為 `null`；依修課時間排序 |
+| G13 | 班級活動、體育、國防科技 | **不得出現在補學分推薦裡**（本次核心迴歸：改動前 `departmentCourses[0]` 實測就是 0 學分的班級活動） |
+| G14 | 每筆推薦 | 其 `fillsGap` 分類的缺口必須 > 0；缺口補滿或 `gaps` 為 `null` 時回空陣列 |
+| G14 | 未被課程地圖細分的本系選修 | 仍算進 `elective` 缺口（實測有 11 門會落在原始的 `選修`） |
+| G15 | 一課多班次／已修過／輸入順序不同 | 只推一次；已修不推；排序穩定 |
+| G17 | `update_student_profile` 送 `admissionYear: 0` | 佔位值被丟棄，其他欄位保留（實測模型 4/4 次送 `0` 湊滿欄位；寫入層另有一道防護） |
+| G16 | 入學年度交叉驗證 | 兩來源一致才採用；不一致或只有單一來源時回 `null` 並說明理由 |
+
 ### 已修課程排除與修課歷史派生運算
 
 已修排除的判定依據是課號（`courseHistory[].courseCode` 比對 `course.catalogCourseCode`），

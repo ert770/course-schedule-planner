@@ -215,6 +215,28 @@ export function mergePreferenceTags(prefs = {}, staged = {}) {
 // 第一次呼叫（沒有 token）只暫存並把 token 交給模型，**完全不寫入**；模型必須
 // 先把 `proposedChanges` 講給使用者確認，拿到同意後才帶 token 再呼叫一次。
 // 回傳的是當初暫存的內容，因此第二次呼叫夾帶的任何額外欄位都會被忽略。
+// `update_student_profile` 的參數清理。
+//
+// 四個欄位都是選填，但 JSON Schema 表達不了「沒有就別填」——實測模型會塞
+// `admissionYear: 0`、`className: ''` 這類佔位值把欄位湊滿。這些不是使用者說的話，
+// 不該被當成要變更的內容送去給使用者確認，更不該寫進資料庫。
+export function sanitizeProfileScopeArgs(args = {}) {
+  const cleaned = { ...args };
+
+  for (const field of ['department', 'className']) {
+    if (typeof cleaned[field] === 'string' && cleaned[field].trim() === '') delete cleaned[field];
+  }
+  // 年級與入學年度：0／負數／非整數都不是使用者講得出來的值。
+  for (const field of ['gradeLevel', 'admissionYear']) {
+    if (field in cleaned) {
+      const value = Number(cleaned[field]);
+      if (!Number.isInteger(value) || value <= 0) delete cleaned[field];
+    }
+  }
+
+  return cleaned;
+}
+
 async function runConfirmedWrite({
   identity, args, changeType, stageChange, consumeChange, write, turnId,
 }) {
@@ -374,7 +396,13 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // 系所／年級／班別決定「哪些課是你的必修、你能修哪些課」，答錯會讓整份
         // 推薦失準，因此與偏好同樣走兩段式確認。
         return await runConfirmedWrite({
-          identity, args, changeType: 'profile-scope', stageChange, consumeChange, turnId: ctx.turnId,
+          identity,
+          // **把佔位值當成「沒填」處理。** JSON Schema 沒有辦法表達「這個欄位可以
+          // 不填」以外的語意，實測模型會用 `admissionYear: 0` 這種佔位值把欄位湊滿。
+          // 不清掉的話，使用者會在確認訊息裡看到「入學年度改成 0」這種鬼東西。
+          // 寫入層另有一道相同方向的防護（`database.js` 拒絕不合法年度）。
+          args: sanitizeProfileScopeArgs(args),
+          changeType: 'profile-scope', stageChange, consumeChange, turnId: ctx.turnId,
           write: async staged => {
             await updatePreferences(identity, staged);
             if (prefs) Object.assign(prefs, staged);

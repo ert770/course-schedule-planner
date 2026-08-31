@@ -193,10 +193,35 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
 | `completed_courses` | json | **已停用**。本專案不再讀寫；歷史修課唯一來源為 `User_Course_History` |
 | `max_credits` | int | `profile.targetCreditsMax` |
+| `admission_year` | smallint unsigned NULL | `profile.admissionYear`；入學學年度（民國），決定套用哪一版畢業規則（roadmap #23）。`NULL` 代表未知，此時 `resolveGraduationRule()` 退回最新版本並標示 `appliedFallbackVersion`。Migration 為 `005_admission-year`，執行方式見下方 |
 
-`student_id`、`class_name`、`profile_schema_version` 的 DDL 與安全 migration 已備妥，
+`student_id` 與 `profile_schema_version` 的 DDL 與安全 migration 已備妥，
 但 shared MySQL 尚未套用；必須先取得組員協調確認。程式會偵測欄位是否存在，
 因此 rollout 前可讀既有 v0 row，rollout 後改以 `student_id` 查詢。
+`class_name` 與 `admission_year` 已存在於 shared MySQL。
+
+**選用欄位的偵測方式**：`database.js` 對 `class_name`、`profile_schema_version`、
+`student_id`、`admission_year` 各有一支 `has...Column()`，用 `SHOW COLUMNS` 查一次並快取，
+查詢失敗一律退回 `false`。欄位不存在時該值為 `null`，不猜、不推導、不補預設值。
+組員新增欄位後重啟後端即自動生效，不需改程式。
+
+`User_Profiles` 另有組員新增的 `program_type`、`enrolled_programs`、`college` 三個欄位，
+**本專案目前完全沒有讀寫**。它們是 roadmap #13D（學制、學程與特殊身分）的材料，
+在 #13D 開始前不要當成不存在而重複新增。
+
+### `admission_year` 與版本化畢業規則（roadmap #23）
+
+```text
+npm run migrate:admission-year --prefix server
+npm run migrate:admission-year --prefix server -- --apply --confirm-shared-mysql
+npm run migrate:admission-year --prefix server -- --rollback --confirm-shared-mysql
+```
+
+回填**一律交叉驗證**：`grade_level + ACTIVE_TERM.academicYear` 推一次、
+`User_Course_History` 最早的 `academic_year` 推一次，兩者一致才寫入。不一致或只有
+單一來源時留 `NULL` 並在 dry-run 輸出說明理由——錯的入學年度會靜默選到錯的規則版本，
+留 `NULL` 至少會誠實回報「入學年度未知」。重複執行只回填仍為 `NULL` 的列，
+不覆蓋人工修正過的值。
 
 ### Profile schema v1 與 migration
 

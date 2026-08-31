@@ -327,17 +327,30 @@ export function getAgentTools() {
       type: 'function',
       name: 'update_student_profile',
       description:
-        '更正使用者的系所、年級或班別（例如使用者說「我是資工系」「其實我三年級」）。'
-        + '這三個欄位決定哪些課算他的必修、哪些課他可以修，答錯會讓整份推薦失準，'
+        '更正使用者的系所、年級、班別或入學年度（例如使用者說「我是資工系」「其實我三年級」'
+        + '「我是 112 學年度入學的」）。這些欄位決定哪些課算他的必修、哪些課他可以修、'
+        + '以及套用哪一版畢業規則，答錯會讓整份推薦失準，'
         + '因此與 update_preferences 一樣是兩段式：先不帶 confirmationToken 提出變更，'
         + '講給使用者確認後，再帶 token 呼叫一次才生效。'
-        + '生效後同一次對話後續的課程查詢會立即改用新的範圍。',
+        + '生效後同一次對話後續的課程查詢會立即改用新的範圍。'
+        // 每個欄位都是選填。少了這句，實測模型會為了湊滿欄位而先追問入學年度，
+        // 使用者明明已經講了系所／年級／班別卻等不到更正（A/B：加上 admissionYear
+        // 欄位後 3/3 不呼叫工具，移除後 3/3 正常呼叫）。
+        + '**四個欄位都是選填，只填使用者這次真的講到的。'
+        + '沒講到的欄位直接省略，不要為了把欄位填滿而追問**——'
+        + '尤其入學年度幾乎沒有人會主動提，缺它完全不影響其他欄位的更正。',
       parameters: {
         type: 'object',
         properties: {
           department: { type: 'string', description: '系所全名，例如「資訊工程學系」。' },
           gradeLevel: { type: 'integer', description: '年級，1~7。' },
           className: { type: 'string', description: '班別，例如「資訊三甲」。' },
+          admissionYear: {
+            type: 'integer',
+            description:
+              '入學學年度（民國），例如 112。只有使用者明確說出來時才填，'
+              + '不要從年級自行推算——推算值與使用者說的值一旦混在一起就分不出可信度。',
+          },
           confirmationToken: {
             type: 'string',
             description: '上一次呼叫回傳的 token。使用者確認後才帶，不可自行編造。',
@@ -501,8 +514,10 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 偏好強度的判讀：
 - 使用者語氣有彈性（「盡量不要」「可以的話」「必要時可以」）時，把
   allowRelaxation 設為 true，排不出來時引擎才可以自動放寬早八／午休／晚課。
-- 使用者語氣強硬（「絕對不要」「無論如何都不行」）時，不要設 allowRelaxation，
-  或把該項放進 nonNegotiablePreferenceIds，確保它不會被自動放寬。
+- 使用者語氣強硬（「絕對不要」「無論如何都不行」）時，**整個省略 allowRelaxation
+  這個參數，不要送 allowRelaxation: false**——false 本來就是預設值，多送一次不會改變
+  任何行為，只會讓同一句話每次產生不同的參數（與上面 minCredits／maxCredits 同理）。
+  改用 nonNegotiablePreferenceIds 指名該項，確保它不會被自動放寬。
 - 兩種語氣混在一句話裡時分開處理，例如「絕對不排早八，但午休可以彈性」應該是
   allowRelaxation: true 加上 nonNegotiablePreferenceIds: ["NO_MORNING_CLASSES"]。
 - 不要把使用者沒表達過的彈性自行補上——沒說可以放寬就是不可以。
