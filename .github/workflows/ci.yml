@@ -67,9 +67,15 @@ jobs:
         run: npm ci
         working-directory: server
 
+      # Roadmap #24 的 golden set 會真的呼叫模型。secret 沒設定時這裡會是空字串，
+      # 測試檔偵測到「CI 且無 key」就跳過那幾題並印出說明（其餘測試照跑）。
+      # 在 repository secrets 加上 OPENAI_API_KEY 之後，這一行就會讓它自動開始實跑，
+      # 不需要改任何程式。
       - name: Test backend
         run: npm test
         working-directory: server
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Check backend JavaScript syntax
         shell: bash

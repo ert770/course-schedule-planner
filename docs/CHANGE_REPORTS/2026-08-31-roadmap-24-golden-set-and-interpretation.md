@@ -218,6 +218,36 @@ INFO [Preflight] 排課前偵測到矛盾或資料不足，改為澄清
   開始間歇性變紅，會照實回報並重新討論執行方式。
 - 語意矛盾偵測不在範圍內，且明確不宣稱。
 
+## 9. 後續修正：GitHub CI（2026-08-31 追加）
+
+**本次交付把 CI 弄紅了，當下沒有發現。** 本地 `npm test` 全綠，但 GitHub Actions 沒有
+`server/.env`、也沒有 `OPENAI_API_KEY` secret，`before()` 的斷言因此觸發，10 題 GS
+全數失敗。從這批 commit 推上去之後每一次 push 都是紅的（`33353771901`、`33390120924`），
+最後一次綠燈是 `60c3379`。
+
+**這是「無條件進 `npm test`」這個決定沒有考慮到的環境。** 當初的理由是「缺 key 就該
+講清楚而不是靜默跳過」，那個判斷對**本機**完全正確；但 public repo 的 CI **結構上
+不可能有 key**，除非把老師給的 API key 放進 repository secret。在那之前 CI 固定紅燈，
+而一直紅著的 CI 會變成背景雜訊，真正的失敗反而沒人看見——那比這幾題沒在 CI 跑更危險。
+
+修法是把兩種環境分開，**原本的意圖兩邊都保住**：
+
+| 環境 | 行為 |
+| --- | --- |
+| 本機、無 key | **維持硬失敗**，訊息不變（「這是環境未設定，不是程式壞掉」） |
+| CI、無 secret | 跳過 GS，並印出明顯說明（跳過幾題、怎麼開啟）。其餘 703 項照跑 |
+| CI、已設 secret | 自動實跑，**不需要改任何程式**（workflow 已把 secret 傳進去） |
+
+判定用 `process.env.CI`（GitHub Actions 固定會設 `CI=true`）。「不設開關」要擋的是
+**開發者可以自己關掉**，這裡不是開關，是環境能力偵測——本機沒有任何方式能跳過。
+
+三種情境都實測過；`npm test` 在模擬 CI 的條件下（`CI=true`、無 `.env`、無 key）
+**703 pass / 0 fail**，本機仍為 **713 pass / 0 fail**。
+
+**是否要在 CI 真的跑 golden set 是使用者的決定**，因為那要把老師的 API key 放進
+一個 public repo 的 secret，並且每次 push 都消耗額度。目前預設不放；要放的話只需在
+GitHub 加 secret，程式與 workflow 都不用再動。
+
 ## 9. 是否 commit 與 push
 
 見本次 commit 紀錄。工作區另有一條 course-history v1 的工作線，未一併提交。

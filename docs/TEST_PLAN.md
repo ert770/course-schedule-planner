@@ -535,6 +535,42 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 | 問畢業門檻 | 回答 128 學分與分類要求 |
 | 資料不足 | 說明限制並要求補充 |
 
+### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
+
+**這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。
+8 題中文題庫在 `server/test/fixtures/agentGoldenSet.json`，另有一題「同一句話重跑三次
+得到逐位元相同的結構化結果」。斷言邏輯本身是純函式（`goldenSetAssertions.js`），
+另由 GA1-GA5 測試，不需要網路。
+
+斷言的是**語意性質而非逐字相同**——推理模型的輸出不保證每次一樣（此模型也不接受
+`temperature`）。要求逐字重現只會做出一個間歇性失敗的測試。
+
+**執行條件依環境而異**，這是刻意的：
+
+| 環境 | 行為 | 理由 |
+| --- | --- | --- |
+| 本機、無 `OPENAI_API_KEY` | **硬失敗**並說明「這是環境未設定，不是程式壞掉」 | 本機一定有 `server/.env`，缺 key 代表環境沒設好。開發者**不能**自己跳過 |
+| CI、未設 secret | 跳過這 9 題並印出明顯說明，其餘照跑 | public repo 的 CI 結構上不可能有 key。固定紅燈會讓 CI 變成背景雜訊，真正的失敗反而看不見 |
+| CI、已設 secret | 自動實跑 | workflow 已把 secret 傳進 `npm test`，不需改程式 |
+
+判定用 `process.env.CI`（GitHub Actions 固定設 `CI=true`）。這**不是開關**，是環境能力
+偵測——本機沒有任何方式能繞過。
+
+驗證方式（三種情境都要能重現）：
+
+```bash
+# CI 無 key：應跳過，0 fail
+env -u OPENAI_API_KEY CI=true DOTENV_CONFIG_PATH=/nonexistent/.env npm test --prefix server
+
+# 本機無 key：應硬失敗
+env -u OPENAI_API_KEY -u CI DOTENV_CONFIG_PATH=/nonexistent/.env npm test --prefix server
+
+# 本機有 key：應實跑並回報通過率
+npm test --prefix server
+```
+
+實測基準：本機 **713 pass / 0 fail**（golden set 8/8）；模擬 CI **703 pass / 0 fail**。
+
 ## 每次開發完成驗收
 
 1. 確認相關文件已更新。

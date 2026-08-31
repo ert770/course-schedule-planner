@@ -38,6 +38,32 @@ const CALL_TIMEOUT_MS = 90_000;
 // 每題最差 3 次呼叫、題目並行，留足夠餘裕給最慢的那一題。
 const SUITE_TIMEOUT_MS = 5 * 60_000;
 
+// **本機缺 key＝失敗；CI 缺 key＝跳過。** 這不是把當初「不設開關」的決定打折。
+//
+// 那個決定要擋的是「開發者可以自己關掉」——本機一定有 `server/.env`，缺 key 代表
+// 環境沒設好，應該立刻失敗並說清楚，這個行為完全不變。
+//
+// 但 GitHub Actions 是 public repo 的 CI，**結構上不可能有 key**，除非把老師給的
+// API key 放進 repository secret。在那之前每次 push 都固定紅燈，紅燈就會變成背景雜訊，
+// 真正的失敗反而看不見——CI 一直紅著沒人看，比這幾題沒在 CI 跑更危險。
+//
+// 設定 `OPENAI_API_KEY` secret 之後，workflow 會把它傳進來，這裡就自動改成實跑，
+// **不需要再改任何程式**。
+const HAS_API_KEY = Boolean(process.env.OPENAI_API_KEY);
+const IS_CI = process.env.CI === 'true' || process.env.CI === '1';
+const SKIP_REASON = !HAS_API_KEY && IS_CI
+  ? 'CI 未設定 OPENAI_API_KEY secret，跳過需要真實模型呼叫的題目'
+  : false;
+
+// 跳過也要看得見。靜默跳過才是當初真正反對的東西。
+if (SKIP_REASON) {
+  console.log(
+    `\n  ⚠ golden set 已跳過：${SKIP_REASON}\n`
+    + `    共 ${fixture.cases.length} 題 + 1 題重跑一致性未執行。\n`
+    + '    在 repository secrets 設定 OPENAI_API_KEY 後會自動開始執行，不需改程式。\n'
+  );
+}
+
 // 用一份「什麼都沒設定」的 profile，讓題目本身成為唯一的輸入來源。
 // 若用 demo 帳號的真實偏好，模型可能從 prompt 的偏好摘要抄答案，
 // 題目就測不到「它有沒有讀懂這句話」。
@@ -92,12 +118,16 @@ async function runCase(testCase) {
   };
 }
 
-describe('GS 自然語言 golden set（會實際呼叫模型）', { timeout: SUITE_TIMEOUT_MS }, () => {
+describe('GS 自然語言 golden set（會實際呼叫模型）', {
+  timeout: SUITE_TIMEOUT_MS,
+  skip: SKIP_REASON,
+}, () => {
   before(async () => {
+    // 走到這裡代表沒有被跳過，也就是「本機」。本機缺 key 依然是硬失敗。
     assert.ok(
       process.env.OPENAI_API_KEY,
       'golden set 需要 OPENAI_API_KEY。這是環境未設定，不是程式壞掉——'
-        + '請在 server/.env 設定後再跑，或改用有開關的執行方式。'
+        + '請在 server/.env 設定後再跑。'
     );
     client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 });
 
