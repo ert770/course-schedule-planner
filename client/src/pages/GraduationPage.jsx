@@ -168,6 +168,27 @@ export default function GraduationPage() {
                       <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
                         {gap} <span className="grad-gap-unit">學分</span>
                       </div>
+                      {/*
+                        通識再拆成「基礎必修」與「選修」兩格（roadmap #23）。
+                        先前只顯示總缺口，使用者看到「尚缺通識 4 學分」卻不知道
+                        缺的是英文那類基礎必修，還是領域通識選修。
+                      */}
+                      {category === 'general' && data?.generalEducation && (
+                        <div className="grad-gap-split">
+                          <div className="grad-gap-split-row">
+                            <span>基礎必修</span>
+                            <span className={data.generalEducation.basic.gap === 0 ? 'green' : 'red'}>
+                              {data.generalEducation.basic.earned}/{data.generalEducation.basic.required}
+                            </span>
+                          </div>
+                          <div className="grad-gap-split-row">
+                            <span>通識選修</span>
+                            <span className={data.generalEducation.elective.gap === 0 ? 'green' : 'red'}>
+                              {data.generalEducation.elective.earned}/{data.generalEducation.elective.required}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       {earnedCourses.length > 0 && (
                         <details className="grad-attribution">
                           <summary className="grad-attribution-summary">

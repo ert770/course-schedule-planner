@@ -3,7 +3,13 @@ import { getAll } from '../db/database.js';
 import { resolveGraduationRule } from '../data/graduationRuleVersions.js';
 import { normalizeDepartment } from '../utils/text.js';
 import { parseClassName, buildStudentScope } from '../skills/courseScope.js';
-import { annotateCourseCategory } from '../skills/courseCategory.js';
+import {
+  annotateCourseCategory,
+  CATEGORY_OUTSIDE_ELECTIVE,
+  CATEGORY_GENERAL_EDUCATION,
+} from '../skills/courseCategory.js';
+import { filterCategorizedCourses } from '../skills/courseQuery.js';
+import { evaluateGeneralEducationProgress } from '../data/generalEducationRecognition.js';
 import { countsTowardGraduation } from '../data/generalEducation.js';
 import { getUserPreferences } from '../services/memoryService.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
@@ -84,6 +90,39 @@ const GAP_LABELS = {
   unspecified: '自由選修',
 };
 
+// 補學分推薦的候選池。
+//
+// **先前只撈本系開的課**（`parseClassName(course.department).department === department`），
+// 所以 `general` 與 `external` 兩個缺口實務上永遠推不出東西——使用者缺 4 學分通識，
+// 系統卻只能推本系選修。
+//
+// 三種範圍**全部重用 `courseQuery.js` 的 `filterCategorizedCourses()`**，不在這裡另寫
+// 一套班級規則：它已經處理好 active term 過濾、系外選修的學制相符檢查，以及通識
+// 「不屬於任何班級但全校適用」這個特例。搜尋、排課、Agent 三條路徑都走它，
+// 畢業推薦再自己寫一套只會第四次漂移。
+async function collectRecommendationCandidates(department, scope) {
+  const all = await getAll('courses');
+
+  // 本人班級的課（必修／核心選修／一般選修）＋ 通識。
+  const ownAndGeneral = filterCategorizedCourses(all, {}, scope, { includeGeneralEducation: true });
+  // 系外選修要指定 category 才拿得到——它不在本人班級範圍內。
+  const outside = filterCategorizedCourses(all, { category: CATEGORY_OUTSIDE_ELECTIVE }, scope);
+
+  // `filterCategorizedCourses` 會過濾掉非本學期的課，但本系課程仍沿用原本的
+  // 班級名稱比對，避免因為 scope 解析不到而讓既有的本系推薦整個消失。
+  const ownByClassName = all.filter(course =>
+    parseClassName(course.department).department === department
+  );
+
+  const seen = new Set();
+  return [...ownAndGeneral, ...outside, ...ownByClassName].filter(course => {
+    const key = course.id ?? course.catalogCourseCode;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // 補學分推薦：只推**真的補得上某個缺口**的課。
 //
 // 先前這裡是 `departmentCourses[0]`——沒有排序、沒有排除不計入畢業學分的課，
@@ -117,12 +156,24 @@ export function buildCreditRecommendations({
     if (!countsTowardGraduation(course)) continue;
 
     const annotated = annotateCourseCategory(course, scope);
-    // 資格未確認的課（#13B 的 B～F 類）不主動推薦：不能一邊說「資格待確認」
-    // 一邊叫使用者去修。
-    if (annotated.eligibility === 'ineligible' || annotated.eligibility === 'unknown') continue;
+    if (annotated.eligibility === 'ineligible') continue;
 
     const gapKey = CATEGORY_TO_GAP.get(annotated.category);
     if (!gapKey) continue;
+
+    // 資格未確認的課（#13B 的 B～F 類）原則上不主動推薦：不能一邊說「資格待確認」
+    // 一邊叫使用者去修。
+    //
+    // **通識是唯一的例外**，而且理由是官方明載的：`docs/COURSE_SELECTION_RULES.md`
+    // 寫「這四個領域名稱……它們不是班級，適用全校學生」。GE 之所以是 `unknown`，
+    // 是因為 #13B 對整個 B 類一視同仁地保守處理，並沒有針對這條官方事實細分。
+    //
+    // 不改 `resolveCourseEligibility()`——那是 #13B／#13C 的範圍。這裡只在
+    // **推薦**這個情境放行，並且把「資格待確認」照實標出來讓使用者看見：
+    // 推薦是「你還缺 4 學分通識，這幾門可以補」，不是宣稱他一定選得上。
+    // 不放行的話，缺通識的使用者永遠看不到任何通識建議——那正是本次要修的問題。
+    const needsEligibilityConfirmation = annotated.eligibility === 'unknown';
+    if (needsEligibilityConfirmation && annotated.category !== CATEGORY_GENERAL_EDUCATION) continue;
 
     const gapBefore = Number(gaps[gapKey] || 0);
     if (gapBefore <= 0) continue;
@@ -130,7 +181,7 @@ export function buildCreditRecommendations({
     const credits = Number(course.credits) || 0;
     if (credits <= 0) continue;
 
-    candidates.push({ course: annotated, gapKey, gapBefore, credits });
+    candidates.push({ course: annotated, gapKey, gapBefore, credits, needsEligibilityConfirmation });
   }
 
   // 明確的排序規則，不再依賴陣列原始順序：缺口大的分類優先 → 學分高者優先 →
@@ -155,12 +206,40 @@ export function buildCreditRecommendations({
     return true;
   });
 
-  return unique.slice(0, limit).map(({ course, gapKey, gapBefore, credits }) => ({
+  // **每個有缺口的分類至少先推一門，再用剩下的名額補**。
+  //
+  // 單純照上面的排序取前 3 名會讓最大的缺口吃掉全部名額：實測 demo 帳號
+  // 本系選修缺 6、通識缺 4，三個名額全被本系選修佔滿，使用者永遠看不到
+  // 通識該修什麼——那正是「補學分建議」最該回答的問題。
+  // 分類之間仍照缺口大小排序，所以最大的缺口還是排第一個。
+  const byGap = new Map();
+  for (const item of unique) {
+    if (!byGap.has(item.gapKey)) byGap.set(item.gapKey, []);
+    byGap.get(item.gapKey).push(item);
+  }
+
+  const selected = [];
+  // `unique` 已排序，因此各分類的內部順序、以及分類第一次出現的順序都已是缺口大→小。
+  while (selected.length < limit) {
+    let added = false;
+    for (const queue of byGap.values()) {
+      if (selected.length >= limit) break;
+      if (queue.length === 0) continue;
+      selected.push(queue.shift());
+      added = true;
+    }
+    if (!added) break;
+  }
+
+  return selected.map(({ course, gapKey, gapBefore, credits, needsEligibilityConfirmation }) => ({
     type: 'suggestion',
     title: `補足${GAP_LABELS[gapKey]}`,
     message: `${course.name}（${credits} 學分）可計入${GAP_LABELS[gapKey]}，`
-      + `目前尚缺 ${gapBefore} 學分。`,
+      + `目前尚缺 ${gapBefore} 學分。`
+      // 資格待確認的課要在文字裡講出來，不能只放進一個前端可能忽略的旗標。
+      + (needsEligibilityConfirmation ? '此類課程的正式適用對象尚待系辦確認，選課前請再確認資格。' : ''),
     course,
+    needsEligibilityConfirmation,
     // 讓前端不必再猜這是哪一類推薦——先前它把所有非 warning 的推薦
     // 一律寫死顯示「通識推薦」。
     fillsGap: gapKey,
@@ -253,19 +332,25 @@ async function handleGraduation(req, res) {
       ? getEarnedCreditsAttribution(profile.courseHistory, rule)
       : null;
 
-    // `course.department` 存的是**班級名稱**（`資訊三甲`），不是系所全名。
-    // 先前這裡直接用 `course.department === user.department` 比對，等於拿
-    // 「資訊三甲」比「資訊工程學系」，永遠不成立——這條建議從來沒出現過。
-    // 判定方式與排課一致：解析班級名稱後比對系所。
-    const departmentCourses = courseHistoryAvailable
-      ? (await getAll('courses')).filter(course =>
-        parseClassName(course.department).department === department
-      )
-      : [];
+    const scope = buildStudentScope(profile);
+
+    // 通識畢業認列：把 `general` 這一桶拆成基礎必修與選修（Roadmap #23）。
+    //
+    // **直接吃 attribution 的結果**，不自己再篩一次「已通過、最新一次、屬於哪一類」
+    // ——那組篩選是 `courseHistory.js` 的職責，兩邊各寫一套必然漂移。
+    const generalEducation = attribution
+      ? evaluateGeneralEducationProgress({
+        generalEntries: attribution.general.courses,
+        admissionYear: rule.admissionYear,
+        requirement,
+      })
+      : null;
+
+    if (generalEducation?.notes?.length) warnings.push(...generalEducation.notes);
 
     const recommendations = buildCreditRecommendations({
-      courses: departmentCourses,
-      scope: buildStudentScope(profile),
+      courses: await collectRecommendationCandidates(department, scope),
+      scope,
       gaps,
       passedCourseCodes,
       rule,
@@ -282,6 +367,9 @@ async function handleGraduation(req, res) {
       gaps,
       // 逐門認列追溯：每一筆帶課號、學分、修課學期、規則版本與出處。
       attribution,
+      // 通識拆成基礎必修／選修兩個缺口。`gaps.general` 維持總數不變（向後相容），
+      // 這裡是額外的細分——先前系統只知道「通識共缺 N」，不知道缺在哪一邊。
+      generalEducation,
       // 這次用的是哪一版規則、從哪來、是不是退回了預設版本。
       ruleVersion: rule.ruleVersion,
       ruleSource: rule.ruleSource,

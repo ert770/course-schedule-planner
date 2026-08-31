@@ -696,6 +696,15 @@
 .grad-gap-value.green { color: var(--accent-emerald); }
 .grad-gap-unit { font-size: 0.9rem; font-weight: 600; }
 
+/* 通識拆成基礎必修／選修兩格（roadmap #23）。 */
+.grad-gap-split { margin-top: 10px; font-size: 0.75rem; }
+.grad-gap-split-row {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 3px 0; color: var(--text-muted);
+}
+.grad-gap-split-row .green { color: var(--accent-emerald); font-weight: 600; }
+.grad-gap-split-row .red { color: var(--accent-red); font-weight: 600; }
+
 /* 逐門認列追溯（roadmap #23）：預設收起，展開後列出湊出這些學分的每一門課。 */
 .grad-attribution { margin-top: 12px; text-align: left; }
 .grad-attribution-summary {

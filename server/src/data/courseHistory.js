@@ -156,6 +156,10 @@ export function getEarnedCreditsAttribution(courseHistory = [], rule = null) {
       academicYear: entry.academicYear,
       semester: entry.semester,
       requirementType: entry.requirementType,
+      // 通識領域欄位。`generalEducationRecognition.js` 用它與「課程身分」交叉驗證
+      // 一門通識課是基礎必修還是選修——讓那邊直接吃這裡的結果，就不必自己再
+      // 篩一次「已通過、最新一次、屬於哪一類」，兩套篩選必然漂移。
+      generalEducationCategory: entry.generalEducationCategory ?? null,
       // 認列依據：哪一版規則、出處、是否尚待人工複核。
       ruleVersion: rule?.ruleVersion ?? null,
       ruleSource: rule?.ruleSource ?? null,

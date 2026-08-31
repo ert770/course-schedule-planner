@@ -939,17 +939,29 @@ Response:
 | `gaps` | 每類的缺口，不會小於 0 |
 | `attribution` | **逐門認列追溯**（roadmap #23）：每個分類列出湊出這些學分的課程，各帶課號、課名、學分、修課學年度／學期、規則版本、規則出處、是否待人工複核與認列來源。各分類的 `credits` **恆等於** `earned` 的對應值（與 `getEarnedCredits()` 共用同一組篩選，由 G10 測試釘住）。`courseHistoryAvailable` 為 `false` 時為 `null` |
 | `admissionYear` | 學生入學學年度（民國）。來自 `User_Profiles.admission_year`，未知時為 `null`，**不從年級推導** |
+| `generalEducation` | **通識拆成基礎必修／選修兩個缺口**（roadmap #23）。`gaps.general` 維持總數不變（向後相容），這裡是額外細分——先前系統只知道「通識共缺 N」，不知道缺在哪一邊。含 `basic`／`elective`（各有 `earned`／`required`／`gap`）、`ruleVersion`／`ruleSource`、`coreRequired`（要求／已完成／未完成的課號）、`disagreements`（兩個判定來源不一致、需人工確認的課）、`unverifiableRules`（有官方出處但目前無資料可執行的規則及其阻塞原因）、`notes`。`courseHistoryAvailable` 為 `false` 時為 `null` |
+| `recommendations[].needsEligibilityConfirmation` | 這門課的正式適用對象尚未確認（目前只有通識會是 `true`）。`message` 裡也會明講，前端不得只靠旗標 |
 | `ruleVersion`／`ruleSource`／`ruleCoverage` | 這次實際套用的畢業規則版本、官方出處與該版本涵蓋的入學年度範圍 |
 | `appliedFallbackVersion` | 是否因為該入學年度沒有對應版本而退回最新一版。為 `true` 時 `warnings` 會含說明——**目前只有 114 學年度一版真實資料**，因此 112／113 入學生一律為 `true` |
 | `warnings` | 查不到系所對照、該系資料標記為待人工複核、或規則版本退回時的說明。**查無對照時不會用臆測的數字填補** |
 | `recommendations[].fillsGap` | 這門課會補到哪一類缺口（`required`／`elective`／`general`／`external`）。**每筆推薦都已驗證該分類的 `gaps` 大於 0**；補不了任何缺口的課（例如 0 學分的班級活動、體育、國防科技）不會出現 |
 | `recommendations[].gapLabel`／`gapBefore` | 缺口的中文標籤與推薦前的缺口學分數，供前端直接顯示 |
 
-**補學分推薦的判定順序**：排除已修過並通過的課 → 排除不計入畢業學分的課
-（`countsTowardGraduation()`）→ 排除資格為 `ineligible`／`unknown` 的課 → 對映到缺口分類 →
-只留該分類缺口大於 0 者 → 排序（缺口大者優先 → 學分高者優先 → 課號）→ 同一
-`catalogCourseCode` 只留一筆 → 取前 3 筆。所有缺口都補滿或 `gaps` 為 `null` 時回傳空陣列，
-不硬推一門。
+**補學分推薦的候選範圍**：本人班級課程 ＋ 通識 ＋ 系外選修的聯集，三者皆由
+`courseQuery.js` 的 `filterCategorizedCourses()` 取得（與搜尋、排課、Agent 同一套班級規則）。
+先前只撈本系開的課，因此 `general`／`external` 缺口實務上永遠推不出東西。
+
+**判定順序**：排除已修過並通過的課 → 排除不計入畢業學分的課
+（`countsTowardGraduation()`）→ 排除 `ineligible`；`unknown` 一律排除，
+**唯一例外是通識**（官方明載四大領域「不是班級，適用全校學生」，見
+`docs/COURSE_SELECTION_RULES.md`），放行時標記 `needsEligibilityConfirmation` 並在
+`message` 講明 → 對映到缺口分類 → 只留該分類缺口大於 0 者 → 排序（缺口大者優先 →
+學分高者優先 → 課號）→ 同一 `catalogCourseCode` 只留一筆 → **每個有缺口的分類各先取
+一門，再用剩餘名額輪流補**，總共 3 筆。
+
+最後那條是必要的：單純取前 3 名會讓最大的缺口吃光名額（實測本系選修缺 6、通識缺 4 時，
+三個名額全被本系選修佔滿），缺通識的使用者永遠看不到通識建議。所有缺口都補滿或
+`gaps` 為 `null` 時回傳空陣列，不硬推一門。
 
 **查不到系所對照表**（`getGraduationRequirement()` 回傳 `null`）時，`required`、
 `totalRequired`、`gaps` 皆為 `null`，`warnings` 固定含 `此系所不存在，請檢查是否輸入錯誤`。

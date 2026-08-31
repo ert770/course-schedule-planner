@@ -363,6 +363,74 @@ describe('G15 推薦的排序與去重', () => {
   });
 });
 
+describe('G22 推薦要涵蓋每一個有缺口的分類，不被最大的缺口吃光', () => {
+  function geCourse(overrides = {}) {
+    return course({
+      id: 900, catalogCourseCode: 'GEH1028', name: '決策與賽局', credits: 2,
+      type: '選修', department: '人文藝術與社會經典教育', ...overrides,
+    });
+  }
+
+  // 本次的核心迴歸：候選池擴大之後，若仍照「缺口大者優先」單純取前 3 名，
+  // 本系選修（缺 6）會吃掉全部名額，缺 4 學分通識的使用者永遠看不到通識建議。
+  test('G22 本系選修缺 6、通識缺 4 時，通識仍要出現在推薦裡', () => {
+    const courses = [
+      course({ id: 1, catalogCourseCode: 'IECS2011', name: '系統分析與設計' }),
+      course({ id: 2, catalogCourseCode: 'IECS2024', name: '行動應用程式開發' }),
+      course({ id: 3, catalogCourseCode: 'IECS2026', name: '電子商務安全' }),
+      geCourse(),
+    ];
+    const recommendations = buildCreditRecommendations({
+      courses, scope: CS_SCOPE, gaps: FULL_GAPS, rule: RULE,
+    });
+
+    assert.ok(
+      recommendations.some(item => item.fillsGap === 'general'),
+      '缺通識就要推得出通識課，否則擴大候選池毫無意義'
+    );
+    assert.ok(recommendations.some(item => item.fillsGap === 'elective'));
+  });
+
+  // 通識的 eligibility 是 unknown（#13B 對 B 類一律保守），但官方明載四大領域
+  // 「不是班級，適用全校學生」。推薦放行，但必須把「資格待確認」講出來。
+  test('G22 通識推薦帶 needsEligibilityConfirmation，並在文字裡講明', () => {
+    const [recommendation] = buildCreditRecommendations({
+      courses: [geCourse()],
+      scope: CS_SCOPE,
+      gaps: { required: 0, elective: 0, general: 4, external: 0, unspecified: 0 },
+      rule: RULE,
+    });
+
+    assert.equal(recommendation.fillsGap, 'general');
+    assert.equal(recommendation.needsEligibilityConfirmation, true);
+    assert.match(recommendation.message, /資格/);
+  });
+
+  test('G22 通識以外的 unknown 資格課程仍然不推薦', () => {
+    // 學院綜合班（C 類）同樣是 unknown，但沒有「適用全校」的官方依據。
+    const collegeWide = course({
+      id: 901, catalogCourseCode: 'XXXX1234', name: '學院綜合課程',
+      department: '資電學院綜合班',
+    });
+    const recommendations = buildCreditRecommendations({
+      courses: [collegeWide], scope: CS_SCOPE, gaps: FULL_GAPS, rule: RULE,
+    });
+
+    assert.deepEqual(recommendations, []);
+  });
+
+  test('G22 缺口為 0 的分類即使有候選也不推', () => {
+    const recommendations = buildCreditRecommendations({
+      courses: [geCourse()],
+      scope: CS_SCOPE,
+      gaps: { required: 2, elective: 6, general: 0, external: 0, unspecified: 0 },
+      rule: RULE,
+    });
+
+    assert.ok(recommendations.every(item => item.fillsGap !== 'general'));
+  });
+});
+
 describe('G17 update_student_profile 的佔位值不得被當成使用者的變更', () => {
   // 實測發現的真實問題：在 `update_student_profile` 的 schema 加上 admissionYear 之後，
   // 模型會用 `admissionYear: 0` 這種佔位值把欄位湊滿（4/4 次都送 0）。
