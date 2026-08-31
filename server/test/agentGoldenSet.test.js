@@ -38,21 +38,22 @@ const CALL_TIMEOUT_MS = 90_000;
 // 每題最差 3 次呼叫、題目並行，留足夠餘裕給最慢的那一題。
 const SUITE_TIMEOUT_MS = 5 * 60_000;
 
-// **本機缺 key＝失敗；CI 缺 key＝跳過。** 這不是把當初「不設開關」的決定打折。
+// **本機一律執行；CI 一律不執行。** 這兩件事都是明確的決定，不是巧合。
 //
-// 那個決定要擋的是「開發者可以自己關掉」——本機一定有 `server/.env`，缺 key 代表
-// 環境沒設好，應該立刻失敗並說清楚，這個行為完全不變。
+// 本機：`npm test` 每次都真的打模型。缺 key 就硬失敗並說明「這是環境未設定，
+// 不是程式壞掉」——本機一定有 `server/.env`，缺 key 代表環境沒設好。
+// **開發者沒有任何方式可以跳過**，這正是當初「不設開關」要保住的東西。
 //
-// 但 GitHub Actions 是 public repo 的 CI，**結構上不可能有 key**，除非把老師給的
-// API key 放進 repository secret。在那之前每次 push 都固定紅燈，紅燈就會變成背景雜訊，
-// 真正的失敗反而看不見——CI 一直紅著沒人看，比這幾題沒在 CI 跑更危險。
+// CI：**決定於 2026-08-31——不讓 golden set 在 CI 跑。** 理由是要在 CI 跑就得把
+// 老師給的 API key 放進一個 public repo 的 repository secret，並且每次 push 都消耗
+// 額度；這個代價不值得。
 //
-// 設定 `OPENAI_API_KEY` secret 之後，workflow 會把它傳進來，這裡就自動改成實跑，
-// **不需要再改任何程式**。
-const HAS_API_KEY = Boolean(process.env.OPENAI_API_KEY);
+// 判定只看 `CI`，**不看有沒有 key**：如果哪天為了別的用途在 CI 加了
+// `OPENAI_API_KEY` secret，也不該讓這幾題無聲無息地開始每次 push 都呼叫模型。
+// 要恢復在 CI 執行是刻意的動作——改這個常數，不是設一個 secret 就自動生效。
 const IS_CI = process.env.CI === 'true' || process.env.CI === '1';
-const SKIP_REASON = !HAS_API_KEY && IS_CI
-  ? 'CI 未設定 OPENAI_API_KEY secret，跳過需要真實模型呼叫的題目'
+const SKIP_REASON = IS_CI
+  ? 'CI 依決定不執行需要真實模型呼叫的題目（避免把 API key 放進 public repo 的 CI）'
   : false;
 
 // 跳過也要看得見。靜默跳過才是當初真正反對的東西。
@@ -60,7 +61,7 @@ if (SKIP_REASON) {
   console.log(
     `\n  ⚠ golden set 已跳過：${SKIP_REASON}\n`
     + `    共 ${fixture.cases.length} 題 + 1 題重跑一致性未執行。\n`
-    + '    在 repository secrets 設定 OPENAI_API_KEY 後會自動開始執行，不需改程式。\n'
+    + '    這幾題由本機 `npm test` 負責，每次都會執行。\n'
   );
 }
 

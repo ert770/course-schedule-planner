@@ -545,31 +545,36 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 斷言的是**語意性質而非逐字相同**——推理模型的輸出不保證每次一樣（此模型也不接受
 `temperature`）。要求逐字重現只會做出一個間歇性失敗的測試。
 
-**執行條件依環境而異**，這是刻意的：
+**本機一律執行，CI 一律不執行。** 兩者都是明確的決定：
 
 | 環境 | 行為 | 理由 |
 | --- | --- | --- |
+| 本機、有 key | 每次 `npm test` 都實跑並回報通過率 | 這是 golden set 的正常執行環境 |
 | 本機、無 `OPENAI_API_KEY` | **硬失敗**並說明「這是環境未設定，不是程式壞掉」 | 本機一定有 `server/.env`，缺 key 代表環境沒設好。開發者**不能**自己跳過 |
-| CI、未設 secret | 跳過這 9 題並印出明顯說明，其餘照跑 | public repo 的 CI 結構上不可能有 key。固定紅燈會讓 CI 變成背景雜訊，真正的失敗反而看不見 |
-| CI、已設 secret | 自動實跑 | workflow 已把 secret 傳進 `npm test`，不需改程式 |
+| CI（不論有沒有 key） | 跳過這 9 題並印出明顯說明，其餘照跑 | **決定於 2026-08-31：不讓 golden set 在 CI 跑。** 要跑就得把 API key 放進 public repo 的 secret，且每次 push 都消耗額度 |
 
-判定用 `process.env.CI`（GitHub Actions 固定設 `CI=true`）。這**不是開關**，是環境能力
-偵測——本機沒有任何方式能繞過。
+判定**只看 `process.env.CI`**（GitHub Actions 固定設 `CI=true`），**不看有沒有 key**。
+這樣即使日後為了別的用途在 CI 加了 `OPENAI_API_KEY` secret，這幾題也不會無聲無息地
+開始每次 push 都呼叫模型——要恢復在 CI 執行必須是刻意的動作（改
+`agentGoldenSet.test.js` 的 `SKIP_REASON`），不是設個 secret 就自動生效。
 
-驗證方式（三種情境都要能重現）：
+這**不是給開發者的開關**：本機沒有任何方式能繞過。
+
+驗證方式（四種情境都要能重現）：
 
 ```bash
-# CI 無 key：應跳過，0 fail
-env -u OPENAI_API_KEY CI=true DOTENV_CONFIG_PATH=/nonexistent/.env npm test --prefix server
+# 本機有 key：實跑並回報通過率（713 pass / 0 fail，golden set 8/8）
+npm test --prefix server
 
-# 本機無 key：應硬失敗
+# 本機無 key：硬失敗
 env -u OPENAI_API_KEY -u CI DOTENV_CONFIG_PATH=/nonexistent/.env npm test --prefix server
 
-# 本機有 key：應實跑並回報通過率
-npm test --prefix server
-```
+# CI 無 key：跳過，0 fail（703 pass）
+env -u OPENAI_API_KEY CI=true DOTENV_CONFIG_PATH=/nonexistent/.env npm test --prefix server
 
-實測基準：本機 **713 pass / 0 fail**（golden set 8/8）；模擬 CI **703 pass / 0 fail**。
+# CI 有 key：仍然跳過（防止 secret 意外啟用它）
+CI=true npm test --prefix server
+```
 
 ## 每次開發完成驗收
 

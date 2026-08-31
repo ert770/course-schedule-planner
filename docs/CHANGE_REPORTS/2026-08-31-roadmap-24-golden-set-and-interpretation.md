@@ -234,19 +234,28 @@ INFO [Preflight] 排課前偵測到矛盾或資料不足，改為澄清
 
 | 環境 | 行為 |
 | --- | --- |
+| 本機、有 key | 每次 `npm test` 實跑，行為不變 |
 | 本機、無 key | **維持硬失敗**，訊息不變（「這是環境未設定，不是程式壞掉」） |
-| CI、無 secret | 跳過 GS，並印出明顯說明（跳過幾題、怎麼開啟）。其餘 703 項照跑 |
-| CI、已設 secret | 自動實跑，**不需要改任何程式**（workflow 已把 secret 傳進去） |
+| CI（不論有無 key） | 跳過 GS 並印出明顯說明。其餘 703 項照跑 |
 
-判定用 `process.env.CI`（GitHub Actions 固定會設 `CI=true`）。「不設開關」要擋的是
-**開發者可以自己關掉**，這裡不是開關，是環境能力偵測——本機沒有任何方式能跳過。
+「不設開關」要擋的是**開發者可以自己關掉**；這裡不是開關，本機沒有任何方式能跳過。
 
-三種情境都實測過；`npm test` 在模擬 CI 的條件下（`CI=true`、無 `.env`、無 key）
-**703 pass / 0 fail**，本機仍為 **713 pass / 0 fail**。
+### 使用者的決定：不讓 golden set 在 CI 跑
 
-**是否要在 CI 真的跑 golden set 是使用者的決定**，因為那要把老師的 API key 放進
-一個 public repo 的 secret，並且每次 push 都消耗額度。目前預設不放；要放的話只需在
-GitHub 加 secret，程式與 workflow 都不用再動。
+第一版修法讓 workflow 把 `secrets.OPENAI_API_KEY` 傳進去，設了 secret 就自動實跑。
+把這個選擇交給使用者之後，**使用者決定不在 CI 跑**，因此改成：
+
+- workflow **不再**傳 `OPENAI_API_KEY`；
+- 判定**只看 `process.env.CI`，不看有沒有 key**。
+
+第二點是這次決定之後才補的防護：如果日後為了別的用途在 CI 加了 `OPENAI_API_KEY`
+secret，這幾題不該就這樣無聲無息地開始每次 push 都呼叫模型、消耗額度。
+要恢復在 CI 執行必須是刻意的動作（改 `SKIP_REASON`），不是設個 secret 就自動生效。
+
+四種情境都實測過（本機有／無 key、CI 有／無 key）：本機 **713 pass / 0 fail**
+（golden set 8/8）；CI **703 pass / 0 fail**，實際 GitHub Actions run 已確認綠燈
+（`33390711687`），log 中可見跳過說明與 `skipped 18`（1 個 GS + 17 個
+`database-contract`，後者因 CI 無 MySQL 連線資訊，是既有行為）。
 
 ## 9. 是否 commit 與 push
 
