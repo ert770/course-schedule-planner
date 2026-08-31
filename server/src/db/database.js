@@ -8,6 +8,7 @@ import { getAbbreviations } from '../data/departmentMapping.js';
 import { tagsToFlags, extractTags } from '../data/preferenceTags.js';
 import { logger } from '../utils/logger.js';
 import { createTtlCache } from '../utils/ttlCache.js';
+import { validateCourseHistoryEntry } from '../data/courseHistory.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -279,6 +280,74 @@ function mapReviewRow(row) {
     url: row.url || null,
     createdAt: row.scraped_at || null,
   };
+}
+
+export class CourseHistoryUnavailableError extends Error {
+  constructor(message, options = {}) {
+    super(message, options);
+    this.name = 'CourseHistoryUnavailableError';
+    this.status = 503;
+    this.code = 'COURSE_HISTORY_UNAVAILABLE';
+  }
+}
+
+export function mapCourseHistoryRow(row) {
+  const requiredColumns = [
+    'academic_year', 'semester', 'catalog_course_code', 'course_name', 'credits',
+    'passed', 'requirement_type', 'graduation_category',
+  ];
+  const missingColumns = requiredColumns.filter(column => row[column] === null || row[column] === undefined);
+  if (missingColumns.length > 0) {
+    throw new CourseHistoryUnavailableError(
+      `歷史修課資料格式不完整（history_id=${row.history_id ?? 'unknown'}）：缺少 ${missingColumns.join('、')}`
+    );
+  }
+  const entry = {
+    academicYear: normalizeNumber(row.academic_year),
+    semester: normalizeNumber(row.semester),
+    courseCode: row.catalog_course_code,
+    courseName: row.course_name,
+    score: row.score === null || row.score === undefined ? null : normalizeNumber(row.score),
+    letterGrade: row.letter_grade ?? null,
+    credits: normalizeNumber(row.credits, 0),
+    passed: Number(row.passed) === 1,
+    requirementType: row.requirement_type,
+    generalEducationCategory: row.general_education_category ?? null,
+    graduationCategory: row.graduation_category,
+  };
+  const validation = validateCourseHistoryEntry(entry);
+  if (!validation.valid) {
+    throw new CourseHistoryUnavailableError(
+      `歷史修課資料格式不完整（history_id=${row.history_id ?? 'unknown'}）：缺少 ${validation.missingFields.join('、')}`
+    );
+  }
+  return entry;
+}
+
+export async function getUserCourseHistory(identity) {
+  if (!isMysqlConfigured()) {
+    throw new CourseHistoryUnavailableError('歷史修課只能來自 MySQL，但目前未設定資料庫連線。');
+  }
+  const numericId = Number(identity?.numericId);
+  if (!Number.isInteger(numericId) || numericId <= 0) {
+    throw new CourseHistoryUnavailableError('缺少可對應 User_Course_History.user_id 的 numeric identity。');
+  }
+
+  try {
+    const rows = await queryRows(`
+      SELECT
+        \`history_id\`, \`academic_year\`, \`semester\`, \`catalog_course_code\`,
+        \`course_name\`, \`score\`, \`letter_grade\`, \`credits\`, \`passed\`,
+        \`requirement_type\`, \`general_education_category\`, \`graduation_category\`
+      FROM \`User_Course_History\`
+      WHERE \`user_id\` = ?
+      ORDER BY \`academic_year\`, \`semester\`, \`history_id\`
+    `, [numericId]);
+    return rows.map(mapCourseHistoryRow);
+  } catch (err) {
+    if (err instanceof CourseHistoryUnavailableError) throw err;
+    throw new CourseHistoryUnavailableError('歷史修課資料暫時無法載入，請稍後再試。', { cause: err });
+  }
 }
 
 // canonical ID（學號）與 `User_Profiles.user_id`（數字主鍵）的對照。
@@ -933,4 +1002,7 @@ export async function clearCollection(collection) {
   writeCollection(collection, []);
 }
 
-export default { getAll, getById, query, insert, update, upsertByField, remove, clearCollection };
+export default {
+  getAll, getById, query, insert, update, upsertByField, remove, clearCollection,
+  getUserCourseHistory,
+};

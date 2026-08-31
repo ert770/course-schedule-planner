@@ -1,4 +1,6 @@
-import { getAll, insert, upsertByField, clearCollection } from '../db/database.js';
+import {
+  getAll, insert, upsertByField, clearCollection, getUserCourseHistory,
+} from '../db/database.js';
 import { normalizeProfile } from '../data/profileSchema.js';
 import { queryRows } from '../db/mysql.js';
 
@@ -29,8 +31,7 @@ function emptyProfile(identity) {
   };
 }
 
-// 歷史修課存在 `users.json`（2026-08-06 匯入），偏好存在 `User_Profiles`。
-// 排課只讀後者，因此在 profile 層合併——否則排課器永遠看不到修課歷史。
+// 歷史修課存在 MySQL `User_Course_History`，與偏好一樣由 profile 層組合。
 //
 // **只回傳 `courseHistory` 本身，不派生任何欄位。** 先前這裡另外回傳
 // `completedCourseCodes` 與 `completedCredits`，那是把同一份資料從檔案搬到
@@ -38,15 +39,7 @@ function emptyProfile(identity) {
 // `data/courseHistory.js` 的 `getPassedCourseCodes()` / `getEarnedCredits()` /
 // `getTotalEarnedCredits()`。
 async function readCourseHistory(identity) {
-  const users = await getAll('users');
-  const user = users.find(item =>
-    String(item.studentId) === String(identity.studentId)
-    || String(item.id) === String(identity.canonicalId)
-  );
-
-  if (!user) return {};
-
-  return { courseHistory: user.courseHistory ?? [] };
+  return { courseHistory: await getUserCourseHistory(identity) };
 }
 
 // Profile 的欄位擁有權契約。
@@ -61,7 +54,7 @@ async function readCourseHistory(identity) {
 // | `blockedPeriods`（第 1～14 節） | `User_Profiles.avoid_time` | 有對應欄位 |
 // | `targetCreditsMax` | `User_Profiles.max_credits` | 有對應欄位 |
 // | `studentId`、`name`、`className` | `users.json` | `User_Profiles` 沒有這些欄位 |
-// | `courseHistory` | `users.json` | 同上；2026-08-06 由成績單匯入 |
+// | `courseHistory` | `User_Course_History` | 11 欄完整歷史修課契約；只從 MySQL 讀取 |
 //
 // **修課歷史只有 `courseHistory` 一個代表。** `completedCourseCodes`、
 // `completedCourseNames`、`completedCourseIds`、`completedCredits`、`earnedCredits`
@@ -86,7 +79,7 @@ export async function getUserPreferences(identity) {
   return normalizeProfile({
     ...emptyProfile(identity),
     ...(prefs || {}),
-    // 歷史修課的真相來源是 users.json，偏好列不得覆蓋它。
+    // 歷史修課的真相來源是 User_Course_History，偏好列不得覆蓋它。
     ...history,
   });
 }

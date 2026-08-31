@@ -28,7 +28,10 @@ router.get('/', requireIdentity, requireServiceConsent, async (req, res) => {
       courseSearchScope: buildCourseSearchScope(prefs),
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({
+      error: err.message,
+      ...(err.code ? { code: err.code } : {}),
+    });
   }
 });
 
@@ -50,7 +53,10 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
     const updated = await updateUserPreferences(req.identity, updates);
     res.json({ success: true, preferences: updated });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({
+      error: err.message,
+      ...(err.code ? { code: err.code } : {}),
+    });
   }
 });
 

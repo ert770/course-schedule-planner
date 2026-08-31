@@ -348,6 +348,10 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 比對 `course.catalogCourseCode`），不是當學期的 section id——section id 每學期、每個班次
 都會改變，用它排除已修課從一開始就不會生效。
 
+`courseHistory` 只由 MySQL `User_Course_History` 載入，不再讀取 `users.json`。資料庫查詢
+失敗時整次排課回 `503 COURSE_HISTORY_UNAVAILABLE`；不能把錯誤當成零筆歷史，否則會重新
+推薦已修課。真正查詢成功且 0 筆才代表沒有歷史修課。
+
 - 候選課程的 `course.catalogCourseCode` 落在使用者 `courseHistory` 已通過（`passed: true`）
   的課號集合裡，就整批排除（一課多班次時**每一個班次**都要排除，不能只擋到其中
   一個 section）。

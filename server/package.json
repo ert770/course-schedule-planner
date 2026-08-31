@@ -11,6 +11,7 @@
     "migrate:profile": "node scripts/profileSchemaMigration.js",
     "migrate:privacy": "node scripts/privacyMigration.js",
     "migrate:interactions": "node scripts/interactionEventsMigration.js",
+    "migrate:course-history": "node scripts/courseHistoryMigration.js",
     "configure:privacy": "node scripts/configurePrivacyEnvironment.js",
     "cleanup:privacy": "node scripts/privacyCleanup.js",
     "cleanup:legacy-chat": "node scripts/legacyChatCleanup.js"

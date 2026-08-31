@@ -191,7 +191,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `profile_schema_version` | int | `profile.schemaVersion`；目前版本 `1`（migration 目標欄位） |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
-| `completed_courses` | json | **已停用**（2026-08-13）。本專案不再讀寫此欄位——已修排除改用 `users.json` 的 `courseHistory`，理由與遷移細節見 `docs/CHANGE_REPORTS/2026-08-13-part-a-course-history-scheduling-data.md`。欄位本身仍存在於共用表，本專案不自行 `ALTER TABLE`，清理需與組員協調 |
+| `completed_courses` | json | **已停用**。本專案不再讀寫；歷史修課唯一來源為 `User_Course_History` |
 | `max_credits` | int | `profile.targetCreditsMax` |
 
 `student_id`、`class_name`、`profile_schema_version` 的 DDL 與安全 migration 已備妥，
@@ -297,19 +297,17 @@ store 的邏輯名稱。
 
 ### `users.json` 的職責
 
-`users.json` **只負責登入身分與 demo 展示資料**（`studentId`、`password`、`name`、
-`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
+`users.json` **只負責登入身分與尚未遷移的 demo 資料**（`studentId`、`password`、`name`、
+`watchlist`、`skillTree`…），以及班別的後備儲存。它不再保存 `courseHistory`。
 
-**歷史修課只有 `courseHistory` 一個欄位。** 2026-08-11 前這裡另外存了
-`completedCredits`、`completedCourseIds`、`completedCourseCodes`、
-`completedCourseNames`、`earnedCredits` 五個衍生欄位——全部是 `courseHistory`
-逐門加總／篩選就能算出來的東西，同一份資料存六份必然漂移。已修課號、
-已修學分、分類學分彙總一律呼叫 `server/src/data/courseHistory.js` 的
+歷史修課唯一來源為 MySQL `User_Course_History`。已修課號、已修學分、分類學分彙總
+一律由查出的 11 欄 `courseHistory` 物件呼叫 `server/src/data/courseHistory.js` 的
 `getPassedCourseCodes()`／`getEarnedCredits()`／`getTotalEarnedCredits()`
-當場算，**不得**在 `users.json` 或任何 profile 物件上重新造出這幾個名字的
-派生欄位（`server/test/courseHistory.test.js` 的 H3 有回歸測試釘住這件事）。
+當場算，不得在 JSON 或 profile 上保存衍生欄位。
 
-`courseHistory` 項目：
+### `User_Course_History`
+
+資料庫以 snake_case 保存，`database.js` 映射為下列 `courseHistory` 項目：
 
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
@@ -330,6 +328,19 @@ store 的邏輯名稱。
 `passed: false` 且 `requirementType: 必修` 才成為自動重補修來源。`withdrawn`、
 `transferred`、`exempted` 等多狀態模型不屬於 #19，本次不新增欄位，改由 roadmap #23
 在畢業認列規則與來源可追溯性一併設計。
+
+`catalog_course_code` 不設 `Courses` FK，因為歷史課程可能已不在當期 catalog；只保留
+`user_id → User_Profiles.user_id` FK。唯一鍵為使用者、穩定課號、學年度與學期。
+Migration 為 `server/migrations/004_course-history-v1.*.sql`，執行方式：
+
+```text
+npm run migrate:course-history --prefix server
+npm run migrate:course-history --prefix server -- --apply --confirm-shared-mysql
+npm run migrate:course-history --prefix server -- --rollback --confirm-shared-mysql
+```
+
+查詢成功但 0 筆是合法空歷史；查詢失敗則回 `503 COURSE_HISTORY_UNAVAILABLE`，不得假裝
+成空歷史繼續排課或計算畢業進度。
 
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——

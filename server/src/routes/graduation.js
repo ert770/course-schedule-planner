@@ -51,8 +51,8 @@ export function resolveRequiredCredits(requirement) {
 // （見 `data/courseHistory.js`），`getEarnedCredits()` 對任何陣列都會回傳
 // 合法形狀的結果（空陣列得到全 0），沒有「派生值壞掉」這種狀態需要防。
 // 因此只需判斷有沒有可以派生的來源。
-function hasCourseHistory(user) {
-  return Array.isArray(user.courseHistory) && user.courseHistory.length > 0;
+function hasCourseHistory(profile) {
+  return Array.isArray(profile.courseHistory) && profile.courseHistory.length > 0;
 }
 
 async function handleGraduation(req, res) {
@@ -85,7 +85,7 @@ async function handleGraduation(req, res) {
       warnings.push(`「${department}」的畢業學分資料尚待人工複核，缺口僅供參考。`);
     }
 
-    const courseHistoryAvailable = hasCourseHistory(user);
+    const courseHistoryAvailable = hasCourseHistory(profile);
     const courseHistoryMessage = courseHistoryAvailable
       ? null
       : '缺少歷史修課資料，請至 MyFCU 擷取歷史修課資料並匯入。';
@@ -93,9 +93,9 @@ async function handleGraduation(req, res) {
     // `completedCredits`（2026-08-11 已從 `users.json` 移除）。
     // 兩支函式與排課共用同一份 `data/courseHistory.js`，因此畢業進度與
     // 排課的已修判定必然一致。
-    const earned = courseHistoryAvailable ? getEarnedCredits(user.courseHistory) : null;
+    const earned = courseHistoryAvailable ? getEarnedCredits(profile.courseHistory) : null;
     const totalEarned = courseHistoryAvailable
-      ? getTotalEarnedCredits(user.courseHistory)
+      ? getTotalEarnedCredits(profile.courseHistory)
       : null;
     // `required` 查不到系所時是 `null`（見 resolveRequiredCredits）；
     // 只看 courseHistoryAvailable 的話，「有修課歷史但系所查不到」會讓
@@ -114,7 +114,7 @@ async function handleGraduation(req, res) {
     // `completedCourseIds` 恆為空陣列（歷史修課存的是課號，不是當學期 section id），
     // 所以這個排除從來沒有生效過，「建議補足系上課程」可能推薦一門已經修過
     // 並及格的課。`course.id` 也不是課程識別碼，而是「班級 + 課程」的組合。
-    const passedCourseCodes = new Set(getPassedCourseCodes(user.courseHistory));
+    const passedCourseCodes = new Set(getPassedCourseCodes(profile.courseHistory));
     const recommendations = [];
 
     // `course.department` 存的是**班級名稱**（`資訊三甲`），不是系所全名。
@@ -154,7 +154,10 @@ async function handleGraduation(req, res) {
       overallScoreMax: user.overallScoreMax || 100,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({
+      error: err.message,
+      ...(err.code ? { code: err.code } : {}),
+    });
   }
 }
 

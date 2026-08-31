@@ -198,6 +198,7 @@ node --check src/app.js
 （`getPassedCourseCodes()`／`getEarnedCredits()`／`getTotalEarnedCredits()`）
 是排課、畢業頁共用的唯一來源，取代了先前各自獨立、彼此可能不一致的
 `completedCourseIds`／`completedCourseCodes`／`completedCredits`／`earnedCredits`。
+執行期資料由 MySQL `User_Course_History` 映射，不讀 `users.json.courseHistory`。
 
 `server/test/courseHistory.test.js`：
 
@@ -210,9 +211,16 @@ node --check src/app.js
 | H2 | 課程分類為 `nonGraduation` | 不計入任何分類，也不進總學分 |
 | H2 | `graduationCategory` 缺漏或不在已知清單 | 歸入 `unspecified`，不靜默丟棄學分 |
 | H2 | `courseHistory` 為空 | 回傳全 0 物件而非 `undefined` |
-| H3 | demo 使用者（`D1249697`）真實 53 筆資料 | 分類學分 `61/22/24/11`、總學分 `118`——與整併前的既有值逐項相符 |
-| H3 | 同一批真實資料 | 53 個已修課號皆不重複 |
-| H3 | 整併後的 `users.json` | `completedCourseCodes`／`completedCourseNames`／`completedCourseIds`／`completedCredits`／`earnedCredits` 五個欄位皆不存在 |
+| H3 | 53 筆合成回歸資料 | 分類學分 `61/22/24/11`、總學分 `118`，53 個課號皆不重複 |
+
+`server/test/courseHistoryDatabase.test.js`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| H8 | MySQL row 映射 | 完整回傳既有 11 欄 camelCase 契約 |
+| H8 | `passed=0` | 映射為 `false`，不受字串 truthiness 影響 |
+| H8 | 必要欄位缺漏 | 回報 `503 COURSE_HISTORY_UNAVAILABLE` |
+| H8 | runtime source scan | `memoryService`／graduation 不再讀 `users.json.courseHistory`，JSON 欄位已刪除 |
 
 `server/test/scheduler.test.js`（`generateSchedule()` 端到端，不是只測合併函式）：
 

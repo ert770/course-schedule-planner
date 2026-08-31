@@ -23,6 +23,7 @@ export default function GraduationPage() {
   const { theme, toggleTheme } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
 
@@ -35,35 +36,12 @@ export default function GraduationPage() {
       return;
     }
     try {
+      setLoadError('');
       const result = await graduationAPI.get();
       setData(result);
     } catch (err) {
-      console.error('Failed to load graduation data:', err);
-      // Fallback data matching mockup
-      setData({
-        totalRequired: 128,
-        totalEarned: 107,
-        gaps: { required: 10, elective: 9, general: 4, external: 0 },
-        recommendations: [
-          {
-            type: 'warning',
-            title: '必修警告',
-            message: '偵測到您尚未修畢大三必修【計算機結構學】，建議本學期優先排入以防延畢。',
-            course: { id: 4, name: '計算機組織', credits: 3 },
-          },
-          {
-            type: 'suggestion',
-            title: '通識推薦',
-            message: '您的通識尚缺 4 學分，AI 根據您先前勾選的涼課條件，為您推薦【現代車業事件剖析】。該課平常簡單自由簽到，老師確幸至10次，而且期末考不恐怖，若還有剩餘讀書時間可以拿到分數，達成您的篩選條件。',
-            course: { id: 99, name: '現代車業事件剖析', credits: 2 },
-          },
-        ],
-        watchlist: [
-          { id: 101, name: '密碼學', category: '選修', credits: 3 },
-          { id: 102, name: '人工智慧自然語言導論', category: '選修', credits: 3 },
-          { id: 103, name: '資訊實務案例探討', category: '選修', credits: 2 },
-        ],
-      });
+      setData(null);
+      setLoadError(err.message || '畢業進度暫時無法載入，請稍後再試。');
     } finally {
       setLoading(false);
     }
@@ -78,6 +56,19 @@ export default function GraduationPage() {
       <div className="graduation-page" id="graduation-page">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#6b7280' }}>
           載入中...
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="graduation-page" id="graduation-page">
+        <div style={{ maxWidth: '560px', margin: '18vh auto', padding: '24px', textAlign: 'center' }}>
+          <AlertTriangle size={42} style={{ color: 'var(--accent-red)', marginBottom: '12px' }} />
+          <h2>畢業進度暫時無法載入</h2>
+          <p style={{ color: 'var(--text-secondary)', margin: '12px 0 20px' }}>{loadError}</p>
+          <button className="btn-primary" type="button" onClick={loadGraduationData}>重新載入</button>
         </div>
       </div>
     );

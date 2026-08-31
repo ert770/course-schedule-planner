@@ -1,6 +1,6 @@
 // 歷史修課紀錄的派生運算。
 //
-// **`courseHistory` 是修課歷史的唯一來源。** 先前 `users.json` 對同一批資料
+// **`User_Course_History` 映射出的 `courseHistory` 是修課歷史的唯一來源。** 先前 `users.json` 對同一批資料
 // 另外存了 `completedCourseCodes`、`completedCourseNames`、`completedCourseIds`、
 // `completedCredits`、`earnedCredits` 五個欄位，全部都是 `courseHistory` 能直接
 // 算出來的東西。同一份資料存多份必然漂移，那些欄位已於 2026-08-11 移除，
