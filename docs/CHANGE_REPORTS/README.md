@@ -4,7 +4,8 @@
 
 ## 2026-08-31
 
-1. [Roadmap #24：永久寫入確認閘門、身分更正與排課前矛盾偵測](./2026-08-31-roadmap-24-requirement-gate.md)
+1. [Roadmap #24 第二輪：結構性矛盾完整化、理解回講與 golden set](./2026-08-31-roadmap-24-golden-set-and-interpretation.md)
+2. [Roadmap #24：永久寫入確認閘門、身分更正與排課前矛盾偵測](./2026-08-31-roadmap-24-requirement-gate.md)
 
 ## 2026-08-30
 

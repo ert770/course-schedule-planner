@@ -1,0 +1,102 @@
+{
+  "_comment": [
+    "Roadmap #24 的自然語言 golden set。",
+    "每題斷言的是「這次解析有沒有抓到重點」，不是逐字相同——推理模型的輸出",
+    "本來就不保證每次一樣，要求逐字重現只會做出一個間歇性失敗的測試。",
+    "新增題目時請一併想清楚：這題要防的是哪一種誤解？"
+  ],
+  "cases": [
+    {
+      "id": "basic-no-morning",
+      "utterance": "幫我排一份不要早八的課表。",
+      "why": "最基本的旗標對應。沒抓到就代表偏好完全沒傳到排課引擎。",
+      "expect": {
+        "tool": "run_csp_scheduler",
+        "params": {
+          "noMorningClasses": true
+        }
+      }
+    },
+    {
+      "id": "strength-absolute",
+      "utterance": "幫我排一份課表，我絕對不要早八，無論如何都不行。",
+      "why": "語氣強硬時必須列進不可放寬清單，否則排課引擎仍可能自動放寬。（原本的題目只是陳述不是請求，模型不呼叫工具其實是對的——已改成明確的排課請求。）",
+      "expect": {
+        "tool": "run_csp_scheduler",
+        "params": {
+          "noMorningClasses": true
+        },
+        "includes": {
+          "nonNegotiablePreferenceIds": "NO_MORNING_CLASSES"
+        }
+      }
+    },
+    {
+      "id": "strength-flexible",
+      "utterance": "幫我排一份課表，盡量不要排早八，但如果真的排不出來，早八也可以接受。",
+      "why": "語氣有彈性時要允許放寬。與上一題是同一個偏好、相反的強度。",
+      "expect": {
+        "tool": "run_csp_scheduler",
+        "params": {
+          "noMorningClasses": true,
+          "allowRelaxation": true
+        }
+      }
+    },
+    {
+      "id": "interest-keywords",
+      "utterance": "幫我排課，我對資訊安全這個領域很有興趣。",
+      "why": "興趣沒傳進去的話，推薦就退化成只看總學分，個人化整個失效。",
+      "expect": {
+        "tool": "run_csp_scheduler",
+        "includes": {
+          "interests": "資"
+        }
+      }
+    },
+    {
+      "id": "permanent-vs-once",
+      "utterance": "以後都不要幫我排晚上的課。",
+      "why": "「以後都」是永久偏好，該走 update_preferences 而不是只帶進這次排課。",
+      "expect": {
+        "tool": "update_preferences",
+        "params": {
+          "noEveningClasses": true
+        }
+      }
+    },
+    {
+      "id": "once-not-permanent",
+      "utterance": "這學期先不要排晚上的課，幫我排一份看看。",
+      "why": "「這學期」是單次條件，不該去改使用者的長期偏好。",
+      "expect": {
+        "tool": "run_csp_scheduler",
+        "params": {
+          "noEveningClasses": true
+        }
+      }
+    },
+    {
+      "id": "no-invented-constraints",
+      "utterance": "幫我排課就好。",
+      "why": "使用者什麼條件都沒提時，不得自行假設他不要早八或不要晚課。",
+      "expect": {
+        "tool": "run_csp_scheduler",
+        "absent": [
+          "noMorningClasses",
+          "noEveningClasses",
+          "mondayFree",
+          "lunchBreakFree"
+        ]
+      }
+    },
+    {
+      "id": "profile-correction",
+      "utterance": "你資料弄錯了，我是資訊工程學系三年級、資訊三乙，請幫我更正。",
+      "why": "更正身分要走 update_student_profile，不是塞進排課參數或偏好。（題目要一次給齊系所／年級／班別，否則模型會先追問缺的欄位——那也是正確行為。）",
+      "expect": {
+        "tool": "update_student_profile"
+      }
+    }
+  ]
+}

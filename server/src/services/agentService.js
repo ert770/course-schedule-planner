@@ -304,12 +304,18 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // #22 的 clarification 是「排完發現排不出來」才產生的；有些問題不必真的
         // 跑一次排課就能斷定——例如系所無法解析（必修判定其實懸空，先前會靜默
         // 照排），或使用者指名必修的課正好落在他自己設的封鎖時段裡。
+        // `interpretation` 是給使用者看的理解回講，不是排課條件——要從送進排課
+        // 引擎的 constraints 裡拆出來，否則會被當成一個不認得的限制欄位。
+        const { interpretation = null, ...schedulingArgs } = args;
+
         const contradiction = preflight({
           constraints: args,
           studentScope,
-          courseById: args.mustTakeCourseIds?.length
-            ? await lookupCourses(args.mustTakeCourseIds)
-            : new Map(),
+          // 必修與已選都要查——已選課程撞封鎖時段同樣是使用者自己的條件打架。
+          courseById: await lookupCourses([
+            ...(args.mustTakeCourseIds ?? []),
+            ...(args.selectedCourseIds ?? []),
+          ]),
         });
         if (contradiction.required) {
           logger.info('排課前偵測到矛盾或資料不足，改為澄清', { label: 'Preflight' });
@@ -322,9 +328,14 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
           };
         }
 
-        return await generateSchedule(
-          identity, { constraints: args, surface: 'chat', trigger: 'chat_tool' }, { prefs }
+        const scheduled = await generateSchedule(
+          identity, { constraints: schedulingArgs, surface: 'chat', trigger: 'chat_tool' }, { prefs }
         );
+
+        // 回講跟著結果一起回去，讓前端與使用者看得到「Agent 理解成什麼」。
+        // **不寫進 log 也不進 Interaction_Events**：`sourcePhrases` 含使用者原話，
+        // #33 明訂 log 只記 metadata 不記內容。
+        return interpretation ? { ...scheduled, interpretation } : scheduled;
       }
 
       case 'record_schedule_feedback':

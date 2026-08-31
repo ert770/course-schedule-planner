@@ -225,3 +225,47 @@ describe('AG12 部分偏好更新不得刪掉使用者沒提到的偏好', () =>
     assert.equal(written.lunchBreakFree, true);
   });
 });
+
+describe('AG13 理解回講不進排課引擎，但會回傳給使用者', () => {
+  const interpretation = {
+    nonNegotiable: [], flexible: ['盡量集中排課'], creditGoal: '12～18 學分', notMentioned: ['不能上課的時段'],
+  };
+
+  // interpretation 是給使用者看的說明，不是排課條件。混進 constraints 會被
+  // 排課引擎當成一個不認得的限制欄位。
+  test('送進排課引擎的 constraints 不含 interpretation', async () => {
+    let received;
+    await executeAgentTool(
+      'run_csp_scheduler', { maxCredits: 18, interpretation },
+      { ...ctx, studentScope: { resolved: true } },
+      { generateSchedule: (_id, input) => { received = input; return { success: true }; } }
+    );
+
+    assert.equal(received.constraints.maxCredits, 18);
+    assert.ok(!('interpretation' in received.constraints));
+  });
+
+  test('排課結果會帶回 interpretation 給前端顯示', async () => {
+    const result = await executeAgentTool(
+      'run_csp_scheduler', { interpretation },
+      { ...ctx, studentScope: { resolved: true } },
+      { generateSchedule: () => ({ success: true, requestId: 'r-1' }) }
+    );
+
+    assert.deepEqual(result.interpretation, interpretation);
+    assert.equal(result.success, true);
+  });
+
+  test('回講與參數自相矛盾時擋下，不跑排課', async () => {
+    let scheduled = false;
+    const result = await executeAgentTool(
+      'run_csp_scheduler',
+      { interpretation: { ...interpretation, nonNegotiable: ['絕對不排早八'] } },
+      { ...ctx, studentScope: { resolved: true } },
+      { generateSchedule: () => { scheduled = true; return { success: true }; } }
+    );
+
+    assert.equal(scheduled, false);
+    assert.equal(result.clarification.questions[0].id, 'confirm-interpretation-mismatch');
+  });
+});

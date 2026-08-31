@@ -235,3 +235,38 @@ describe('P5 Roadmap #24：偏好強度的判讀', () => {
     assert.ok(prompt.includes('盡量不要'), 'prompt 需給出彈性語氣的例子');
   });
 });
+
+describe('P6 Roadmap #24：結構化理解回講', () => {
+  const scheduler = toolByName.get('run_csp_scheduler');
+
+  // 原生 tool calling 保證得了參數格式，保證不了理解正確——模型把「盡量」
+  // 聽成「絕對」，參數一樣合法，使用者卻拿到不對的課表。
+  test('interpretation 是 run_csp_scheduler 的必填參數', () => {
+    assert.ok(scheduler.parameters.required.includes('interpretation'));
+  });
+
+  test('四個必填子欄位齊全', () => {
+    const { interpretation } = scheduler.parameters.properties;
+
+    for (const field of ['nonNegotiable', 'flexible', 'creditGoal', 'notMentioned']) {
+      assert.ok(interpretation.required.includes(field), `缺少必填欄位 ${field}`);
+      assert.ok(Object.hasOwn(interpretation.properties, field), `缺少欄位定義 ${field}`);
+    }
+  });
+
+  test('sourcePhrases 存在但非必填（沒有直接對應時可省略）', () => {
+    const { interpretation } = scheduler.parameters.properties;
+
+    assert.ok(Object.hasOwn(interpretation.properties, 'sourcePhrases'));
+    assert.ok(!interpretation.required.includes('sourcePhrases'));
+  });
+
+  test('system prompt 要求排課前先回講，且不得自行假設', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('理解回講'));
+    assert.ok(prompt.includes('interpretation'));
+    assert.ok(prompt.includes('notMentioned'));
+    assert.ok(prompt.includes('不要在那裡自行假設答案'));
+  });
+});

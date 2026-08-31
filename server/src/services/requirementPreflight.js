@@ -16,7 +16,8 @@
 // 純函式，所有外部資料由呼叫端注入（比照 `executeAgentTool(name, args, ctx, deps)`
 // 與 `scheduleService.loadCourseReviewsSafely()` 的既有作法）。
 
-import { normalizeBlockedPeriods } from '../utils/periods.js';
+import { normalizeBlockedPeriods, PERIODS_PER_DAY } from '../utils/periods.js';
+import { isActiveTermCourse } from '../data/activeTerm.js';
 
 // 取出一門課的所有上課時段。
 //
@@ -47,6 +48,60 @@ export function courseIntersectsBlockedPeriods(course, blockedPeriods = []) {
       && Number(bp.period) <= Number(block.endPeriod ?? block.startPeriod)
   ));
 }
+
+// 兩門課的時段是否重疊。與 `scheduler.js` 的 `blocksOverlap()` 同一套判定。
+function coursesOverlap(a, b) {
+  return timeBlocksOf(a).some(x => timeBlocksOf(b).some(y => (
+    Number(x.dayOfWeek) === Number(y.dayOfWeek)
+    && Number(x.startPeriod) <= Number(y.endPeriod ?? y.startPeriod)
+    && Number(y.startPeriod) <= Number(x.endPeriod ?? x.startPeriod)
+  )));
+}
+
+// 時段類偏好合起來還剩幾個可用節次。
+//
+// 早八／午休／晚課的節次定義**沿用 `scheduler.js` 的既有規則**，不自己另定一套：
+// 早八 = 第 1 節、午休 = 第 5 節、晚間 = 第 12 節以後。
+function countAvailableSlots(constraints) {
+  const blocked = new Set(
+    normalizeBlockedPeriods(constraints.blockedPeriods).map(bp => `${bp.day}-${bp.period}`)
+  );
+  const days = constraints.mondayFree ? [2, 3, 4, 5] : [1, 2, 3, 4, 5];
+
+  let available = 0;
+  for (const day of days) {
+    for (let period = 1; period <= PERIODS_PER_DAY; period += 1) {
+      if (blocked.has(`${day}-${period}`)) continue;
+      if (constraints.noMorningClasses && period === 1) continue;
+      if (constraints.lunchBreakFree && period === 5) continue;
+      if (constraints.noEveningClasses && period >= 12) continue;
+      available += 1;
+    }
+  }
+  return available;
+}
+
+// 理解回講裡提到某個限制時，可以用哪些關鍵字認出來。
+//
+// 刻意用寬鬆的關鍵字比對而不是要求模型填固定 enum：回講是要給**使用者**看的
+// 自然語言，逼它填代號會讓那段文字變得沒人看得懂。這裡只做「它說了不可退讓，
+// 參數卻沒開」這種明顯自打嘴巴的偵測，不做語意理解。
+const INTERPRETATION_KEYWORDS = {
+  NO_MORNING_CLASSES: ['早八', '早上八點', '第一節'],
+  LUNCH_BREAK_FREE: ['午休', '中午'],
+  NO_EVENING_CLASSES: ['晚上', '晚間', '夜間'],
+};
+
+function mentionsConstraint(phrases, constraintId) {
+  const keywords = INTERPRETATION_KEYWORDS[constraintId] ?? [];
+  return phrases.some(text => keywords.some(word => String(text ?? '').includes(word)));
+}
+
+const RELAXABLE_FLAG_BY_ID = {
+  NO_MORNING_CLASSES: 'noMorningClasses',
+  LUNCH_BREAK_FREE: 'lunchBreakFree',
+  NO_EVENING_CLASSES: 'noEveningClasses',
+};
 
 /**
  * 排課前的矛盾與資料不足檢查。
@@ -97,6 +152,167 @@ export function checkPreflightContradictions({
       courseIds: [Number(rawId)],
       constraintIds: ['BLOCKED_PERIODS'],
     });
+  }
+
+  // (3) 學分區間本身自相矛盾。目前 `constraintService.js` 只是把兩個值直通，
+  // 排課引擎也沒有互相比對，因此「最少 20 但最多 15」會一路排到底。
+  const { minCredits, maxCredits, maxCoursesPerDay } = constraints;
+  if (Number.isFinite(minCredits) && Number.isFinite(maxCredits) && minCredits > maxCredits) {
+    questions.push({
+      id: 'confirm-credit-range',
+      type: 'contradiction',
+      prompt: `你說最少要 ${minCredits} 學分、最多只能 ${maxCredits} 學分，這兩個條件無法同時成立。`
+        + '請確認學分範圍。',
+      courseIds: [],
+      constraintIds: ['CREDIT_FLOOR', 'CREDIT_CEILING'],
+    });
+  }
+
+  // (4) 負數或零的上限。
+  for (const [label, value, id] of [
+    ['學分下限', minCredits, 'CREDIT_FLOOR'],
+    ['學分上限', maxCredits, 'CREDIT_CEILING'],
+  ]) {
+    if (Number.isFinite(value) && value < 0) {
+      questions.push({
+        id: 'confirm-credit-range',
+        type: 'contradiction',
+        prompt: `${label}不能是負數（目前是 ${value}），請確認正確的數字。`,
+        courseIds: [],
+        constraintIds: [id],
+      });
+    }
+  }
+  if (Number.isFinite(maxCoursesPerDay) && maxCoursesPerDay <= 0) {
+    questions.push({
+      id: 'confirm-daily-cap',
+      type: 'contradiction',
+      prompt: `每天最多 ${maxCoursesPerDay} 門課代表一門都不能排，請確認這個上限。`,
+      courseIds: [],
+      constraintIds: ['DAILY_COURSE_CAP'],
+    });
+  }
+
+  // (5) 指定必修彼此衝堂——使用者自己指名的兩門課本來就撞在一起。
+  const mustTake = (constraints.mustTakeCourseIds ?? [])
+    .map(id => [Number(id), courseById.get(Number(id))])
+    .filter(([, course]) => Boolean(course));
+
+  for (let i = 0; i < mustTake.length; i += 1) {
+    for (let j = i + 1; j < mustTake.length; j += 1) {
+      const [idA, courseA] = mustTake[i];
+      const [idB, courseB] = mustTake[j];
+      if (!coursesOverlap(courseA, courseB)) continue;
+
+      questions.push({
+        id: 'confirm-required-course-conflict',
+        type: 'course-priority',
+        prompt: `你指定一定要修的「${courseA.name}」和「${courseB.name}」上課時間互相衝突，`
+          + '沒辦法同時排進同一份課表，請確認要保留哪一門。',
+        courseIds: [idA, idB],
+        constraintIds: ['TIME_CONFLICT'],
+      });
+    }
+  }
+
+  // (6) 指定必修的學分總和已經超過學分上限。
+  if (Number.isFinite(maxCredits) && mustTake.length > 0) {
+    const total = mustTake.reduce((sum, [, course]) => sum + (Number(course.credits) || 0), 0);
+    if (total > maxCredits) {
+      questions.push({
+        id: 'confirm-credit-range',
+        type: 'contradiction',
+        prompt: `你指定一定要修的課合計 ${total} 學分，已經超過你設的上限 ${maxCredits} 學分。`
+          + '請確認要提高上限，還是拿掉其中幾門。',
+        courseIds: mustTake.map(([id]) => id),
+        constraintIds: ['CREDIT_CEILING'],
+      });
+    }
+  }
+
+  // (7) 指定必修不在本學期開課。
+  for (const [id, course] of mustTake) {
+    if (isActiveTermCourse(course)) continue;
+    questions.push({
+      id: 'confirm-course-term',
+      type: 'missing-data',
+      prompt: `你指定一定要修的「${course.name}」不是本學期開的課，沒辦法排進這學期的課表。`
+        + '請確認是不是要換一門，或改排下學期。',
+      courseIds: [id],
+      constraintIds: ['OFF_TERM'],
+    });
+  }
+
+  // (8) 已選課程撞到自己設定的封鎖時段。
+  for (const rawId of constraints.selectedCourseIds ?? []) {
+    const course = courseById.get(Number(rawId));
+    if (!course) continue;
+    if (!courseIntersectsBlockedPeriods(course, constraints.blockedPeriods)) continue;
+
+    questions.push({
+      id: 'confirm-selected-course-conflict',
+      type: 'course-priority',
+      prompt: `你已選的「${course.name}」上課時間落在你設定的不能上課時段裡，`
+        + '請確認要退掉這門課，還是放寬那個時段。',
+      courseIds: [Number(rawId)],
+      constraintIds: ['BLOCKED_PERIODS'],
+    });
+  }
+
+  // (9) 時段偏好合起來把可用節次清空。
+  if (countAvailableSlots(constraints) === 0) {
+    questions.push({
+      id: 'confirm-time-preferences',
+      type: 'contradiction',
+      prompt: '你設定的不能上課時段與時段偏好合起來，已經沒有任何節次可以排課了。'
+        + '請確認要放寬哪一項。',
+      courseIds: [],
+      constraintIds: ['BLOCKED_PERIODS'],
+    });
+  }
+
+  // (10) 指名「絕對不可放寬」的偏好，但那個偏好根本沒有開。
+  //
+  // 這代表模型自己前後矛盾（例如列了 NO_MORNING_CLASSES 卻沒設 noMorningClasses），
+  // 照著排下去會產生一份與使用者語意不符的課表。
+  for (const id of constraints.nonNegotiablePreferenceIds ?? []) {
+    const flag = RELAXABLE_FLAG_BY_ID[id];
+    if (!flag || constraints[flag] === true) continue;
+
+    questions.push({
+      id: 'confirm-preference-strength',
+      type: 'contradiction',
+      prompt: `你把「${id}」列為絕對不可放寬，但這個偏好目前並沒有開啟。`
+        + '請確認你是不是要啟用這個限制。',
+      courseIds: [],
+      constraintIds: [id],
+    });
+  }
+
+  // (11) 理解回講與實際參數自相矛盾。
+  //
+  // 模型在回講裡說「絕對不排早八」，實際參數卻沒有把 noMorningClasses 打開，
+  // 或沒有列進 nonNegotiablePreferenceIds——那份課表排出來就會與它自己剛剛
+  // 對使用者說的話不符。這是模型前後矛盾，退回去讓它修正。
+  const interpretation = constraints.interpretation ?? null;
+  if (interpretation) {
+    const nonNegotiable = Array.isArray(interpretation.nonNegotiable)
+      ? interpretation.nonNegotiable : [];
+    const declared = new Set(constraints.nonNegotiablePreferenceIds ?? []);
+
+    for (const [constraintId, flag] of Object.entries(RELAXABLE_FLAG_BY_ID)) {
+      if (!mentionsConstraint(nonNegotiable, constraintId)) continue;
+      if (constraints[flag] === true && declared.has(constraintId)) continue;
+
+      questions.push({
+        id: 'confirm-interpretation-mismatch',
+        type: 'contradiction',
+        prompt: `你在理解說明裡把「${constraintId}」列為絕對不可退讓，`
+          + '但實際排課參數沒有把它設成硬性限制。請確認使用者的語氣到底是不是絕對的。',
+        courseIds: [],
+        constraintIds: [constraintId],
+      });
+    }
   }
 
   return {

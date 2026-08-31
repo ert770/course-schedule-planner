@@ -129,6 +129,55 @@ const SCHEDULER_PARAMETERS = {
   },
 };
 
+// Roadmap #24 的「結構化需求模型」。
+//
+// 原生 tool calling 已經保證**參數格式**正確，但保證不了**理解正確**——模型把
+// 「盡量不要早八」聽成「絕對不要」，參數一樣合法，使用者卻拿到不對的課表。
+//
+// 這個欄位要求模型排課前先把理解攤開來：哪些是不可退讓的、哪些有彈性、
+// 哪些是它自己補的、哪些使用者根本沒提。因為是 JSON Schema 的 required，
+// 格式由 API 層保證，不是靠 prompt 自律。
+//
+// 三個用途：使用者當場能抓到誤解；伺服器可以檢查它與實際參數是否自相矛盾；
+// golden set 有明確的比對對象。
+//
+// **不記錄、不持久化**：`sourcePhrases` 含使用者原話，#33 明訂 log 只記 metadata
+// 不記內容。這個物件只出現在這一次請求的回應裡。
+const INTERPRETATION_SCHEMA = {
+  type: 'object',
+  description: '你對使用者這次需求的理解。會顯示給使用者確認，也會被伺服器對照實際參數檢查。',
+  properties: {
+    nonNegotiable: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '使用者語氣強硬、絕對不能違反的條件，用中文短句描述，例如「絕對不排早八」。',
+    },
+    flexible: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '使用者表達過彈性、必要時可以退讓的條件，例如「盡量集中排課」。',
+    },
+    creditGoal: {
+      type: 'string',
+      description: '你對學分需求的理解，例如「12～18 學分」；使用者沒提就寫「未指定」。',
+    },
+    notMentioned: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '排課會用到、但使用者這次完全沒提到的項目，例如「不能上課的時段」。'
+        + '**不要在這裡自行假設答案**，只是列出你沒有資訊的部分。',
+    },
+    sourcePhrases: {
+      type: 'object',
+      description: '參數名稱對應到使用者的原話，例如 {"noMorningClasses":"不要早八"}。'
+        + '沒有直接對應的參數就不要列。',
+      additionalProperties: { type: 'string' },
+    },
+  },
+  required: ['nonNegotiable', 'flexible', 'creditGoal', 'notMentioned'],
+  additionalProperties: false,
+};
+
 /**
  * OpenAI Responses API 的工具定義。
  *
@@ -239,10 +288,13 @@ export function getAgentTools() {
       name: 'run_csp_scheduler',
       description:
         '產生推薦課表。使用者若表達了興趣、想集中排課或想修涼課，必須把對應參數帶進來，'
-        + '否則系統只能改用總學分挑選方案，推薦會失去個人化。',
+        + '否則系統只能改用總學分挑選方案，推薦會失去個人化。'
+        + '呼叫時必須一併附上 interpretation，把你對使用者需求的理解攤開來；'
+        + '伺服器會檢查它與實際參數是否一致，對不上會被退回。',
       parameters: {
         type: 'object',
-        properties: SCHEDULER_PARAMETERS,
+        properties: { ...SCHEDULER_PARAMETERS, interpretation: INTERPRETATION_SCHEMA },
+        required: ['interpretation'],
         additionalProperties: false,
       },
     },
@@ -367,6 +419,17 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 使用者沒有明確同意就不要帶 token 呼叫第二次；也不得自行編造 token。
 - 使用者說「這次就這樣」而不是「以後都這樣」時，不要呼叫 update_preferences，
   直接把條件帶進 run_csp_scheduler 就好。
+
+排課前的理解回講（必做）：
+- 呼叫 run_csp_scheduler 時必須附上 interpretation，把你的理解攤開來：
+  哪些是使用者語氣強硬、絕對不能違反的；哪些是他表達過彈性的；學分怎麼理解；
+  以及**他這次完全沒提到的項目**。
+- notMentioned 只列「你沒有資訊的部分」，**不要在那裡自行假設答案**。
+- interpretation 必須與實際參數一致。你在 nonNegotiable 說「絕對不排早八」，
+  就必須同時把 noMorningClasses 設為 true 並把 NO_MORNING_CLASSES 放進
+  nonNegotiablePreferenceIds；對不上會被伺服器退回要求你修正。
+- 排課後給使用者的文字回覆裡，要用一小段把這份理解講出來，並明說沒提到的項目
+  你沒有替他決定。
 
 偏好強度的判讀：
 - 使用者語氣有彈性（「盡量不要」「可以的話」「必要時可以」）時，把

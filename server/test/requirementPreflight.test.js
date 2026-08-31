@@ -131,3 +131,263 @@ describe('RP4 與 #22 的 clarification 形狀相容', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Roadmap #24 第二輪：結構性矛盾偵測補完整。
+//
+// 「結構性矛盾」= 數字、時段、集合互相打架，可以窮舉、可以宣告完整。
+// 每一項都有正例（該擋）與反例（不該誤報）。
+// ---------------------------------------------------------------------------
+
+const ok = { studentScope: resolvedScope };
+const ids = result => result.questions.map(q => q.id);
+
+describe('RP5 學分區間自相矛盾', () => {
+  test('最少 20 但最多 15 → 擋下', () => {
+    const r = checkPreflightContradictions({ ...ok, constraints: { minCredits: 20, maxCredits: 15 } });
+
+    assert.equal(r.required, true);
+    assert.ok(ids(r).includes('confirm-credit-range'));
+  });
+
+  test('最少 15 最多 20 → 不誤報', () => {
+    const r = checkPreflightContradictions({ ...ok, constraints: { minCredits: 15, maxCredits: 20 } });
+
+    assert.equal(r.required, false);
+  });
+
+  test('相等也合法', () => {
+    const r = checkPreflightContradictions({ ...ok, constraints: { minCredits: 18, maxCredits: 18 } });
+
+    assert.equal(r.required, false);
+  });
+
+  test('負學分擋下', () => {
+    const r = checkPreflightContradictions({ ...ok, constraints: { minCredits: -3 } });
+
+    assert.ok(ids(r).includes('confirm-credit-range'));
+  });
+
+  test('只給其中一個不比對', () => {
+    assert.equal(checkPreflightContradictions({ ...ok, constraints: { maxCredits: 20 } }).required, false);
+  });
+});
+
+describe('RP6 每日課程數上限', () => {
+  test('0 門代表一門都不能排 → 擋下', () => {
+    const r = checkPreflightContradictions({ ...ok, constraints: { maxCoursesPerDay: 0 } });
+
+    assert.ok(ids(r).includes('confirm-daily-cap'));
+  });
+
+  test('正常值不誤報', () => {
+    assert.equal(
+      checkPreflightContradictions({ ...ok, constraints: { maxCoursesPerDay: 4 } }).required,
+      false
+    );
+  });
+});
+
+describe('RP7 指定必修彼此衝堂', () => {
+  const a = { id: 1, name: '甲課', dayOfWeek: 1, startPeriod: 3, endPeriod: 4, credits: 3 };
+  const b = { id: 2, name: '乙課', dayOfWeek: 1, startPeriod: 4, endPeriod: 5, credits: 3 };
+  const c = { id: 3, name: '丙課', dayOfWeek: 2, startPeriod: 3, endPeriod: 4, credits: 3 };
+
+  test('兩門指定必修撞在一起 → 擋下並列出兩門', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { mustTakeCourseIds: [1, 2] },
+      courseById: new Map([[1, a], [2, b]]),
+    });
+
+    assert.ok(ids(r).includes('confirm-required-course-conflict'));
+    assert.deepEqual(r.relatedCourseIds.sort(), [1, 2]);
+  });
+
+  test('不同天不誤報', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { mustTakeCourseIds: [1, 3] },
+      courseById: new Map([[1, a], [3, c]]),
+    });
+
+    assert.equal(r.required, false);
+  });
+});
+
+describe('RP8 指定必修的學分超過上限', () => {
+  const heavy = n => ({ id: n, name: `課${n}`, credits: 4, dayOfWeek: n, startPeriod: 1, endPeriod: 2 });
+
+  test('合計超過 maxCredits → 擋下', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { mustTakeCourseIds: [1, 2, 3], maxCredits: 9 },
+      courseById: new Map([[1, heavy(1)], [2, heavy(2)], [3, heavy(3)]]),
+    });
+
+    assert.ok(ids(r).includes('confirm-credit-range'));
+  });
+
+  test('剛好等於上限不誤報', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { mustTakeCourseIds: [1, 2], maxCredits: 8 },
+      courseById: new Map([[1, heavy(1)], [2, heavy(2)]]),
+    });
+
+    assert.equal(r.required, false);
+  });
+});
+
+describe('RP9 指定必修不在本學期', () => {
+  test('舊學期的課擋下', () => {
+    const stale = { id: 9, name: '舊課', academicYear: 110, semester: '1', dayOfWeek: 1, startPeriod: 3, endPeriod: 4 };
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { mustTakeCourseIds: [9] },
+      courseById: new Map([[9, stale]]),
+    });
+
+    assert.ok(ids(r).includes('confirm-course-term'));
+  });
+
+  // 沒有標學年學期的課視為本學期（相容既有無 term 資料），不該被誤擋。
+  test('沒有 term 欄位的課不誤報', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { mustTakeCourseIds: [9] },
+      courseById: new Map([[9, { id: 9, name: '無標註', dayOfWeek: 1, startPeriod: 3, endPeriod: 4 }]]),
+    });
+
+    assert.equal(r.required, false);
+  });
+});
+
+describe('RP10 已選課程撞封鎖時段', () => {
+  const picked = { id: 20, name: '已選課', dayOfWeek: 3, startPeriod: 6, endPeriod: 7 };
+
+  test('撞到 → 擋下', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { selectedCourseIds: [20], blockedPeriods: [{ day: 3, period: 6 }] },
+      courseById: new Map([[20, picked]]),
+    });
+
+    assert.ok(ids(r).includes('confirm-selected-course-conflict'));
+  });
+
+  test('沒撞到不誤報', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { selectedCourseIds: [20], blockedPeriods: [{ day: 4, period: 6 }] },
+      courseById: new Map([[20, picked]]),
+    });
+
+    assert.equal(r.required, false);
+  });
+});
+
+describe('RP11 時段偏好把可用節次清空', () => {
+  // 週一到週五 × 14 節全部封鎖 → 一個節次都不剩。
+  const everySlot = [];
+  for (let day = 1; day <= 5; day += 1) {
+    for (let period = 1; period <= 14; period += 1) everySlot.push({ day, period });
+  }
+
+  test('全部封鎖 → 擋下', () => {
+    const r = checkPreflightContradictions({ ...ok, constraints: { blockedPeriods: everySlot } });
+
+    assert.ok(ids(r).includes('confirm-time-preferences'));
+  });
+
+  test('留一個節次就不算矛盾', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { blockedPeriods: everySlot.slice(0, -1) },
+    });
+
+    assert.equal(r.required, false);
+  });
+
+  test('只開三個時段偏好不會清空（仍有其他節次）', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { noMorningClasses: true, lunchBreakFree: true, noEveningClasses: true },
+    });
+
+    assert.equal(r.required, false);
+  });
+});
+
+describe('RP12 指名不可放寬但該偏好沒開', () => {
+  test('列了 NO_MORNING_CLASSES 卻沒設 noMorningClasses → 擋下', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { nonNegotiablePreferenceIds: ['NO_MORNING_CLASSES'] },
+    });
+
+    assert.ok(ids(r).includes('confirm-preference-strength'));
+  });
+
+  test('偏好有開就不誤報', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { nonNegotiablePreferenceIds: ['NO_MORNING_CLASSES'], noMorningClasses: true },
+    });
+
+    assert.equal(r.required, false);
+  });
+});
+
+describe('RP13 理解回講與實際參數必須一致', () => {
+  // 模型對使用者說「絕對不排早八」，參數卻沒把它設成硬性限制——排出來的課表
+  // 會與它自己剛剛講的話不符。這是模型前後矛盾，退回去讓它修。
+  test('說了絕對不排早八卻沒開該限制 → 擋下', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { interpretation: { nonNegotiable: ['絕對不排早八'] } },
+    });
+
+    assert.ok(ids(r).includes('confirm-interpretation-mismatch'));
+  });
+
+  test('說了也確實設好了 → 不誤報', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: {
+        interpretation: { nonNegotiable: ['絕對不排早八'] },
+        noMorningClasses: true,
+        nonNegotiablePreferenceIds: ['NO_MORNING_CLASSES'],
+      },
+    });
+
+    assert.equal(r.required, false);
+  });
+
+  // 開了偏好但沒列進 nonNegotiablePreferenceIds，等於還是可能被自動放寬，
+  // 與「絕對」不符。
+  test('只開偏好但沒列進不可放寬清單 → 仍擋下', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: {
+        interpretation: { nonNegotiable: ['絕對不排早八'] },
+        noMorningClasses: true,
+      },
+    });
+
+    assert.ok(ids(r).includes('confirm-interpretation-mismatch'));
+  });
+
+  test('放在 flexible 而非 nonNegotiable 不觸發檢查', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: { interpretation: { nonNegotiable: [], flexible: ['盡量不排早八'] } },
+    });
+
+    assert.equal(r.required, false);
+  });
+
+  test('沒有 interpretation 時不檢查（其他呼叫端不受影響）', () => {
+    assert.equal(checkPreflightContradictions({ ...ok, constraints: {} }).required, false);
+  });
+});
