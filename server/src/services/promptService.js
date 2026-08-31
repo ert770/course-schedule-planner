@@ -134,49 +134,112 @@ const SCHEDULER_PARAMETERS = {
 // 原生 tool calling 已經保證**參數格式**正確，但保證不了**理解正確**——模型把
 // 「盡量不要早八」聽成「絕對不要」，參數一樣合法，使用者卻拿到不對的課表。
 //
-// 這個欄位要求模型排課前先把理解攤開來：哪些是不可退讓的、哪些有彈性、
-// 哪些是它自己補的、哪些使用者根本沒提。因為是 JSON Schema 的 required，
-// 格式由 API 層保證，不是靠 prompt 自律。
+// **為什麼用代號而不是自由文字**：實測同一句話跑三次，模型對語意的判斷完全一致
+// （`nonNegotiable` 三次都是同一個意思），但自由文字的寫法每次不同——
+// 「午休時段可以彈性安排」／「可以彈性安排」／「可以彈性調整」。變異全部來自
+// 「同一個意思有很多種寫法」，不是來自理解不穩。
 //
-// 三個用途：使用者當場能抓到誤解；伺服器可以檢查它與實際參數是否自相矛盾；
-// golden set 有明確的比對對象。
+// 把欄位改成固定代號，等於把輸出空間縮到每個意思只有一種寫法，同句重跑就能
+// 得到逐位元相同的結構化結果。中文說明由伺服器依代號生成（`describeInterpretation()`），
+// 使用者看到的仍然是人話。
 //
 // **不記錄、不持久化**：`sourcePhrases` 含使用者原話，#33 明訂 log 只記 metadata
 // 不記內容。這個物件只出現在這一次請求的回應裡。
+export const INTERPRETATION_TOPICS = Object.freeze({
+  NO_MORNING_CLASSES: { label: '不排早八', flag: 'noMorningClasses' },
+  NO_EVENING_CLASSES: { label: '不排晚間課', flag: 'noEveningClasses' },
+  LUNCH_BREAK_FREE: { label: '午休不排課', flag: 'lunchBreakFree' },
+  MONDAY_FREE: { label: '週一整天空堂', flag: 'mondayFree' },
+  BLOCKED_PERIODS: { label: '指定的不能上課時段', flag: null },
+  CREDIT_RANGE: { label: '學分範圍', flag: null },
+  DAILY_COURSE_CAP: { label: '每天課程數上限', flag: null },
+  MUST_TAKE_COURSES: { label: '指定一定要修的課', flag: null },
+  PREFER_COMPACT: { label: '集中排課', flag: 'preferCompact' },
+  PREFER_EASY: { label: '偏好涼課', flag: 'preferEasyCourses' },
+  INTERESTS: { label: '興趣領域', flag: null },
+  ENGLISH_TAUGHT: { label: '全英授課', flag: 'englishTaught' },
+  NO_MIDTERM: { label: '沒有期中考', flag: 'noMidterm' },
+  NO_GROUP_REPORT: { label: '沒有分組報告', flag: 'noGroupReport' },
+  PRACTICAL_EXAM: { label: '上機實作考試', flag: 'practicalExam' },
+  FINAL_REPORT: { label: '期末報告為主', flag: 'finalReport' },
+  WEIGHT_DAILY: { label: '平時成績佔比高', flag: 'weightDaily' },
+  DISCUSSION: { label: '課堂討論多', flag: 'discussion' },
+  LEARN_MORE: { label: '學到較多知識', flag: 'learnMore' },
+});
+
+const INTERPRETATION_TOPIC_IDS = Object.keys(INTERPRETATION_TOPICS);
+
+const TOPIC_ARRAY = {
+  type: 'array',
+  items: { type: 'string', enum: INTERPRETATION_TOPIC_IDS },
+};
+
 const INTERPRETATION_SCHEMA = {
   type: 'object',
-  description: '你對使用者這次需求的理解。會顯示給使用者確認，也會被伺服器對照實際參數檢查。',
+  description: '你對使用者這次需求的理解。會顯示給使用者確認，也會被伺服器對照實際參數檢查。'
+    + '**一律使用代號，不要自由發揮文字**——中文說明由系統依代號生成。',
   properties: {
     nonNegotiable: {
-      type: 'array',
-      items: { type: 'string' },
-      description: '使用者語氣強硬、絕對不能違反的條件，用中文短句描述，例如「絕對不排早八」。',
+      ...TOPIC_ARRAY,
+      description: '使用者語氣強硬、絕對不能違反的項目代號。'
+        + '例如他說「絕對不要早八」就填 ["NO_MORNING_CLASSES"]。',
     },
     flexible: {
-      type: 'array',
-      items: { type: 'string' },
-      description: '使用者表達過彈性、必要時可以退讓的條件，例如「盡量集中排課」。',
+      ...TOPIC_ARRAY,
+      description: '使用者表達過彈性、必要時可以退讓的項目代號。'
+        + '例如「午休可以彈性」就填 ["LUNCH_BREAK_FREE"]。',
     },
     creditGoal: {
-      type: 'string',
-      description: '你對學分需求的理解，例如「12～18 學分」；使用者沒提就寫「未指定」。',
+      type: 'object',
+      description: '你對學分需求的理解。使用者沒有明講數字時兩個欄位都填 null，'
+        + '**不要把偏好摘要裡的預設值抄進來**。',
+      properties: {
+        min: { type: ['integer', 'null'] },
+        max: { type: ['integer', 'null'] },
+      },
+      required: ['min', 'max'],
+      additionalProperties: false,
     },
     notMentioned: {
-      type: 'array',
-      items: { type: 'string' },
-      description: '排課會用到、但使用者這次完全沒提到的項目，例如「不能上課的時段」。'
+      ...TOPIC_ARRAY,
+      description: '排課會用到、但使用者這次完全沒提到的項目代號。'
         + '**不要在這裡自行假設答案**，只是列出你沒有資訊的部分。',
     },
     sourcePhrases: {
       type: 'object',
-      description: '參數名稱對應到使用者的原話，例如 {"noMorningClasses":"不要早八"}。'
-        + '沒有直接對應的參數就不要列。',
+      description: '項目代號對應到使用者的原話，例如 {"NO_MORNING_CLASSES":"絕對不要早八"}。'
+        + '使用者沒有直接講到的項目就不要列。',
       additionalProperties: { type: 'string' },
     },
   },
   required: ['nonNegotiable', 'flexible', 'creditGoal', 'notMentioned'],
   additionalProperties: false,
 };
+
+/**
+ * 把代號形式的理解回講轉成給人看的中文。
+ *
+ * 模型輸出穩定的代號、使用者看到人話——兩邊都要，所以轉換放伺服器端而不是
+ * 讓模型自己寫中文。
+ */
+export function describeInterpretation(interpretation) {
+  if (!interpretation || typeof interpretation !== 'object') return null;
+
+  const toLabels = ids => (Array.isArray(ids) ? ids : [])
+    .map(id => INTERPRETATION_TOPICS[id]?.label ?? id);
+
+  const { min = null, max = null } = interpretation.creditGoal ?? {};
+  const creditGoal = min == null && max == null
+    ? '未指定（將沿用你已儲存的偏好）'
+    : `${min ?? '不限'} ~ ${max ?? '不限'} 學分`;
+
+  return {
+    nonNegotiable: toLabels(interpretation.nonNegotiable),
+    flexible: toLabels(interpretation.flexible),
+    creditGoal,
+    notMentioned: toLabels(interpretation.notMentioned),
+  };
+}
 
 /**
  * OpenAI Responses API 的工具定義。
@@ -425,6 +488,10 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
   哪些是使用者語氣強硬、絕對不能違反的；哪些是他表達過彈性的；學分怎麼理解；
   以及**他這次完全沒提到的項目**。
 - notMentioned 只列「你沒有資訊的部分」，**不要在那裡自行假設答案**。
+- interpretation 的三個清單一律填代號，不要自由發揮文字——中文說明由系統生成。
+- 使用者沒有明講學分數字時，creditGoal 的 min 與 max 都填 null，
+  **也不要把 minCredits／maxCredits 帶進排課參數**——已儲存的偏好由伺服器自己套用，
+  你把它抄一遍只會讓同一句話每次產生不同的參數。
 - interpretation 必須與實際參數一致。你在 nonNegotiable 說「絕對不排早八」，
   就必須同時把 noMorningClasses 設為 true 並把 NO_MORNING_CLASSES 放進
   nonNegotiablePreferenceIds；對不上會被伺服器退回要求你修正。

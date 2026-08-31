@@ -35,13 +35,18 @@ describe('AG1 未知工具與工具錯誤不得中斷對話', () => {
 });
 
 describe('AG2 run_csp_scheduler 的曝光來源由伺服器決定', () => {
+  // Roadmap #24 之後 chat 這條路一定要附上理解回講，否則會被 preflight 擋下。
+  const interpretation = {
+    nonNegotiable: [], flexible: [], creditGoal: { min: null, max: null }, notMentioned: [],
+  };
+
   // 「這次推薦顯示在哪個畫面、被什麼觸發」是系統事實，不是模型可以宣稱的東西。
   // 允許模型覆蓋，等於讓它把 chat 的推薦記成前端畫面上的曝光。
   test('模型帶進來的 surface／trigger 不得覆蓋伺服器寫死的值', async () => {
     let received;
     await executeAgentTool(
       'run_csp_scheduler',
-      { maxCredits: 20, surface: 'schedule_page', trigger: 'user_click' },
+      { maxCredits: 20, surface: 'schedule_page', trigger: 'user_click', interpretation },
       ctx,
       { generateSchedule: (_id, input) => { received = input; return { success: true }; } }
     );
@@ -55,7 +60,7 @@ describe('AG2 run_csp_scheduler 的曝光來源由伺服器決定', () => {
   test('已載入的 prefs 直接傳下去，同一次對話不重複查詢 profile', async () => {
     const prefs = { targetCreditsMax: 22 };
     let options;
-    await executeAgentTool('run_csp_scheduler', {}, { ...ctx, prefs }, {
+    await executeAgentTool('run_csp_scheduler', { interpretation }, { ...ctx, prefs }, {
       generateSchedule: (_id, _input, opts) => { options = opts; return { success: true }; },
     });
 

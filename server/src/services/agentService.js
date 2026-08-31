@@ -12,7 +12,7 @@
 
 import crypto from 'node:crypto';
 import OpenAI from 'openai';
-import { buildSystemPrompt, getAgentTools } from './promptService.js';
+import { buildSystemPrompt, getAgentTools, describeInterpretation } from './promptService.js';
 import { getUserPreferences, updateUserPreferences } from './memoryService.js';
 import { getChatHistory, saveChatExchange } from './privacyService.js';
 import { searchCoursesForAgent } from '../skills/courseQuery.js';
@@ -311,6 +311,9 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         const contradiction = preflight({
           constraints: args,
           studentScope,
+          // chat 這條路一定要有理解回講——schema 的巢狀 required 在非 strict
+          // 模式下不被 API 強制，實測模型會送空物件過來。
+          requireInterpretation: true,
           // 必修與已選都要查——已選課程撞封鎖時段同樣是使用者自己的條件打架。
           courseById: await lookupCourses([
             ...(args.mustTakeCourseIds ?? []),
@@ -333,9 +336,14 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         );
 
         // 回講跟著結果一起回去，讓前端與使用者看得到「Agent 理解成什麼」。
+        // 模型輸出的是穩定的代號，中文由伺服器生成——兩邊都拿到：輸出可重現，
+        // 使用者看到的仍是人話。
+        //
         // **不寫進 log 也不進 Interaction_Events**：`sourcePhrases` 含使用者原話，
         // #33 明訂 log 只記 metadata 不記內容。
-        return interpretation ? { ...scheduled, interpretation } : scheduled;
+        return interpretation
+          ? { ...scheduled, interpretation, interpretationText: describeInterpretation(interpretation) }
+          : scheduled;
       }
 
       case 'record_schedule_feedback':

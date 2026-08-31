@@ -22,7 +22,7 @@
 
 | 檔案 | 改動 |
 | --- | --- |
-| `server/src/services/requirementPreflight.js` | 從 2 項檢查擴充到 11 項；新增時段可用性計算與理解回講一致性檢查 |
+| `server/src/services/requirementPreflight.js` | 從 2 項檢查擴充到 12 項；新增時段可用性計算、理解回講一致性與缺漏檢查 |
 | `server/src/services/promptService.js` | `run_csp_scheduler` 新增必填的 `interpretation`；system prompt 新增回講章節 |
 | `server/src/services/agentService.js` | 把 `interpretation` 從排課條件中拆出、隨結果回傳；課程查詢範圍擴大到 `selectedCourseIds` |
 | `server/src/services/goldenSetAssertions.js` | **新增**。golden set 的斷言邏輯，純函式 |
@@ -38,7 +38,7 @@
 
 ### 4.1 結構性矛盾偵測——可以窮舉，因此宣告完整
 
-`checkPreflightContradictions()` 從 2 項擴充到 11 項。完整清單見
+`checkPreflightContradictions()` 從 2 項擴充到 12 項。完整清單見
 `docs/PROMPT_DESIGN.md`，其中先前**完全沒有任何檢查**的包括：`minCredits > maxCredits`
 （已查證 `constraintService.js` 只是把兩個值直通，排課引擎也沒有互相比對，
 「最少 20 但最多 15」會一路排到底）、兩門指定必修彼此衝堂、指定必修的學分總和
@@ -54,13 +54,13 @@
 ### 4.2 結構化理解回講——#24 的本體
 
 `run_csp_scheduler` 新增**必填**參數 `interpretation`（`nonNegotiable`、
-`flexible`、`creditGoal`、`notMentioned`、`sourcePhrases`）。因為是 JSON Schema
-的 `required`，格式由 API 層保證，不是靠 prompt 自律。
+`flexible`、`creditGoal`、`notMentioned`、`sourcePhrases`）。三個清單一律填
+**代號**而非自由文字，中文由伺服器生成——理由與量測數據見第 7 節。
 
-伺服器做三件事：**檢查回講與實際參數是否自相矛盾**（說了「絕對不排早八」就必須
-同時設好 `noMorningClasses` 與 `nonNegotiablePreferenceIds`，對不上退回修正）、
-**隨結果回傳給前端顯示**、**不寫 log 也不持久化**（`sourcePhrases` 含使用者原話，
-#33 明訂 log 只記 metadata 不記內容）。
+伺服器做四件事：**檢查回講與實際參數是否自相矛盾**、**擋下缺漏的回講**
+（schema 的巢狀 `required` 在非 strict 模式下不被 API 強制，實測模型會送
+`interpretation: {}` 過來）、**隨結果回傳給前端顯示**、**不寫 log 也不持久化**
+（`sourcePhrases` 含使用者原話，#33 明訂 log 只記 metadata 不記內容）。
 
 ### 4.3 Golden set 進入 `npm test`
 
@@ -79,14 +79,14 @@
 
 ### 自動化
 
-- `npm test`：**670 pass / 0 fail**（第一輪後 615，新增 55 項），**8.3 秒**。
+- `npm test`：**672 pass / 0 fail**（第一輪後 615，新增 57 項），**約 10～23 秒**。
 - **我先前的估計錯了**：我預估加入 golden set 後 `npm test` 會從 9 秒變成 1～2 分鐘。
   實際是 8.3 秒——並行加上第一次就答對，比預期快得多。
 - `client`：`npm run build` 成功、`npm run lint` 無輸出。
 
 ### Golden set 實際通過率
 
-**8/8（100%）**，總耗時約 6 秒。
+**8/8（100%）**，另加一題「同句重跑逐位元相同」（見第 7 節）。
 
 **第一次執行是 5/8，三題失敗——查證後是我的題目寫錯，不是模型答錯。**
 失敗的三題原文是「我絕對不要早八，無論如何都不行。」這類**陳述句**，不是排課請求；
@@ -107,20 +107,29 @@ Agent 回「你的學分條件互相矛盾……請確認你要的是哪一種�
 **2. 理解回講**：送「幫我排課表。我絕對不要早八，這點無論如何都不能讓步；
 午休倒是可以彈性一點。」實際回傳：
 
+**改成代號之後**重測（送「我絕對不要早八，這點不能讓步；集中排課的話有就好。」），
+模型輸出的代號與伺服器生成的中文：
+
 ```json
 {
-  "nonNegotiable": ["絕對不排早八，無論如何不讓步"],
-  "flexible": ["午休時段可以彈性一點", "盡量集中排課", "偏好上機實作考試、全英授課與學到較多知識"],
-  "creditGoal": "12～25 學分",
-  "notMentioned": ["不能上課的其他日期與節次", "一定要修的課程或班次", "已選課程",
-                   "是否要排除晚間課", "是否有其他必修或資格限制"],
-  "sourcePhrases": { "noMorningClasses": "絕對不要早八，這點無論如何都不能讓步",
-                     "lunchBreakFree": "午休倒是可以彈性一點", … }
+  "codes": {
+    "nonNegotiable": ["NO_MORNING_CLASSES"],
+    "flexible": ["PREFER_COMPACT"],
+    "creditGoal": { "min": null, "max": null },
+    "notMentioned": ["NO_EVENING_CLASSES", "LUNCH_BREAK_FREE", … 共 17 項],
+    "sourcePhrases": { "NO_MORNING_CLASSES": "絕對不要早八",
+                       "PREFER_COMPACT": "集中排課的話有就好" }
+  },
+  "chinese": {
+    "nonNegotiable": ["不排早八"],
+    "flexible": ["集中排課"],
+    "creditGoal": "未指定（將沿用你已儲存的偏好）"
+  }
 }
 ```
 
-強度分類正確（早八在 `nonNegotiable`、午休在 `flexible`），`notMentioned` 列出五項
-它沒有資訊的部分而沒有自行假設。排出來的課表也確實沒有早八。
+強度分類正確、`creditGoal` 沒有把偏好摘要的預設值抄進來、`sourcePhrases` 正確
+對回使用者原話，而 `notMentioned` 完整列出它沒有資訊的 17 個項目。
 
 **3. 伺服器端 preflight 真正被觸發**：送「我這學期一定要修『資訊安全管理』，
 但我週五第 11 節到第 13 節要打工不能上課。」——模型無法自行判斷該課的時段，
@@ -142,16 +151,73 @@ INFO [Preflight] 排課前偵測到矛盾或資料不足，改為澄清
 | # | `#24` 驗收標準 | 結果 |
 | --- | --- | --- |
 | 1 | 自然語言 golden set 可正確轉成結構化需求 | **完成**。8 題進 `npm test` 每次執行，實測 8/8 |
-| 2 | 資料不足與矛盾案例會先澄清 | **結構性矛盾完整**（11 項，清單即定義）；**語意矛盾明確不宣稱** |
+| 2 | 資料不足與矛盾案例會先澄清 | **結構性矛盾完整**（12 項，清單即定義）；**語意矛盾明確不宣稱** |
 | 3 | 更正 department／grade／className 後 scope 使用新值 | 第一輪已完成 |
-| 4 | 同一句需求重跑能得到相同結構化結果，或清楚標記 LLM 不確定性 | **後半句完成**。理解回講讓解析看得見、可被使用者當場糾正、可被 golden set 量測。**前半句仍不宣稱**：無法讓模型自身的解析變成確定性的（此模型不吃 `temperature`），這一點沒有因為本輪而改變 |
+| 4 | 同一句需求重跑能得到相同結構化結果 | **完成**（對無歧義的需求）。見下方第 7 節 |
 
-## 7. 已知限制
+## 7. 追加：把回講改成代號，讓同句重跑真的逐位元相同
 
-- Golden set 每次 `npm test` 都會消耗 API 額度。目前 8.3 秒、8 次呼叫，成本可接受；
-  若之後題庫變大或開始間歇性變紅，會照實回報並重新討論執行方式。
+使用者追問「同句重跑逐字相同，不能用 prompt 達到嗎？」——我先前直接寫成做不到，
+但沒有量測過就下結論。實測之後發現**可以，而且我原本的判斷太快**。
+
+### 先量測，再下判斷
+
+同一句話跑三次，比對結果：
+
+| 項目 | 三次是否一致 |
+| --- | --- |
+| 選的工具 | ✅ |
+| 語意核心（`noMorningClasses`、`allowRelaxation`、`nonNegotiablePreferenceIds`） | ✅ |
+| `minCredits`／`maxCredits` | ❌ 有時從偏好摘要抄、有時不抄 |
+| `flexible`（自由文字） | ❌ 「可以彈性安排」／「彈性安排」／「彈性調整」 |
+| `creditGoal`（自由文字） | ❌ 「12～25 學分」／「12～25 學分（依目前設定）」 |
+
+**模型對語意的判斷三次完全相同，變異全部來自「同一個意思有很多種寫法」。**
+那不是模型不穩定，是輸出空間太大。
+
+順帶一提，`temperature` 也實測過了：Responses API 同樣回
+`400 Unsupported parameter: 'temperature' is not supported with this model`——
+先前那句話是從 chat completions 的錯誤推論的，這次才真的驗證。
+
+### 改法：把輸出空間縮到每個意思只有一種寫法
+
+- `nonNegotiable`／`flexible`／`notMentioned`：自由文字 → **代號 enum**
+  （19 個項目的固定詞彙表 `INTERPRETATION_TOPICS`）。
+- `creditGoal`：字串 → `{ min, max }` 整數，使用者沒明講就都填 `null`。
+- prompt 新增一條：使用者沒明講學分時**不要把偏好摘要的預設值抄進參數**。
+- 中文說明改由伺服器的 `describeInterpretation()` 依代號生成——模型輸出穩定，
+  使用者看到的仍是人話，兩邊都拿到。
+
+### 結果
+
+新增測試「同一句話重跑三次得到逐位元相同的結構化結果」，**連續四輪執行全部通過**
+（12 次呼叫）。
+
+### 過程中發現的兩件事，都寫進程式碼註解
+
+**1. 測試句本身不能有歧義。** 最早用的題目是「我絕對不要早八，午休可以彈性」，
+四輪裡有一輪不一致——「午休可以彈性」本來就能解讀成「要保留午休但可放寬」或
+「午休不用保留」，模型在兩者間搖擺是合理的。**同句重跑的一致性只對明確的需求成立，
+這是句子的性質，不是系統的缺陷。** 題目已換成無歧義的版本，並在測試裡註明原委。
+
+**2. schema 的巢狀 `required` 沒有被強制。** 實測模型會送 `interpretation: {}`
+過來——OpenAI 的 function calling 在非 strict 模式下不深入檢查 `required`。
+沒有回講就等於沒有這一層保護，因此新增第 12 種矛盾檢查由伺服器自己擋
+（只對 chat 路徑要求，REST 與測試等其他呼叫端不受影響）。
+
+### 誠實的界線
+
+給使用者看的**中文回覆文字**仍然不可能逐字相同，也不需要——驗收標準講的是
+「結構化需求」。而「無歧義的需求」這個前提必須講明白：句子本身有歧義時，
+不同的解讀都是合理的，那時候要做的是澄清而不是硬求一致。
+
+## 8. 已知限制
+
+- Golden set 每次 `npm test` 都會消耗 API 額度：8 題加上 determinism 測試的 3 次
+  重跑，順利時共 11 次呼叫、整套約 10～23 秒。成本目前可接受；若之後題庫變大或
+  開始間歇性變紅，會照實回報並重新討論執行方式。
 - 語意矛盾偵測不在範圍內，且明確不宣稱。
 
-## 8. 是否 commit 與 push
+## 9. 是否 commit 與 push
 
 見本次 commit 紀錄。工作區另有一條 course-history v1 的工作線，未一併提交。

@@ -117,6 +117,11 @@ describe('AG10 update_student_profile 確認後同回合就改變查詢範圍', 
 });
 
 describe('AG11 排課前的矛盾與資料不足偵測', () => {
+  // chat 這條路一定要附上理解回講，因此正常路徑的測試都要帶著它。
+  const validInterpretation = {
+    nonNegotiable: [], flexible: [], creditGoal: { min: null, max: null }, notMentioned: [],
+  };
+
   // 系所無法解析時必修判定其實懸空，先前照樣排完給使用者，一聲不吭。
   test('scope 無法解析時短路成澄清，完全不呼叫排課引擎', async () => {
     let scheduled = false;
@@ -134,11 +139,26 @@ describe('AG11 排課前的矛盾與資料不足偵測', () => {
   test('scope 正常且無矛盾時照常進入排課引擎', async () => {
     let scheduled = false;
     await executeAgentTool(
-      'run_csp_scheduler', {}, { ...ctx, studentScope: { resolved: true } },
+      'run_csp_scheduler', { interpretation: validInterpretation },
+      { ...ctx, studentScope: { resolved: true } },
       { generateSchedule: () => { scheduled = true; return { success: true }; } }
     );
 
     assert.equal(scheduled, true);
+  });
+
+  // schema 把四個子欄位列為 required，但非 strict 模式下 API 不強制巢狀 required
+  // ——實測模型會送 `interpretation: {}` 過來。沒有回講就沒有這一層保護。
+  test('缺少理解回講時擋下，不跑排課', async () => {
+    let scheduled = false;
+    const result = await executeAgentTool(
+      'run_csp_scheduler', { interpretation: {} },
+      { ...ctx, studentScope: { resolved: true } },
+      { generateSchedule: () => { scheduled = true; return { success: true }; } }
+    );
+
+    assert.equal(scheduled, false);
+    assert.equal(result.clarification.questions[0].id, 'confirm-interpretation-missing');
   });
 
   // 使用者自己給的兩個條件互相打架——直接問他要保留哪一邊，比跑完一次排課
@@ -167,7 +187,7 @@ describe('AG11 排課前的矛盾與資料不足偵測', () => {
     const course = { id: 55, name: '資料結構', dayOfWeek: 1, startPeriod: 3, endPeriod: 4 };
     await executeAgentTool(
       'run_csp_scheduler',
-      { mustTakeCourseIds: [55], blockedPeriods: [{ day: 2, period: 3 }] },
+      { mustTakeCourseIds: [55], blockedPeriods: [{ day: 2, period: 3 }], interpretation: validInterpretation },
       { ...ctx, studentScope: { resolved: true } },
       {
         generateSchedule: () => { scheduled = true; return { success: true }; },
@@ -227,8 +247,10 @@ describe('AG12 部分偏好更新不得刪掉使用者沒提到的偏好', () =>
 });
 
 describe('AG13 理解回講不進排課引擎，但會回傳給使用者', () => {
+  // 回講一律用代號，中文由伺服器的 describeInterpretation() 生成。
   const interpretation = {
-    nonNegotiable: [], flexible: ['盡量集中排課'], creditGoal: '12～18 學分', notMentioned: ['不能上課的時段'],
+    nonNegotiable: [], flexible: ['PREFER_COMPACT'],
+    creditGoal: { min: 12, max: 18 }, notMentioned: ['BLOCKED_PERIODS'],
   };
 
   // interpretation 是給使用者看的說明，不是排課條件。混進 constraints 會被
@@ -254,13 +276,16 @@ describe('AG13 理解回講不進排課引擎，但會回傳給使用者', () =>
 
     assert.deepEqual(result.interpretation, interpretation);
     assert.equal(result.success, true);
+    // 中文由伺服器生成，模型只需輸出穩定的代號。
+    assert.deepEqual(result.interpretationText.flexible, ['集中排課']);
+    assert.equal(result.interpretationText.creditGoal, '12 ~ 18 學分');
   });
 
   test('回講與參數自相矛盾時擋下，不跑排課', async () => {
     let scheduled = false;
     const result = await executeAgentTool(
       'run_csp_scheduler',
-      { interpretation: { ...interpretation, nonNegotiable: ['絕對不排早八'] } },
+      { interpretation: { ...interpretation, nonNegotiable: ['NO_MORNING_CLASSES'] } },
       { ...ctx, studentScope: { resolved: true } },
       { generateSchedule: () => { scheduled = true; return { success: true }; } }
     );

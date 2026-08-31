@@ -284,8 +284,22 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 **為什麼需要**：原生 tool calling 保證得了**參數格式**，保證不了**理解正確**
 ——模型把「盡量不要早八」聽成「絕對不要」，參數一樣合法，使用者卻拿到不對的課表。
 
-伺服器會檢查回講與實際參數是否自相矛盾（說了「絕對不排早八」就必須同時設好
-`noMorningClasses` 與 `nonNegotiablePreferenceIds`），對不上就退回要求修正。
+**三個清單一律填代號，不填自由文字**（`NO_MORNING_CLASSES`、`PREFER_COMPACT`…，
+完整詞彙表見 `promptService.js` 的 `INTERPRETATION_TOPICS`），中文說明由伺服器的
+`describeInterpretation()` 依代號生成。
+
+**為什麼是代號**：實測同一句話跑三次，模型對語意的判斷完全一致，但自由文字每次
+寫法不同（「午休時段可以彈性安排」／「可以彈性安排」／「可以彈性調整」），學分
+也時而從偏好摘要抄、時而不抄。**變異全部來自「同一個意思有很多種寫法」，不是來自
+理解不穩。** 改成代號等於把輸出空間縮到每個意思只有一種寫法，同句重跑就能得到
+逐位元相同的結構化結果——這是驗收標準第四條前半句唯一可行的達成方式，因為模型
+本身無法變成確定性的（此模型連 `temperature` 都不接受，實測回 `400 Unsupported
+parameter`）。
+
+伺服器會檢查回講與實際參數是否自相矛盾（`nonNegotiable` 含 `NO_MORNING_CLASSES`
+就必須同時設好 `noMorningClasses` 與 `nonNegotiablePreferenceIds`），對不上就退回
+要求修正；**也會擋下缺漏的回講**——schema 的巢狀 `required` 在非 strict 模式下
+不被 API 強制，實測模型會送 `interpretation: {}` 過來。
 
 回講會跟著排課結果回傳給前端顯示，但**不寫進 log、不進 `Interaction_Events`**：
 `sourcePhrases` 含使用者原話，#33 明訂 log 只記 metadata 不記內容。
@@ -310,6 +324,7 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 9. 系所／年級無法解析（先前會靜默照排，必修判定其實懸空）
 10. `nonNegotiablePreferenceIds` 指名了某項，但該偏好根本沒開
 11. 理解回講與實際參數自相矛盾
+12. 理解回講缺漏（chat 路徑才要求）
 
 **不宣稱完整的**：語意矛盾（「想輕鬆一點但也想學很多」）。那取決於語言理解而非
 數字比對，無法窮舉——這條界線要講清楚，不要含糊成一句「無法窮舉」。

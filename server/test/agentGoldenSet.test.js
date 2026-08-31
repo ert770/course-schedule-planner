@@ -115,6 +115,34 @@ describe('GS 自然語言 golden set（會實際呼叫模型）', { timeout: SUI
     });
   }
 
+  // Roadmap #24 驗收標準四的前半句：「同一句需求重跑能得到相同結構化結果」。
+  //
+  // 模型本身**不是**確定性的（此模型連 temperature 都不接受），所以這裡不是靠
+  // 讓它變確定，而是靠把輸出空間縮到「每個意思只有一種寫法」：
+  // interpretation 全部改用代號、學分不得從偏好摘要抄。
+  //
+  // 實測改造前同一句話跑三次，語意判斷完全一致，但自由文字有三種寫法、學分
+  // 有時抄有時不抄——變異全部來自寫法而非理解。這個測試就是釘住那件事。
+  test('同一句話重跑三次得到逐位元相同的結構化結果', async () => {
+    // **題目必須是無歧義的。** 最早用的是「午休可以彈性」，實測四輪有一輪不一致
+    // ——那句話本身就能解讀成「要保留午休但可放寬」或「午休不用保留」，模型在
+    // 兩者間搖擺是合理的，不是不穩定。同句重跑的一致性只對明確的需求成立，
+    // 這是句子的性質，不是系統的缺陷。
+    const utterance = '幫我排一份課表，我絕對不要早八。';
+    const runs = await Promise.all([1, 2, 3].map(() => askModel(utterance)));
+
+    const serialized = runs.map(call => JSON.stringify({
+      tool: call?.name,
+      // 鍵排序後比對，避免只是欄位順序不同就被判定為不一致。
+      args: call?.args
+        ? JSON.stringify(call.args, Object.keys(call.args).sort())
+        : null,
+    }));
+
+    const detail = serialized.map((x, i) => `  run${i + 1}: ${x}`).join('\n');
+    assert.equal(new Set(serialized).size, 1, `三次結果不一致：\n${detail}`);
+  });
+
   test('整體通過率', () => {
     const summary = summarizeGoldenSet(results);
     console.log(

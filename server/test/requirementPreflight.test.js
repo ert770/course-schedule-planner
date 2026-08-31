@@ -339,13 +339,14 @@ describe('RP12 指名不可放寬但該偏好沒開', () => {
   });
 });
 
+// 回講改用代號之後是代號直接比對，不再靠關鍵字猜。
 describe('RP13 理解回講與實際參數必須一致', () => {
   // 模型對使用者說「絕對不排早八」，參數卻沒把它設成硬性限制——排出來的課表
   // 會與它自己剛剛講的話不符。這是模型前後矛盾，退回去讓它修。
   test('說了絕對不排早八卻沒開該限制 → 擋下', () => {
     const r = checkPreflightContradictions({
       ...ok,
-      constraints: { interpretation: { nonNegotiable: ['絕對不排早八'] } },
+      constraints: { interpretation: { nonNegotiable: ['NO_MORNING_CLASSES'] } },
     });
 
     assert.ok(ids(r).includes('confirm-interpretation-mismatch'));
@@ -355,7 +356,7 @@ describe('RP13 理解回講與實際參數必須一致', () => {
     const r = checkPreflightContradictions({
       ...ok,
       constraints: {
-        interpretation: { nonNegotiable: ['絕對不排早八'] },
+        interpretation: { nonNegotiable: ['NO_MORNING_CLASSES'] },
         noMorningClasses: true,
         nonNegotiablePreferenceIds: ['NO_MORNING_CLASSES'],
       },
@@ -370,7 +371,7 @@ describe('RP13 理解回講與實際參數必須一致', () => {
     const r = checkPreflightContradictions({
       ...ok,
       constraints: {
-        interpretation: { nonNegotiable: ['絕對不排早八'] },
+        interpretation: { nonNegotiable: ['NO_MORNING_CLASSES'] },
         noMorningClasses: true,
       },
     });
@@ -381,7 +382,7 @@ describe('RP13 理解回講與實際參數必須一致', () => {
   test('放在 flexible 而非 nonNegotiable 不觸發檢查', () => {
     const r = checkPreflightContradictions({
       ...ok,
-      constraints: { interpretation: { nonNegotiable: [], flexible: ['盡量不排早八'] } },
+      constraints: { interpretation: { nonNegotiable: [], flexible: ['NO_MORNING_CLASSES'] } },
     });
 
     assert.equal(r.required, false);

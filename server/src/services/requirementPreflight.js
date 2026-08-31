@@ -81,22 +81,6 @@ function countAvailableSlots(constraints) {
   return available;
 }
 
-// 理解回講裡提到某個限制時，可以用哪些關鍵字認出來。
-//
-// 刻意用寬鬆的關鍵字比對而不是要求模型填固定 enum：回講是要給**使用者**看的
-// 自然語言，逼它填代號會讓那段文字變得沒人看得懂。這裡只做「它說了不可退讓，
-// 參數卻沒開」這種明顯自打嘴巴的偵測，不做語意理解。
-const INTERPRETATION_KEYWORDS = {
-  NO_MORNING_CLASSES: ['早八', '早上八點', '第一節'],
-  LUNCH_BREAK_FREE: ['午休', '中午'],
-  NO_EVENING_CLASSES: ['晚上', '晚間', '夜間'],
-};
-
-function mentionsConstraint(phrases, constraintId) {
-  const keywords = INTERPRETATION_KEYWORDS[constraintId] ?? [];
-  return phrases.some(text => keywords.some(word => String(text ?? '').includes(word)));
-}
-
 const RELAXABLE_FLAG_BY_ID = {
   NO_MORNING_CLASSES: 'noMorningClasses',
   LUNCH_BREAK_FREE: 'lunchBreakFree',
@@ -115,6 +99,8 @@ export function checkPreflightContradictions({
   constraints = {},
   studentScope = null,
   courseById = new Map(),
+  // 只有 chat 這條路要求模型附上理解回講；其他呼叫端（REST、測試）沒有這個義務。
+  requireInterpretation = false,
 } = {}) {
   const questions = [];
 
@@ -294,14 +280,38 @@ export function checkPreflightContradictions({
   // 模型在回講裡說「絕對不排早八」，實際參數卻沒有把 noMorningClasses 打開，
   // 或沒有列進 nonNegotiablePreferenceIds——那份課表排出來就會與它自己剛剛
   // 對使用者說的話不符。這是模型前後矛盾，退回去讓它修正。
+  // (12) 理解回講缺漏。
+  //
+  // schema 把四個子欄位列為 required，但 OpenAI 的 function calling 在非 strict
+  // 模式下**不強制巢狀 required**——實測模型會送 `interpretation: {}` 過來。
+  // 沒有回講就等於沒有這一層保護，因此由伺服器自己擋。
   const interpretation = constraints.interpretation ?? null;
+  const REQUIRED_INTERPRETATION_FIELDS = ['nonNegotiable', 'flexible', 'creditGoal', 'notMentioned'];
+  const missingFields = interpretation
+    ? REQUIRED_INTERPRETATION_FIELDS.filter(field => interpretation[field] === undefined)
+    : REQUIRED_INTERPRETATION_FIELDS;
+
+  if (requireInterpretation && missingFields.length > 0) {
+    questions.push({
+      id: 'confirm-interpretation-missing',
+      type: 'contradiction',
+      prompt: `排課前必須先附上完整的 interpretation，目前缺少：${missingFields.join('、')}。`
+        + '請把你對使用者需求的理解填齊再呼叫一次。',
+      courseIds: [],
+      constraintIds: [],
+    });
+  }
+
   if (interpretation) {
-    const nonNegotiable = Array.isArray(interpretation.nonNegotiable)
-      ? interpretation.nonNegotiable : [];
+    const nonNegotiable = new Set(
+      Array.isArray(interpretation.nonNegotiable) ? interpretation.nonNegotiable : []
+    );
     const declared = new Set(constraints.nonNegotiablePreferenceIds ?? []);
 
+    // 回講改用代號之後，這裡是**代號直接比對**，不再靠關鍵字猜——
+    // 精準得多，也不會因為模型換一種寫法就漏判。
     for (const [constraintId, flag] of Object.entries(RELAXABLE_FLAG_BY_ID)) {
-      if (!mentionsConstraint(nonNegotiable, constraintId)) continue;
+      if (!nonNegotiable.has(constraintId)) continue;
       if (constraints[flag] === true && declared.has(constraintId)) continue;
 
       questions.push({
