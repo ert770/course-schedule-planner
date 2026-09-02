@@ -270,3 +270,27 @@ describe('P6 Roadmap #24：結構化理解回講', () => {
     assert.ok(prompt.includes('不要在那裡自行假設答案'));
   });
 });
+
+describe('P7 Roadmap #25：工具結果信封說明', () => {
+  test('system prompt 說明信封的五個欄位與 result 才是實際內容', () => {
+    const prompt = buildSystemPrompt({});
+
+    for (const field of ['schemaVersion', 'dataSource', 'term', 'warnings', 'errorCode', 'result']) {
+      assert.ok(prompt.includes(field), `system prompt 未提到信封欄位 ${field}`);
+    }
+  });
+
+  test('system prompt 說明 json-fallback 是暫時性限制，不是資料不存在', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('json-fallback'));
+    assert.ok(prompt.includes('暫時性限制'));
+  });
+
+  test('system prompt 說明 errorCode 不為 null 時不得宣稱已完成', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('errorCode'));
+    assert.ok(prompt.includes('不要宣稱已完成'));
+  });
+});

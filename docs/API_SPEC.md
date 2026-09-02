@@ -731,8 +731,10 @@ Response:
 ——例如顯示「已記錄你的回饋」，但資料庫裡一筆都沒有。因此
 `agentService.applyToolOutcome()` 只在工具成功時更新它們。
 
-`data` 帶的是**完整**結果；送進模型的是投影後的精簡版（見 `docs/PROMPT_DESIGN.md`
-的「排課結果必須先投影」）。
+`data` 帶的是**完整、未經任何信封包裝的原始結果**——Roadmap #25 新增的
+tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`errorCode`）
+**只包在送給模型的那一份**，不影響這個欄位。送進模型的是投影後再包信封的版本
+（見 `docs/PROMPT_DESIGN.md` 的「排課結果必須先投影」與「工具結果信封」）。
 
 ## Profile
 

@@ -25,9 +25,14 @@ import {
 } from './pendingChangeService.js';
 import { checkPreflightContradictions } from './requirementPreflight.js';
 import { getAll } from '../db/database.js';
+import { isMysqlConfigured } from '../db/mysql.js';
 import { logger } from '../utils/logger.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 import { ALL_FLAGS, tagsToFlags, flagsToTags } from '../data/preferenceTags.js';
+import { ACTIVE_TERM } from '../data/activeTerm.js';
+import {
+  getConfirmationChangeType, isRenderableTool, listConfirmationChangeTypes,
+} from './agentToolRegistry.js';
 
 let ai = null;
 
@@ -57,13 +62,6 @@ export function resolveMaxSteps(raw = process.env.AGENT_MAX_STEPS) {
   return Math.min(parsed, MAX_STEPS_CEILING);
 }
 
-// 哪些工具的結果要一併回傳給前端渲染。`record_schedule_feedback` 與
-// `update_preferences` 只是確認訊息，讓它們覆蓋 `data` 會把畫面上已經顯示的
-// 課表洗掉。
-const RENDERABLE_TOOLS = new Set([
-  'query_course_db', 'search_dcard_reviews', 'run_csp_scheduler', 'get_easy_courses',
-]);
-
 /**
  * 一次工具呼叫的結果，對回應信封（`intent` / `data`）代表什麼。
  *
@@ -78,12 +76,16 @@ const RENDERABLE_TOOLS = new Set([
  *
  * 抽成純函式是為了測得到：`handleChat` 需要真的資料庫與真的模型呼叫，整條迴圈
  * 無法在單元測試裡跑，但這個判斷本身完全不需要 I/O。
+ *
+ * 「哪些工具的結果算渲染資料」查 `agentToolRegistry.js`（Roadmap #25），
+ * 不再是這裡另外維護的一份 Set——那份 Set 與 `getAgentTools()`／
+ * `executeAgentTool()` 的 switch 各自為政，漏改一邊不會有任何錯誤訊息。
  */
 export function applyToolOutcome(envelope, toolName, result) {
   if (result && typeof result === 'object' && result.error) return envelope;
   return {
     intent: toolName || envelope.intent,
-    data: RENDERABLE_TOOLS.has(toolName) ? result : envelope.data,
+    data: isRenderableTool(toolName) ? result : envelope.data,
   };
 }
 
@@ -171,7 +173,51 @@ export function summarizeScheduleForModel(result) {
     solver: result.solver,
     warnings: result.warnings,
     preferenceProfile: result.preferenceProfile,
+    // 目前只有排課前矛盾偵測（Roadmap #24）擋下時會帶這個欄位；正常排課結果沒有
+    // `errorCode`，`buildToolResultEnvelope()` 會把 `undefined` 正規化成 `null`。
+    errorCode: result.errorCode,
   };
+}
+
+// 模型看到的 tool result 信封版本（Roadmap #25）。改動信封形狀（新增／改名／
+// 移除欄位）時遞增，讓 prompt 與模型都能依版本判斷要不要調整讀取方式。
+const TOOL_RESULT_SCHEMA_VERSION = 1;
+
+// 結果含課程物件的工具，模型需要知道目前的判斷基準是哪個學期；
+// 偏好／身分寫入與排課後確認不含課程物件，跟學期無關，不附加這個欄位。
+const COURSE_BEARING_TOOLS = new Set([
+  'query_course_db', 'search_dcard_reviews', 'get_easy_courses', 'run_csp_scheduler',
+]);
+
+/**
+ * 把工具結果包成模型看得到的統一信封（Roadmap #25：schema version、data source、
+ * term、warnings、error code）。
+ *
+ * **只作用在模型看到的那一份**，這個分岔本來就存在——`summarizeScheduleForModel()`
+ * 已經證明「前端拿完整結果、模型拿投影後的版本」是安全的做法，這裡是同一道理。
+ * 前端消費的是 `applyToolOutcome()` 寫進回應信封的原始 `result`，完全不經過這裡，
+ * `ChatPanel.jsx`／`DashboardPage.jsx` 既有的 `res.data?.success` 判斷不受影響。
+ *
+ * 信封形狀不論成功或失敗、不論原始結果是陣列還是物件都一樣，模型不必先判斷
+ * 這次拿到的是什麼形狀，才知道要去哪裡找答案——實際內容一律在 `result` 欄位。
+ */
+export function buildToolResultEnvelope(name, modelResult) {
+  const warnings = Array.isArray(modelResult?.warnings) ? modelResult.warnings : [];
+  const errorCode = typeof modelResult?.errorCode === 'string' ? modelResult.errorCode : null;
+
+  const envelope = {
+    schemaVersion: TOOL_RESULT_SCHEMA_VERSION,
+    dataSource: isMysqlConfigured() ? 'mysql' : 'json-fallback',
+    warnings,
+    errorCode,
+    result: modelResult,
+  };
+
+  if (COURSE_BEARING_TOOLS.has(name)) {
+    envelope.term = { academicYear: ACTIVE_TERM.academicYear, semester: ACTIVE_TERM.semester };
+  }
+
+  return envelope;
 }
 
 // 只撈 `mustTakeCourseIds` 指到的那幾門課，供排課前的矛盾偵測比對時段用。
@@ -244,7 +290,7 @@ async function runConfirmedWrite({
 
   if (!confirmationToken) {
     if (Object.keys(changes).length === 0) {
-      return { error: '沒有要變更的欄位，不需要呼叫這個工具。' };
+      return { error: '沒有要變更的欄位，不需要呼叫這個工具。', errorCode: 'NOTHING_TO_CHANGE' };
     }
     const { token, expiresAt } = stageChange(identity, changeType, changes, { turnId });
     return {
@@ -263,6 +309,7 @@ async function runConfirmedWrite({
       error: 'confirmationToken 無效、已過期、已使用過，或你想在提出變更的同一回合就'
         + '直接確認——使用者必須真的回覆同意（也就是下一則訊息）之後才能確認。'
         + '請先把變更內容講給使用者聽，等他回覆。',
+      errorCode: 'CONFIRMATION_INVALID',
     };
   }
   return await write(staged);
@@ -309,7 +356,7 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
 
       case 'search_dcard_reviews': {
         const courses = await searchCourses({ keyword: args.keyword }, studentScope);
-        if (courses.length === 0) return { error: '找不到該課程的評價' };
+        if (courses.length === 0) return { error: '找不到該課程的評價', errorCode: 'REVIEWS_NOT_FOUND' };
         return { ...(await sentimentSummary(courses[0].id)), courseName: courses[0].name };
       }
 
@@ -329,6 +376,16 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // `interpretation` 是給使用者看的理解回講，不是排課條件——要從送進排課
         // 引擎的 constraints 裡拆出來，否則會被當成一個不認得的限制欄位。
         const { interpretation = null, ...schedulingArgs } = args;
+        const watchingIds = args.watchingCourseIds ?? [];
+
+        // 關注課程也要查——不是為了跟 mustTake／selected 一樣擋下整次排課
+        // （那兩者已由 #22 的 Z5 在排課層處理，這裡刻意不重複），而是為了下面
+        // 濾掉查無對應課程的 id，見 Roadmap #25。
+        const courseById = await lookupCourses([
+          ...(args.mustTakeCourseIds ?? []),
+          ...(args.selectedCourseIds ?? []),
+          ...watchingIds,
+        ]);
 
         const contradiction = preflight({
           constraints: args,
@@ -336,11 +393,7 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
           // chat 這條路一定要有理解回講——schema 的巢狀 required 在非 strict
           // 模式下不被 API 強制，實測模型會送空物件過來。
           requireInterpretation: true,
-          // 必修與已選都要查——已選課程撞封鎖時段同樣是使用者自己的條件打架。
-          courseById: await lookupCourses([
-            ...(args.mustTakeCourseIds ?? []),
-            ...(args.selectedCourseIds ?? []),
-          ]),
+          courseById,
         });
         if (contradiction.required) {
           logger.info('排課前偵測到矛盾或資料不足，改為澄清', { label: 'Preflight' });
@@ -350,12 +403,33 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
             clarification: contradiction,
             solver: { status: 'data-insufficient', repairAttempted: false, resultSource: 'none' },
             message: '需要先確認幾個條件才能排課。',
+            errorCode: 'PREFLIGHT_CLARIFICATION_REQUIRED',
           };
+        }
+
+        // Roadmap #25：查無對應課程的關注 id 濾掉，不讓它進 `scheduler.js`。
+        //
+        // `mustTakeCourseIds`／`selectedCourseIds` 撞到不存在的 id 時，#22 已經讓
+        // 整次排課回報 `data-insufficient` 並回頭問使用者——那是對的，因為那兩者
+        // 是「這門課一定要在課表裡」的硬性宣告，答錯會讓整份課表偏離使用者真正
+        // 要的東西。關注課程只是追蹤用途，不佔時段也不計學分，為了一個打錯的 id
+        // 擋下整次排課並不相稱；改成濾掉並在結果附上原因，讓使用者看得到但不被
+        // 卡住必要的課程排入。
+        const droppedWatchingIds = watchingIds.filter(id => !courseById.has(Number(id)));
+        if (droppedWatchingIds.length > 0) {
+          schedulingArgs.watchingCourseIds = watchingIds.filter(id => courseById.has(Number(id)));
         }
 
         const scheduled = await generateSchedule(
           identity, { constraints: schedulingArgs, surface: 'chat', trigger: 'chat_tool' }, { prefs }
         );
+
+        if (droppedWatchingIds.length > 0) {
+          scheduled.warnings = [
+            ...(scheduled.warnings ?? []),
+            `關注課程 id ${droppedWatchingIds.join('、')} 查無對應課程，已略過。`,
+          ];
+        }
 
         // 回講跟著結果一起回去，讓前端與使用者看得到「Agent 理解成什麼」。
         // 模型輸出的是穩定的代號，中文由伺服器生成——兩邊都拿到：輸出可重現，
@@ -381,7 +455,7 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // system prompt 裡一句模型可以無視的叮嚀，違反 #24 自己的「使用者確認前
         // 不得永久更新偏好」。現在改成兩段式。
         return await runConfirmedWrite({
-          identity, args, changeType: 'preferences', stageChange, consumeChange, turnId: ctx.turnId,
+          identity, args, changeType: getConfirmationChangeType(name), stageChange, consumeChange, turnId: ctx.turnId,
           write: async staged => {
             const mergedTags = mergePreferenceTags(prefs ?? {}, staged);
             const payload = mergedTags ? { ...staged, preferenceTags: mergedTags } : staged;
@@ -402,7 +476,7 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
           // 不清掉的話，使用者會在確認訊息裡看到「入學年度改成 0」這種鬼東西。
           // 寫入層另有一道相同方向的防護（`database.js` 拒絕不合法年度）。
           args: sanitizeProfileScopeArgs(args),
-          changeType: 'profile-scope', stageChange, consumeChange, turnId: ctx.turnId,
+          changeType: getConfirmationChangeType(name), stageChange, consumeChange, turnId: ctx.turnId,
           write: async staged => {
             await updatePreferences(identity, staged);
             if (prefs) Object.assign(prefs, staged);
@@ -419,10 +493,10 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         });
 
       default:
-        return { error: `不明的函數呼叫: ${name}` };
+        return { error: `不明的函數呼叫: ${name}`, errorCode: 'UNKNOWN_TOOL' };
     }
   } catch (err) {
-    return { error: `執行工具發生錯誤: ${err.message}` };
+    return { error: `執行工具發生錯誤: ${err.message}`, errorCode: 'TOOL_EXECUTION_FAILED' };
   }
 }
 
@@ -488,7 +562,7 @@ export async function handleChat(identity, message) {
   // 待確認的變更也必須由伺服器補進 prompt，理由與 latestExposure 完全相同：
   // 工具結果不跨回合保存，模型下一回合不會記得上一回合拿到的 confirmationToken
   // ——實測時它因此又重新暫存一次，永遠走不到寫入那一步。
-  const pendingChanges = ['preferences', 'profile-scope']
+  const pendingChanges = listConfirmationChangeTypes()
     .map(changeType => {
       const entry = peekPendingChange(identity, changeType);
       return entry ? { changeType, token: entry.token, changes: entry.changes } : null;
@@ -557,7 +631,7 @@ export async function handleChat(identity, message) {
         let result;
         if (args === null) {
           logger.error('工具參數不是合法 JSON', { label: 'AgentCore' });
-          result = { error: '工具參數不是合法的 JSON 物件，請重新產生。' };
+          result = { error: '工具參數不是合法的 JSON 物件，請重新產生。', errorCode: 'MALFORMED_ARGUMENTS' };
         } else {
           logger.debug('工具參數已解析（內容不記錄）', { label: 'ToolCall' });
           result = await executeAgentTool(call.name, args, ctx);
@@ -568,9 +642,10 @@ export async function handleChat(identity, message) {
           applyToolOutcome({ intent: detectedIntent, data: responseData }, call.name, result));
 
         // 前端拿完整結果渲染課表；模型只拿投影後的版本（見
-        // `summarizeScheduleForModel()`：完整結果有 800KB+，會撐爆 context）。
+        // `summarizeScheduleForModel()`：完整結果有 800KB+，會撐爆 context），
+        // 再包上統一信封（見 `buildToolResultEnvelope()`）。
         const modelResult = call.name === 'run_csp_scheduler' ? summarizeScheduleForModel(result) : result;
-        const outputStr = JSON.stringify(modelResult);
+        const outputStr = JSON.stringify(buildToolResultEnvelope(call.name, modelResult));
         logger.info('工具執行完成', { label: 'ToolCall_Result', outputLength: outputStr.length });
 
         // 工具「被呼叫了」不等於「成功了」——驗證失敗時只是回一個 { error } 給模型，

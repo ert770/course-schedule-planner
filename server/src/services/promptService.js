@@ -480,6 +480,11 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 需要資料或要產生課表時，直接呼叫對應的工具；每個工具的參數說明寫在工具定義裡，以那份定義為準。
 - 工具回傳結果之後，若已足以回答，就直接用一般文字回覆使用者，不需要再呼叫任何工具。
 - 不要把工具回傳的原始 JSON 貼給使用者，要用中文說明重點。
+- 每個工具的結果都包在同一種信封裡：\`{ schemaVersion, dataSource, term, warnings, errorCode, result }\`，
+  實際內容一律在 \`result\` 欄位（陣列或物件都一樣，不必先判斷形狀）。\`dataSource\` 為
+  \`json-fallback\` 時代表資料庫暫時不可用，回答時要說明這是暫時性限制，不要說成資料真的不存在。
+  \`warnings\` 有內容時要在回覆裡提到。\`errorCode\` 不為 \`null\` 時代表這次呼叫沒有成功，
+  依 \`result.error\` 的文字向使用者說明，不要宣稱已完成。
 
 排課偏好使用說明：
 - preferredKeywords、interests、preferCompact、preferEasyCourses 會決定多個課表方案中要主推哪一個。

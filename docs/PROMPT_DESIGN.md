@@ -229,11 +229,19 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 
 ## 工具結果（function_call_output）
 
-工具結果以 JSON 字串放回 `input`：
+工具結果以 JSON 字串放回 `input`，**先投影（見下方）、再包上統一信封
+（Roadmap #25，見「工具結果信封」）**：
 
 ```js
-{ type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(result) }
+{
+  type: 'function_call_output',
+  call_id: call.call_id,
+  output: JSON.stringify(buildToolResultEnvelope(call.name, modelResult)),
+}
 ```
+
+這一份**只給模型看**。前端消費的是 `applyToolOutcome()` 寫進 `/api/chat` 回應
+`data` 欄位的原始 `result`，完全不經過投影或信封，見 `docs/API_SPEC.md`。
 
 ### 單次請求的步數上限
 
@@ -381,7 +389,52 @@ parameter`）。
 
 **完整結果仍原封不動回傳給前端**渲染課表；被裁掉的只有送進模型的那一份。
 
-## 最終回答格式
+### 工具結果信封（Roadmap #25）
+
+七個工具的**政策**（是否可渲染、是否寫入、寫入要不要兩段式確認）統一登記在
+`server/src/services/agentToolRegistry.js`，不再分散成 `promptService.js` 的
+schema、`agentService.js` 的 switch、還有一份獨立的 `RENDERABLE_TOOLS` Set 三處
+各自維護——`agentToolRegistry.test.js` 直接讀原始碼比對三者的工具名稱集合，
+漏改一邊測試會失敗。這份登記表**只管政策**，參數的型別／enum／必填仍在
+`promptService.js` 的 schema 裡，兩者由契約測試保證一致。
+
+`agentService.buildToolResultEnvelope()` 把投影後的結果包成統一形狀，不論原始
+結果是陣列還是物件，模型都不必先判斷形狀：
+
+```json
+{
+  "schemaVersion": 1,
+  "dataSource": "mysql",
+  "term": { "academicYear": 114, "semester": "下學期" },
+  "warnings": [],
+  "errorCode": null,
+  "result": { "...": "投影後的原始內容" }
+}
+```
+
+- `dataSource` 為 `json-fallback` 代表 MySQL 暫時不可用，退回本機 JSON——
+  system prompt 要求模型把這講成「暫時性限制」，不能說成資料真的不存在。
+- `term` 只附加在會回傳課程物件的工具（`query_course_db`、`search_dcard_reviews`、
+  `get_easy_courses`、`run_csp_scheduler`）；偏好／身分寫入與排課後確認跟學期
+  無關，不附加。
+- `warnings` 是把 `result.warnings`（若有）提到信封層，模型不必自己去翻。
+- `errorCode` 不為 `null` 代表這次呼叫沒有成功；system prompt 要求模型依
+  `result.error` 的文字說明，不宣稱已完成。目前定義的錯誤碼：
+  `UNKNOWN_TOOL`、`MALFORMED_ARGUMENTS`、`TOOL_EXECUTION_FAILED`、
+  `REVIEWS_NOT_FOUND`、`NOTHING_TO_CHANGE`、`CONFIRMATION_INVALID`、
+  `PREFLIGHT_CLARIFICATION_REQUIRED`。
+
+### 非法課程 id：`watchingCourseIds` 會被濾掉
+
+`mustTakeCourseIds`／`selectedCourseIds` 撞到不存在的課程 id 時，Roadmap #22
+已經讓整次排課回報 `data-insufficient` 並回頭問使用者（`docs/TEST_PLAN.md` 的
+Z5）——這兩者是「這門課一定要在課表裡」的硬性宣告，答錯會讓整份課表偏離使用者
+真正要的東西，值得停下來問清楚。
+
+`watchingCourseIds` 只是追蹤用途，不佔時段也不計學分，因此**不套用同一個機制**：
+`agentService.js` 在呼叫 `generateSchedule()` 前把查無對應課程的 watching id
+直接濾掉——它們真的不會進入 `scheduler.js`——並在結果的 `warnings` 附上
+「關注課程 id X 查無對應課程，已略過。」，不中斷排課、也不回頭問。
 
 模型回傳一則沒有 `function_call` 的訊息即為最終回答，內容就是要顯示給使用者的文字。
 不需要（也不應該）再包一層 `final_answer` 工具。
@@ -451,9 +504,14 @@ parameter`）。
 
 1. 更新 `promptService.js` 的 `getAgentTools()`（JSON Schema）。
 2. 更新 `agentService.js` 的 `executeAgentTool()` dispatch。
-3. 更新 `server/test/prompt.test.js` 的工具清單與 `server/test/agentTools.test.js`。
-4. 更新本文件。
+3. **在 `agentToolRegistry.js` 加一筆**（`renderable`／`writes`／`confirmation`）
+   ——漏這一步 `agentToolRegistry.test.js` 的 AR1 會先失敗，比漏改 dispatch 更早
+   被抓到。
+4. 更新 `server/test/prompt.test.js` 的工具清單、`server/test/agentTools.test.js`
+   與 `server/test/agentToolRegistry.test.js`。
+5. 更新本文件。
+6. 新增測試案例到 `docs/TEST_PLAN.md`。
 
 若新增的工具會回傳大型物件，必須一併決定它的投影方式（見「排課結果必須先投影」），
-不要直接把整包 JSON 餵回模型。
-4. 新增測試案例到 `docs/TEST_PLAN.md`。
+不要直接把整包 JSON 餵回模型。若工具結果含課程物件，`buildToolResultEnvelope()`
+的 `COURSE_BEARING_TOOLS` 也要一併加入，模型才會拿到 `term`。

@@ -535,6 +535,30 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 | 問畢業門檻 | 回答 128 學分與分類要求 |
 | 資料不足 | 說明限制並要求補充 |
 
+### Tool allowlist 與工具結果信封（Roadmap #25）
+
+`server/test/agentToolRegistry.test.js`（AR1-AR4）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| AR1 | 登記表 vs `getAgentTools()` schema vs `executeAgentTool()` 的 switch | 三處工具名稱集合完全一致（讀原始碼比對，不是人工同步） |
+| AR2 | 需要兩段式確認的工具（`update_preferences`／`update_student_profile`） | schema 必須有 `confirmationToken`；其餘工具不得有 |
+| AR3 | 全部 7 個工具的 schema | `additionalProperties` 為 `false` |
+| AR4 | `isRenderableTool()`／`getConfirmationChangeType()`／`listConfirmationChangeTypes()` | 回傳值與登記表定義逐項相符 |
+
+`server/test/agentTools.test.js` 新增：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| AG14 | `watchingCourseIds` 含查無對應課程的 id | 該 id 不會出現在傳給 `generateSchedule()` 的 constraints 裡；結果 `warnings` 附上「已略過」說明，且不覆蓋既有 warning |
+| AG14 | 全部合法／完全沒帶 `watchingCourseIds` | 不受影響（反例，避免誤判） |
+| AG15 | `buildToolResultEnvelope()` | 含 `schemaVersion`／`dataSource`／`warnings`／`errorCode`／`result` 五個欄位；陣列型結果一樣能包裝；只有課程類工具附 `term`；`errorCode` 正確透出 |
+| AG15 | `applyToolOutcome()` 寫進 `/api/chat` 回應 `data` 的值 | **不得被信封污染**——仍是原始 `result`，不含 `schemaVersion` 等信封欄位 |
+
+`server/test/prompt.test.js` 新增 P7：system prompt 提到信封五個欄位、
+`json-fallback` 是「暫時性限制」而非資料不存在、`errorCode` 不為 `null` 時
+「不要宣稱已完成」。
+
 ### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
 
 **這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。

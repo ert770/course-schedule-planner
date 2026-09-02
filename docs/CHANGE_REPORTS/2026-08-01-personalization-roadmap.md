@@ -4,89 +4,38 @@
 
 本文件為**持續更新的任務追蹤報告**。每完成一項任務即回來更新該任務區塊的狀態、修改檔案清單、實際改動與驗證結果。
 
+### 每次修改都要更新「狀態」與「相依」兩欄
+
+**這兩欄不會自己失效，只會靜默失準。** 每次改動之後都必須回頭核對整張進度總覽表，
+不是只改你剛動到的那一列。
+
+**為什麼要核對整張表，而不只是自己那一列**：完成任務 A 會讓「相依 A」的 B、C、D
+三列一起過期，而那時候沒有人在做 B、C、D，也就沒有人會發現。這不是假設——
+2026-08-31 核對時實際抓到**五項**（`#10`、`#26`、`#34`、`#35`、`#28`）的前置相依
+早已全部完成，卻仍被記成卡住；`#10` 與 `#26` 的內文甚至還寫著「仍卡 #21、#22」，
+而那兩項分別在 08-29 與 08-30 就完成了。被誤記為卡住的任務不會有人去碰，
+等於白白擱置。
+
+**狀態一律依實際程式碼判定，不依印象或文件推定。** 標成「已完成」就要指得出實作位置
+或釘住它的測試；標成「尚未完成」就要指得出缺少的具體欄位、模組或測試。
+（2026-08-09 首次依此原則全表盤點時，多項任務因此由「⬜ 未開始」改為「🟡 部分完成」
+——原本的標示低估了已完成的前置工作。）
+
+核對時要做的四件事：
+
+1. **狀態欄**：完成度是否改變；仍是部分完成的，要寫清楚「還缺什麼」而不只是 🟡。
+2. **相依欄**：列出的每一項現在是什麼狀態？全部完成就標「均已完成」，並在狀態欄
+   明講**可繼續／可開始**。
+3. **外部阻塞要寫進相依欄**，不能只寫在內文——否則從表格看會誤以為只是排程問題。
+   例如 `#8` 缺的是 `Courses.prerequisites`（3,086 筆全為 NULL），不是缺工。
+4. **區分「卡任務」與「卡資料」**：前者做上游就會解開，後者寫程式也解決不了，
+   兩者的處置完全不同。
+
+同一份修改若讓某項任務的相依全部滿足，要一併更新「現在可以動工的任務」一節。
+
 ## 建立日期
 
 2026-08-01
-
-## 最後更新
-
-2026-08-31（**#23 第二輪**：補學分推薦候選池擴大為「本人班級 ＋ 通識 ＋ 系外選修」，
-並改成每個有缺口的分類至少先推一門——先前擴大候選後仍被最大的缺口吃光名額。
-新增通識畢業認列（`generalEducationRecognition.js`）：依**學生入學年度**選版本、
-基礎必修與選修拆成兩個缺口、核心必修過渡規則。同時把 roadmap 裡兩項**已於第一輪修好
-卻仍寫著未修**的追蹤記錄更正，並把每條阻塞項改成附實查證據。**#23 仍為部分完成**，
-剩餘各項全部卡在外部資料。詳見
-[第二輪變更報告](./2026-08-31-roadmap-23-general-education-recognition.md)）
-
-前次更新：2026-08-31（**#23 第一次更新**：完成版本化規則模型
-（`program + degree + admissionYear + ruleVersion`）、逐門認列追溯、每筆認列的規則來源與
-待確認狀態、以及補學分推薦的 gap 驗證。`User_Profiles` 新增 `admission_year` 欄位並回填
-（migration `005`，兩個來源交叉驗證）。修掉「0 學分的班級活動被當成通識推薦」這個
-已用線上資料重現的 bug。**#23 仍維持部分完成**——系所學分維度只有 114 一版真實資料，
-多版本比較做不出真東西，不宣稱。過程中加欄位引發兩個真實回歸（模型改為追問入學年度
-而不更正、以及送 `admissionYear: 0` 佔位值會洗掉真實資料），皆已用 A/B 確認因果並修復。
-詳見[變更報告](./2026-08-31-roadmap-23-versioned-graduation-rules.md)）
-
-前次更新：2026-08-31（全文重新盤點：逐份重讀 `docs/CHANGE_REPORTS/` 全部報告與現行程式碼後更新進度。
-**#24 由部分完成改判為已完成**——第二輪報告的驗收標準對照表其實已四條全數達成，本文件先前
-沒有同步更新到那一版結論。**#25 由未開始改判為部分完成**——2026-08-30 遷移 OpenAI 原生
-tool calling、`intent`/`data` 誠實化與 2026-08-31 第一輪的同回合 scope 重建，合計已達成該任務
-四條驗收標準中的三條。**#34 由未開始改判為部分完成**——`agentGoldenSet.test.js` 的 8 題
-golden set 已進 `npm test` 每次執行，是一個小規模但真實存在的 Agent 需求理解 eval。同時修正
-#2「已知限制」一節：Chat 排課後確認的瀏覽器端對端驗收已於 2026-08-30 隨 OpenAI 遷移完成，
-先前記錄的「未完成」已過期。另外，工作區原有一條與 #8 資料基礎相關、獨立進行中的
-`courseHistory` → MySQL `User_Course_History` 遷移工作，已於本次一併 commit（`c6da412`）
-並 push 到 `backend` 分支）
-
-前次更新：2026-08-30（完成 #22：保留五個 greedy baseline，新增 2 秒 bounded backtracking repair、
-deterministic seed、validator gate、四態 solver 結果、合法 fallback、草稿隔離與結構化 Chat 澄清契約）
-
-再前次：2026-08-29（移除退課原因對話框的「略過，直接移除」；重新劃分 #21 的責任邊界並標記完成：
-廣義先修／共修的資料模型與強制執行歸 #8，`scoreCourse()` 動態讀取 schema 歸 #7，偏好型
-每日課程數上限的需求定義歸 #24）
-
-前次更新：2026-08-26（完成 #2：`Interaction_Events` 表、`POST /api/interactions`、排課回應的
-`requestId`／`planId`／`variantId`、Agent 排課後確認與 `record_schedule_feedback`、
-前端全事件埋點與移除原因選單。19 項新測試、後端 501/501 通過；瀏覽器 A/B 實機驗收
-完成（未同意 0 列、同意後 8 種事件與 7 個原因逐一驗到）。#30 的阻塞解除）
-
-更早：2026-08-22（完成 #33：`002_privacy-foundation` 已套用 shared MySQL 並確認五張表存在；
-本機已產生獨立 secrets、使用 MySQL privacy store 並啟用 enforcement；Privacy Center 人工 A/B
-確認只同意必要用途即可使用，兩項可選用途維持關閉。#2 的前置相依已滿足，可開始實作；正式網站另由
-#39 追蹤 Production hosting）
-
-前次更新：2026-08-21（完成 #29：建立 versioned `InteractionEvent v1`、event/source/reason enums、
-server-authoritative envelope、v0 migration、完整 validator 與 storage-agnostic idempotency
-append／duplicate／conflict 純邏輯；10 項新測試、後端 471/471 全數通過。依 #33→#2 相依
-邊界不新增 API、不持久化真實互動，也不修改前端）
-
-再前次：2026-08-20（#15 的 Codex adversarial review 修復：多候選實習班次逐一重試互相污染、
-不及格必修重補修漏接配對邏輯、`/validate` 端點繞過新規則，3 項發現全數修復，三個
-排入路徑統一共用 `placeCourseWithCorequisite()`，新增 Y10-Y12 與路由層級測試，
-461/461 通過）
-
-再前次：2026-08-20（完成 #15：實習課程與同名正課的共同必修排入——配對推導、原子排入、獨立 validator
-複查配對完整性，已用真實 MySQL 資料驗證例外清單；順手修正 #35 兩項已由 #21 解決的過期缺口記錄）
-
-更早：2026-08-20（#21 大部分完成：建立正式 hard/soft constraint schema、與方案產生器分離的獨立
-validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修／共修強制執行，卡在 roadmap #8
-尚未開始的資料模型）
-
-更早：2026-08-19（完成 #3：8 個內容偏好從硬過濾改成軟懲罰，並回填 #21「開始前必須具備」欄位）
-
-更早：2026-08-19（統一 #31、#35、#36 的總覽與詳細章節狀態為「部分完成」；#13D 因 #18 已完成，改為
-「工程可開始、正式驗收等待特殊身分資料」）
-
-更早：2026-08-17（第二次更新：#5 拆成 #5A／#5B——#5A 已完成，#5B 阻塞在 #29→#33→#2→#30 依序完成，並修正
-#7／#26／#30／#36／Gate 4 原本誤指向 #5 的相依方向）
-
-更早：2026-08-17（完成 #4：評價聚合層接進排課引擎與 `/api/reviews/easy` 排行榜，取代課程描述關鍵字；#5、#10、#26 隨之回填進度）
-
-更早：2026-08-14（完成 #12、#13B、#18、#19 的進度回填；#13B 以現行 562 個班級名稱重新核對並完成 unknown eligibility）
-
-更早紀錄：2026-08-09（#13 拆成 #13A～#13D；依程式碼盤點補上 #4、#18、#19、#20、#21、#23、#26、#28、#31、#35、#36 的既有進度）
-
-> **2026-08-09 盤點方式**：狀態不是依印象或文件推定，而是逐一讀取 `server/src`、`client/src` 與 `server/test` 的實際程式碼後判定。凡標成「已完成」者，本文件均指出其實作位置或釘住它的測試；凡標成「尚未完成」者，均指出缺少的具體欄位、模組或測試。多項任務因此由「⬜ 未開始」改為「🟡 部分完成」——原本的標示低估了已完成的前置工作。
 
 ## 背景
 
@@ -122,43 +71,67 @@ validator、opt-in 放寬階梯、結構化 conflict set；剩餘缺口為先修
 | 4 | 把評分方式結構化：新增課程欄位並從 reviews 聚合難度甜度 | ✅ 已完成（2026-08-17） | 無（DDL 欄位另列 D 類） |
 | 5A | 結構化評價分數接進 `scoreCourse`（母體共用） | ✅ 已完成（2026-08-17） | #4 |
 | 5B | per-user 加權方向（同一分數對不同使用者相反符號） | ⛔ 等待 #30 | #5A、#29、#33、#2（均已完成）；只剩 #30 |
-| 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⬜ 未開始（卡 #31 與樣本量） | #2、#29（已完成）、#31；另需足夠互動樣本 |
-| 7 | 以個人化權重向量取代 5 個固定 variant | ⬜ 未開始（卡 #30） | #2、#5A（已完成）、#30 |
-| 8 | 先修關係與多學期路徑規劃 | ⬜ 未開始 | #19、#20、#21、#23 |
-| 9 | 探索機制：小比例隨機與多樣性重排 | ⬜ 未開始 | #2（已完成）、#21、#30、#36 |
-| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 部分完成（2026-08-17） | #4、#21、#22 |
+| 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⬜ 未開始（卡 #31 與樣本量） | #2、#29（已完成）；#31（部分完成，本身卡 #30）；另需足夠互動樣本 |
+| 7 | 以個人化權重向量取代 5 個固定 variant | ⬜ 未開始（卡 #30） | #2、#5A（已完成）；#30（可開始但未開始） |
+| 8 | 先修關係與多學期路徑規劃 | ⬜ 多學期規劃未開始；歷史修課 MySQL 基礎已完成（2026-08-30） | #19、#21（已完成）；#20、#23（部分完成，剩餘皆卡外部資料）；**另需先修資料——`Courses.prerequisites` 目前 3,086/3,086 全為 NULL** |
+| 9 | 探索機制：小比例隨機與多樣性重排 | ⬜ 未開始（卡 #30、#36） | #2、#21（已完成）；#30、#36 |
+| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 部分完成（2026-08-17）——**前置相依已全部完成，可繼續**（根因二已由 #4 緩解；根因一「必修互相衝堂」未動） | #4、#21、#22（均已完成） |
 | 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ✅ 已完成 | 無 |
 | 12 | 課程類別不完整：資料庫只有必修／選修，缺通識、核心選修、系外選修 | ✅ 已完成 | 無（歷史畢業認列另屬 #23） |
 | 13A | 資工系一般班級必修 scope | ✅ 已完成 | 無 |
 | 13B | B～F 類班級分類與 unknown eligibility | ✅ 已完成（2026-08-14） | #13A |
 | 13C | B～F 類的正式適用規則 | ⛔ 等待外部資料 | #13B；**另需系辦／校方正式規則** |
-| 13D | 學制、學程與特殊身分 | 🟡 工程可開始；正式驗收等待特殊身分資料 | #13B、#18（均已完成）；另需特殊身分資料與正式適用規則 |
+| 13D | 學制、學程與特殊身分 | 🟡 工程可開始；正式驗收等待特殊身分資料。**`User_Profiles` 已有組員新增的 `program_type`／`enrolled_programs`／`college` 三欄（本專案尚未讀寫），欄位設計這一段不必從零開始** | #13B、#18（均已完成）；另需特殊身分資料與正式適用規則 |
 | 14 | 無時間課程永不衝堂，可被無限排入 | ✅ 已完成 | 無 |
 | 15 | 實習課程需與同名正課一併排入 | ✅ 已完成（2026-08-20） | #13A、#13B、#19、#20、#21 |
 | 16 | 多時段課程支援 | ✅ 已完成 | 無 |
 | 17 | 週六與週日課程支援 | ✅ 已完成 | 無 |
 | 18 | 統一 user identity、Profile、歷史修課與偏好資料來源 | ✅ 已完成（shared MySQL rollout 另列 D 類） | 無（新增任務的資料基礎） |
 | 19 | 以穩定 course code 建立歷史修課、重修與跨學期對應 | ✅ 已完成 | #18 |
-| 20 | 建立 active term 與完整 candidate eligibility 規則 | 🟡 部分完成 | #12、#13A、#13B、#18、#19 |
+| 20 | 建立 active term 與完整 candidate eligibility 規則 | 🟡 部分完成——**程式相依已全部完成**；剩餘缺口（B～F 類正式適用規則、學制學程身分）全部卡 #13C／#13D 的外部資料，非工程問題 | #12、#13A、#13B、#18、#19（均已完成）；剩餘缺口另需 #13C／#13D 的外部資料 |
 | 21 | 建立 hard／soft constraint schema、validator 與放寬策略 | ✅ 已完成（2026-08-29 確認責任邊界） | #3、#19（已完成）、#20（已提供本任務所需能力） |
 | 22 | 為 greedy 排課加入 repair／backtracking 或 constraint solver | ✅ 已完成（2026-08-30） | #21（已完成） |
 | 23 | 建立版本化且可追溯的畢業規則引擎 | 🟡 部分完成（2026-08-31 兩輪）——版本化架構、逐門認列追溯、規則來源記錄、補學分推薦驗證與候選範圍、通識基礎／選修拆分皆完成；剩餘各項全部卡在外部資料（科目表、官方認列表、歷史學期資料、系辦確認） | #12、#19；另需校方正式規則 |
 | 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ✅ 已完成（2026-08-31，兩輪）——四條驗收標準全數達成（第 4 條前提為「無歧義的需求」） | #18、#21（均已完成） |
-| 25 | 改用 structured/native tool calling 與輸入輸出驗證 | 🟡 部分完成（2026-08-31）——OpenAI 原生 tool calling／JSON Schema、誠實 intent/data、同回合 scope 重建、矛盾參數排課前擋下均已完成；非法 course ID 邊界驗證與正式 tool allowlist 政策尚未做 | #20、#21、#24（已完成） |
-| 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成 | #4、#5A、#21、#22 |
-| 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ 未開始 | #10、#26 |
-| 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成 | 無（#18 已完成；雙帳號完整驗收待補） |
+| 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ✅ 已完成（2026-08-31）——四條驗收標準全數達成：OpenAI 原生 tool calling／JSON Schema、誠實 intent/data、同回合 scope 重建、矛盾參數排課前擋下、正式 tool allowlist（`agentToolRegistry.js`）、非法 course ID 過濾（`watchingCourseIds`）與統一結果信封均已完成 | #20、#21、#24（均已完成） |
+| 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成——**前置相依已全部完成，可繼續**（`reviewEvidence` 已由 #4 提供；`selectedBecause`／`matchedPreferences`／`requiredRules`／`alternativesRejected` 等仍未做） | #4、#5A、#21、#22（均已完成） |
+| 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ 未開始（#10、#26 本身皆已解除阻塞，但都還沒做完） | #10、#26（均為部分完成，前置已全部解除） |
+| 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成——**可完成**：#2 已於 2026-08-26 開始記錄互動事件，「互動事件不交叉」這條驗收先前無事件可測，現在可以測了；只剩雙帳號實機驗收 | 無（#18、#2 均已完成） |
 | 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ⬜ **可開始（前置相依已全部完成）** | #2、#5A、#29（均已完成） |
 | 31 | 建立冷啟動、偏好重設、時間衰減與資料不足策略 | 🟡 部分完成 | #18、#30 |
 | 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | ⬜ 未開始 | #6、#7、#31、#36；另需足夠互動樣本 |
 | 33 | 建立互動資料隱私、匿名化、consent 與保存規則 | ✅ 已完成（2026-08-22） | #18、#29（均已完成） |
-| 34 | 建立 Agent 自然語言需求理解 eval | 🟡 部分完成（2026-08-31）——8 題中文 golden set 已進 `npm test` 每次執行；多輪修正、課名同名、越權要求與大規模標註資料集尚未涵蓋 | #24（已完成）、#25 |
-| 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成 | #15、#21、#22 |
-| 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成 | #5B、#7、#30、#31 |
-| 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ 未開始 | #25、#26 |
-| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始 | #27、#28、#33、#34、#35、#36、#37 |
-| 39 | 架設正式網站與 Production rollout | ⬜ 未開始 | #33；另需選定部署平台、網域與 secret store |
+| 34 | 建立 Agent 自然語言需求理解 eval | 🟡 部分完成（2026-08-31）——**前置相依已全部完成，可繼續**。8 題中文 golden set 已進 `npm test` 每次執行；多輪修正、課名同名、越權要求與大規模標註資料集尚未涵蓋 | #24、#25（均已完成） |
+| 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成——**前置相依已全部完成，可繼續**。Z1–Z7 已提供最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 | #15、#21、#22（均已完成） |
+| 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成（卡 #30 那條鏈） | #5B、#7、#30、#31（四者最終都卡在 #30） |
+| 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ 未開始（只剩 #26） | #25（已完成）、#26（部分完成，前置已解除） |
+| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始 | #33（已完成）；#27、#28、#34、#35、#36、#37 |
+| 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
+
+## 現在可以動工的任務（2026-08-31 盤點）
+
+`#25` 完成後重新核對整張表的相依欄，發現**有五項的前置相依其實早就全部完成，
+只是表格沒有跟著更新**。這一節是那次核對的結論，避免「以為還卡著」而擱置。
+
+| # | 任務 | 為什麼現在可以動 |
+| ---: | --- | --- |
+| 10 | 修復多方案塌縮 | #4、#21、#22 全部完成。根因二（涼課評分恆為 0）已由 #4 緩解，**根因一「15 門必修有 11 對互相衝堂、低年級只剩 1 學分填充空間」完全沒動**——那才是塌縮的主因 |
+| 26 | evidence-based recommendation reason | #4、#5A、#21、#22 全部完成。四個欄位只做了 `reviewEvidence`，其餘三個加上 `alternativesRejected`／`confidence`／`dataSources` 都還沒開始 |
+| 34 | Agent 需求理解 eval | #24、#25 均已完成。目前只有 8 題，缺多輪修正、課名同名、越權要求等類別 |
+| 35 | solver benchmark | #15、#21、#22 全部完成。Z1–Z7 是最小 golden cases，缺 runner 與量化報告 |
+| 28 | 統一登入使用者 context | #2 已在記錄互動事件，「互動事件不交叉」這條驗收**先前無事件可測**，現在可以測；只剩雙帳號實機驗收 |
+
+另外 `#39`（正式網站）在工程上也可開始——`#33` 已完成，缺的是「選哪個平台」這個
+人的決定，不是程式相依。
+
+**仍然真的卡住的**，卡點只有兩種：
+
+- **卡 #30 這條鏈**：`#30`（可開始但未開始）→ `#5B`／`#7`／`#31`／`#36`／`#9`／`#6`／`#32`。
+  `#30` 本身前置已全部完成，它是這條鏈唯一的閘門。
+- **卡外部資料**：`#13C`（系辦規則）、`#13D`（特殊身分資料）、`#23` 剩餘項（歷史科目表、
+  官方認列表、歷史學期課程資料）、`#8`（`Courses.prerequisites` 全為 NULL）。
+  這些不是排程問題，寫程式也解決不了。
 
 ## 任務相依的閱讀方式
 
@@ -524,7 +497,8 @@ flowchart LR
 
 **狀態**：⬜ 未開始（#2、#29 已完成；卡 #31 與樣本量）
 
-**相依**：#2、#29（已完成）、#31；外部條件為足夠且去識別化的 user-course interaction matrix。
+**相依**：#2、#29（均已完成）；#31（部分完成，本身卡 #30——因此本任務最終也卡在 #30）；
+外部條件為足夠且去識別化的 user-course interaction matrix。
 
 **開始前必須具備**：事件能區分「被曝光但未選」與「根本沒看見」，冷啟動策略已存在，並先定義最少使用者數、最少課程互動數與離線切分方式。若樣本不足，本任務只能做實驗，不得接管正式排序。
 
@@ -553,7 +527,8 @@ flowchart LR
 
 **狀態**：⬜ 多學期規劃未開始；歷史修課 MySQL 基礎已完成（2026-08-30，仍卡 #20、#23 與先修資料）
 
-**相依**：#19、#20、#21、#23
+**相依**：#19、#21（均已完成）；#20、#23（部分完成，各自的剩餘缺口皆卡外部資料）；
+**另需先修資料——`Courses.prerequisites` 目前 3,086/3,086 全為 NULL，沒有任何可用來源**
 
 **開始前必須具備**：歷史修課可用穩定課程代碼判定完成／未通過／重修；每學期課程與資格可查；限制 schema 可表達先修與共修；畢業規則已有入學年度版本。缺一項時只能做單學期提示，不能宣稱完成路徑規劃。
 
@@ -580,9 +555,9 @@ flowchart LR
 
 ## #9 探索機制
 
-**狀態**：⬜ 未開始（#2 已完成；卡 #21、#30、#36）
+**狀態**：⬜ 未開始（#2、#21 已完成；卡 #30、#36）
 
-**相依**：#2（已完成）、#21、#30、#36
+**相依**：#2、#21（均已完成）、#30、#36
 
 **開始前必須具備**：互動 log 可供回饋、hard constraints 有獨立 validator、個人偏好已有穩定 baseline，且 A/B 指標能偵測探索是否降低品質。探索不得作用於必修、重補修、明確指定或資格不確定課程。
 
@@ -592,9 +567,11 @@ flowchart LR
 
 ## #10 修復多方案塌縮
 
-**狀態**：🟡 部分完成（2026-08-17）——根因二（涼課評分恆為 0）已緩解，根因一（必修互相衝堂）未動，仍卡 #21、#22
+**狀態**：🟡 部分完成（2026-08-17）——根因二（涼課評分恆為 0）已緩解，根因一（必修互相衝堂）未動。
+**2026-08-31 更新：#21、#22 均已完成，前置相依已全部滿足，本任務可繼續**——剩下的是根因一，
+不再有相依阻塞。
 
-**相依**：#4、#21、#22
+**相依**：#4、#21、#22（均已完成）
 
 **開始前必須具備**：課程評分維度有非零且可信的資料，限制 schema 已穩定，solver／repair 能在相同硬限制下搜尋不同可行區域。否則只調整排序常數可能短暫得到五份方案，後續 solver 重構又會全部失效。
 
@@ -1166,7 +1143,7 @@ remaining.some(next => plan.totalCredits + next.credits <= plan.maxCredits)
 
 **狀態**：🟡 部分完成（2026-08-15 盤點）——active term 過濾、`eligibilitySource`／`scopeReason`／`term` 三欄位、四種判定的正式對照均已完成；B～F 正式可加選規則仍卡 #13C／#13D，維持部分完成
 
-**相依**：#12、#13A、#13B、#18、#19
+**相依**：#12、#13A、#13B、#18、#19（**均已完成**）；剩餘缺口另需 #13C／#13D 的外部資料
 
 **開始前必須具備**：課程分類與學生 scope 已穩定；Profile 能提供科系、學制、年級、班級；歷史修課可用穩定代碼排除；確認目前啟用學年與學期的來源。
 
@@ -1342,7 +1319,8 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
   最佳部分組合只放 `draftSchedule`，搭配 `isDraft`、`unmetRequirements`、`conflictSet` 與
   `clarification.questions` 供 Chat 問具體必要課、目標學分、不可上課時段或課程取捨。
 - `promptService.js` 已限制 Agent 不得把草稿說成成功、不得把 timeout 說成 infeasible，也不得
-  建議放寬衝堂、重複班次、學分硬上限或封鎖時段。structured/native tool calling 仍屬 #25。
+  建議放寬衝堂、重複班次、學分硬上限或封鎖時段。structured/native tool calling 已由
+  #25（2026-08-31）完成。
 - 新增 Z1–Z7 與 service／prompt 契約測試，涵蓋 greedy trap、真正無解、兩種 timeout、資料不足、
   deterministic 結果及正課／實習原子性。完整量化 benchmark 與比較報告仍由 #35 負責。
 
@@ -1556,10 +1534,10 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 
 ## #25 改用 structured/native tool calling 與輸入輸出驗證
 
-**狀態**：🟡 部分完成（2026-08-31 盤點）——四條驗收標準中三條已由 2026-08-30～08-31 的三份
-變更報告合計達成；「非法 course ID」邊界驗證與正式 tool allowlist 政策尚未做
+**狀態**：✅ 已完成（2026-08-31）——四條驗收標準全數達成。詳見
+[變更報告](./2026-08-31-roadmap-25-tool-allowlist-and-envelope.md)
 
-**相依**：#20、#21、#24（已完成）
+**相依**：#20、#21、#24（均已完成）
 
 **開始前必須具備**：course query、schedule 與 preference tools 的輸入輸出 schema 已固定；需求模型能產生 validated parameters；每個 tool 的授權、timeout 與錯誤語意已定義。
 
@@ -1575,7 +1553,7 @@ validator、逐級放寬機制與結構化 conflict set 已於 2026-08-20 交付
 - Tool result 加入 schema version、data source、term、warnings 與 error code。
 - Profile 被工具更新後重新建立 scope，不沿用 Agent turn 開頭的舊 scope。
 
-### 驗收標準對照（2026-08-31 盤點）
+### 驗收標準對照（2026-08-31 完成）
 
 本任務原文設想的是「換掉 Gemini 的 regex 解析」，實際發生的是**連 provider 一併換成
 OpenAI**（因為 `gemini-2.5-pro` 已被 Google 下架，Chat 整條路徑本來就是壞的，見
@@ -1584,29 +1562,37 @@ OpenAI**（因為 `gemini-2.5-pro` 已被 Google 下架，Chat 整條路徑本�
 
 | # | 驗收標準 | 結果 |
 | --- | --- | --- |
-| 1 | malformed、未知工具、非法 course ID 與矛盾參數不會進入核心 service | **部分完成**。malformed／未知工具：`getAgentTools()` 六個工具改用 JSON Schema（`enum`／`required`／`additionalProperties:false`），未知工具名稱由 `executeAgentTool()` 攔下回傳 `不明的函數呼叫` 錯誤物件，不拋例外、不進 service（AG1）。矛盾參數：`run_csp_scheduler` 前的 `checkPreflightContradictions()`（#24 第二輪，12 項）在排課引擎執行前擋下，不放行進 `scheduler.js`。**非法 course ID 未做**：目前沒有工具邊界層驗證 `explicitCourseIds`／`selectedCourseIds` 是否為存在的課程，不存在的 ID 會被排課器當成一般候選處理（不會壞掉，但不是「進不了核心 service」） |
-| 2 | Tool schema 與 `PROMPT_DESIGN.md` 有自動契約測試 | **完成**。`server/test/prompt.test.js` 直接對 `getAgentTools()` 的 schema 斷言參數、enum 與必填欄位，不是比對 prompt 字串 |
-| 3 | Agent 修改 Profile 後，同一對話後續查詢使用更新後 scope | **完成**。#24 第一輪新增 `update_student_profile` 確認後寫回 `ctx.studentScope`（物件參考，非區域變數），同回合後續 `query_course_db` 立即使用新範圍；已實機驗證（更正系所後同回合查詢改用新系所的選修課），見 [requirement-gate 報告](./2026-08-31-roadmap-24-requirement-gate.md) 4.2 節與「A/B 對照 2」 |
-| 4 | Tool 失敗時 final answer 正確轉述錯誤，不宣稱任務成功 | **完成**。`applyToolOutcome()`（2026-08-30）讓 `intent`／`data` 只反映**成功**的工具，被拒的工具呼叫不會讓回應宣稱「已記錄」「已更新」，見 [honest-intent-and-step-limit 報告](./2026-08-30-honest-intent-and-step-limit.md) 與 AG7 測試 |
+| 1 | malformed、未知工具、非法 course ID 與矛盾參數不會進入核心 service | **完成**。malformed／未知工具：JSON Schema（`enum`／`required`／`additionalProperties:false`）+ `executeAgentTool()` 攔下未知名稱（AG1）。矛盾參數：`checkPreflightContradictions()`（#24，12 項）在排課引擎執行前擋下。非法 course ID：**開始實作才查證到** `mustTakeCourseIds`／`selectedCourseIds` 撞到不存在的 id 其實已由 #22 的 `data-insufficient` 機制處理（Z5），真正的缺口只有 `watchingCourseIds`——實測它會被靜默吃掉、無警告無澄清。2026-08-31 修正：`agentService.js` 在呼叫排課引擎前濾掉查無對應課程的 watching id，讓它們**真的不會進入** `scheduler.js`，並在 `warnings` 說明（AG14） |
+| 2 | Tool schema 與 `PROMPT_DESIGN.md` 有自動契約測試 | **完成**。`prompt.test.js` 對 `getAgentTools()` schema 斷言；`agentToolRegistry.test.js`（AR1-AR4）另外釘住登記表、schema、switch 三處工具名稱一致 |
+| 3 | Agent 修改 Profile 後，同一對話後續查詢使用更新後 scope | **完成**（#24 第一輪已達成，未變動） |
+| 4 | Tool 失敗時 final answer 正確轉述錯誤，不宣稱任務成功 | **完成**（2026-08-30 `applyToolOutcome()` 已達成）。2026-08-31 補上系統性 `errorCode`：七個工具的失敗路徑統一標上穩定錯誤碼並透過信封傳給模型，不再各自寫錯誤文字讓模型自己猜 |
 
-### 尚未涵蓋
+### 完成內容（2026-08-31）
 
-- 「非法 course ID 不會進入核心 service」——目前沒有專門的存在性檢查層。
-- 「tool allowlist」目前等於「`getAgentTools()` 回傳的六個工具」這個隱含集合，沒有獨立、
-  可稽核的 allowlist 政策文件或機制；`RENDERABLE_TOOLS` 只解決「哪些工具結果要進
-  `data`」，不是授權層。
-- Tool result 的 `schema version`／`data source`／`term`／`error code` 尚未系統化——目前
-  各工具各自決定回傳形狀，沒有統一的信封規格。
-- 「user scope 不讓模型或 client 任意切換」已由 #18 的 session/identity 機制保證
-  （與本任務無直接關係，但滿足同一句精神）。
+- **`agentToolRegistry.js`**：七個工具的政策單一來源（`renderable`／`writes`／
+  `confirmation`），取代原本各自維護的 `getAgentTools()` schema、`executeAgentTool()`
+  switch、獨立的 `RENDERABLE_TOOLS` Set 三處定義。`agentToolRegistry.test.js` 直接
+  讀原始碼比對三者名稱集合，漏改一邊會讓測試先失敗，而不是等模型呼叫到才發現。
+- **`buildToolResultEnvelope()`**：模型看到的工具結果統一包成
+  `{ schemaVersion, dataSource, term, warnings, errorCode, result }`，只影響送給
+  模型的那一份——前端消費的 `/api/chat` 回應 `data` 欄位完全不受影響（已用測試與
+  瀏覽器實機驗證）。
+- **`watchingCourseIds` 的存在性過濾**：與 `mustTakeCourseIds`／`selectedCourseIds`
+  刻意不同待遇——後兩者是硬性宣告，撞到不存在的 id 由 #22 回頭問清楚；關注課程只是
+  追蹤用途，不佔時段不計學分，改成直接濾掉並在 `warnings` 說明，不中斷排課。
+
+詳見變更報告「查證到的事實」一節——原計畫以為要在 preflight 加一個新檢查涵蓋三種
+id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 #22 已有機制、
+也避免了對低風險欄位套用與高風險欄位相同的阻斷式處理。
 
 ---
 
 ## #26 建立每門課的 evidence-based recommendation reason
 
-**狀態**：🟡 部分完成（2026-08-17）——`reviewEvidence` 已由 #4 提供，其餘三個欄位未開始
+**狀態**：🟡 部分完成（2026-08-17）——`reviewEvidence` 已由 #4 提供，其餘三個欄位未開始。
+**2026-08-31 更新：#21、#22 均已完成，前置相依已全部滿足，本任務可繼續**。
 
-**相依**：#4（已完成部分）、#5A（已完成）、#21、#22（其餘三個欄位仍待這兩項）
+**相依**：#4、#5A、#21、#22（均已完成）
 
 **開始前必須具備**：課程 feature 與 review aggregate 已通過資料品質檢查；constraint exclusions 與 solver objective 可輸出結構化原因；禁止讓 LLM 自行推測缺少的課程事實。
 
@@ -1662,9 +1648,9 @@ OpenAI**（因為 `gemini-2.5-pro` 已被 Google 下架，Chat 整條路徑本�
 
 ## #27 完成多方案比較 UI 與 counterfactual explanation
 
-**狀態**：⬜ 未開始（卡 #10、#26）
+**狀態**：⬜ 未開始（卡 #10、#26；兩者本身的前置相依已於 2026-08-31 全部解除，但都還沒做完）
 
-**相依**：#10、#26
+**相依**：#10、#26（均為部分完成，前置已全部解除）
 
 **開始前必須具備**：後端能穩定回傳真正不同的方案；每個方案與課程已有 reason object；定義方案差異度，不以排序不同冒充內容不同。
 
@@ -1933,7 +1919,7 @@ OpenAI**（因為 `gemini-2.5-pro` 已被 Google 下架，Chat 整條路徑本�
 **狀態**：🟡 部分完成（2026-08-31 盤點）——#24 第二輪已交付一個小規模但真實存在、
 每次 `npm test` 都會執行的 golden set，具備本任務的雛形；規模與涵蓋面遠不到完整驗收
 
-**相依**：#24（已完成）、#25（部分完成）
+**相依**：#24、#25（均已完成）
 
 **開始前必須具備**：結構化需求 schema 與 tool schema 已固定；建立由人工標註的需求、歧義、否定、修正與矛盾案例。
 
@@ -1985,9 +1971,10 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 
 ## #35 建立 feasibility、constraint violation 與 solver benchmark
 
-**狀態**：🟡 部分完成（2026-08-30 更新）——greedy 與 repair 的 golden fixtures 已建立；完整量化 benchmark、跨 scope 資料集與比較報告仍未完成
+**狀態**：🟡 部分完成（2026-08-30 更新）——greedy 與 repair 的 golden fixtures 已建立；完整量化 benchmark、跨 scope 資料集與比較報告仍未完成。
+**2026-08-31 更新：#15、#21、#22 均已完成，前置相依已全部滿足，本任務可繼續**。
 
-**相依**：#15、#21、#22
+**相依**：#15、#21、#22（均已完成）
 
 **開始前必須具備**：co-requisite、hard／soft constraints、validator 與 solver 已完成；測試資料能表示不同科系、年級、班級、學期與歷史狀態。
 
@@ -2093,9 +2080,9 @@ soft utility、runtime 與 timeout rate 的正式報告。
 
 ## #37 建立 explanation faithfulness 與 hallucination tests
 
-**狀態**：⬜ 未開始（卡 #25、#26）
+**狀態**：⬜ 未開始（#25 已於 2026-08-31 完成，只剩 #26）
 
-**相依**：#25、#26
+**相依**：#25（已完成）、#26（部分完成，前置已解除）
 
 **開始前必須具備**：Tool result 與 recommendation reason 均有 schema、data source 及 confidence；準備有資料、缺資料、工具失敗與惡意 prompt 等測試情境。
 
@@ -2121,9 +2108,9 @@ LLM 能寫出流暢理由不代表理由正確。需要驗證每個課名、教�
 
 ## #38 進行學生使用者測試並整理量化結果
 
-**狀態**：⬜ 未開始（卡 #27、#28、#33～#37）
+**狀態**：⬜ 未開始（卡 #27、#28、#34～#37）
 
-**相依**：#27、#28、#33、#34、#35、#36、#37
+**相依**：#33（已完成）；#28、#34、#35（前置皆已解除，可繼續）；#27、#36、#37（仍有上游未完成）
 
 **開始前必須具備**：Demo 身分與資料隔離、隱私 consent、穩定 UI、多方案解釋、Agent／solver／個人化／hallucination 自動 eval 均已通過；先完成研究問題、招募條件與問卷／訪談設計。
 
@@ -2150,9 +2137,10 @@ LLM 能寫出流暢理由不代表理由正確。需要驗證每個課名、教�
 
 ## #39 架設正式網站與 Production rollout
 
-**狀態**：⬜ 未開始（目前只有本機前後端與 shared MySQL，尚無正式網站）
+**狀態**：⬜ **工程可開始**（`#33` 已完成，程式相依已滿足）——目前只有本機前後端與
+shared MySQL，尚無正式網站。缺的是「選哪個平台、哪個網域」這個**人的決定**，不是程式相依。
 
-**相依**：#33；外部條件為選定部署平台、網域、HTTPS 與平台 secret store
+**相依**：#33（已完成）；外部條件為選定部署平台、網域、HTTPS 與平台 secret store
 
 **開始前必須具備**：Privacy migration、consent A/B 與 production startup checks 均已通過；確認前後端要部署在同網域或跨網域，並決定 session cookie／CORS 策略。
 
