@@ -360,6 +360,28 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 判定沿用 `getEffectiveCategoryPriority()` 的結果，不另寫一份「非本人必修要降級」
 的判斷，避免兩個實作漂移。
 
+### 推薦理由（Roadmap #26）
+
+每門排入的課帶 `recommendationReason`——它為什麼被選、用了哪些證據、誰輸給了它。
+欄位定義見 `docs/API_SPEC.md`。三個設計要點：
+
+**分數的公式只有一份。** `computeScoreComponents()` 回傳各項分數，
+`scoreCourse()` 只是把它加總。解釋用的數字與排序用的數字因此不可能不一致
+（`scheduler.test.js` 的 R7 釘住「組成總和 === 總分」）。
+
+**理由只解釋決策，不參與決策。** `recommendationReason.js` 不重新判定任何規則——
+`isRequiredForStudent()`、`resolveCourseEligibility()`、`deriveReviewEvidence()`
+的結果一律沿用。排課結果不得因為理由的計算而改變（R10）。
+
+**「沒有競爭者」與「還沒算」要分得出來。** `alternativesRejected.status` 用
+`no-competitors`／`not-applicable`／`had-competitors` 三態表達，不用空陣列含糊帶過。
+實測 demo 帳號現況：8 門排入的課裡有 7 門真的沒有競爭者（可競爭課程只有 16 門，
+貪婪迴圈是候選用完才停，不是撞到學分上限）——那是真實情況，不是計算失敗。
+
+落選者的記錄時間點是**做決定的當下**，那時還不知道排在後面的課稍後會不會也被排入。
+因此 `finalizePlan()` 會把「最後也進了課表」的課從落選清單剔除（實測 18 筆裡有 16 筆
+屬於此類），否則「A 輸給 B」是假的。
+
 **方案數少於 5 時要說明原因**：`warnings` 會指出哪些取向被合併、以及可競爭的課程數。
 最常見的原因不是排序邏輯，而是**可修的課太少**（demo 帳號實測 227 門候選裡 211 門
 因 #13C 適用對象規則未確認而保守排除，真正能競爭的只有 16 門）。

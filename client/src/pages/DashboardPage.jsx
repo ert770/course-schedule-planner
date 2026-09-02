@@ -9,6 +9,7 @@ import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
 import { formatCourseTime } from '../utils/courseTime';
+import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import { X, Send, Search, Download, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, AlertTriangle } from 'lucide-react';
 
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
@@ -641,31 +642,12 @@ export default function DashboardPage() {
       />
 
       {/* Modal is same as before */}
-      {detailCourse && (
-        <div className="modal-overlay" onClick={() => setDetailCourse(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setDetailCourse(null)}>✕</button>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>{detailCourse.name}</h2>
-            <span className="detail-code">{detailCourse.code}</span>
-            <div className="detail-meta">
-              <span>👤 {detailCourse.instructor}</span>
-              <span>📚 {detailCourse.credits} 學分</span>
-            </div>
-            {detailCourse.description && (
-              <div className="detail-desc">
-                <div className="detail-desc-label">課程說明</div>
-                <p>{detailCourse.description}</p>
-              </div>
-            )}
-            <button
-              className="action-btn secondary modal-remove-course"
-              onClick={() => handleRemoveClick(detailCourse)}
-            >
-              從課表移除
-            </button>
-          </div>
-        </div>
-      )}
+      <CourseDetailModal
+        course={detailCourse}
+        onClose={() => setDetailCourse(null)}
+        onRemove={handleRemoveClick}
+        showTime={false}
+      />
     </div>
   );
 }

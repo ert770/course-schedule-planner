@@ -579,6 +579,7 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學期 |
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明 |
 | `easinessSource`（Roadmap #10） | 排序用涼度分數的來源：`reviews`（有實際評價）／`proxy`（無評價，依課程屬性推估）／`none`（兩者皆無）。**`proxy` 不是證據**——UI 與 Agent 只能說「依課程屬性推估」，不得說涼／好拿分。它也不會進入 `reviewCoverage` 或方案層 `preferenceBreakdown.easy`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度來源」 |
+| `recommendationReason`（Roadmap #26） | **這門課為什麼被推薦**的結構化理由，詳見下表。`reason` 那個字串仍保留（既有呼叫端在讀），這是它的證據版本，不是取代 |
 | `reviewEvidence`（Roadmap #4） | 課程評價證據物件，`null` 代表這門課沒有評價，**不是** 0 分。有值時包含 `reviewCount`、`avgSweetness`／`avgCoolness`／`avgWorkload`／`avgOverall`／`avgDifficulty`／`avgRecommend`、`positiveCount`／`negativeCount`／`neutralCount`、`easiness`（1–5，未收縮）、`adjustedEasiness`（1–5，m-estimate 收縮後）、`easyScore`（0–100，排課實際採用）、`priorEasiness`、`shrinkagePriorWeight`、`source`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」 |
 | `formallyRequired`（Roadmap #21） | 布林，永遠存在（`true`／`false`）。`true` 代表這門課是這位學生本學期正式必修（`isRequiredForStudent()===true`），且排入時已無條件豁免 3 個時段類舒適偏好（不排早八／午休保留／不排晚課）；不含封鎖時段，也不含使用者手動指定的 `mustTakeCourseIds`。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」 |
 | `corequisiteCode`（Roadmap #15） | 字串或 `null`。有配對時為對應正課／實習的 `catalogCourseCode`；`null` 代表這門課沒有配對（含 P 後綴但候選池中找不到正課的例外情況） |
@@ -587,6 +588,36 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 `category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」；`term`／
 `eligibilitySource`／`scopeReason` 見同檔案的「Active Term」與「候選課程的可追溯
 metadata」兩節。
+
+### `recommendationReason` 的欄位（Roadmap #26）
+
+| 欄位 | 說明 |
+| --- | --- |
+| `reasonVersion` | 理由結構的版本（目前 `2026-08-31.v1`）。同一個值會寫進 `Interaction_Events.recommendation_reason_version`，讓曝光事件能回溯「當時是用哪一版理由算的」 |
+| `selectedBecause` | 主要原因代號：`REQUIRED_COURSE`／`RETAKE_REQUIRED`／`USER_SPECIFIED`／`COREQUISITE_PAIR`／`PREFERENCE_MATCH`／`CREDIT_FILL`／`WATCHING`。用代號不用自由文字，中文由呈現層決定 |
+| `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。元件名稱與 `VARIANT_WEIGHTS` 的鍵一致（`base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest`） |
+| `scoreTotal` | 這門課在勝出方案裡的總分。**含**被 `scoreBreakdown` 過濾掉的 0 值元件 |
+| `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣關鍵字）。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
+| `requiredRules` | 必修／分類的判定依據：`formallyRequired`、`category`、`sourceCategory`、`classificationSource`、`track`、`countsTowardGraduation`、`nonGraduationCategory` |
+| `reviewEvidence` | 同上表的 `reviewEvidence`；`null` 代表沒有評價 |
+| `easinessSource` | 同上表的 `easinessSource` |
+| `constraintTradeoffs` | 排入這門課付出的代價，例如必修無條件豁免了時段偏好：`[{ type, label, because }]` |
+| `alternativesRejected` | 見下方說明 |
+| `confidence` | `high`／`medium`／`low`，由**證據完整度**決定：資格待確認或系所範圍無法解析 → `low`；涼度只是推估或完全沒有評價 → `medium`；其餘 `high` |
+| `dataSources` | 這門課**實際查過**的來源。沒有評價的課不會列 `Course_Reviews` |
+
+`alternativesRejected` 的 `status` 有三種，**不可混為一談**：
+
+| `status` | 意義 |
+| --- | --- |
+| `had-competitors` | 有課在同一個決策點輸給它。`candidates` 為 `[{ sectionId, catalogCourseCode, name, scoreDelta, notScheduledBecause }]`，`notScheduledBecause` 是它最後不在課表的原因（通常是與勝出者衝堂） |
+| `no-competitors` | **確實沒有其他課與它競爭**，不是還沒算 |
+| `not-applicable` | 這條放置路徑不經過競爭（例如必修迴圈、關注課程） |
+
+只記錄「在該決策點被比下去」的課。**被更早的硬限制擋掉的課不算落選者**——那是
+`excludedCourses` 的 `constraintId` 在回答的問題。另外，當下排在後面、稍後自己也被
+排入的課會在 `finalizePlan()` 被剔除（實測 demo 帳號 18 筆原始記錄裡有 16 筆屬於這種
+情況），否則「A 輸給 B」會是假的。
 
 `watchOnly` 為 `true` 時表示沒有任何正式加選課程排入，課表上只有關注課程。此情境的 `success` 仍為 `true`，因為關注課程本身是合法且可顯示的結果。
 

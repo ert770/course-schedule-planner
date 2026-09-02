@@ -201,6 +201,55 @@ describe('AG6 排課結果送進模型前要投影', () => {
     assert.ok(!('description' in first));
   });
 
+  // roadmap #26：模型先前完全看不到課為何被推薦，只能講空泛的話——
+  // 而講空泛的話最容易變成編造。
+  test('AG6 課程帶著推薦理由送進模型', () => {
+    const result = bigResult();
+    result.schedule[0].recommendationReason = {
+      selectedBecause: 'PREFERENCE_MATCH',
+      matchedPreferences: [{ type: 'content', preferenceId: 'practicalExam', label: '實作評量', score: 40 }],
+      easinessSource: 'proxy',
+      confidence: 'medium',
+      dataSources: ['Course_Sections'],
+      constraintTradeoffs: [],
+      scoreBreakdown: [{ component: 'base', value: 1000 }],
+      alternativesRejected: {
+        status: 'had-competitors',
+        candidates: [{ sectionId: 9, name: '對手課', scoreDelta: 40, notScheduledBecause: '衝堂' }],
+      },
+    };
+
+    const [first] = summarizeScheduleForModel(result).schedule;
+
+    assert.equal(first.recommendationReason.selectedBecause, 'PREFERENCE_MATCH');
+    assert.deepEqual(first.recommendationReason.matchedPreferences, ['實作評量']);
+    assert.equal(first.recommendationReason.easinessSource, 'proxy');
+    assert.equal(first.recommendationReason.alternativesRejected.status, 'had-competitors');
+    assert.equal(first.recommendationReason.alternativesRejected.candidates[0].name, '對手課');
+  });
+
+  // 分數是內部排序用的，對使用者講「這門課得了 956 分」沒有意義，
+  // 而且會把 input 撐大——那正是這個投影函式存在的原因。
+  test('AG6 理由的分數組成不送進模型', () => {
+    const result = bigResult();
+    result.schedule[0].recommendationReason = {
+      selectedBecause: 'PREFERENCE_MATCH', matchedPreferences: [],
+      scoreBreakdown: [{ component: 'base', value: 1000 }], scoreTotal: 1000,
+      alternativesRejected: { status: 'no-competitors', candidates: [] },
+    };
+
+    const [first] = summarizeScheduleForModel(result).schedule;
+
+    assert.ok(!('scoreBreakdown' in first.recommendationReason));
+    assert.ok(!('scoreTotal' in first.recommendationReason));
+  });
+
+  test('AG6 沒有理由的課不會憑空生出一個', () => {
+    const [first] = summarizeScheduleForModel(bigResult()).schedule;
+
+    assert.equal(first.recommendationReason, null);
+  });
+
   test('excludedCourses 只給總數與樣本，不整包送', () => {
     const compact = summarizeScheduleForModel(bigResult());
 

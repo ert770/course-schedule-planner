@@ -559,6 +559,31 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 `json-fallback` 是「暫時性限制」而非資料不存在、`errorCode` 不為 `null` 時
 「不要宣稱已完成」。
 
+### 推薦理由（Roadmap #26）
+
+`server/test/recommendationReason.test.js`（純函式，不需網路或資料庫）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| R1 | 主要原因代號 | 本人必修優先於使用者指名；關注／重補修由 placementReason 判定；每份理由帶版本 |
+| R2 | 信心度 | 資格待確認或系所無法解析 → `low`；涼度是 proxy 或無評價 → `medium`；其餘 `high` |
+| R3 | 資料來源 | 沒有評價的課**不得**列 `Course_Reviews`（proxy 涼度不算查過評價） |
+| R4 | 競爭狀態 | 「沒有落選者」回 `no-competitors`、未走競爭路徑回 `not-applicable`，**不得都用空陣列** |
+| R5 | 分數組成 | 只列非 0 元件，但 `scoreTotal` 仍含 0 值元件；沒命中偏好時是空陣列，不硬掰 |
+| R6 | 證據原樣帶出 | 無評價時 `reviewEvidence` 為 `null`；必修豁免時段偏好記成 `constraintTradeoffs` |
+
+`server/test/scheduler.test.js` 的 R7-R10（整合）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| R7 | 分數組成 vs 實際總分 | `scoreBreakdown` 總和 **恆等於** `scoreTotal`（防兩份公式漂移，比照 #23 的 G10） |
+| R8 | 改一個偏好 | 命中的課多出 `matchedPreferences` 且 `contentPreference` 分數真的增加；**沒命中的課不受影響**（A/B 兩次排課比對） |
+| R9 | 落選者 | 最後也被排入的課**不得**出現在任何落選清單；沒有競爭者時回 `no-competitors`；真落選者要附 `notScheduledBecause` |
+| R10 | 誠實邊界 | 無評價的課理由裡 `reviewEvidence` 為 `null` 且不列評價來源；**理由不得改變排課決策本身** |
+
+`server/test/agentTools.test.js` 的 AG6 另驗：理由有送進模型、`scoreBreakdown` 不送、
+沒有理由時不憑空生一個。
+
 ### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
 
 **這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。

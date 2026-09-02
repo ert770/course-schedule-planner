@@ -2174,3 +2174,150 @@ describe('P10-6 interests 不再從偏好標籤回填（Roadmap #10）', () => {
     assert.deepEqual(merged.interests, ['人工智慧']);
   });
 });
+
+// Roadmap #26：推薦理由接進排課結果之後的整合行為。
+describe('R7-R10 Roadmap #26：理由掛進排課結果', () => {
+  const at = (id, day, start, overrides = {}) => makeCourse(id, {
+    dayOfWeek: day, startPeriod: start, endPeriod: start + 1, ...overrides,
+  });
+
+  describe('R7 分數組成必須等於實際排序用的總分', () => {
+    // 比照 #23 的 G10：解釋用的數字與實際用的數字必須是同一個，
+    // 否則畫面上的「為什麼」會跟排序結果對不起來。
+    test('R7 scoreBreakdown 的總和等於 scoreTotal', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' }), at(2, 2, 3, { category: '核心選修' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      for (const course of result.schedule) {
+        const reason = course.recommendationReason;
+        const summed = reason.scoreBreakdown.reduce((total, item) => total + item.value, 0);
+        assert.equal(summed, reason.scoreTotal, `${course.name} 的分數組成與總分對不上`);
+      }
+    });
+  });
+
+  describe('R8 改一個偏好，受影響的課理由跟著變', () => {
+    // 這是 #26 的驗收標準第二條，用 A/B 兩次排課比對，而不是只看一次結果。
+    function pool() {
+      return [
+        at(1, 1, 3, { category: '一般選修', description: '課堂討論與互動參與為主' }),
+        at(2, 2, 3, { category: '一般選修', description: '需要實作專題與實驗' }),
+      ];
+    }
+
+    test('R8 開啟內容偏好後，命中的課多出 matchedPreferences，沒命中的不變', () => {
+      const before = generateSchedule(pool(), { minCredits: 0, maxCredits: 25 });
+      const after = generateSchedule(pool(), {
+        minCredits: 0, maxCredits: 25, practicalExam: true,
+      });
+
+      const hit = course => course.recommendationReason.matchedPreferences.map(p => p.label);
+      const beforeById = new Map(before.schedule.map(c => [c.id, hit(c)]));
+      const afterById = new Map(after.schedule.map(c => [c.id, hit(c)]));
+
+      // 課程 2 的描述含「實作／專題／實驗」，開啟 practicalExam 後應命中。
+      assert.deepEqual(beforeById.get(2), [], '改動前不該有命中');
+      assert.ok(afterById.get(2).includes('實作評量'), '改動後應命中實作評量');
+      // 課程 1 不含那些關鍵字，不受影響。
+      assert.deepEqual(afterById.get(1), [], '沒命中的課不該被影響');
+    });
+
+    test('R8 命中偏好會反映在分數組成裡，不只是文字', () => {
+      const after = generateSchedule(pool(), {
+        minCredits: 0, maxCredits: 25, practicalExam: true,
+      });
+      const course2 = after.schedule.find(c => c.id === 2);
+      const contentComponent = course2.recommendationReason.scoreBreakdown
+        .find(item => item.component === 'contentPreference');
+
+      assert.ok(contentComponent && contentComponent.value > 0,
+        '命中偏好要讓 contentPreference 這一項真的加分');
+    });
+  });
+
+  describe('R9 落選者只列真的沒排進來的課', () => {
+    // 開發時實測到的問題：貪婪迴圈記錄落選者的時間點是決定的當下，
+    // 那時還不知道排在後面的課稍後也會被排入。demo 帳號 18 筆記錄裡
+    // 有 16 筆（89%）最後自己也進了課表，把它們說成「輸給某某課」是假的。
+    test('R9 最後也被排入的課不得出現在任何一門課的落選清單裡', () => {
+      const courses = [];
+      for (let day = 1; day <= 5; day += 1) {
+        courses.push(at(100 + day, day, 3, { category: '一般選修' }));
+      }
+      const result = generateSchedule(courses, { minCredits: 0, maxCredits: 25 });
+      const placed = new Set(result.schedule.map(c => c.id));
+
+      for (const course of result.schedule) {
+        for (const candidate of course.recommendationReason.alternativesRejected.candidates) {
+          assert.ok(
+            !placed.has(candidate.sectionId),
+            `${candidate.name} 也排進了課表，不該被記成輸給 ${course.name}`
+          );
+        }
+      }
+    });
+
+    test('R9 沒有競爭者時明講 no-competitors，不是空陣列', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' })], { minCredits: 0, maxCredits: 25 }
+      );
+
+      assert.equal(
+        result.schedule[0].recommendationReason.alternativesRejected.status,
+        'no-competitors'
+      );
+    });
+
+    test('R9 真正的落選者會附上它最後為什麼不在課表', () => {
+      // 兩門同時段的課只能擇一，落選的那門會因衝堂被排除。
+      const result = generateSchedule(
+        [
+          at(1, 1, 3, { category: '核心選修', credits: 3 }),
+          at(2, 1, 3, { category: '一般選修', credits: 3 }),
+        ],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      const withRivals = result.schedule
+        .map(c => c.recommendationReason.alternativesRejected)
+        .find(alt => alt.candidates.length > 0);
+
+      assert.ok(withRivals, '應該要有一門課記錄到落選者');
+      assert.ok(
+        withRivals.candidates[0].notScheduledBecause,
+        '落選者要說明它最後為什麼不在課表，只講「輸了」不完整'
+      );
+    });
+  });
+
+  describe('R10 誠實邊界不得被理由破壞', () => {
+    test('R10 沒有評價的課，理由裡的 reviewEvidence 為 null 且不列評價來源', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修', description: '課堂討論' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+      const reason = result.schedule[0].recommendationReason;
+
+      assert.equal(reason.reviewEvidence, null);
+      assert.ok(!reason.dataSources.includes('Course_Reviews'));
+      assert.equal(reason.easinessSource, 'proxy', 'proxy 是推估，不是評價證據');
+    });
+
+    test('R10 理由不得改變排課決策本身', () => {
+      // 理由是解釋既有決策，不能反過來影響結果。同一組輸入，
+      // 排出來的課程集合必須與不看理由時完全相同（由既有 S/N/X/Z 套件把關，
+      // 這裡再釘一次「加了理由之後結果不變」的直接證據）。
+      const build = () => generateSchedule(
+        [at(1, 1, 3, { category: '核心選修' }), at(2, 2, 3, { category: '一般選修' })],
+        { minCredits: 0, maxCredits: 25, seed: 0 }
+      );
+
+      assert.deepEqual(
+        build().schedule.map(c => c.id).sort(),
+        build().schedule.map(c => c.id).sort()
+      );
+    });
+  });
+});

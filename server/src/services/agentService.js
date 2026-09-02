@@ -124,6 +124,39 @@ function compactCourse(course) {
     eligibilityReason: course.eligibilityReason,
     countsTowardGraduation: course.countsTowardGraduation,
     reviewEvidence: course.reviewEvidence ?? null,
+    // roadmap #26：模型先前**完全看不到課為何被推薦**——這裡沒有理由欄位，
+    // 所以它只能講空泛的話，而講空泛的話最容易變成編造。
+    //
+    // 只送代號與關鍵數字，不送整包（`scoreBreakdown` 對使用者沒有意義，
+    // 而且會把 input 撐大），比照 `summarizeScheduleForModel()` 的既有做法。
+    recommendationReason: compactReason(course.recommendationReason),
+  };
+}
+
+// 給模型的理由精簡版。**刻意不含 `scoreBreakdown`**：分數是內部排序用的，
+// 對使用者講「這門課得了 956 分」沒有意義，講「它命中了你的哪些偏好」才有。
+function compactReason(reason) {
+  if (!reason || typeof reason !== 'object') return null;
+  const alternatives = reason.alternativesRejected;
+  return {
+    selectedBecause: reason.selectedBecause,
+    matchedPreferences: (reason.matchedPreferences || []).map(item => item.label),
+    // `reviews` 才是證據；`proxy` 只能說「依課程屬性推估」，`none` 是沒有依據。
+    easinessSource: reason.easinessSource,
+    confidence: reason.confidence,
+    dataSources: reason.dataSources,
+    constraintTradeoffs: reason.constraintTradeoffs,
+    // 「沒有競爭者」與「還沒算」要分得出來，因此連 status 一起送。
+    alternativesRejected: alternatives
+      ? {
+        status: alternatives.status,
+        candidates: (alternatives.candidates || []).map(candidate => ({
+          name: candidate.name,
+          scoreDelta: candidate.scoreDelta,
+          notScheduledBecause: candidate.notScheduledBecause ?? null,
+        })),
+      }
+      : null,
   };
 }
 

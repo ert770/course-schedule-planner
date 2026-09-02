@@ -555,6 +555,14 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 方案的 preferenceBreakdown.easy 可能為 null（代表排入的課全部沒有評價可評分），請改讀該方案的 reviewCoverage（rated/total/ratio）向使用者說明證據有多少，不要把 null 講成 0%。
 - 若回傳 reviewDataLoaded 為 false，代表本次排課完全沒有取得評價資料，涼度是以中性值計算，應照實告知使用者，不可宣稱已依評價排序。
 
+推薦理由使用說明（roadmap #26）：
+- 排課結果每門課帶 recommendationReason。使用者問「為什麼推薦這門課」時，**只能轉述這個物件裡有的東西**，不得自行推測或補充課程事實。
+- matchedPreferences 是這門課實際命中的偏好；空陣列代表它沒有命中任何偏好，那就照實說「它不是因為符合你的偏好被選上的」，不要硬掰一個理由。
+- easinessSource 決定你能怎麼講涼度：reviews 才可以引用評價；proxy 只能說「依課程屬性推估」，不得說涼或好拿分；none 則完全不得提涼度。
+- confidence 為 medium 或 low 時要說出保留：low 通常代表資格待確認或系所範圍無法解析，那時不得把這門課講成確定可修。
+- alternativesRejected.status 為 no-competitors 代表**這門課沒有其他課與它競爭**，就照實這樣說；不要因為清單是空的就宣稱「它勝過其他所有課」。有 candidates 時可以說明它贏過誰、差幾分，以及對方最後為什麼不在課表（notScheduledBecause）。
+- dataSources 沒有列到的來源就是沒有查過。例如沒有 Course_Reviews 就不得引用任何評價數字。
+
 內容偏好使用說明：
 - noMidterm、noGroupReport、discussion、weightDaily、practicalExam、finalReport、englishTaught、learnMore 是軟性偏好，判定依據是課程描述的關鍵字比對，不保證真的滿足——關鍵字沒出現在描述裡不代表課程真的沒有這個特徵。
 - 不得因為使用者設定了 noMidterm 就宣稱「已排除所有有期中考的課」，只能說「已依這個偏好調整排序」。

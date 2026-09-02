@@ -94,8 +94,8 @@
 | 23 | 建立版本化且可追溯的畢業規則引擎 | 🟡 部分完成（2026-08-31 兩輪）——版本化架構、逐門認列追溯、規則來源記錄、補學分推薦驗證與候選範圍、通識基礎／選修拆分皆完成；剩餘各項全部卡在外部資料（科目表、官方認列表、歷史學期資料、系辦確認） | #12、#19；另需校方正式規則 |
 | 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ✅ 已完成（2026-08-31，兩輪）——四條驗收標準全數達成（第 4 條前提為「無歧義的需求」） | #18、#21（均已完成） |
 | 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ✅ 已完成（2026-08-31）——四條驗收標準全數達成：OpenAI 原生 tool calling／JSON Schema、誠實 intent/data、同回合 scope 重建、矛盾參數排課前擋下、正式 tool allowlist（`agentToolRegistry.js`）、非法 course ID 過濾（`watchingCourseIds`）與統一結果信封均已完成 | #20、#21、#24（均已完成） |
-| 26 | 建立每門課的 evidence-based recommendation reason | 🟡 部分完成——**前置相依已全部完成，可繼續**（`reviewEvidence` 已由 #4 提供；`selectedBecause`／`matchedPreferences`／`requiredRules`／`alternativesRejected` 等仍未做） | #4、#5A、#21、#22（均已完成） |
-| 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ 未開始——**#10 的後端條件已於 2026-08-31 具備**（方案內容真的不同了，前端目前完全沒讀 `plans`）；仍等 #26 的 reason 物件 | #10（後端方案分化已完成）、#26（部分完成） |
+| 26 | 建立每門課的 evidence-based recommendation reason | ✅ 已完成（2026-08-31）——8 個欄位全數交付並接到前端與 Agent；`recommendationReasonVersion` 已填。**內容量受 #13C 的候選池限制**：demo 帳號實測 8 門課有 7 門「沒有競爭者」，那是真實情況並已明講，不是缺漏 | #4、#5A、#21、#22（均已完成）；落選者與分數取捨的**內容豐富度**另受 #13C 限制 |
+| 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ **未開始，但兩個前置都已具備（2026-08-31）**——#10 讓方案內容真的不同、#26 提供了每門課的 reason 物件。剩下純粹是前端工作：目前 `client/src` 只有 `interactionLog.js` 讀 `plans`，使用者只看得到 `plans[0]` | #10、#26（均已完成） |
 | 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成——**可完成**：#2 已於 2026-08-26 開始記錄互動事件，「互動事件不交叉」這條驗收先前無事件可測，現在可以測了；只剩雙帳號實機驗收 | 無（#18、#2 均已完成） |
 | 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ⬜ **可開始（前置相依已全部完成）** | #2、#5A、#29（均已完成） |
@@ -105,7 +105,7 @@
 | 34 | 建立 Agent 自然語言需求理解 eval | 🟡 部分完成（2026-08-31）——**前置相依已全部完成，可繼續**。8 題中文 golden set 已進 `npm test` 每次執行；多輪修正、課名同名、越權要求與大規模標註資料集尚未涵蓋 | #24、#25（均已完成） |
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成——**前置相依已全部完成，可繼續**。Z1–Z7 已提供最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 | #15、#21、#22（均已完成） |
 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成（卡 #30 那條鏈） | #5B、#7、#30、#31（四者最終都卡在 #30） |
-| 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ 未開始（只剩 #26） | #25（已完成）、#26（部分完成，前置已解除） |
+| 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ **未開始，前置已全部完成（2026-08-31）**——#26 的 reason 物件正是「把每個句子對應回 Profile／DB／review／rule」所需要的結構，`dataSources` 與 `confidence` 可直接當比對基準 | #25、#26（均已完成） |
 | 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始 | #33（已完成）；#27、#28、#34、#35、#36、#37 |
 | 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
 
@@ -117,7 +117,7 @@
 | # | 任務 | 為什麼現在可以動 |
 | ---: | --- | --- |
 | ~~10~~ | ~~修復多方案塌縮~~ | **已於 2026-08-31 動工**，排序機制的根因已修（見下方 #10 段落）。原本記在這裡的「根因一：15 門必修有 11 對互相衝堂」經真實資料重測後**確認已過期**——那是 55 門假資料時代的現象 |
-| 26 | evidence-based recommendation reason | #4、#5A、#21、#22 全部完成。四個欄位只做了 `reviewEvidence`，其餘三個加上 `alternativesRejected`／`confidence`／`dataSources` 都還沒開始 |
+| ~~26~~ | ~~evidence-based recommendation reason~~ | **已於 2026-08-31 完成**（見下方 #26 段落）。它解除了 #27 與 #37 的最後一個前置 |
 | 34 | Agent 需求理解 eval | #24、#25 均已完成。目前只有 8 題，缺多輪修正、課名同名、越權要求等類別 |
 | 35 | solver benchmark | #15、#21、#22 全部完成。Z1–Z7 是最小 golden cases，缺 runner 與量化報告 |
 | 28 | 統一登入使用者 context | #2 已在記錄互動事件，「互動事件不交叉」這條驗收**先前無事件可測**，現在可以測；只剩雙帳號實機驗收 |
@@ -1619,10 +1619,39 @@ id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 
 
 ## #26 建立每門課的 evidence-based recommendation reason
 
-**狀態**：🟡 部分完成（2026-08-17）——`reviewEvidence` 已由 #4 提供，其餘三個欄位未開始。
-**2026-08-31 更新：#21、#22 均已完成，前置相依已全部滿足，本任務可繼續**。
+**狀態**：✅ 已完成（2026-08-31）——詳見
+[變更報告](./2026-08-31-roadmap-26-evidence-based-reason.md)
 
-**相依**：#4、#5A、#21、#22（均已完成）
+**相依**：#4、#5A、#21、#22（均已完成）；**落選者與分數取捨的內容豐富度**另受
+#13C 限制（候選池被壓到 16 門，多數課沒有競爭者——那是真實情況且已明講）
+
+### 2026-08-31 完成內容
+
+實作範圍列的 8 個欄位全數交付，並接到前端與 Agent：
+
+| 欄位 | 內容 |
+| --- | --- |
+| `selectedBecause` | 7 個原因代號（必修／重補修／使用者指名／共同必修／偏好符合／補學分／關注） |
+| `scoreBreakdown`／`scoreTotal` | 分數組成。`computeScoreComponents()` 是唯一公式，`scoreCourse()` 只是加總——解釋與排序不可能漂移（R7 釘住） |
+| `matchedPreferences` | 實際命中的內容偏好與興趣關鍵字。**空陣列＝沒命中**，照實說不硬掰 |
+| `requiredRules` | 必修／分類判定依據，沿用既有欄位不新增判定 |
+| `reviewEvidence`／`easinessSource` | #4／#10 已提供，直接引用 |
+| `constraintTradeoffs` | 排入的代價（例如必修豁免時段偏好） |
+| `alternativesRejected` | 誰輸給了它，三態區分「有競爭者／沒有競爭者／不適用」 |
+| `confidence`／`dataSources` | 證據完整度與實際查過的來源 |
+
+同時填上 `#2` 從 `#29` 起就預留、註記「等 #26」的
+`Interaction_Events.recommendation_reason_version`（已查 MySQL 確認新資料為
+`2026-08-31.v1`、舊資料仍為 `null`）。
+
+**開發中抓到的一個假資料**：貪婪迴圈記錄落選者的時間點是決定的當下，那時還不知道
+排在後面的課稍後也會被排入——實測 18 筆記錄裡有 **16 筆（89%）**最後自己也進了課表。
+已在 `finalizePlan()` 加一道修剪並補上「它最後為什麼不在課表」。
+
+**內容量的誠實說明**：`#26` 的機制完整，但「誰輸給了它」與「分數取捨」的**內容**
+受 `#13C` 限制——demo 帳號 8 門排入的課有 7 門真的沒有競爭者（可競爭課程只有 16 門，
+貪婪迴圈是候選用完才停）。這是真實情況，畫面上會明講「同一個時段沒有其他課與它競爭」，
+不是留白。候選池一放大（模擬 `#13C` 已解）落選者立刻變成 185 個。
 
 **開始前必須具備**：課程 feature 與 review aggregate 已通過資料品質檢查；constraint exclusions 與 solver objective 可輸出結構化原因；禁止讓 LLM 自行推測缺少的課程事實。
 
@@ -1678,14 +1707,15 @@ id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 
 
 ## #27 完成多方案比較 UI 與 counterfactual explanation
 
-**狀態**：⬜ 未開始——**「後端能穩定回傳真正不同的方案」這條前置已於 2026-08-31
-由 #10 滿足**（見該段落的量測表；方案之間現在是課程集合不同，不是只有排序不同）。
-仍等 #26 的 reason 物件。
+**狀態**：⬜ **未開始，但兩個前置都已於 2026-08-31 具備**——#10 讓方案之間是
+課程集合不同（不是只有排序不同），#26 提供了每門課的 reason 物件。
+**剩下的是純前端工作。**
 
-**相依**：#10（後端方案分化已完成）、#26（部分完成，`reviewEvidence` 以外的欄位未做）
+**相依**：#10、#26（均已完成）
 
-**開始前必須具備**：後端能穩定回傳真正不同的方案（**已具備**）；每個方案與課程已有
-reason object（**未具備，等 #26**）；定義方案差異度，不以排序不同冒充內容不同。
+**開始前必須具備**：後端能穩定回傳真正不同的方案（**已具備**，見 #10 的量測表）；
+每個方案與課程已有 reason object（**已具備**，見 #26）；定義方案差異度，
+不以排序不同冒充內容不同。
 
 **動工時要知道的現況**：前端目前**完全沒有讀 `plans`**（`client/src` 只有
 `interactionLog.js` 用到，且只取 `planId` 寫曝光事件），使用者只看得到 `plans[0]`。
@@ -2117,9 +2147,12 @@ soft utility、runtime 與 timeout rate 的正式報告。
 
 ## #37 建立 explanation faithfulness 與 hallucination tests
 
-**狀態**：⬜ 未開始（#25 已於 2026-08-31 完成，只剩 #26）
+**狀態**：⬜ **未開始，前置已全部完成（2026-08-31）**——#26 的 reason 物件正是
+「把每個句子對應回 Profile／DB／review／rule」需要的結構：`dataSources` 說明查過
+哪些來源、`confidence` 說明證據夠不夠、`matchedPreferences` 為空即代表沒有命中。
+這三者可直接當作忠實度比對的基準。
 
-**相依**：#25（已完成）、#26（部分完成，前置已解除）
+**相依**：#25、#26（均已完成）
 
 **開始前必須具備**：Tool result 與 recommendation reason 均有 schema、data source 及 confidence；準備有資料、缺資料、工具失敗與惡意 prompt 等測試情境。
 

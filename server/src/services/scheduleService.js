@@ -25,6 +25,7 @@ import { getFailedRequiredCourseCodes } from '../data/courseHistory.js';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
 import { INTERACTION_EVENT_TYPES, INTERACTION_SOURCES } from '../data/interactionEventSchema.js';
 import { recordInteractionEvents } from './interactionEventService.js';
+import { RECOMMENDATION_REASON_VERSION } from '../skills/recommendationReason.js';
 import { logger } from '../utils/logger.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
@@ -92,7 +93,10 @@ function buildExposureDraft(result, requestId, { surface, trigger } = {}) {
     position: { planRank: primary?.planId ? 1 : null, courseRank: null },
     exposureContext: { surface, trigger, candidateSet, displayedSet },
     source: INTERACTION_SOURCES.SYSTEM_RECOMMENDATION,
-    versionSnapshot: { recommendationReasonVersion: null },
+    // roadmap #26：這個欄位從 #2／#29 建好之後就一直是 `null`，註記寫著「等 #26」。
+    // 現在有真的理由結構了，記下它的版本——日後理由的欄位語意改變時，
+    // 才分得出「這筆曝光當時的理由是用哪一版算的」。
+    versionSnapshot: { recommendationReasonVersion: RECOMMENDATION_REASON_VERSION },
   };
 }
 

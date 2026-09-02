@@ -30,6 +30,9 @@ import {
 import { CONSTRAINTS, DEFAULT_TIME_PREFERENCE_PRIORITY } from '../data/constraintSchema.js';
 import { validateScheduleAgainstConstraints } from './scheduleValidator.js';
 import {
+  buildRecommendationReason, buildAlternatives, COMPETITION_STATUS,
+} from './recommendationReason.js';
+import {
   solveWithBoundedBacktracking,
   seededStableHash,
   DEFAULT_SOLVER_TIMEOUT_MS,
@@ -50,6 +53,9 @@ const INTEREST_KEYWORD_SCORE = 40;
 const MAX_EASY_COURSE_SCORE = 100;
 const PREFERENCE_SCORE_EPSILON = 0.001;
 const UNSCHEDULED_NAMES_IN_WARNING = 3;
+// roadmap #26：每個決策點記幾名落選者。記太多會讓回應變胖又幫不上忙——
+// 使用者想知道的是「差一點的是誰」，不是完整排名。
+const GREEDY_RUNNERS_UP_RECORDED = 3;
 // 涼度覆蓋率低於此比例時，主推方案要提醒使用者「涼度只由少數幾門課推得」，
 // 不能讓使用者把它當成整份課表的涼度。
 const LOW_REVIEW_COVERAGE_RATIO = 0.5;
@@ -240,14 +246,28 @@ function matchesContentPreference(course, rule) {
 // 「不當成 0 分」是同一個誠實原則的延伸（見 docs/DECISIONS.md ADR-010）。
 // 完全沒有設定任何內容偏好時，這個函式對每門課都回傳 0，排序與改動前
 // （8 個旗標全 undefined/false）逐項一致。
-function getContentPreferenceScore(course, constraints) {
-  let score = 0;
+// roadmap #26：命中的內容偏好本身就是「為什麼推薦這門課」的證據，
+// 但先前只回傳加總後的分數，命中了哪幾項算完就丟。改成回傳命中明細，
+// `getContentPreferenceScore()` 退化成「把明細加總」的薄包裝——
+// **判定只有一份**，解釋與評分不會各自漂移。
+function collectContentPreferenceHits(course, constraints) {
+  const hits = [];
   for (const rule of CONTENT_PREFERENCE_RULES) {
     if (!constraints[rule.flag]) continue;
     if (!matchesContentPreference(course, rule)) continue;
-    score += rule.mode === 'avoid' ? -CONTENT_PREFERENCE_SCORE : CONTENT_PREFERENCE_SCORE;
+    hits.push({
+      preferenceId: rule.flag,
+      label: rule.label,
+      mode: rule.mode,
+      score: rule.mode === 'avoid' ? -CONTENT_PREFERENCE_SCORE : CONTENT_PREFERENCE_SCORE,
+    });
   }
-  return score;
+  return hits;
+}
+
+function getContentPreferenceScore(course, constraints) {
+  return collectContentPreferenceHits(course, constraints)
+    .reduce((total, hit) => total + hit.score, 0);
 }
 
 // 候選池中每個「使用者實際啟用」的內容偏好旗標，其關鍵字命中率。獨立於任何
@@ -567,10 +587,11 @@ function collectInterestKeywords(constraints) {
   ].filter(Boolean);
 }
 
-function getInterestScore(course, constraints) {
+// 回傳這門課實際命中的興趣關鍵字（roadmap #26 的解釋原料）。
+function collectInterestHits(course, constraints) {
   const keywords = collectInterestKeywords(constraints);
 
-  if (keywords.length === 0) return 0;
+  if (keywords.length === 0) return [];
 
   // ragTag 是資料庫 `Course_Sections.rag_tag` 的主題標籤陣列，100% 有值，
   // 是比課名與課程描述更精準的興趣訊號，必須納入比對。
@@ -585,9 +606,13 @@ function getInterestScore(course, constraints) {
     ...toArray(course.ragTag),
   ].filter(Boolean).join(' ');
 
-  return keywords.reduce((score, keyword) => (
-    searchable.includes(keyword) ? score + INTEREST_KEYWORD_SCORE : score
-  ), 0);
+  return keywords.filter(keyword => searchable.includes(keyword));
+}
+
+// 與 `collectContentPreferenceHits()` 同一個做法：命中明細是解釋的原料，
+// 分數只是它的加總。判定只有一份，不讓解釋與評分各自實作。
+function getInterestScore(course, constraints) {
+  return collectInterestHits(course, constraints).length * INTEREST_KEYWORD_SCORE;
 }
 
 // 方案偏好符合度：所有方案都用「同一組使用者權重」評分，方案不得用自己的
@@ -673,25 +698,36 @@ function evaluatePreference(plan, constraints, profile) {
   return { score, breakdown };
 }
 
-function scoreCourse(course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore = EASY_SCORE_MAX / 2) {
-  let score = 1000;
-  const id = Number(course.id);
-  // roadmap #10：權重表決定「這個方案在乎什麼」。`required_first` 的係數全為
-  // 1／0，因此它的排序與改動前逐項相同，是其餘 variant 的對照組。
+// roadmap #26：分數的**組成**，不只是總分。
+//
+// `scoreCourse()` 退化成「把這裡的元件加總」，因此公式只有一份——解釋用的版本
+// 與排序用的版本不可能漂移。這個專案已經被「同一份邏輯兩個實作」咬過好幾次
+// （`constraintService` 的抽出就是為此），不重蹈覆轍。
+//
+// 每個元件對應 `VARIANT_WEIGHTS` 的一個鍵，數值已乘上該 variant 的係數，
+// 因此「這門課贏在哪一項」直接讀得出來，也看得出換一個方案為什麼結果不同。
+function computeScoreComponents(
+  course, schedule, constraints, variant, requiredIds, scope,
+  neutralEasyScore = EASY_SCORE_MAX / 2
+) {
   const weights = VARIANT_WEIGHTS[variant.id] ?? DEFAULT_VARIANT_WEIGHT;
-
-  if (requiredIds.has(id)) score += 10000;
-
   const categoryPriority = getEffectiveCategoryPriority(course, scope);
-  // **必修的絕對優先與權重表無關**：權重表只排序選修。少了這一段，
-  // 把類別係數調低的 variant 會讓替代涼度高的一般選修壓過必修。
-  if (categoryPriority === CATEGORY_PRIORITY['必修']) score += REQUIRED_COURSE_BONUS;
-  score -= categoryPriority * CATEGORY_WEIGHT * weights.category;
-
-  score += (course.credits || 0) * 12 * weights.credits;
-  // 內容偏好（roadmap #3）不分 variant 一律套用，比照 category/credits 的
-  // 基礎分寫法——這 8 個旗標原本就是候選篩選層級，不是特定 variant 的行為。
-  score += getContentPreferenceScore(course, constraints);
+  const components = {
+    base: 1000,
+    // 使用者明確指名要修的課。
+    requiredSelection: requiredIds.has(Number(course.id)) ? 10000 : 0,
+    // **本人必修的絕對優先與權重表無關**：權重表只排序選修。少了這一段，
+    // 把類別係數調低的 variant 會讓替代涼度高的一般選修壓過必修。
+    requiredCourse: categoryPriority === CATEGORY_PRIORITY['必修'] ? REQUIRED_COURSE_BONUS : 0,
+    category: -categoryPriority * CATEGORY_WEIGHT * weights.category,
+    credits: (course.credits || 0) * 12 * weights.credits,
+    // 內容偏好（roadmap #3）不分 variant 一律套用，比照 category/credits 的
+    // 基礎分寫法——這 8 個旗標原本就是候選篩選層級，不是特定 variant 的行為。
+    contentPreference: getContentPreferenceScore(course, constraints),
+    compact: 0,
+    easy: 0,
+    interest: 0,
+  };
 
   if (weights.compact > 0 || constraints.preferCompact) {
     const usedDays = new Set(schedule.flatMap(c => [...getUsedDays(c)]));
@@ -700,8 +736,8 @@ function scoreCourse(course, schedule, constraints, variant, requiredIds, scope,
     // `preferCompact` 是使用者的顯式偏好，即使 variant 不主打集中排課也要生效，
     // 因此係數至少為 1（維持改動前的量級）。
     const compactWeight = Math.max(weights.compact, constraints.preferCompact ? 1 : 0);
-    score += (overlapping > 0 ? 120 * overlapping : -20 * Math.max(1, courseDays.length))
-      * compactWeight;
+    components.compact =
+      (overlapping > 0 ? 120 * overlapping : -20 * Math.max(1, courseDays.length)) * compactWeight;
   }
 
   if (weights.easy > 0) {
@@ -709,14 +745,24 @@ function scoreCourse(course, schedule, constraints, variant, requiredIds, scope,
     // 兩者都沒有時才退回母體先驗換算的中性分——給 0 會讓沒有評價的課全部沉底，
     // 等於用「查不到」冒充「很硬」。
     const { score: easiness } = resolveEasiness(course);
-    score += (easiness ?? neutralEasyScore) * weights.easy;
+    components.easy = (easiness ?? neutralEasyScore) * weights.easy;
   }
 
   if (weights.interest > 0) {
-    score += getInterestScore(course, constraints) * weights.interest;
+    components.interest = getInterestScore(course, constraints) * weights.interest;
   }
 
-  return score;
+  return components;
+}
+
+function sumScoreComponents(components) {
+  return Object.values(components).reduce((total, value) => total + value, 0);
+}
+
+function scoreCourse(course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore = EASY_SCORE_MAX / 2) {
+  return sumScoreComponents(computeScoreComponents(
+    course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+  ));
 }
 
 // 單一課程的放置判斷。greedy 與 roadmap #22 repair 必須共用這一個入口，
@@ -816,6 +862,30 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
     ...course,
     scheduleState: 'selected',
     reason,
+    // roadmap #26：證據導向的推薦理由。`reason` 那個字串保留不動——既有呼叫端
+    // 與測試都還在讀它；這裡是它的結構化版本，不是取代。
+    //
+    // 掛在這裡是因為**放置當下才知道的事實**都在這個函式裡：時段偏好豁免
+    // （`decision.violatedTimePreferences`）、是否使用者指名（`options.required`）、
+    // 是否本人必修（`decision.skipTimePreferences`）。搬到外面組裝就得把這些
+    // 再傳一次，等於製造第二個真相來源。
+    recommendationReason: buildRecommendationReason({
+      course,
+      placementReason: reason,
+      scoreComponents: options.scoreComponents ?? null,
+      contentHits: collectContentPreferenceHits(course, constraints),
+      interestHits: collectInterestHits(course, constraints),
+      alternatives: options.alternatives ?? null,
+      // 必修無條件豁免時段偏好是**付出的代價**，不是附帶說明：
+      // 使用者設了不排早八卻拿到早八的課，要看得到原因。
+      tradeoffs: decision.violatedTimePreferences.map(label => ({
+        type: 'time-preference-exempted',
+        label,
+        because: 'REQUIRED_COURSE_PRIORITY',
+      })),
+      requiredSelection: Boolean(options.required),
+      formallyRequired: Boolean(decision.skipTimePreferences),
+    }),
     countsTowardGraduation: nonGraduationCategory === null,
     nonGraduationCategory,
     // roadmap #21：這門課是否透過必修對時段偏好的無條件豁免排入。標在課程
@@ -1279,9 +1349,48 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   return { courses, exclusions, warnings, scope, explicitIds, neutralEasyScore };
 }
 
+// roadmap #26：把「其實也排進來了」的課從落選清單裡剔除。
+//
+// 貪婪迴圈記錄落選者的時間點是**做決定的當下**，那時還不知道排在後面的課
+// 稍後會不會也被排入。實測 demo 帳號：18 筆記錄裡有 16 筆（89%）最後自己也
+// 進了課表——把它們說成「輸給了某某課」是假的。
+//
+// 放在 `finalizePlan()` 是因為它是 greedy 與 `#22` repair 的共同出口，
+// 兩條路徑都會被修剪到，不會有一條漏掉。
+function reconcileAlternatives(plan) {
+  const placedIds = new Set(
+    [...plan.schedule, ...plan.unscheduledCourses].map(course => Number(course.id))
+  );
+  // 落選者最後為什麼不在課表裡——分數輸了是一回事，被硬限制擋掉是另一回事。
+  // 少了這一句，「A 輸給 B」講不完整：實測 demo 帳號真正的落選者全都是
+  // **與勝出者衝堂**，那才是使用者要的「為什麼是這門不是那門」。
+  const exclusionReason = new Map(
+    (plan.excludedCourses || []).map(item => [Number(item.course?.id), item.reason])
+  );
+
+  for (const course of [...plan.schedule, ...plan.unscheduledCourses]) {
+    const alternatives = course.recommendationReason?.alternativesRejected;
+    if (!alternatives || alternatives.candidates.length === 0) continue;
+
+    const stillRejected = alternatives.candidates
+      .filter(candidate => !placedIds.has(Number(candidate.sectionId)))
+      .map(candidate => ({
+        ...candidate,
+        notScheduledBecause: exclusionReason.get(Number(candidate.sectionId)) ?? null,
+      }));
+
+    course.recommendationReason.alternativesRejected = stillRejected.length > 0
+      ? { ...alternatives, candidates: stillRejected }
+      // 全部都排進來了＝這個決策點其實沒有人真的落選。
+      : { status: COMPETITION_STATUS.NO_COMPETITORS, candidates: [] };
+  }
+}
+
 function finalizePlan(plan, prepared, constraints, otherRequired = []) {
   const candidateCourses = prepared.courses;
   const { scope } = prepared;
+
+  reconcileAlternatives(plan);
 
   plan.schedule.sort((a, b) => {
     if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
@@ -1558,6 +1667,24 @@ function buildPlan(prepared, constraints, variant) {
 
     const course = remaining.shift();
 
+    // roadmap #26：誰輸給了它。`remaining` 剛依同一個 `plan.schedule` 狀態排好序，
+    // 因此排在後面的就是這個決策點上的落選者——不必另外模擬一次競爭。
+    //
+    // 只取前幾名並在同一狀態下重算分數（4 次呼叫，非熱路徑）。`remaining` 為空時
+    // `buildAlternatives()` 會回報 `no-competitors`，而不是給一個分不出
+    // 「沒有競爭者」與「還沒算」的空陣列——實測 demo 帳號現況正是 0 個落選者。
+    const score = candidate => scoreCourse(
+      candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+    );
+    const alternatives = buildAlternatives(
+      score(course),
+      remaining.slice(0, GREEDY_RUNNERS_UP_RECORDED).map(c => ({ course: c, score: score(c) }))
+    );
+    const scoreComponents = computeScoreComponents(
+      course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+    );
+    const explain = { alternatives, scoreComponents };
+
     if (course.corequisiteRole === 'regular') {
       // roadmap #15：貪婪填充選中一門帶共同必修的正課時，兩者一併嘗試
       // 排入，不是只排正課。找不到候選實習或整組排不進去時，皆不進入
@@ -1567,9 +1694,11 @@ function buildPlan(prepared, constraints, variant) {
       const internshipCandidates = eligible.filter(
         c => c.catalogCourseCode === course.corequisiteCode
       );
-      placeCourseWithCorequisite(plan, course, internshipCandidates, constraints, variant.title);
+      placeCourseWithCorequisite(
+        plan, course, internshipCandidates, constraints, variant.title, explain
+      );
     } else {
-      addCourseToPlan(plan, course, constraints, variant.title);
+      addCourseToPlan(plan, course, constraints, variant.title, explain);
     }
 
     if (plan.totalCredits >= plan.minCredits && variant.id !== 'max_credits') {
