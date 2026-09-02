@@ -74,6 +74,44 @@ const CATEGORY_PRIORITY = {
   '系外選修': 4,
 };
 
+// 一個類別級距的基準分。variant 權重表以此為底再乘上自己的係數。
+const CATEGORY_WEIGHT = 120;
+
+// **本人必修的絕對優先，不受 variant 權重表影響。**
+//
+// roadmap #10：類別分變成 variant 可調之後，「必修排最前面」不能再靠
+// `CATEGORY_PRIORITY['必修'] = 0` 這個相對關係——一旦某個 variant 把類別係數調低，
+// 一門替代涼度很高的一般選修就可能壓過必修。必修先排是**規則**不是偏好，
+// 因此抽成與 `requiredIds` 同級的固定加分。
+//
+// 判定直接沿用 `getEffectiveCategoryPriority()` 的結果（priority 為 0 才給），
+// 不另寫一份 `isRequiredForStudent()` 判斷——否則「非本人必修要降級」這條規則
+// 會有兩個實作，遲早漂移。
+const REQUIRED_COURSE_BONUS = 5000;
+
+// roadmap #10：每個 variant 一張權重表，取代「共用基礎分 + 各自一點小加分」。
+//
+// **改動前實測的量級失衡**（demo 帳號真實候選池）：類別項每差一級 120 分，
+// 而 variant 專屬項只有 25～40 分（`max_credits` 的 2→3 學分只差 25），
+// 主題訊號被類別分完全蓋過，五個 variant 排出同一份課表，去重後只剩 1 份。
+//
+// 係數是「相對於既有基準」的倍率，因此 `required_first` 全部維持 1／0，
+// 行為與改動前**逐項相同**，可作為對照組。其餘 variant 降低類別係數、
+// 拉高自己的主題係數，讓主題真的能重排選修——但必修永遠不受影響（見上方常數）。
+const VARIANT_WEIGHTS = {
+  required_first: { category: 1, credits: 1, easy: 0, interest: 0, compact: 0 },
+  // `compact` 的係數要明顯高於「使用者自己勾了集中排課」的基準（下方 scoreCourse
+  // 對 `constraints.preferCompact` 給的係數 1）。實測 demo 帳號本來就開著
+  // 「盡量集中排課」，係數只設 2 時這個方案與其他方案幾乎排出同一份課表——
+  // 這個方案的語意是「比你平常更集中」，不是「跟你平常一樣集中」。
+  compact: { category: 0.35, credits: 1, easy: 0, interest: 0, compact: 4 },
+  easy_score: { category: 0.35, credits: 1, easy: 3, interest: 0, compact: 0 },
+  interest: { category: 0.35, credits: 1, easy: 0, interest: 6, compact: 0 },
+  max_credits: { category: 0.35, credits: 10, easy: 0, interest: 0, compact: 0 },
+};
+
+const DEFAULT_VARIANT_WEIGHT = VARIANT_WEIGHTS.required_first;
+
 const PLAN_VARIANTS = [
   {
     id: 'required_first',
@@ -458,6 +496,69 @@ function getEasyCourseScore(course) {
   return course.reviewEvidence?.easyScore ?? null;
 }
 
+// roadmap #10：沒有評價時的涼度**替代訊號**。
+//
+// **這不是證據，是排序用的推估。** #4 當初刻意廢掉關鍵字判定涼度（真實命中率
+// 0.7%，還會把「教室很涼」誤判成涼課），本函式沒有推翻那個結論——它的用途只有
+// 一個：讓「涼課優先」方案在評價稀薄時仍然排得出一份**不同**的課表，而不是拿
+// 一個常數中性分假裝有偏好、最後被去重掉。
+//
+// 實測 demo 帳號：實際參與競爭的 10 門課裡只有 1 門有評價（其餘 9 門走 proxy），
+// 評價幾乎無法區分課程，涼度分數趨近常數。
+//
+// 因此：
+//   - 產出一律標記 `easinessSource: 'proxy'`，
+//   - **不得**灌進 `plan.reviewCoverage` 或方案層 `preferenceBreakdown.easy`
+//     （那兩者只認真實評價，見 SCHEDULING_LOGIC.md 的方案層涼度說明），
+//   - Agent 對使用者只能說「依課程屬性推估」，不得說涼／好拿分
+//     （見 docs/PROMPT_DESIGN.md 的評價證據使用限制）。
+//
+// **只用實測有區分力的訊號。** 對 demo 帳號 16 門可修課量測各關鍵字組的命中數：
+// 討論／互動／參與 8/16（剛好切一半，最有效）、實作／實驗／專題 13/16（偏斜但可用）、
+// 學分數 2 種值；而期中考 0/16、期末報告 0/16、深入進階應用 16/16 **完全無法區分**，
+// 加進來只是雜訊，因此排除。關鍵字重用 `CONTENT_PREFERENCE_RULES` 已定義的組別，
+// 不另外發明一套詞表。
+const PROXY_EASINESS_BASE = EASY_SCORE_MAX / 2;
+const PROXY_DISCUSSION_BONUS = 20;
+const PROXY_PROJECT_PENALTY = 15;
+const PROXY_CREDIT_PENALTY = 5;
+
+function findContentRule(flag) {
+  return CONTENT_PREFERENCE_RULES.find(rule => rule.flag === flag);
+}
+
+function getProxyEasinessScore(course) {
+  const description = course.description || '';
+  if (!description) return null;
+
+  let score = PROXY_EASINESS_BASE;
+  // 以討論／參與為主的課，通常考試壓力較低。
+  if (textIncludesAny(description, findContentRule('discussion').keywords)) {
+    score += PROXY_DISCUSSION_BONUS;
+  }
+  // 實作／實驗／專題型的課，通常投入時間較長。
+  if (textIncludesAny(description, findContentRule('practicalExam').keywords)) {
+    score -= PROXY_PROJECT_PENALTY;
+  }
+  // 學分越高，投入時間通常越多。
+  score -= (Number(course.credits) || 0) * PROXY_CREDIT_PENALTY;
+
+  return Math.max(0, Math.min(EASY_SCORE_MAX, score));
+}
+
+// 涼度分數與它的來源。排序用這個分數，對使用者的宣稱只能用 `source === 'reviews'`。
+function resolveEasiness(course) {
+  const fromReviews = getEasyCourseScore(course);
+  if (fromReviews !== null && fromReviews !== undefined) {
+    return { score: fromReviews, source: 'reviews' };
+  }
+
+  const proxy = getProxyEasinessScore(course);
+  if (proxy !== null) return { score: proxy, source: 'proxy' };
+
+  return { score: null, source: 'none' };
+}
+
 function collectInterestKeywords(constraints) {
   return [
     ...toArray(constraints.preferredKeywords),
@@ -575,34 +676,44 @@ function evaluatePreference(plan, constraints, profile) {
 function scoreCourse(course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore = EASY_SCORE_MAX / 2) {
   let score = 1000;
   const id = Number(course.id);
+  // roadmap #10：權重表決定「這個方案在乎什麼」。`required_first` 的係數全為
+  // 1／0，因此它的排序與改動前逐項相同，是其餘 variant 的對照組。
+  const weights = VARIANT_WEIGHTS[variant.id] ?? DEFAULT_VARIANT_WEIGHT;
 
   if (requiredIds.has(id)) score += 10000;
-  score -= getEffectiveCategoryPriority(course, scope) * 120;
-  score += (course.credits || 0) * 12;
+
+  const categoryPriority = getEffectiveCategoryPriority(course, scope);
+  // **必修的絕對優先與權重表無關**：權重表只排序選修。少了這一段，
+  // 把類別係數調低的 variant 會讓替代涼度高的一般選修壓過必修。
+  if (categoryPriority === CATEGORY_PRIORITY['必修']) score += REQUIRED_COURSE_BONUS;
+  score -= categoryPriority * CATEGORY_WEIGHT * weights.category;
+
+  score += (course.credits || 0) * 12 * weights.credits;
   // 內容偏好（roadmap #3）不分 variant 一律套用，比照 category/credits 的
   // 基礎分寫法——這 8 個旗標原本就是候選篩選層級，不是特定 variant 的行為。
   score += getContentPreferenceScore(course, constraints);
 
-  if (variant.id === 'compact' || constraints.preferCompact) {
+  if (weights.compact > 0 || constraints.preferCompact) {
     const usedDays = new Set(schedule.flatMap(c => [...getUsedDays(c)]));
     const courseDays = [...getUsedDays(course)];
     const overlapping = courseDays.filter(day => usedDays.has(day)).length;
-    score += overlapping > 0 ? 120 * overlapping : -20 * Math.max(1, courseDays.length);
+    // `preferCompact` 是使用者的顯式偏好，即使 variant 不主打集中排課也要生效，
+    // 因此係數至少為 1（維持改動前的量級）。
+    const compactWeight = Math.max(weights.compact, constraints.preferCompact ? 1 : 0);
+    score += (overlapping > 0 ? 120 * overlapping : -20 * Math.max(1, courseDays.length))
+      * compactWeight;
   }
 
-  if (variant.id === 'easy_score') {
-    // 沒有評價的課給母體先驗換算的中性分，不給 0。給 0 會讓 95% 沒有評價的課
-    // 全部沉底，等於用「查不到」冒充「很硬」。完全沒有評價資料時
-    // `neutralEasyScore` 對每門課相同，是常數偏移，排序與改動前逐項一致。
-    score += getEasyCourseScore(course) ?? neutralEasyScore;
+  if (weights.easy > 0) {
+    // 有評價走評價；沒有評價改用替代訊號（見 resolveEasiness()）。
+    // 兩者都沒有時才退回母體先驗換算的中性分——給 0 會讓沒有評價的課全部沉底，
+    // 等於用「查不到」冒充「很硬」。
+    const { score: easiness } = resolveEasiness(course);
+    score += (easiness ?? neutralEasyScore) * weights.easy;
   }
 
-  if (variant.id === 'interest') {
-    score += getInterestScore(course, constraints);
-  }
-
-  if (variant.id === 'max_credits') {
-    score += (course.credits || 0) * 25;
+  if (weights.interest > 0) {
+    score += getInterestScore(course, constraints) * weights.interest;
   }
 
   return score;
@@ -977,6 +1088,9 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     // term gate 與 eligibility gate **之前**——被排除的課也要帶著它，
     // 才能統計「有評價但因資格待確認而未納入」的門數。
     course.reviewEvidence = deriveReviewEvidence(reviewIndex, reviewPrior, course);
+    // roadmap #10：涼度分數的**來源**。`'reviews'` 才是證據，`'proxy'` 是依課程
+    // 屬性推估的排序訊號，對使用者的措辭不同（見 resolveEasiness() 的說明）。
+    course.easinessSource = resolveEasiness(course).source;
 
     // roadmap #15：共同必修配對同樣要在任何排除 continue 之前標記，
     // 理由與上面 reviewEvidence 相同——被排除的那一半也要帶著這個資訊，
@@ -2010,6 +2124,36 @@ function buildReviewCoverage(plan) {
   return { rated, total, ratio: total === 0 ? 0 : rated / total };
 }
 
+// roadmap #10：方案塌縮的誠實說明。
+//
+// 去重後少於 `PLAN_VARIANTS.length` 時，指出哪些取向沒能排出不同的課表，
+// 並附上「可競爭課程數」——因為最常見的原因根本不是排序邏輯，而是**可修的課太少**
+// （demo 帳號實測 227 門候選裡 211 門因 #13C 適用對象規則未確認而保守排除，
+// 真正能競爭的只有 16 門）。少了這句，使用者會以為系統只想得出這幾種方案。
+function describePlanCollapse(allPlans, dedupedPlans, prepared, constraints) {
+  const collapsed = allPlans.length - dedupedPlans.length;
+  if (collapsed <= 0) return null;
+
+  const survivingIds = new Set(dedupedPlans.map(plan => plan.id));
+  const collapsedPlans = allPlans.filter(plan => !survivingIds.has(plan.id));
+  const titles = collapsedPlans.map(plan => plan.title);
+
+  const poolSize = prepared?.courses?.length ?? 0;
+  let message = `${titles.join('、')}排出的課表與其他方案相同，已合併，`
+    + `目前提供 ${dedupedPlans.length} 種方案。`
+    + `可競爭的課程僅 ${poolSize} 門，方案之間的差異空間有限。`;
+
+  // 「集中排課」方案與其他方案相同，最常見的原因是使用者本來就勾了集中排課——
+  // 那麼每一份方案都已經是集中的，這個取向自然不會產生第二種答案。
+  // 這是合理結果，不是缺陷，講清楚比只說「已合併」有用。
+  if (constraints?.preferCompact && collapsedPlans.some(plan => plan.id === 'compact')) {
+    message += '（你已設定「盡量集中排課」，因此每個方案本來就會集中，'
+      + '集中排課方案不會再產生不同的結果。）';
+  }
+
+  return message;
+}
+
 function uniquePlans(plans) {
   const seen = new Set();
   return plans.filter(plan => {
@@ -2192,18 +2336,22 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     constraints
   );
 
-  let plans = uniquePlans(
-    PLAN_VARIANTS
-      .map(variant => {
-        const plan = buildPlan(prepared, constraints, variant);
-        const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
-        plan.preferenceScore = score;
-        plan.preferenceBreakdown = breakdown;
-        plan.reviewCoverage = buildReviewCoverage(plan);
-        return plan;
-      })
-      .sort(comparePlans)
-  );
+  const allVariantPlans = PLAN_VARIANTS
+    .map(variant => {
+      const plan = buildPlan(prepared, constraints, variant);
+      const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
+      plan.preferenceScore = score;
+      plan.preferenceBreakdown = breakdown;
+      plan.reviewCoverage = buildReviewCoverage(plan);
+      return plan;
+    })
+    .sort(comparePlans);
+
+  let plans = uniquePlans(allVariantPlans);
+  // roadmap #10：方案數少於 variant 數時要說出**為什麼**，不能讓使用者以為
+  // 系統只想得出這幾種。原因有兩類且處置完全不同：候選池太小（等 #13C 的
+  // 適用對象規則）與某個 variant 沒有可用訊號（資料缺口）。
+  const collapsedVariantWarning = describePlanCollapse(allVariantPlans, plans, prepared, constraints);
 
   const baselinePrimary = plans[0];
   const baselineCheck = baselinePrimary?.success
@@ -2401,6 +2549,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   }
 
   const allWarnings = [...new Set(plans.flatMap(plan => plan.warnings))];
+  if (collapsedVariantWarning) allWarnings.push(collapsedVariantWarning);
   if (!hasExpressedPreference) {
     allWarnings.push('未設定興趣關鍵字、集中排課或涼課偏好，主推方案改以總學分決定，個人化程度有限。');
   }

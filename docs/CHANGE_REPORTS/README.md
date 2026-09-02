@@ -4,11 +4,12 @@
 
 ## 2026-08-31
 
-1. [Roadmap #25：Tool allowlist、工具結果信封與非法課程 id 過濾](./2026-08-31-roadmap-25-tool-allowlist-and-envelope.md)
-2. [Roadmap #23 第二輪：通識畢業認列、推薦候選範圍與過期文件更正](./2026-08-31-roadmap-23-general-education-recognition.md)
-3. [Roadmap #23：版本化畢業規則、逐門認列追溯與補學分推薦修正](./2026-08-31-roadmap-23-versioned-graduation-rules.md)
-4. [Roadmap #24 第二輪：結構性矛盾完整化、理解回講與 golden set](./2026-08-31-roadmap-24-golden-set-and-interpretation.md)
-5. [Roadmap #24：永久寫入確認閘門、身分更正與排課前矛盾偵測](./2026-08-31-roadmap-24-requirement-gate.md)
+1. [Roadmap #10：修復多方案塌縮（variant 權重表、涼度來源標記）](./2026-08-31-roadmap-10-plan-diversity.md)
+2. [Roadmap #25：Tool allowlist、工具結果信封與非法課程 id 過濾](./2026-08-31-roadmap-25-tool-allowlist-and-envelope.md)
+3. [Roadmap #23 第二輪：通識畢業認列、推薦候選範圍與過期文件更正](./2026-08-31-roadmap-23-general-education-recognition.md)
+4. [Roadmap #23：版本化畢業規則、逐門認列追溯與補學分推薦修正](./2026-08-31-roadmap-23-versioned-graduation-rules.md)
+5. [Roadmap #24 第二輪：結構性矛盾完整化、理解回講與 golden set](./2026-08-31-roadmap-24-golden-set-and-interpretation.md)
+6. [Roadmap #24：永久寫入確認閘門、身分更正與排課前矛盾偵測](./2026-08-31-roadmap-24-requirement-gate.md)
 
 ## 2026-08-30
 

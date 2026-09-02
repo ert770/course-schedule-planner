@@ -578,6 +578,7 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `eligibilitySource`（Roadmap #20） | `eligibility` 結論套用的規則代號，供追查來源 |
 | `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學期 |
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明 |
+| `easinessSource`（Roadmap #10） | 排序用涼度分數的來源：`reviews`（有實際評價）／`proxy`（無評價，依課程屬性推估）／`none`（兩者皆無）。**`proxy` 不是證據**——UI 與 Agent 只能說「依課程屬性推估」，不得說涼／好拿分。它也不會進入 `reviewCoverage` 或方案層 `preferenceBreakdown.easy`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度來源」 |
 | `reviewEvidence`（Roadmap #4） | 課程評價證據物件，`null` 代表這門課沒有評價，**不是** 0 分。有值時包含 `reviewCount`、`avgSweetness`／`avgCoolness`／`avgWorkload`／`avgOverall`／`avgDifficulty`／`avgRecommend`、`positiveCount`／`negativeCount`／`neutralCount`、`easiness`（1–5，未收縮）、`adjustedEasiness`（1–5，m-estimate 收縮後）、`easyScore`（0–100，排課實際採用）、`priorEasiness`、`shrinkagePriorWeight`、`source`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」 |
 | `formallyRequired`（Roadmap #21） | 布林，永遠存在（`true`／`false`）。`true` 代表這門課是這位學生本學期正式必修（`isRequiredForStudent()===true`），且排入時已無條件豁免 3 個時段類舒適偏好（不排早八／午休保留／不排晚課）；不含封鎖時段，也不含使用者手動指定的 `mustTakeCourseIds`。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」 |
 | `corequisiteCode`（Roadmap #15） | 字串或 `null`。有配對時為對應正課／實習的 `catalogCourseCode`；`null` 代表這門課沒有配對（含 P 後綴但候選池中找不到正課的例外情況） |
