@@ -1,14 +1,23 @@
 import { Router } from 'express';
 import { getAll } from '../db/database.js';
-import { getGraduationRequirement } from '../data/graduationRequirements.js';
+import { resolveGraduationRule } from '../data/graduationRuleVersions.js';
 import { normalizeDepartment } from '../utils/text.js';
-import { parseClassName } from '../skills/courseScope.js';
+import { parseClassName, buildStudentScope } from '../skills/courseScope.js';
+import {
+  annotateCourseCategory,
+  CATEGORY_OUTSIDE_ELECTIVE,
+  CATEGORY_GENERAL_EDUCATION,
+} from '../skills/courseCategory.js';
+import { filterCategorizedCourses } from '../skills/courseQuery.js';
+import { evaluateGeneralEducationProgress } from '../data/generalEducationRecognition.js';
+import { countsTowardGraduation } from '../data/generalEducation.js';
 import { getUserPreferences } from '../services/memoryService.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
 import {
   getPassedCourseCodes,
   getEarnedCredits,
+  getEarnedCreditsAttribution,
   getTotalEarnedCredits,
 } from '../data/courseHistory.js';
 
@@ -51,8 +60,195 @@ export function resolveRequiredCredits(requirement) {
 // （見 `data/courseHistory.js`），`getEarnedCredits()` 對任何陣列都會回傳
 // 合法形狀的結果（空陣列得到全 0），沒有「派生值壞掉」這種狀態需要防。
 // 因此只需判斷有沒有可以派生的來源。
-function hasCourseHistory(user) {
-  return Array.isArray(user.courseHistory) && user.courseHistory.length > 0;
+function hasCourseHistory(profile) {
+  return Array.isArray(profile.courseHistory) && profile.courseHistory.length > 0;
+}
+
+// 課程類別 → 畢業學分缺口分類。
+//
+// `annotateCourseCategory()` 回傳的是**修課視角**的類別（核心選修／一般選修分開，
+// 因為排課優先度不同）；畢業學分只認「本系選修」一格，兩者在此收斂。
+const CATEGORY_TO_GAP = new Map([
+  ['必修', 'required'],
+  ['核心選修', 'elective'],
+  ['一般選修', 'elective'],
+  // 未被資工必選修科目表細分的選修：`classifyCsCourse()` 依**課名**比對，比對不到
+  // 就退回 MySQL 原始的 `選修`。實測資訊工程學系 119 門候選中有 11 門是這種
+  // （高等資訊安全、影像處理、資訊保密與安全…），它們確實是本系開的選修課，
+  // 漏掉這一行會讓它們永遠不被推薦。細不細分是課程地圖的涵蓋度問題，
+  // 不是「這門課算不算本系選修」的問題。
+  ['選修', 'elective'],
+  ['系外選修', 'external'],
+  ['通識', 'general'],
+]);
+
+const GAP_LABELS = {
+  required: '本系必修',
+  elective: '本系選修',
+  general: '通識',
+  external: '外系選修',
+  unspecified: '自由選修',
+};
+
+// 補學分推薦的候選池。
+//
+// **先前只撈本系開的課**（`parseClassName(course.department).department === department`），
+// 所以 `general` 與 `external` 兩個缺口實務上永遠推不出東西——使用者缺 4 學分通識，
+// 系統卻只能推本系選修。
+//
+// 三種範圍**全部重用 `courseQuery.js` 的 `filterCategorizedCourses()`**，不在這裡另寫
+// 一套班級規則：它已經處理好 active term 過濾、系外選修的學制相符檢查，以及通識
+// 「不屬於任何班級但全校適用」這個特例。搜尋、排課、Agent 三條路徑都走它，
+// 畢業推薦再自己寫一套只會第四次漂移。
+async function collectRecommendationCandidates(department, scope) {
+  const all = await getAll('courses');
+
+  // 本人班級的課（必修／核心選修／一般選修）＋ 通識。
+  const ownAndGeneral = filterCategorizedCourses(all, {}, scope, { includeGeneralEducation: true });
+  // 系外選修要指定 category 才拿得到——它不在本人班級範圍內。
+  const outside = filterCategorizedCourses(all, { category: CATEGORY_OUTSIDE_ELECTIVE }, scope);
+
+  // `filterCategorizedCourses` 會過濾掉非本學期的課，但本系課程仍沿用原本的
+  // 班級名稱比對，避免因為 scope 解析不到而讓既有的本系推薦整個消失。
+  const ownByClassName = all.filter(course =>
+    parseClassName(course.department).department === department
+  );
+
+  const seen = new Set();
+  return [...ownAndGeneral, ...outside, ...ownByClassName].filter(course => {
+    const key = course.id ?? course.catalogCourseCode;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// 補學分推薦：只推**真的補得上某個缺口**的課。
+//
+// 先前這裡是 `departmentCourses[0]`——沒有排序、沒有排除不計入畢業學分的課，
+// 也沒有比對缺口。實測結果是資訊工程學系 119 門候選裡第一門就是 0 學分的
+// `班級活動`（`GEID0010`），它補不了任何缺口，前端還會把它標成「通識推薦」，
+// 而它的真實分類是必修。roadmap #23 的驗收標準「推薦補學分課程前，先驗證課程
+// 能補足指定 gap」因此明確未通過。
+//
+// 抽成純函式（比照同檔的 `resolveRequiredCredits()`）：專案沒有 supertest，
+// 這樣才測得到，不必啟動整個 Express app。
+export function buildCreditRecommendations({
+  courses = [],
+  scope = null,
+  gaps = null,
+  passedCourseCodes = new Set(),
+  rule = null,
+  limit = 3,
+} = {}) {
+  // 缺口算不出來（系所查不到或沒有修課歷史）時不推薦——沒有缺口就無從驗證
+  // 「這門課補得上」，硬推等於回到舊行為。
+  if (!gaps) return [];
+
+  const candidates = [];
+
+  for (const course of courses) {
+    // 已修過並通過的課不再推薦。
+    if (passedCourseCodes.has(course.catalogCourseCode)) continue;
+    // 不計入畢業學分的課（班級活動／體育／國防科技）補不了任何缺口。
+    // 沿用既有判定，不自己另寫 0 學分規則——`LAND2012P` 那類 1 學分實習
+    // 已經證明學分數不是可靠判準。
+    if (!countsTowardGraduation(course)) continue;
+
+    const annotated = annotateCourseCategory(course, scope);
+    if (annotated.eligibility === 'ineligible') continue;
+
+    const gapKey = CATEGORY_TO_GAP.get(annotated.category);
+    if (!gapKey) continue;
+
+    // 資格未確認的課（#13B 的 B～F 類）原則上不主動推薦：不能一邊說「資格待確認」
+    // 一邊叫使用者去修。
+    //
+    // **通識是唯一的例外**，而且理由是官方明載的：`docs/COURSE_SELECTION_RULES.md`
+    // 寫「這四個領域名稱……它們不是班級，適用全校學生」。GE 之所以是 `unknown`，
+    // 是因為 #13B 對整個 B 類一視同仁地保守處理，並沒有針對這條官方事實細分。
+    //
+    // 不改 `resolveCourseEligibility()`——那是 #13B／#13C 的範圍。這裡只在
+    // **推薦**這個情境放行，並且把「資格待確認」照實標出來讓使用者看見：
+    // 推薦是「你還缺 4 學分通識，這幾門可以補」，不是宣稱他一定選得上。
+    // 不放行的話，缺通識的使用者永遠看不到任何通識建議——那正是本次要修的問題。
+    const needsEligibilityConfirmation = annotated.eligibility === 'unknown';
+    if (needsEligibilityConfirmation && annotated.category !== CATEGORY_GENERAL_EDUCATION) continue;
+
+    const gapBefore = Number(gaps[gapKey] || 0);
+    if (gapBefore <= 0) continue;
+
+    const credits = Number(course.credits) || 0;
+    if (credits <= 0) continue;
+
+    candidates.push({ course: annotated, gapKey, gapBefore, credits, needsEligibilityConfirmation });
+  }
+
+  // 明確的排序規則，不再依賴陣列原始順序：缺口大的分類優先 → 學分高者優先 →
+  // 課號穩定排序（同分時每次結果一致，測試才釘得住）。
+  candidates.sort((left, right) =>
+    right.gapBefore - left.gapBefore
+    || right.credits - left.credits
+    || String(left.course.catalogCourseCode).localeCompare(String(right.course.catalogCourseCode))
+  );
+
+  // 一門課開多個班次時只推薦一次。
+  //
+  // 候選來自 `Course_Sections`，同一個 `catalogCourseCode` 可能有好幾個班次
+  // （實測「系統分析與設計」在資訊工程學系底下就有兩個），對「你還缺 6 學分
+  // 本系選修」這件事而言它們是同一個答案，列兩次只是佔掉推薦名額。
+  // 判定用 `catalogCourseCode`，與本 route 既有的已修排除同一個鍵。
+  const seen = new Set();
+  const unique = candidates.filter(({ course }) => {
+    const key = String(course.catalogCourseCode || '').trim() || `id:${course.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // **每個有缺口的分類至少先推一門，再用剩下的名額補**。
+  //
+  // 單純照上面的排序取前 3 名會讓最大的缺口吃掉全部名額：實測 demo 帳號
+  // 本系選修缺 6、通識缺 4，三個名額全被本系選修佔滿，使用者永遠看不到
+  // 通識該修什麼——那正是「補學分建議」最該回答的問題。
+  // 分類之間仍照缺口大小排序，所以最大的缺口還是排第一個。
+  const byGap = new Map();
+  for (const item of unique) {
+    if (!byGap.has(item.gapKey)) byGap.set(item.gapKey, []);
+    byGap.get(item.gapKey).push(item);
+  }
+
+  const selected = [];
+  // `unique` 已排序，因此各分類的內部順序、以及分類第一次出現的順序都已是缺口大→小。
+  while (selected.length < limit) {
+    let added = false;
+    for (const queue of byGap.values()) {
+      if (selected.length >= limit) break;
+      if (queue.length === 0) continue;
+      selected.push(queue.shift());
+      added = true;
+    }
+    if (!added) break;
+  }
+
+  return selected.map(({ course, gapKey, gapBefore, credits, needsEligibilityConfirmation }) => ({
+    type: 'suggestion',
+    title: `補足${GAP_LABELS[gapKey]}`,
+    message: `${course.name}（${credits} 學分）可計入${GAP_LABELS[gapKey]}，`
+      + `目前尚缺 ${gapBefore} 學分。`
+      // 資格待確認的課要在文字裡講出來，不能只放進一個前端可能忽略的旗標。
+      + (needsEligibilityConfirmation ? '此類課程的正式適用對象尚待系辦確認，選課前請再確認資格。' : ''),
+    course,
+    needsEligibilityConfirmation,
+    // 讓前端不必再猜這是哪一類推薦——先前它把所有非 warning 的推薦
+    // 一律寫死顯示「通識推薦」。
+    fillsGap: gapKey,
+    gapLabel: GAP_LABELS[gapKey],
+    gapBefore,
+    credits,
+    ruleVersion: rule?.ruleVersion ?? null,
+    ruleSource: rule?.ruleSource ?? null,
+  }));
 }
 
 async function handleGraduation(req, res) {
@@ -73,7 +269,15 @@ async function handleGraduation(req, res) {
     // 畢業學分依系所而定，沒有全校通用的預設值。查不到對照時明確回報，
     // 不得用臆測的數字讓畫面看起來正常。
     const department = normalizeDepartment(profile?.department ?? user.department);
-    const requirement = getGraduationRequirement(department);
+
+    // 依 `program + degree + admissionYear` 解析適用的規則版本（Roadmap #23）。
+    // 入學年度未知，或該學年度的科目表尚未取得時，`appliedFallbackVersion` 為 true，
+    // 並附上說明——不假裝套用的就是該學生入學年度的規則。
+    const rule = resolveGraduationRule({
+      program: department,
+      admissionYear: profile?.admissionYear ?? null,
+    });
+    const requirement = rule.requirement;
     const warnings = [];
 
     const { required, totalRequired, warning: requirementWarning } = resolveRequiredCredits(requirement);
@@ -85,7 +289,13 @@ async function handleGraduation(req, res) {
       warnings.push(`「${department}」的畢業學分資料尚待人工複核，缺口僅供參考。`);
     }
 
-    const courseHistoryAvailable = hasCourseHistory(user);
+    // 規則版本退回預設時要說出來。這是 #23 的核心誠實要求：目前只有 114 學年度
+    // 一版真實資料，套用在 112／113 入學生身上時使用者必須看得到這件事。
+    if (rule.appliedFallbackVersion && rule.fallbackReason) {
+      warnings.push(rule.fallbackReason);
+    }
+
+    const courseHistoryAvailable = hasCourseHistory(profile);
     const courseHistoryMessage = courseHistoryAvailable
       ? null
       : '缺少歷史修課資料，請至 MyFCU 擷取歷史修課資料並匯入。';
@@ -93,9 +303,9 @@ async function handleGraduation(req, res) {
     // `completedCredits`（2026-08-11 已從 `users.json` 移除）。
     // 兩支函式與排課共用同一份 `data/courseHistory.js`，因此畢業進度與
     // 排課的已修判定必然一致。
-    const earned = courseHistoryAvailable ? getEarnedCredits(user.courseHistory) : null;
+    const earned = courseHistoryAvailable ? getEarnedCredits(profile.courseHistory) : null;
     const totalEarned = courseHistoryAvailable
-      ? getTotalEarnedCredits(user.courseHistory)
+      ? getTotalEarnedCredits(profile.courseHistory)
       : null;
     // `required` 查不到系所時是 `null`（見 resolveRequiredCredits）；
     // 只看 courseHistoryAvailable 的話，「有修課歷史但系所查不到」會讓
@@ -114,28 +324,37 @@ async function handleGraduation(req, res) {
     // `completedCourseIds` 恆為空陣列（歷史修課存的是課號，不是當學期 section id），
     // 所以這個排除從來沒有生效過，「建議補足系上課程」可能推薦一門已經修過
     // 並及格的課。`course.id` 也不是課程識別碼，而是「班級 + 課程」的組合。
-    const passedCourseCodes = new Set(getPassedCourseCodes(user.courseHistory));
-    const recommendations = [];
+    const passedCourseCodes = new Set(getPassedCourseCodes(profile.courseHistory));
 
-    // `course.department` 存的是**班級名稱**（`資訊三甲`），不是系所全名。
-    // 先前這裡直接用 `course.department === user.department` 比對，等於拿
-    // 「資訊三甲」比「資訊工程學系」，永遠不成立——這條建議從來沒出現過。
-    // 判定方式與排課一致：解析班級名稱後比對系所。
-    const departmentCourses = courseHistoryAvailable
-      ? (await getAll('courses')).filter(course =>
-        parseClassName(course.department).department === department
-        && !passedCourseCodes.has(course.catalogCourseCode)
-      )
-      : [];
+    // 「這些學分是哪些課湊出來的」。與 `getEarnedCredits()` 共用同一組篩選，
+    // 各分類總和恆等於上面的 `earned`（由 G10 測試釘住）。
+    const attribution = courseHistoryAvailable
+      ? getEarnedCreditsAttribution(profile.courseHistory, rule)
+      : null;
 
-    if (courseHistoryAvailable && departmentCourses.length > 0) {
-      recommendations.push({
-        type: 'suggestion',
-        title: '建議補足系上課程',
-        message: `可優先查看 ${departmentCourses[0].name}。`,
-        course: departmentCourses[0],
-      });
-    }
+    const scope = buildStudentScope(profile);
+
+    // 通識畢業認列：把 `general` 這一桶拆成基礎必修與選修（Roadmap #23）。
+    //
+    // **直接吃 attribution 的結果**，不自己再篩一次「已通過、最新一次、屬於哪一類」
+    // ——那組篩選是 `courseHistory.js` 的職責，兩邊各寫一套必然漂移。
+    const generalEducation = attribution
+      ? evaluateGeneralEducationProgress({
+        generalEntries: attribution.general.courses,
+        admissionYear: rule.admissionYear,
+        requirement,
+      })
+      : null;
+
+    if (generalEducation?.notes?.length) warnings.push(...generalEducation.notes);
+
+    const recommendations = buildCreditRecommendations({
+      courses: await collectRecommendationCandidates(department, scope),
+      scope,
+      gaps,
+      passedCourseCodes,
+      rule,
+    });
 
     res.json({
       department,
@@ -146,6 +365,17 @@ async function handleGraduation(req, res) {
       required,
       earned,
       gaps,
+      // 逐門認列追溯：每一筆帶課號、學分、修課學期、規則版本與出處。
+      attribution,
+      // 通識拆成基礎必修／選修兩個缺口。`gaps.general` 維持總數不變（向後相容），
+      // 這裡是額外的細分——先前系統只知道「通識共缺 N」，不知道缺在哪一邊。
+      generalEducation,
+      // 這次用的是哪一版規則、從哪來、是不是退回了預設版本。
+      ruleVersion: rule.ruleVersion,
+      ruleSource: rule.ruleSource,
+      ruleCoverage: rule.coverage,
+      appliedFallbackVersion: rule.appliedFallbackVersion,
+      admissionYear: rule.admissionYear,
       warnings,
       recommendations,
       watchlist: user.watchlist || [],
@@ -154,7 +384,10 @@ async function handleGraduation(req, res) {
       overallScoreMax: user.overallScoreMax || 100,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({
+      error: err.message,
+      ...(err.code ? { code: err.code } : {}),
+    });
   }
 }
 

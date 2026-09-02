@@ -23,6 +23,7 @@ export default function GraduationPage() {
   const { theme, toggleTheme } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
 
@@ -35,35 +36,12 @@ export default function GraduationPage() {
       return;
     }
     try {
+      setLoadError('');
       const result = await graduationAPI.get();
       setData(result);
     } catch (err) {
-      console.error('Failed to load graduation data:', err);
-      // Fallback data matching mockup
-      setData({
-        totalRequired: 128,
-        totalEarned: 107,
-        gaps: { required: 10, elective: 9, general: 4, external: 0 },
-        recommendations: [
-          {
-            type: 'warning',
-            title: '必修警告',
-            message: '偵測到您尚未修畢大三必修【計算機結構學】，建議本學期優先排入以防延畢。',
-            course: { id: 4, name: '計算機組織', credits: 3 },
-          },
-          {
-            type: 'suggestion',
-            title: '通識推薦',
-            message: '您的通識尚缺 4 學分，AI 根據您先前勾選的涼課條件，為您推薦【現代車業事件剖析】。該課平常簡單自由簽到，老師確幸至10次，而且期末考不恐怖，若還有剩餘讀書時間可以拿到分數，達成您的篩選條件。',
-            course: { id: 99, name: '現代車業事件剖析', credits: 2 },
-          },
-        ],
-        watchlist: [
-          { id: 101, name: '密碼學', category: '選修', credits: 3 },
-          { id: 102, name: '人工智慧自然語言導論', category: '選修', credits: 3 },
-          { id: 103, name: '資訊實務案例探討', category: '選修', credits: 2 },
-        ],
-      });
+      setData(null);
+      setLoadError(err.message || '畢業進度暫時無法載入，請稍後再試。');
     } finally {
       setLoading(false);
     }
@@ -78,6 +56,19 @@ export default function GraduationPage() {
       <div className="graduation-page" id="graduation-page">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#6b7280' }}>
           載入中...
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="graduation-page" id="graduation-page">
+        <div style={{ maxWidth: '560px', margin: '18vh auto', padding: '24px', textAlign: 'center' }}>
+          <AlertTriangle size={42} style={{ color: 'var(--accent-red)', marginBottom: '12px' }} />
+          <h2>畢業進度暫時無法載入</h2>
+          <p style={{ color: 'var(--text-secondary)', margin: '12px 0 20px' }}>{loadError}</p>
+          <button className="btn-primary" type="button" onClick={loadGraduationData}>重新載入</button>
         </div>
       </div>
     );
@@ -166,16 +157,64 @@ export default function GraduationPage() {
                 </div>
               </div>
 
-              {/* Gap cards */}
+              {/* Gap cards。每張卡可展開「這些學分是哪些課修來的」（roadmap #23 逐門追溯）。 */}
               <div className="grad-gaps-grid">
-                {Object.entries(data?.gaps || {}).map(([category, gap]) => (
-                  <div key={category} className="grad-card grad-gap-card">
-                    <div className="grad-gap-label">尚缺{CREDIT_CATEGORY_LABELS[category] || category}</div>
-                    <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
-                      {gap} <span className="grad-gap-unit">學分</span>
+                {Object.entries(data?.gaps || {}).map(([category, gap]) => {
+                  const earnedCourses = data?.attribution?.[category]?.courses || [];
+                  const earnedCredits = data?.attribution?.[category]?.credits ?? 0;
+                  return (
+                    <div key={category} className="grad-card grad-gap-card">
+                      <div className="grad-gap-label">尚缺{CREDIT_CATEGORY_LABELS[category] || category}</div>
+                      <div className={`grad-gap-value ${gap === 0 ? 'green' : 'red'}`}>
+                        {gap} <span className="grad-gap-unit">學分</span>
+                      </div>
+                      {/*
+                        通識再拆成「基礎必修」與「選修」兩格（roadmap #23）。
+                        先前只顯示總缺口，使用者看到「尚缺通識 4 學分」卻不知道
+                        缺的是英文那類基礎必修，還是領域通識選修。
+                      */}
+                      {category === 'general' && data?.generalEducation && (
+                        <div className="grad-gap-split">
+                          <div className="grad-gap-split-row">
+                            <span>基礎必修</span>
+                            <span className={data.generalEducation.basic.gap === 0 ? 'green' : 'red'}>
+                              {data.generalEducation.basic.earned}/{data.generalEducation.basic.required}
+                            </span>
+                          </div>
+                          <div className="grad-gap-split-row">
+                            <span>通識選修</span>
+                            <span className={data.generalEducation.elective.gap === 0 ? 'green' : 'red'}>
+                              {data.generalEducation.elective.earned}/{data.generalEducation.elective.required}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {earnedCourses.length > 0 && (
+                        <details className="grad-attribution">
+                          <summary className="grad-attribution-summary">
+                            已修 {earnedCredits} 學分（{earnedCourses.length} 門）
+                          </summary>
+                          <ul className="grad-attribution-list">
+                            {earnedCourses.map(item => (
+                              <li key={`${item.courseCode}-${item.academicYear}-${item.semester}`}>
+                                <span className="grad-attribution-term">
+                                  {item.academicYear}-{item.semester}
+                                </span>
+                                <span className="grad-attribution-name">{item.courseName}</span>
+                                <span className="grad-attribution-credits">{item.credits} 學分</span>
+                              </li>
+                            ))}
+                          </ul>
+                          {/* 認列依據要看得到，不能只有一個數字。 */}
+                          <p className="grad-attribution-source">
+                            依 {earnedCourses[0].ruleVersion || '—'} 學年度規則認列
+                            {earnedCourses[0].needsVerification ? '（尚待人工複核）' : ''}
+                          </p>
+                        </details>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
@@ -215,8 +254,15 @@ export default function GraduationPage() {
                   ) : (
                     <Lightbulb size={16} className="rec-icon suggestion" />
                   )}
+                  {/*
+                    先前這裡不論課程實際分類，一律寫死顯示「💡 通識推薦：」——
+                    後端推的 `班級活動` 真實分類是必修，畫面卻標成通識。
+                    現在改用後端算出的 `fillsGap` 標籤（它已驗證這門課補得上該缺口）。
+                  */}
                   <span className="grad-rec-type">
-                    {rec.type === 'warning' ? '⚠️ 必修警告：' : '💡 通識推薦：'}
+                    {rec.type === 'warning'
+                      ? '⚠️ 必修警告：'
+                      : `💡 ${rec.gapLabel || '課程'}推薦：`}
                   </span>
                 </div>
                 <p className="grad-rec-message">{rec.message}</p>

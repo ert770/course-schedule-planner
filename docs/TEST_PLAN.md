@@ -191,6 +191,34 @@ node --check src/app.js
 專案沒有 supertest 之類的 HTTP 路由測試設施，因此把判斷抽成純函式
 `resolveRequiredCredits()` 並匯出，不必啟動整個 Express app 就能測。
 
+### 版本化畢業規則與逐門認列（Roadmap #23）
+
+`server/test/graduationRuleVersions.test.js`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| G7 | 114／115 學年度入學生 | 選到 `114` 版，`appliedFallbackVersion` 為 `false`，附 `ruleSource` 與 `coverage` |
+| G8 | 112 學年度入學生 | 退回 `114` 版，`appliedFallbackVersion` 為 `true`，`fallbackReason` 明講「該學年度版本尚未取得…僅供參考」 |
+| G8 | `admissionYear` 為 `null` 或完全不給參數 | 同樣退回並說明，不丟例外 |
+| G9 | 查不到的系所／未支援的學制 | `requirement` 為 `null` 但版本資訊照給；學制無資料時標示退回 |
+| G9 | `normalizeAdmissionYear()` | `0`／負數／小數／超範圍／非數字一律 `null`，不強行轉換 |
+| G9 | 版本清單 | 目前**只有 1 版**真實資料；數量改變時測試失敗以提醒同步更新文件 |
+
+`server/test/graduationAttribution.test.js`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| G10 | 逐門追溯 vs `getEarnedCredits()` | 各分類 `credits` **恆等於**既有計算；逐門加總也等於該分類總數（防止長出第二套算法） |
+| G10 | demo 53 筆分佈 | `61／22／24／11`，總計 `118` |
+| G11 | `nonGraduation`／未通過／重修／未知分類 | 分別為不列入、不列入、只算最新一次、歸入 `unspecified` |
+| G12 | 每一筆認列 | 帶 `ruleVersion`／`ruleSource`／`attributionSource`／`needsVerification`；未傳 rule 時三者為 `null`；依修課時間排序 |
+| G13 | 班級活動、體育、國防科技 | **不得出現在補學分推薦裡**（本次核心迴歸：改動前 `departmentCourses[0]` 實測就是 0 學分的班級活動） |
+| G14 | 每筆推薦 | 其 `fillsGap` 分類的缺口必須 > 0；缺口補滿或 `gaps` 為 `null` 時回空陣列 |
+| G14 | 未被課程地圖細分的本系選修 | 仍算進 `elective` 缺口（實測有 11 門會落在原始的 `選修`） |
+| G15 | 一課多班次／已修過／輸入順序不同 | 只推一次；已修不推；排序穩定 |
+| G17 | `update_student_profile` 送 `admissionYear: 0` | 佔位值被丟棄，其他欄位保留（實測模型 4/4 次送 `0` 湊滿欄位；寫入層另有一道防護） |
+| G16 | 入學年度交叉驗證 | 兩來源一致才採用；不一致或只有單一來源時回 `null` 並說明理由 |
+
 ### 已修課程排除與修課歷史派生運算
 
 已修排除的判定依據是課號（`courseHistory[].courseCode` 比對 `course.catalogCourseCode`），
@@ -198,6 +226,7 @@ node --check src/app.js
 （`getPassedCourseCodes()`／`getEarnedCredits()`／`getTotalEarnedCredits()`）
 是排課、畢業頁共用的唯一來源，取代了先前各自獨立、彼此可能不一致的
 `completedCourseIds`／`completedCourseCodes`／`completedCredits`／`earnedCredits`。
+執行期資料由 MySQL `User_Course_History` 映射，不讀 `users.json.courseHistory`。
 
 `server/test/courseHistory.test.js`：
 
@@ -210,9 +239,16 @@ node --check src/app.js
 | H2 | 課程分類為 `nonGraduation` | 不計入任何分類，也不進總學分 |
 | H2 | `graduationCategory` 缺漏或不在已知清單 | 歸入 `unspecified`，不靜默丟棄學分 |
 | H2 | `courseHistory` 為空 | 回傳全 0 物件而非 `undefined` |
-| H3 | demo 使用者（`D1249697`）真實 53 筆資料 | 分類學分 `61/22/24/11`、總學分 `118`——與整併前的既有值逐項相符 |
-| H3 | 同一批真實資料 | 53 個已修課號皆不重複 |
-| H3 | 整併後的 `users.json` | `completedCourseCodes`／`completedCourseNames`／`completedCourseIds`／`completedCredits`／`earnedCredits` 五個欄位皆不存在 |
+| H3 | 53 筆合成回歸資料 | 分類學分 `61/22/24/11`、總學分 `118`，53 個課號皆不重複 |
+
+`server/test/courseHistoryDatabase.test.js`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| H8 | MySQL row 映射 | 完整回傳既有 11 欄 camelCase 契約 |
+| H8 | `passed=0` | 映射為 `false`，不受字串 truthiness 影響 |
+| H8 | 必要欄位缺漏 | 回報 `503 COURSE_HISTORY_UNAVAILABLE` |
+| H8 | runtime source scan | `memoryService`／graduation 不再讀 `users.json.courseHistory`，JSON 欄位已刪除 |
 
 `server/test/scheduler.test.js`（`generateSchedule()` 端到端，不是只測合併函式）：
 
@@ -498,6 +534,96 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 | 問不存在課程 | 不得編造，需說明查無資料 |
 | 問畢業門檻 | 回答 128 學分與分類要求 |
 | 資料不足 | 說明限制並要求補充 |
+
+### Tool allowlist 與工具結果信封（Roadmap #25）
+
+`server/test/agentToolRegistry.test.js`（AR1-AR4）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| AR1 | 登記表 vs `getAgentTools()` schema vs `executeAgentTool()` 的 switch | 三處工具名稱集合完全一致（讀原始碼比對，不是人工同步） |
+| AR2 | 需要兩段式確認的工具（`update_preferences`／`update_student_profile`） | schema 必須有 `confirmationToken`；其餘工具不得有 |
+| AR3 | 全部 7 個工具的 schema | `additionalProperties` 為 `false` |
+| AR4 | `isRenderableTool()`／`getConfirmationChangeType()`／`listConfirmationChangeTypes()` | 回傳值與登記表定義逐項相符 |
+
+`server/test/agentTools.test.js` 新增：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| AG14 | `watchingCourseIds` 含查無對應課程的 id | 該 id 不會出現在傳給 `generateSchedule()` 的 constraints 裡；結果 `warnings` 附上「已略過」說明，且不覆蓋既有 warning |
+| AG14 | 全部合法／完全沒帶 `watchingCourseIds` | 不受影響（反例，避免誤判） |
+| AG15 | `buildToolResultEnvelope()` | 含 `schemaVersion`／`dataSource`／`warnings`／`errorCode`／`result` 五個欄位；陣列型結果一樣能包裝；只有課程類工具附 `term`；`errorCode` 正確透出 |
+| AG15 | `applyToolOutcome()` 寫進 `/api/chat` 回應 `data` 的值 | **不得被信封污染**——仍是原始 `result`，不含 `schemaVersion` 等信封欄位 |
+
+`server/test/prompt.test.js` 新增 P7：system prompt 提到信封五個欄位、
+`json-fallback` 是「暫時性限制」而非資料不存在、`errorCode` 不為 `null` 時
+「不要宣稱已完成」。
+
+### 推薦理由（Roadmap #26）
+
+`server/test/recommendationReason.test.js`（純函式，不需網路或資料庫）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| R1 | 主要原因代號 | 本人必修優先於使用者指名；關注／重補修由 placementReason 判定；每份理由帶版本 |
+| R2 | 信心度 | 資格待確認或系所無法解析 → `low`；涼度是 proxy 或無評價 → `medium`；其餘 `high` |
+| R3 | 資料來源 | 沒有評價的課**不得**列 `Course_Reviews`（proxy 涼度不算查過評價） |
+| R4 | 競爭狀態 | 「沒有落選者」回 `no-competitors`、未走競爭路徑回 `not-applicable`，**不得都用空陣列** |
+| R5 | 分數組成 | 只列非 0 元件，但 `scoreTotal` 仍含 0 值元件；沒命中偏好時是空陣列，不硬掰 |
+| R6 | 證據原樣帶出 | 無評價時 `reviewEvidence` 為 `null`；必修豁免時段偏好記成 `constraintTradeoffs` |
+
+`server/test/scheduler.test.js` 的 R7-R10（整合）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| R7 | 分數組成 vs 實際總分 | `scoreBreakdown` 總和 **恆等於** `scoreTotal`（防兩份公式漂移，比照 #23 的 G10） |
+| R8 | 改一個偏好 | 命中的課多出 `matchedPreferences` 且 `contentPreference` 分數真的增加；**沒命中的課不受影響**（A/B 兩次排課比對） |
+| R9 | 落選者 | 最後也被排入的課**不得**出現在任何落選清單；沒有競爭者時回 `no-competitors`；真落選者要附 `notScheduledBecause` |
+| R10 | 誠實邊界 | 無評價的課理由裡 `reviewEvidence` 為 `null` 且不列評價來源；**理由不得改變排課決策本身** |
+
+`server/test/agentTools.test.js` 的 AG6 另驗：理由有送進模型、`scoreBreakdown` 不送、
+沒有理由時不憑空生一個。
+
+### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
+
+**這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。
+8 題中文題庫在 `server/test/fixtures/agentGoldenSet.json`，另有一題「同一句話重跑三次
+得到逐位元相同的結構化結果」。斷言邏輯本身是純函式（`goldenSetAssertions.js`），
+另由 GA1-GA5 測試，不需要網路。
+
+斷言的是**語意性質而非逐字相同**——推理模型的輸出不保證每次一樣（此模型也不接受
+`temperature`）。要求逐字重現只會做出一個間歇性失敗的測試。
+
+**本機一律執行，CI 一律不執行。** 兩者都是明確的決定：
+
+| 環境 | 行為 | 理由 |
+| --- | --- | --- |
+| 本機、有 key | 每次 `npm test` 都實跑並回報通過率 | 這是 golden set 的正常執行環境 |
+| 本機、無 `OPENAI_API_KEY` | **硬失敗**並說明「這是環境未設定，不是程式壞掉」 | 本機一定有 `server/.env`，缺 key 代表環境沒設好。開發者**不能**自己跳過 |
+| CI（不論有沒有 key） | 跳過這 9 題並印出明顯說明，其餘照跑 | **決定於 2026-08-31：不讓 golden set 在 CI 跑。** 要跑就得把 API key 放進 public repo 的 secret，且每次 push 都消耗額度 |
+
+判定**只看 `process.env.CI`**（GitHub Actions 固定設 `CI=true`），**不看有沒有 key**。
+這樣即使日後為了別的用途在 CI 加了 `OPENAI_API_KEY` secret，這幾題也不會無聲無息地
+開始每次 push 都呼叫模型——要恢復在 CI 執行必須是刻意的動作（改
+`agentGoldenSet.test.js` 的 `SKIP_REASON`），不是設個 secret 就自動生效。
+
+這**不是給開發者的開關**：本機沒有任何方式能繞過。
+
+驗證方式（四種情境都要能重現）：
+
+```bash
+# 本機有 key：實跑並回報通過率（713 pass / 0 fail，golden set 8/8）
+npm test --prefix server
+
+# 本機無 key：硬失敗
+env -u OPENAI_API_KEY -u CI DOTENV_CONFIG_PATH=/nonexistent/.env npm test --prefix server
+
+# CI 無 key：跳過，0 fail（703 pass）
+env -u OPENAI_API_KEY CI=true DOTENV_CONFIG_PATH=/nonexistent/.env npm test --prefix server
+
+# CI 有 key：仍然跳過（防止 secret 意外啟用它）
+CI=true npm test --prefix server
+```
 
 ## 每次開發完成驗收
 

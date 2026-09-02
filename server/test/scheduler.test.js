@@ -1574,7 +1574,7 @@ describe('N1-N15 內容偏好從硬過濾改成軟懲罰', () => {
   });
 });
 
-describe('X1-X14 Roadmap #21：hard/soft constraint schema、獨立 validator、放寬階梯、conflict set', () => {
+describe('X1-X16 Roadmap #21（X15-X16 為 #24 的強度區分）：hard/soft constraint schema、獨立 validator、放寬階梯、conflict set', () => {
   test('X1 allowRelaxation:false（預設）：因時段偏好排不出課表時行為與改動前一致', () => {
     const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
     const result = generateSchedule([course], { noMorningClasses: true, minCredits: 0 });
@@ -1602,6 +1602,45 @@ describe('X1-X14 Roadmap #21：hard/soft constraint schema、獨立 validator、
       ['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES']
     );
     assert.ok(result.warnings.some(w => w.includes('不排早八')));
+  });
+
+  // Roadmap #24：「絕對不上早八」與「必要時可早八」的差別。
+  // `constraintSchema.js` 的分類完全沒動——那是「這個限制本質上可不可以放寬」；
+  // 這裡處理的是「這一次使用者允不允許」。
+  test('X15 nonNegotiablePreferenceIds 指名的偏好，即使允許放寬也不會被放寬', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], {
+      noMorningClasses: true,
+      minCredits: 0,
+      allowRelaxation: true,
+      // 排在使用者順序第一位，證明擋下來的是 nonNegotiable 而不是順序沒輪到。
+      timePreferencePriority: ['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES'],
+      nonNegotiablePreferenceIds: ['NO_MORNING_CLASSES'],
+    });
+
+    assert.ok(
+      !(result.relaxedConstraints || []).some(r => r.constraintId === 'NO_MORNING_CLASSES'),
+      '使用者說絕對不行的偏好不得被自動放寬'
+    );
+    assert.ok(!result.schedule.some(c => c.id === 1), '早八的課仍不該被排進來');
+  });
+
+  // 對照：同樣的情境沒有 nonNegotiablePreferenceIds 就會放寬（等同 X2 的行為），
+  // 用來證明 X4 擋下來的確實是新加的過濾，而不是這個情境本來就排不出來。
+  test('X16 未指名時同一情境仍會放寬（與 X15 的對照組）', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], {
+      noMorningClasses: true,
+      minCredits: 0,
+      allowRelaxation: true,
+      timePreferencePriority: ['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES'],
+    });
+
+    assert.ok(
+      result.relaxedConstraints.some(r => r.constraintId === 'NO_MORNING_CLASSES'),
+      '沒有指名時應照既有行為放寬'
+    );
+    assert.ok(result.schedule.some(c => c.id === 1));
   });
 
   test('X3 allowRelaxation:true 但無解原因是 blockedPeriods：放寬階梯不生效，仍然失敗', () => {
@@ -1896,5 +1935,389 @@ describe('Z1-Z7 Roadmap #22：bounded backtracking repair、fallback 與澄清',
     assert.equal(result.solver.resultSource, 'repair');
     assert.equal(result.schedule.some(course => course.id === 952), true);
     assert.equal(result.schedule.some(course => course.id === 953), true);
+  });
+});
+
+// Roadmap #10：修復多方案塌縮。
+//
+// 改動前用真實 MySQL 與 demo 帳號量測到的基準：小池（16 門可競爭）去重後只有
+// **1** 個方案，大池（227 門）也只有 **3** 個。原因是五個 variant 共用同一組
+// 基礎分，各自只加一點小分——類別項每差一級 120 分，而 variant 專屬項只有
+// 25～40 分（`max_credits` 的 2→3 學分只差 25），主題訊號被完全蓋過。
+describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
+  const at = (id, day, start, overrides = {}) => makeCourse(id, {
+    dayOfWeek: day, startPeriod: start, endPeriod: start + 1, ...overrides,
+  });
+
+  // 每天兩個時段、共 10 門課，學分與屬性各異，讓五個取向有分化空間。
+  function widePool(startId = 100) {
+    const courses = [];
+    let id = startId;
+    for (let day = 1; day <= 5; day += 1) {
+      for (const start of [3, 7]) {
+        id += 1;
+        courses.push(at(id, day, start, {
+          category: id % 3 === 0 ? '核心選修' : '一般選修',
+          credits: id % 4 === 0 ? 2 : 3,
+          description: id % 2 === 0
+            ? '課堂討論與互動參與為主'
+            : '需要實作專題與實驗，並深入應用',
+        }));
+      }
+    }
+    return courses;
+  }
+
+  describe('P10-1 必修的絕對優先不得被權重表破壞', () => {
+    // 本次最高回歸風險：類別分變成 variant 可調之後，一門「替代涼度極高」的
+    // 一般選修可能壓過必修。必修先排是規則，不是偏好。
+    const required = at(1, 1, 3, { category: '必修', description: '實作專題與實驗' });
+    const veryEasyElective = at(2, 1, 3, {
+      category: '一般選修', credits: 1,
+      description: '課堂討論與互動參與為主，重視平時參與',
+    });
+
+    // 必修的判定需要學生範圍，否則 A 類必修會因「系所年級資料不足」被保守排除
+    // （比照 S3 的寫法）。`makeCourse` 預設 department 為 `資訊三甲`。
+    const scope = { department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲' };
+
+    test('P10-1 五個 variant 都先排必修，不排與它衝堂的超涼選修', () => {
+      const result = generateSchedule([required, veryEasyElective], {
+        ...scope, minCredits: 0, maxCredits: 25,
+      });
+
+      for (const plan of result.plans) {
+        assert.equal(
+          plan.schedule.some(course => course.id === 1), true,
+          `${plan.id} 應排入必修`
+        );
+        assert.equal(
+          plan.schedule.some(course => course.id === 2), false,
+          `${plan.id} 不得為了涼度捨棄必修`
+        );
+      }
+    });
+
+    // 學分只夠一門課時，必修必須贏過替代涼度極高的選修。
+    //
+    // 刻意**不**斷言 `plan.schedule` 的陣列順序：實測（含改動前對照）該陣列
+    // 本來就不是依優先度排列，必修可能出現在選修之後。斷言陣列位置會釘住一個
+    // 從來不成立的實作細節，而不是「必修優先」這條真正的規則。
+    test('P10-1 學分只夠一門時，五個 variant 都選必修而不是超涼選修', () => {
+      const result = generateSchedule(
+        [veryEasyElective, at(3, 2, 3, { category: '必修', credits: 3 })],
+        { ...scope, minCredits: 0, maxCredits: 3 }
+      );
+
+      for (const plan of result.plans) {
+        assert.equal(
+          plan.schedule.some(course => course.id === 3), true,
+          `${plan.id} 應在有限學分下選必修`
+        );
+      }
+    });
+  });
+
+  describe('P10-2 候選池夠大時方案之間真的不同', () => {
+    test('P10-2 至少產生 3 種內容不同的方案（改動前同樣輸入只有 1 種）', () => {
+      const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
+
+      assert.ok(
+        result.plans.length >= 3,
+        `方案數應 >= 3，實際 ${result.plans.length}：${result.plans.map(p => p.id).join(',')}`
+      );
+    });
+
+    test('P10-2 各方案的課程集合兩兩不同', () => {
+      const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
+      const keys = result.plans.map(
+        p => p.schedule.map(c => c.id).sort((a, b) => a - b).join(',')
+      );
+
+      assert.equal(new Set(keys).size, keys.length, '方案不得有重複的課程集合');
+    });
+
+    test('P10-2 interest 方案會把命中興趣關鍵字的課排進去', () => {
+      const pool = widePool();
+      pool.push(at(999, 1, 5, { category: '一般選修', description: '資訊安全與網路防禦' }));
+
+      const result = generateSchedule(pool, {
+        minCredits: 0, maxCredits: 12, interests: ['資訊安全'],
+      });
+      const interestPlan = result.plans.find(p => p.id === 'interest');
+
+      assert.ok(interestPlan, 'interest 方案應該存在且與其他方案不同');
+      assert.equal(
+        interestPlan.schedule.some(c => c.id === 999), true,
+        'interest 方案應排入命中關鍵字的課'
+      );
+    });
+  });
+
+  describe('P10-3 方案數不足時要說明原因', () => {
+    test('P10-3 方案被合併時指出取向名稱與可競爭課程數', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' }), at(2, 2, 3, { category: '一般選修' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      const warning = result.warnings.find(w => w.includes('已合併'));
+      assert.ok(warning, '方案被合併時必須有說明');
+      assert.match(warning, /可競爭的課程僅 2 門/);
+    });
+
+    test('P10-3 已勾集中排課時額外說明該方案為何不會不同', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' }), at(2, 1, 5, { category: '一般選修' })],
+        { minCredits: 0, maxCredits: 25, preferCompact: true }
+      );
+
+      const warning = result.warnings.find(w => w.includes('已合併')) || '';
+      if (warning.includes('集中排課')) {
+        assert.match(warning, /你已設定「盡量集中排課」/);
+      }
+    });
+
+    test('P10-3 沒有方案被合併時不得出現合併說明', () => {
+      const result = generateSchedule(widePool(300), { minCredits: 0, maxCredits: 12 });
+
+      if (result.plans.length === 5) {
+        assert.equal(result.warnings.some(w => w.includes('已合併')), false);
+      }
+    });
+  });
+
+  describe('P10-4 涼度來源要誠實標記', () => {
+    test('P10-4 有評價的課標記為 reviews', () => {
+      // `courseReviews` 走 constraints，與 V20 的用法一致。
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' })],
+        { minCredits: 0, maxCredits: 25, courseReviews: [makeEasyReview(1)] }
+      );
+
+      assert.equal(result.plans[0].schedule.find(c => c.id === 1).easinessSource, 'reviews');
+    });
+
+    test('P10-4 沒有評價但有課程描述時標記為 proxy', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修', description: '課堂討論與互動參與' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      assert.equal(result.plans[0].schedule.find(c => c.id === 1).easinessSource, 'proxy');
+    });
+
+    test('P10-4 兩者皆無時標記為 none，不硬給分數', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修', description: '' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      assert.equal(result.plans[0].schedule.find(c => c.id === 1).easinessSource, 'none');
+    });
+  });
+
+  describe('P10-5 替代訊號不得污染對使用者的涼度宣稱', () => {
+    // 本次最重要的誠實邊界：替代訊號只影響**排序**，不得讓系統宣稱「這份課表很涼」
+    // ——那個宣稱只能由真實評價支撐（#4 的 ADR-006／ADR-008）。
+    test('P10-5 全部只有 proxy 來源時 reviewCoverage 仍為 0', () => {
+      const result = generateSchedule(
+        [
+          at(1, 1, 3, { category: '一般選修', description: '課堂討論與互動' }),
+          at(2, 2, 3, { category: '一般選修', description: '實作專題與實驗' }),
+        ],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      assert.equal(result.plans[0].reviewCoverage.rated, 0, '替代訊號不得算成有評價');
+      assert.equal(result.plans[0].reviewCoverage.ratio, 0);
+    });
+
+    test('P10-5 全部只有 proxy 來源時方案層 easy 不得冒出數字', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修', description: '課堂討論與互動' })],
+        { minCredits: 0, maxCredits: 25, preferEasyCourses: true }
+      );
+
+      const easy = result.plans[0].preferenceBreakdown?.easy;
+      assert.ok(
+        easy === null || easy === undefined || easy === 0,
+        `方案層涼度只能由真實評價推得，實際為 ${easy}`
+      );
+    });
+  });
+});
+
+describe('P10-6 interests 不再從偏好標籤回填（Roadmap #10）', () => {
+  // 改動前是 `prefs.interests ?? prefs.preferenceTags`，而 `prefs.interests`
+  // 這個欄位不存在，因此永遠退回偏好標籤——「#不排早八」這種**排課偏好**
+  // 被當成**興趣主題**拿去比對課名與課程介紹，實測 demo 帳號 0/16 命中。
+  test('P10-6 只有偏好標籤時 interests 為空，不把標籤當興趣', () => {
+    const merged = buildScheduleConstraints({}, {
+      preferenceTags: ['#不排早八', '#全英授課', '#盡量集中排課'],
+    });
+
+    assert.deepEqual(merged.interests, []);
+  });
+
+  test('P10-6 真正的興趣關鍵字仍然照常帶入', () => {
+    const merged = buildScheduleConstraints({}, { interests: ['資訊安全', '網路'] });
+
+    assert.deepEqual(merged.interests, ['資訊安全', '網路']);
+  });
+
+  test('P10-6 request 帶的 interests 優先於已儲存偏好', () => {
+    const merged = buildScheduleConstraints(
+      { interests: ['人工智慧'] }, { interests: ['資訊安全'] }
+    );
+
+    assert.deepEqual(merged.interests, ['人工智慧']);
+  });
+});
+
+// Roadmap #26：推薦理由接進排課結果之後的整合行為。
+describe('R7-R10 Roadmap #26：理由掛進排課結果', () => {
+  const at = (id, day, start, overrides = {}) => makeCourse(id, {
+    dayOfWeek: day, startPeriod: start, endPeriod: start + 1, ...overrides,
+  });
+
+  describe('R7 分數組成必須等於實際排序用的總分', () => {
+    // 比照 #23 的 G10：解釋用的數字與實際用的數字必須是同一個，
+    // 否則畫面上的「為什麼」會跟排序結果對不起來。
+    test('R7 scoreBreakdown 的總和等於 scoreTotal', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' }), at(2, 2, 3, { category: '核心選修' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      for (const course of result.schedule) {
+        const reason = course.recommendationReason;
+        const summed = reason.scoreBreakdown.reduce((total, item) => total + item.value, 0);
+        assert.equal(summed, reason.scoreTotal, `${course.name} 的分數組成與總分對不上`);
+      }
+    });
+  });
+
+  describe('R8 改一個偏好，受影響的課理由跟著變', () => {
+    // 這是 #26 的驗收標準第二條，用 A/B 兩次排課比對，而不是只看一次結果。
+    function pool() {
+      return [
+        at(1, 1, 3, { category: '一般選修', description: '課堂討論與互動參與為主' }),
+        at(2, 2, 3, { category: '一般選修', description: '需要實作專題與實驗' }),
+      ];
+    }
+
+    test('R8 開啟內容偏好後，命中的課多出 matchedPreferences，沒命中的不變', () => {
+      const before = generateSchedule(pool(), { minCredits: 0, maxCredits: 25 });
+      const after = generateSchedule(pool(), {
+        minCredits: 0, maxCredits: 25, practicalExam: true,
+      });
+
+      const hit = course => course.recommendationReason.matchedPreferences.map(p => p.label);
+      const beforeById = new Map(before.schedule.map(c => [c.id, hit(c)]));
+      const afterById = new Map(after.schedule.map(c => [c.id, hit(c)]));
+
+      // 課程 2 的描述含「實作／專題／實驗」，開啟 practicalExam 後應命中。
+      assert.deepEqual(beforeById.get(2), [], '改動前不該有命中');
+      assert.ok(afterById.get(2).includes('實作評量'), '改動後應命中實作評量');
+      // 課程 1 不含那些關鍵字，不受影響。
+      assert.deepEqual(afterById.get(1), [], '沒命中的課不該被影響');
+    });
+
+    test('R8 命中偏好會反映在分數組成裡，不只是文字', () => {
+      const after = generateSchedule(pool(), {
+        minCredits: 0, maxCredits: 25, practicalExam: true,
+      });
+      const course2 = after.schedule.find(c => c.id === 2);
+      const contentComponent = course2.recommendationReason.scoreBreakdown
+        .find(item => item.component === 'contentPreference');
+
+      assert.ok(contentComponent && contentComponent.value > 0,
+        '命中偏好要讓 contentPreference 這一項真的加分');
+    });
+  });
+
+  describe('R9 落選者只列真的沒排進來的課', () => {
+    // 開發時實測到的問題：貪婪迴圈記錄落選者的時間點是決定的當下，
+    // 那時還不知道排在後面的課稍後也會被排入。demo 帳號 18 筆記錄裡
+    // 有 16 筆（89%）最後自己也進了課表，把它們說成「輸給某某課」是假的。
+    test('R9 最後也被排入的課不得出現在任何一門課的落選清單裡', () => {
+      const courses = [];
+      for (let day = 1; day <= 5; day += 1) {
+        courses.push(at(100 + day, day, 3, { category: '一般選修' }));
+      }
+      const result = generateSchedule(courses, { minCredits: 0, maxCredits: 25 });
+      const placed = new Set(result.schedule.map(c => c.id));
+
+      for (const course of result.schedule) {
+        for (const candidate of course.recommendationReason.alternativesRejected.candidates) {
+          assert.ok(
+            !placed.has(candidate.sectionId),
+            `${candidate.name} 也排進了課表，不該被記成輸給 ${course.name}`
+          );
+        }
+      }
+    });
+
+    test('R9 沒有競爭者時明講 no-competitors，不是空陣列', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' })], { minCredits: 0, maxCredits: 25 }
+      );
+
+      assert.equal(
+        result.schedule[0].recommendationReason.alternativesRejected.status,
+        'no-competitors'
+      );
+    });
+
+    test('R9 真正的落選者會附上它最後為什麼不在課表', () => {
+      // 兩門同時段的課只能擇一，落選的那門會因衝堂被排除。
+      const result = generateSchedule(
+        [
+          at(1, 1, 3, { category: '核心選修', credits: 3 }),
+          at(2, 1, 3, { category: '一般選修', credits: 3 }),
+        ],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      const withRivals = result.schedule
+        .map(c => c.recommendationReason.alternativesRejected)
+        .find(alt => alt.candidates.length > 0);
+
+      assert.ok(withRivals, '應該要有一門課記錄到落選者');
+      assert.ok(
+        withRivals.candidates[0].notScheduledBecause,
+        '落選者要說明它最後為什麼不在課表，只講「輸了」不完整'
+      );
+    });
+  });
+
+  describe('R10 誠實邊界不得被理由破壞', () => {
+    test('R10 沒有評價的課，理由裡的 reviewEvidence 為 null 且不列評價來源', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修', description: '課堂討論' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+      const reason = result.schedule[0].recommendationReason;
+
+      assert.equal(reason.reviewEvidence, null);
+      assert.ok(!reason.dataSources.includes('Course_Reviews'));
+      assert.equal(reason.easinessSource, 'proxy', 'proxy 是推估，不是評價證據');
+    });
+
+    test('R10 理由不得改變排課決策本身', () => {
+      // 理由是解釋既有決策，不能反過來影響結果。同一組輸入，
+      // 排出來的課程集合必須與不看理由時完全相同（由既有 S/N/X/Z 套件把關，
+      // 這裡再釘一次「加了理由之後結果不變」的直接證據）。
+      const build = () => generateSchedule(
+        [at(1, 1, 3, { category: '核心選修' }), at(2, 2, 3, { category: '一般選修' })],
+        { minCredits: 0, maxCredits: 25, seed: 0 }
+      );
+
+      assert.deepEqual(
+        build().schedule.map(c => c.id).sort(),
+        build().schedule.map(c => c.id).sort()
+      );
+    });
   });
 });

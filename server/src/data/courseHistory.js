@@ -1,6 +1,6 @@
 // 歷史修課紀錄的派生運算。
 //
-// **`courseHistory` 是修課歷史的唯一來源。** 先前 `users.json` 對同一批資料
+// **`User_Course_History` 映射出的 `courseHistory` 是修課歷史的唯一來源。** 先前 `users.json` 對同一批資料
 // 另外存了 `completedCourseCodes`、`completedCourseNames`、`completedCourseIds`、
 // `completedCredits`、`earnedCredits` 五個欄位，全部都是 `courseHistory` 能直接
 // 算出來的東西。同一份資料存多份必然漂移，那些欄位已於 2026-08-11 移除，
@@ -119,17 +119,78 @@ export function getTotalEarnedCredits(courseHistory = []) {
     .reduce((sum, credits) => sum + credits, 0);
 }
 
+// 逐門認列的來源。目前只有一種：匯入成績單時就帶著的 `graduationCategory`。
+//
+// 日後若取得官方逐門認列表（跨院認抵、舊制過渡等），會出現第二種來源。欄位現在就
+// 存在，是為了讓那時候不必再改一次已經對外的契約——不是暗示現在有多種來源。
+export const ATTRIBUTION_SOURCE_COURSE_HISTORY = 'course_history_category';
+
+// 「這 61 學分本系必修是哪些課湊出來的」。
+//
+// **刻意與 `getEarnedCredits()` 共用 `getLatestAttemptsByCourseCode()` 與同一組
+// 篩選條件**：追溯結果的各分類總和必須恆等於 `getEarnedCredits()` 的對應值。
+// 兩邊各寫一套遲早會漂移，那正是這個專案一路在消除的模式（`completedCredits`
+// 就是這樣長出來的）。`server/test/graduationAttribution.test.js` 的 G10 釘住這件事。
+//
+// `rule` 為 `resolveGraduationRule()` 的結果，用來在每一筆附上規則版本與出處；
+// 省略時該三個欄位為 null——本函式不自己決定該套哪一版規則。
+export function getEarnedCreditsAttribution(courseHistory = [], rule = null) {
+  const attribution = Object.fromEntries(
+    CREDIT_CATEGORIES.map(key => [key, { credits: 0, courses: [] }])
+  );
+
+  for (const entry of getLatestAttemptsByCourseCode(courseHistory).values()) {
+    if (!entry?.passed) continue;
+    if (entry.graduationCategory === NON_GRADUATION_CATEGORY) continue;
+
+    const category = CREDIT_CATEGORIES.includes(entry.graduationCategory)
+      ? entry.graduationCategory
+      : 'unspecified';
+    const credits = Number(entry.credits) || 0;
+
+    attribution[category].credits += credits;
+    attribution[category].courses.push({
+      courseCode: entry.courseCode,
+      courseName: entry.courseName,
+      credits,
+      academicYear: entry.academicYear,
+      semester: entry.semester,
+      requirementType: entry.requirementType,
+      // 通識領域欄位。`generalEducationRecognition.js` 用它與「課程身分」交叉驗證
+      // 一門通識課是基礎必修還是選修——讓那邊直接吃這裡的結果，就不必自己再
+      // 篩一次「已通過、最新一次、屬於哪一類」，兩套篩選必然漂移。
+      generalEducationCategory: entry.generalEducationCategory ?? null,
+      // 認列依據：哪一版規則、出處、是否尚待人工複核。
+      ruleVersion: rule?.ruleVersion ?? null,
+      ruleSource: rule?.ruleSource ?? null,
+      needsVerification: rule?.needsVerification === true,
+      attributionSource: ATTRIBUTION_SOURCE_COURSE_HISTORY,
+    });
+  }
+
+  // 修課順序排序，讓畫面上「這些學分怎麼來的」讀起來就是一條時間線。
+  for (const bucket of Object.values(attribution)) {
+    bucket.courses.sort((left, right) =>
+      compareAttempts(left, right) || String(left.courseCode).localeCompare(String(right.courseCode))
+    );
+  }
+
+  return attribution;
+}
+
 function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
 export default {
   COURSE_HISTORY_REQUIRED_FIELDS,
+  ATTRIBUTION_SOURCE_COURSE_HISTORY,
   validateCourseHistoryEntry,
   getLatestAttemptsByCourseCode,
   getPassedCourseCodes,
   getFailedRequiredCourses,
   getFailedRequiredCourseCodes,
   getEarnedCredits,
+  getEarnedCreditsAttribution,
   getTotalEarnedCredits,
 };

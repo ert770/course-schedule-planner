@@ -67,6 +67,10 @@ jobs:
         run: npm ci
         working-directory: server
 
+      # Roadmap #24 的 golden set 會真的呼叫模型，**依決定不在 CI 執行**
+      # （要跑就得把 API key 放進 public repo 的 secret，且每次 push 都消耗額度）。
+      # `agentGoldenSet.test.js` 看 `CI` 環境變數自行跳過並印出說明，其餘測試照跑。
+      # 這裡刻意不傳 OPENAI_API_KEY——那幾題由本機 `npm test` 負責。
       - name: Test backend
         run: npm test
         working-directory: server

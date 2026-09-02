@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 
 import {
   applyToolOutcome,
+  buildToolResultEnvelope,
   executeAgentTool,
   resolveMaxSteps,
   summarizeScheduleForModel,
@@ -35,13 +36,18 @@ describe('AG1 未知工具與工具錯誤不得中斷對話', () => {
 });
 
 describe('AG2 run_csp_scheduler 的曝光來源由伺服器決定', () => {
+  // Roadmap #24 之後 chat 這條路一定要附上理解回講，否則會被 preflight 擋下。
+  const interpretation = {
+    nonNegotiable: [], flexible: [], creditGoal: { min: null, max: null }, notMentioned: [],
+  };
+
   // 「這次推薦顯示在哪個畫面、被什麼觸發」是系統事實，不是模型可以宣稱的東西。
   // 允許模型覆蓋，等於讓它把 chat 的推薦記成前端畫面上的曝光。
   test('模型帶進來的 surface／trigger 不得覆蓋伺服器寫死的值', async () => {
     let received;
     await executeAgentTool(
       'run_csp_scheduler',
-      { maxCredits: 20, surface: 'schedule_page', trigger: 'user_click' },
+      { maxCredits: 20, surface: 'schedule_page', trigger: 'user_click', interpretation },
       ctx,
       { generateSchedule: (_id, input) => { received = input; return { success: true }; } }
     );
@@ -55,7 +61,7 @@ describe('AG2 run_csp_scheduler 的曝光來源由伺服器決定', () => {
   test('已載入的 prefs 直接傳下去，同一次對話不重複查詢 profile', async () => {
     const prefs = { targetCreditsMax: 22 };
     let options;
-    await executeAgentTool('run_csp_scheduler', {}, { ...ctx, prefs }, {
+    await executeAgentTool('run_csp_scheduler', { interpretation }, { ...ctx, prefs }, {
       generateSchedule: (_id, _input, opts) => { options = opts; return { success: true }; },
     });
 
@@ -97,7 +103,7 @@ describe('AG4 評價查詢', () => {
       searchCourses: () => [],
     });
 
-    assert.deepEqual(result, { error: '找不到該課程的評價' });
+    assert.deepEqual(result, { error: '找不到該課程的評價', errorCode: 'REVIEWS_NOT_FOUND' });
   });
 
   test('找到課程時附上課程名稱，方便模型指名回覆', async () => {
@@ -110,14 +116,19 @@ describe('AG4 評價查詢', () => {
   });
 });
 
-describe('AG5 update_preferences 同步更新這次對話的 prefs', () => {
+describe('AG5 update_preferences 確認後才寫入，並同步這次對話的 prefs', () => {
   // 不同步的話，同一次對話裡「存好偏好後再排課」會用到舊值，
   // 模型會以為存了卻沒生效。
-  test('寫入後端之後也更新記憶體中的 prefs', async () => {
+  //
+  // Roadmap #24 之後，這個工具是兩段式的——本測試驗的是「確認之後」那一段；
+  // 「確認之前不得寫入」由 `requirementGate.test.js` 的 AG9 負責。
+  test('帶著有效 token 時才寫入後端並更新記憶體中的 prefs', async () => {
     const prefs = { noMorningClasses: false };
-    const result = await executeAgentTool('update_preferences', { noMorningClasses: true }, { ...ctx, prefs }, {
-      updatePreferences: async () => {},
-    });
+    const staged = { noMorningClasses: true };
+    const result = await executeAgentTool(
+      'update_preferences', { confirmationToken: 'tok' }, { ...ctx, prefs },
+      { updatePreferences: async () => {}, consumeChange: () => staged }
+    );
 
     assert.equal(prefs.noMorningClasses, true);
     assert.equal(result.success, true);
@@ -188,6 +199,55 @@ describe('AG6 排課結果送進模型前要投影', () => {
     assert.equal(first.catalogCourseCode, 'IECS1001');
     assert.ok(!('syllabus' in first));
     assert.ok(!('description' in first));
+  });
+
+  // roadmap #26：模型先前完全看不到課為何被推薦，只能講空泛的話——
+  // 而講空泛的話最容易變成編造。
+  test('AG6 課程帶著推薦理由送進模型', () => {
+    const result = bigResult();
+    result.schedule[0].recommendationReason = {
+      selectedBecause: 'PREFERENCE_MATCH',
+      matchedPreferences: [{ type: 'content', preferenceId: 'practicalExam', label: '實作評量', score: 40 }],
+      easinessSource: 'proxy',
+      confidence: 'medium',
+      dataSources: ['Course_Sections'],
+      constraintTradeoffs: [],
+      scoreBreakdown: [{ component: 'base', value: 1000 }],
+      alternativesRejected: {
+        status: 'had-competitors',
+        candidates: [{ sectionId: 9, name: '對手課', scoreDelta: 40, notScheduledBecause: '衝堂' }],
+      },
+    };
+
+    const [first] = summarizeScheduleForModel(result).schedule;
+
+    assert.equal(first.recommendationReason.selectedBecause, 'PREFERENCE_MATCH');
+    assert.deepEqual(first.recommendationReason.matchedPreferences, ['實作評量']);
+    assert.equal(first.recommendationReason.easinessSource, 'proxy');
+    assert.equal(first.recommendationReason.alternativesRejected.status, 'had-competitors');
+    assert.equal(first.recommendationReason.alternativesRejected.candidates[0].name, '對手課');
+  });
+
+  // 分數是內部排序用的，對使用者講「這門課得了 956 分」沒有意義，
+  // 而且會把 input 撐大——那正是這個投影函式存在的原因。
+  test('AG6 理由的分數組成不送進模型', () => {
+    const result = bigResult();
+    result.schedule[0].recommendationReason = {
+      selectedBecause: 'PREFERENCE_MATCH', matchedPreferences: [],
+      scoreBreakdown: [{ component: 'base', value: 1000 }], scoreTotal: 1000,
+      alternativesRejected: { status: 'no-competitors', candidates: [] },
+    };
+
+    const [first] = summarizeScheduleForModel(result).schedule;
+
+    assert.ok(!('scoreBreakdown' in first.recommendationReason));
+    assert.ok(!('scoreTotal' in first.recommendationReason));
+  });
+
+  test('AG6 沒有理由的課不會憑空生出一個', () => {
+    const [first] = summarizeScheduleForModel(bigResult()).schedule;
+
+    assert.equal(first.recommendationReason, null);
   });
 
   test('excludedCourses 只給總數與樣本，不整包送', () => {
@@ -270,5 +330,146 @@ describe('AG8 思考步數上限', () => {
     for (const raw of ['abc', '', '0', '-3', null]) {
       assert.equal(resolveMaxSteps(raw), 12, `${JSON.stringify(raw)} 應退回預設`);
     }
+  });
+});
+
+describe('AG14 查無對應課程的關注 id 不會進入排課引擎（Roadmap #25）', () => {
+  // Roadmap #22 已經讓 mustTakeCourseIds／selectedCourseIds 撞到不存在的 id 時
+  // 回報 data-insufficient 並回頭問使用者（見 Z5），這裡刻意不重複。關注課程
+  // 只是追蹤用途，不佔時段也不計學分，為了一個打錯的 id 擋下整次排課並不相稱
+  // ——改成濾掉並在 warnings 說明，而不是回頭問。
+  const interpretation = {
+    nonNegotiable: [], flexible: [], creditGoal: { min: null, max: null }, notMentioned: [],
+  };
+  const realCourse = { id: 1, catalogCourseCode: 'A1', name: '課甲' };
+
+  test('不存在的 watching id 不會出現在傳給 generateSchedule 的 constraints 裡', async () => {
+    let receivedConstraints;
+    await executeAgentTool(
+      'run_csp_scheduler',
+      { watchingCourseIds: [1, 999999], interpretation },
+      ctx,
+      {
+        lookupCourses: async ids => new Map(
+          ids.filter(id => Number(id) === 1).map(id => [Number(id), realCourse])
+        ),
+        generateSchedule: (_identity, input) => {
+          receivedConstraints = input.constraints;
+          return { success: true, requestId: 'r1' };
+        },
+      }
+    );
+
+    assert.deepEqual(receivedConstraints.watchingCourseIds, [1]);
+  });
+
+  test('被略過的 id 併入 warnings，不覆蓋既有 warning', async () => {
+    const result = await executeAgentTool(
+      'run_csp_scheduler',
+      { watchingCourseIds: [999999], interpretation },
+      ctx,
+      {
+        lookupCourses: async () => new Map(),
+        generateSchedule: () => ({ success: true, warnings: ['既有的排課警告'] }),
+      }
+    );
+
+    assert.deepEqual(result.warnings, [
+      '既有的排課警告',
+      '關注課程 id 999999 查無對應課程，已略過。',
+    ]);
+  });
+
+  test('全部合法時完全不動 constraints，也不新增 warnings', async () => {
+    let receivedConstraints;
+    const result = await executeAgentTool(
+      'run_csp_scheduler',
+      { watchingCourseIds: [1], interpretation },
+      ctx,
+      {
+        lookupCourses: async () => new Map([[1, realCourse]]),
+        generateSchedule: (_identity, input) => {
+          receivedConstraints = input.constraints;
+          return { success: true, warnings: [] };
+        },
+      }
+    );
+
+    assert.deepEqual(receivedConstraints.watchingCourseIds, [1]);
+    assert.deepEqual(result.warnings, []);
+  });
+
+  test('沒有帶 watchingCourseIds 時完全不受影響', async () => {
+    let receivedConstraints;
+    await executeAgentTool('run_csp_scheduler', { interpretation }, ctx, {
+      lookupCourses: async () => new Map(),
+      generateSchedule: (_identity, input) => {
+        receivedConstraints = input.constraints;
+        return { success: true };
+      },
+    });
+
+    assert.ok(!('watchingCourseIds' in receivedConstraints));
+  });
+});
+
+describe('AG15 模型看到的工具結果統一包成信封（Roadmap #25）', () => {
+  test('信封含五個固定欄位，實際內容在 result', () => {
+    const envelope = buildToolResultEnvelope('query_course_db', [{ id: 1, name: '課甲' }]);
+
+    assert.equal(envelope.schemaVersion, 1);
+    assert.ok(['mysql', 'json-fallback'].includes(envelope.dataSource));
+    assert.deepEqual(envelope.warnings, []);
+    assert.equal(envelope.errorCode, null);
+    assert.deepEqual(envelope.result, [{ id: 1, name: '課甲' }]);
+  });
+
+  test('陣列型結果也能正確包裝，不因為原始形狀是陣列而出錯', () => {
+    const envelope = buildToolResultEnvelope('get_easy_courses', [1, 2, 3]);
+
+    assert.deepEqual(envelope.result, [1, 2, 3]);
+  });
+
+  test('只有課程類工具附上 term，偏好／確認類工具不附', () => {
+    const withTerm = buildToolResultEnvelope('run_csp_scheduler', { success: true });
+    const withoutTerm = buildToolResultEnvelope('update_preferences', { success: true });
+
+    assert.ok(withTerm.term && typeof withTerm.term.academicYear === 'number');
+    assert.ok(!('term' in withoutTerm));
+  });
+
+  test('結果自帶 warnings 時會提到信封層', () => {
+    const envelope = buildToolResultEnvelope('run_csp_scheduler', {
+      success: true, warnings: ['訊號極弱'],
+    });
+
+    assert.deepEqual(envelope.warnings, ['訊號極弱']);
+  });
+
+  test('結果帶 errorCode 時信封正確透出', () => {
+    const envelope = buildToolResultEnvelope('search_dcard_reviews', {
+      error: '找不到該課程的評價', errorCode: 'REVIEWS_NOT_FOUND',
+    });
+
+    assert.equal(envelope.errorCode, 'REVIEWS_NOT_FOUND');
+    assert.equal(envelope.result.error, '找不到該課程的評價');
+  });
+
+  test('沒有 errorCode 的結果，信封欄位是 null 而不是 undefined（JSON 序列化才看得到）', () => {
+    const envelope = buildToolResultEnvelope('query_course_db', []);
+
+    assert.equal(JSON.parse(JSON.stringify(envelope)).errorCode, null);
+  });
+
+  // 這是本次的核心邊界：信封只影響模型看到的那一份，前端消費的
+  // `applyToolOutcome()` 寫進回應信封的 `data` 完全不能被信封污染。
+  test('applyToolOutcome 寫進去的 data 是原始 result，不是包過信封的版本', () => {
+    const rawResult = { success: true, requestId: 'r-1' };
+    const after = applyToolOutcome(
+      { intent: 'general_chat', data: null }, 'run_csp_scheduler', rawResult
+    );
+
+    assert.equal(after.data, rawResult);
+    assert.ok(!('schemaVersion' in after.data));
   });
 });

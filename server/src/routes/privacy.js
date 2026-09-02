@@ -13,6 +13,9 @@ const requestId = req => String(req.get('x-request-id') || '').slice(0, 128) || 
 
 function sendPrivacyError(res, err) {
   if (err instanceof PrivacyError) return res.status(err.status).json({ error: err.message, code: err.code });
+  if (err?.code === 'COURSE_HISTORY_UNAVAILABLE') {
+    return res.status(err.status || 503).json({ error: err.message, code: err.code });
+  }
   console.error('Privacy route error:', err.message);
   return res.status(500).json({ error: '隱私服務暫時無法使用', code: 'PRIVACY_STORE_UNAVAILABLE' });
 }

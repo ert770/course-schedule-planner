@@ -334,3 +334,49 @@ input, textarea, select {
   font-size: 0.9rem;
   line-height: 1.6;
 }
+
+/* roadmap #26：推薦理由。措辭由後端的代號決定，前端只負責呈現。 */
+.detail-reason {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f4f7ff;
+  border-left: 3px solid var(--primary, #5b7cfa);
+  border-radius: var(--radius-sm);
+}
+.reason-headline {
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 4px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.reason-confidence {
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.reason-confidence-high { background: #e3f7ec; color: #1a7f4b; }
+.reason-confidence-medium { background: #fff4e0; color: #a86000; }
+.reason-confidence-low { background: #fdeaea; color: #b3261e; }
+.reason-line {
+  font-size: 0.84rem;
+  line-height: 1.6;
+  margin: 4px 0;
+}
+/* 「沒有證據」「沒有競爭者」要看得出是刻意說明，不是漏掉。 */
+.reason-muted { color: var(--text-muted); }
+.reason-tradeoff { color: #a86000; }
+.reason-alternatives {
+  margin: 4px 0 0 18px;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.reason-sources {
+  margin: 10px 0 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}

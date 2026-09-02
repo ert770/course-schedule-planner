@@ -23,6 +23,8 @@ const SCHEDULER_PARAMS = [
   'weightDaily', 'practicalExam', 'finalReport', 'englishTaught',
   'preferCompact', 'preferEasyCourses', 'preferredKeywords', 'interests', 'preferredTrack',
   'digitalCreditsNeeded',
+  // Roadmap #24：接通既有放寬階梯 + 這次不可放寬的指名。
+  'allowRelaxation', 'nonNegotiablePreferenceIds',
 ];
 
 const tools = getAgentTools();
@@ -52,6 +54,7 @@ describe('P1 tool schema 含所有排課參數', () => {
       'get_easy_courses',
       'run_csp_scheduler',
       'update_preferences',
+      'update_student_profile',
       'record_schedule_feedback',
     ]) {
       assert.ok(toolByName.has(name), `缺少工具 ${name}`);
@@ -173,5 +176,121 @@ describe('P3 排課結果欄位有告知模型', () => {
     assert.ok(prompt.includes('timeout 不等於無解'));
     assert.ok(prompt.includes('不能稱為成功或合法完成的課表'));
     assert.ok(prompt.includes('不得自行發明衝突'));
+  });
+});
+
+describe('P4 Roadmap #24：永久寫入的兩段式確認', () => {
+  test('update_preferences 與 update_student_profile 都收 confirmationToken', () => {
+    for (const name of ['update_preferences', 'update_student_profile']) {
+      assert.ok(
+        Object.hasOwn(toolByName.get(name).parameters.properties, 'confirmationToken'),
+        `${name} 缺少 confirmationToken`
+      );
+    }
+  });
+
+  test('update_student_profile 開放系所、年級與班別三個欄位', () => {
+    const props = toolByName.get('update_student_profile').parameters.properties;
+
+    for (const field of ['department', 'gradeLevel', 'className']) {
+      assert.ok(Object.hasOwn(props, field), `缺少 ${field}`);
+    }
+  });
+
+  // 這三個欄位是身分事實，不是排課偏好——不該混進 update_preferences。
+  test('update_preferences 不得同時開放系所年級班別', () => {
+    const props = toolByName.get('update_preferences').parameters.properties;
+
+    for (const field of ['department', 'gradeLevel', 'className']) {
+      assert.ok(!Object.hasOwn(props, field), `${field} 不該出現在 update_preferences`);
+    }
+  });
+
+  test('system prompt 說明兩段式流程且禁止自行編造 token', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('confirmationToken'));
+    assert.ok(prompt.includes('兩段式'));
+    assert.ok(prompt.includes('不得自行編造 token'));
+  });
+});
+
+describe('P5 Roadmap #24：偏好強度的判讀', () => {
+  test('nonNegotiablePreferenceIds 只接受三個可放寬的偏好', () => {
+    const scheduler = toolByName.get('run_csp_scheduler');
+    const { enum: allowed } = scheduler.parameters.properties.nonNegotiablePreferenceIds.items;
+
+    assert.deepEqual(
+      [...allowed].sort(),
+      ['LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES', 'NO_MORNING_CLASSES']
+    );
+  });
+
+  test('system prompt 教模型分辨語氣強弱', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('allowRelaxation'));
+    assert.ok(prompt.includes('nonNegotiablePreferenceIds'));
+    assert.ok(prompt.includes('絕對不要'), 'prompt 需給出強硬語氣的例子');
+    assert.ok(prompt.includes('盡量不要'), 'prompt 需給出彈性語氣的例子');
+  });
+});
+
+describe('P6 Roadmap #24：結構化理解回講', () => {
+  const scheduler = toolByName.get('run_csp_scheduler');
+
+  // 原生 tool calling 保證得了參數格式，保證不了理解正確——模型把「盡量」
+  // 聽成「絕對」，參數一樣合法，使用者卻拿到不對的課表。
+  test('interpretation 是 run_csp_scheduler 的必填參數', () => {
+    assert.ok(scheduler.parameters.required.includes('interpretation'));
+  });
+
+  test('四個必填子欄位齊全', () => {
+    const { interpretation } = scheduler.parameters.properties;
+
+    for (const field of ['nonNegotiable', 'flexible', 'creditGoal', 'notMentioned']) {
+      assert.ok(interpretation.required.includes(field), `缺少必填欄位 ${field}`);
+      assert.ok(Object.hasOwn(interpretation.properties, field), `缺少欄位定義 ${field}`);
+    }
+  });
+
+  test('sourcePhrases 存在但非必填（沒有直接對應時可省略）', () => {
+    const { interpretation } = scheduler.parameters.properties;
+
+    assert.ok(Object.hasOwn(interpretation.properties, 'sourcePhrases'));
+    assert.ok(!interpretation.required.includes('sourcePhrases'));
+  });
+
+  test('system prompt 要求排課前先回講，且不得自行假設', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('理解回講'));
+    assert.ok(prompt.includes('interpretation'));
+    assert.ok(prompt.includes('notMentioned'));
+    assert.ok(prompt.includes('不要在那裡自行假設答案'));
+  });
+});
+
+describe('P7 Roadmap #25：工具結果信封說明', () => {
+  test('system prompt 說明信封的五個欄位與 result 才是實際內容', () => {
+    const prompt = buildSystemPrompt({});
+
+    for (const field of ['schemaVersion', 'dataSource', 'term', 'warnings', 'errorCode', 'result']) {
+      assert.ok(prompt.includes(field), `system prompt 未提到信封欄位 ${field}`);
+    }
+  });
+
+  test('system prompt 說明 json-fallback 是暫時性限制，不是資料不存在', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('json-fallback'));
+    assert.ok(prompt.includes('暫時性限制'));
+  });
+
+  test('system prompt 說明 errorCode 不為 null 時不得宣稱已完成', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('errorCode'));
+    assert.ok(prompt.includes('不要宣稱已完成'));
   });
 });
