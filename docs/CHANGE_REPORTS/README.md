@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-03
+
+1. [解決 PR #14（多格式課表匯出）與 main 的合併衝突](./2026-09-03-pr14-schedule-export-conflict-resolution.md)
+
 ## 2026-08-31
 
 1. [Roadmap #26：每門推薦課的證據導向理由](./2026-08-31-roadmap-26-evidence-based-reason.md)
