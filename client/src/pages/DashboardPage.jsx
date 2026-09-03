@@ -6,11 +6,12 @@ import { useSchedule } from '../contexts/useSchedule';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { scheduleAPI, chatAPI, profileAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
+import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
 import { formatCourseTime } from '../utils/courseTime';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import { X, Send, Search, Download, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, AlertTriangle } from 'lucide-react';
+import { X, Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, AlertTriangle } from 'lucide-react';
 
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
 //
@@ -300,19 +301,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleExport = () => {
-    const text = schedule.map(c =>
-      `${c.name} | ${c.instructor} | ${formatCourseTime(c)}`
-    ).join('\n');
-    const blob = new Blob([`114學年度 上學期 預排課表\n\n${text}`], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '預排課表.txt';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   // roadmap #2：明確回答「符合」才算接受。儲存課表刻意不算——存草稿也會按儲存。
   const handleConfirmFit = async () => {
     const outcome = await acceptRecommendation();
@@ -468,7 +456,7 @@ export default function DashboardPage() {
               )}
             </div>
             <div className="schedule-actions">
-              <button className="action-btn secondary" onClick={handleExport}>匯出課表</button>
+              <ExportDropdown schedule={schedule} gridElementId="schedule-grid-container" />
               <button
                 className="action-btn secondary"
                 onClick={handleSave}
@@ -559,7 +547,9 @@ export default function DashboardPage() {
                 <p>Agent 正在呼叫排課演算法...</p>
               </div>
             )}
-            <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} />
+            <div id="schedule-grid-container">
+              <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} />
+            </div>
           </div>
         </div>
 
