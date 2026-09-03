@@ -47,8 +47,33 @@ Agent 不得：
 | 查課程名稱、教師、時間、類別 | `query_course_db` |
 | 查課程評價、涼課、高分課 | `search_dcard_reviews` 或 `get_easy_courses` |
 | 產生課表 | `run_csp_scheduler` |
-| 修改偏好 | `update_preferences` |
-| 最終回答 | `final_answer` |
+| 修改長期偏好 | `update_preferences`（兩段式，見下） |
+| 更正系所／年級／班別 | `update_student_profile`（兩段式，見下） |
+| 記錄排課後的最終評價 | `record_schedule_feedback` |
+
+**沒有 `final_answer`**：改用 OpenAI 原生 tool calling 之後，模型回一則沒有
+`function_call` 的訊息就是最終回答（2026-08-30）。此表先前仍列著這個已移除的工具。
+
+## 永久寫入必須先取得使用者確認（Roadmap #24）
+
+`update_preferences` 與 `update_student_profile` 都是兩段式：
+
+1. 第一次呼叫（不帶 `confirmationToken`）**不寫入任何東西**，只回傳
+   `proposedChanges` 與一個 `confirmationToken`。
+2. Agent 必須把變更內容講給使用者，等他明確同意。
+3. 帶著該 token 再呼叫一次才真的寫入。
+
+**確認必須發生在另一個回合**——伺服器會拒絕「同一回合內自己暫存又自己確認」。
+這一條是機制保證，不是 prompt 叮嚀：模型可以在同一回合連續呼叫兩次工具，但
+使用者在那中間根本沒有機會說話。
+
+寫入時採用的是**當初暫存的內容**，第二次呼叫夾帶的其他欄位一律忽略。
+
+## 排課前的資料檢查（Roadmap #24）
+
+系所或年級無法解析（`studentScope.resolved === false`）時，`run_csp_scheduler`
+不會真的排課，而是回傳 `clarification` 要求補齊資料。使用者指名必修的課若正好
+落在他自己設定的封鎖時段裡，同樣先問而不是硬排。
 
 ## 回答語氣
 

@@ -8,6 +8,8 @@ import { getAbbreviations } from '../data/departmentMapping.js';
 import { tagsToFlags, extractTags } from '../data/preferenceTags.js';
 import { logger } from '../utils/logger.js';
 import { createTtlCache } from '../utils/ttlCache.js';
+import { validateCourseHistoryEntry } from '../data/courseHistory.js';
+import { normalizeAdmissionYear } from '../data/graduationRuleVersions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -281,6 +283,74 @@ function mapReviewRow(row) {
   };
 }
 
+export class CourseHistoryUnavailableError extends Error {
+  constructor(message, options = {}) {
+    super(message, options);
+    this.name = 'CourseHistoryUnavailableError';
+    this.status = 503;
+    this.code = 'COURSE_HISTORY_UNAVAILABLE';
+  }
+}
+
+export function mapCourseHistoryRow(row) {
+  const requiredColumns = [
+    'academic_year', 'semester', 'catalog_course_code', 'course_name', 'credits',
+    'passed', 'requirement_type', 'graduation_category',
+  ];
+  const missingColumns = requiredColumns.filter(column => row[column] === null || row[column] === undefined);
+  if (missingColumns.length > 0) {
+    throw new CourseHistoryUnavailableError(
+      `歷史修課資料格式不完整（history_id=${row.history_id ?? 'unknown'}）：缺少 ${missingColumns.join('、')}`
+    );
+  }
+  const entry = {
+    academicYear: normalizeNumber(row.academic_year),
+    semester: normalizeNumber(row.semester),
+    courseCode: row.catalog_course_code,
+    courseName: row.course_name,
+    score: row.score === null || row.score === undefined ? null : normalizeNumber(row.score),
+    letterGrade: row.letter_grade ?? null,
+    credits: normalizeNumber(row.credits, 0),
+    passed: Number(row.passed) === 1,
+    requirementType: row.requirement_type,
+    generalEducationCategory: row.general_education_category ?? null,
+    graduationCategory: row.graduation_category,
+  };
+  const validation = validateCourseHistoryEntry(entry);
+  if (!validation.valid) {
+    throw new CourseHistoryUnavailableError(
+      `歷史修課資料格式不完整（history_id=${row.history_id ?? 'unknown'}）：缺少 ${validation.missingFields.join('、')}`
+    );
+  }
+  return entry;
+}
+
+export async function getUserCourseHistory(identity) {
+  if (!isMysqlConfigured()) {
+    throw new CourseHistoryUnavailableError('歷史修課只能來自 MySQL，但目前未設定資料庫連線。');
+  }
+  const numericId = Number(identity?.numericId);
+  if (!Number.isInteger(numericId) || numericId <= 0) {
+    throw new CourseHistoryUnavailableError('缺少可對應 User_Course_History.user_id 的 numeric identity。');
+  }
+
+  try {
+    const rows = await queryRows(`
+      SELECT
+        \`history_id\`, \`academic_year\`, \`semester\`, \`catalog_course_code\`,
+        \`course_name\`, \`score\`, \`letter_grade\`, \`credits\`, \`passed\`,
+        \`requirement_type\`, \`general_education_category\`, \`graduation_category\`
+      FROM \`User_Course_History\`
+      WHERE \`user_id\` = ?
+      ORDER BY \`academic_year\`, \`semester\`, \`history_id\`
+    `, [numericId]);
+    return rows.map(mapCourseHistoryRow);
+  } catch (err) {
+    if (err instanceof CourseHistoryUnavailableError) throw err;
+    throw new CourseHistoryUnavailableError('歷史修課資料暫時無法載入，請稍後再試。', { cause: err });
+  }
+}
+
 // canonical ID（學號）與 `User_Profiles.user_id`（數字主鍵）的對照。
 //
 // canonical 是學號，但 MySQL 的 `WHERE user_id = ?` 只認數字。轉換只在這一層發生，
@@ -410,6 +480,7 @@ function normalizeClassName(value) {
 let classNameColumnPromise = null;
 let profileSchemaVersionColumnPromise = null;
 let studentIdColumnPromise = null;
+let admissionYearColumnPromise = null;
 
 function hasUserProfileClassNameColumn() {
   if (!isMysqlConfigured()) return Promise.resolve(false);
@@ -459,6 +530,32 @@ function hasUserProfileStudentIdColumn() {
   }
 
   return studentIdColumnPromise;
+}
+
+// 入學年度（Roadmap #23 的版本化畢業規則需要它才能選對規則版本）。
+//
+// 與 `class_name`／`profile_schema_version`／`student_id` 同樣是選用欄位：
+// `server/scripts/admissionYearMigration.js` 套用之前欄位不存在，此時
+// `admissionYear` 為 null，`resolveGraduationRule()` 會退回最新一版並明確標示
+// `appliedFallbackVersion`——不是靜默當成該學生的入學年度。
+function hasUserProfileAdmissionYearColumn() {
+  if (!isMysqlConfigured()) return Promise.resolve(false);
+
+  if (!admissionYearColumnPromise) {
+    admissionYearColumnPromise = queryRows(
+      'SHOW COLUMNS FROM `User_Profiles` LIKE \'admission_year\''
+    )
+      .then(rows => rows.length > 0)
+      .catch(err => {
+        logger.warn(
+          `無法確認 User_Profiles.admission_year 欄位是否存在：${err.message}`,
+          { label: 'Profile' }
+        );
+        return false;
+      });
+  }
+
+  return admissionYearColumnPromise;
 }
 
 function readClassNameOverrides() {
@@ -578,6 +675,9 @@ function mapUserProfileRow(row) {
     // `class_name` 欄位還不存在時 row 沒有這個鍵，值為 null，
     // 由 applyClassNameOverride() 從後備來源補上。
     className: normalizeClassName(row.class_name),
+    // `admission_year` 欄位還不存在時 row 沒有這個鍵 → null（＝入學年度未知），
+    // 不從 gradeLevel 推導補值：那會讓「推導值」與「使用者填的值」無從區分。
+    admissionYear: normalizeNumber(row.admission_year, null),
     // 校規下限 12、上限 25（見 docs/COURSE_SELECTION_RULES.md）。
     targetCreditsMin: 12,
     targetCreditsMax: normalizeNumber(row.max_credits, 25) || 25,
@@ -693,6 +793,9 @@ async function getMysqlUserPreferences() {
   if (await hasUserProfileStudentIdColumn()) {
     columns.push('student_id');
   }
+  if (await hasUserProfileAdmissionYearColumn()) {
+    columns.push('admission_year');
+  }
 
   const rows = await queryRows(`
     SELECT ${columns.map(column => `\`${column}\``).join(', ')}
@@ -768,6 +871,27 @@ async function updateMysqlUserPreference(canonicalId, item) {
   if (item.schemaVersion !== undefined && await hasUserProfileSchemaVersionColumn()) {
     updates.push('`profile_schema_version` = ?');
     params.push(item.schemaVersion);
+  }
+  if (item.admissionYear !== undefined && await hasUserProfileAdmissionYearColumn()) {
+    // **不合法的年度一律不寫，而不是寫成該值或 NULL。**
+    //
+    // `normalizeNumber()` 對 `0` 會回傳 `0`（0 是有限數字），寫進去就會把真實的
+    // 入學年度洗掉。這不是假設性風險：實測模型在 `update_student_profile` 的
+    // schema 加上 admissionYear 之後，會用 `admissionYear: 0` 當佔位值送出來。
+    // 明確的 `null` 才視為「清除」，其餘不合法值直接略過並留下 log。
+    const admissionYear = item.admissionYear === null
+      ? null
+      : normalizeAdmissionYear(item.admissionYear);
+
+    if (item.admissionYear !== null && admissionYear === null) {
+      logger.warn(
+        `忽略不合法的 admissionYear（${JSON.stringify(item.admissionYear)}），既有值保持不變`,
+        { label: 'Profile' }
+      );
+    } else {
+      updates.push('`admission_year` = ?');
+      params.push(admissionYear);
+    }
   }
 
   if (updates.length === 0) {
@@ -933,4 +1057,7 @@ export async function clearCollection(collection) {
   writeCollection(collection, []);
 }
 
-export default { getAll, getById, query, insert, update, upsertByField, remove, clearCollection };
+export default {
+  getAll, getById, query, insert, update, upsertByField, remove, clearCollection,
+  getUserCourseHistory,
+};

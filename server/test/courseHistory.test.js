@@ -8,9 +8,6 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 import {
   COURSE_HISTORY_REQUIRED_FIELDS,
@@ -21,8 +18,6 @@ import {
   getTotalEarnedCredits,
   validateCourseHistoryEntry,
 } from '../src/data/courseHistory.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function entry(overrides = {}) {
   return {
@@ -39,6 +34,29 @@ function entry(overrides = {}) {
     graduationCategory: 'required',
     ...overrides,
   };
+}
+
+function regressionHistory() {
+  const groups = [
+    ['required', [...Array(18).fill(3), ...Array(7).fill(1)]],
+    ['elective', [...Array(6).fill(3), 2, 2]],
+    ['general', Array(12).fill(2)],
+    ['external', [3, 2, 2, 2, 2]],
+    ['nonGraduation', [1, 1, 0]],
+  ];
+  let index = 0;
+  return groups.flatMap(([graduationCategory, credits]) => credits.map(value => {
+    index += 1;
+    return entry({
+      academicYear: 112 + Math.floor((index - 1) / 20),
+      semester: index % 2 === 0 ? 2 : 1,
+      courseCode: `HIST${String(index).padStart(4, '0')}`,
+      courseName: `歷史修課 ${index}`,
+      credits: value,
+      requirementType: graduationCategory === 'required' ? '必修' : '選修',
+      graduationCategory,
+    });
+  }));
 }
 
 const EMPTY_CREDITS = {
@@ -153,12 +171,8 @@ describe('H5 courseHistory 完整欄位契約', () => {
     ]);
   });
 
-  test('H5 demo 53 筆紀錄都有全部必要欄位', () => {
-    const users = JSON.parse(
-      fs.readFileSync(path.join(__dirname, '..', 'data', 'users.json'), 'utf8')
-    );
-    const demo = users.find(user => user.studentId === 'D1249697');
-    assert.ok(demo.courseHistory.every(item => validateCourseHistoryEntry(item).valid));
+  test('H5 53 筆回歸紀錄都有全部必要欄位', () => {
+    assert.ok(regressionHistory().every(item => validateCourseHistoryEntry(item).valid));
     assert.equal(COURSE_HISTORY_REQUIRED_FIELDS.length, 11);
   });
 });
@@ -168,51 +182,32 @@ describe('H3 迴歸基準：與整併前的既有值相符', () => {
   // `earnedCredits: {required:61, elective:22, general:24, external:11}`。
   // 這兩個案例確保由 `courseHistory` 現算的結果與那組值逐項相同——
   // 整併只是換了計算方式，不是改變畢業進度的數字。
-  const users = JSON.parse(
-    fs.readFileSync(path.join(__dirname, '..', 'data', 'users.json'), 'utf8')
-  );
-  const demo = users.find(user => user.studentId === 'D1249697');
+  const history = regressionHistory();
 
-  test('H3 demo 使用者的 courseHistory 有 53 筆且都帶 passed', () => {
-    assert.ok(demo, '找不到 demo 使用者 D1249697');
-    assert.equal(demo.courseHistory.length, 53);
+  test('H3 回歸資料有 53 筆且都帶 passed', () => {
+    assert.equal(history.length, 53);
     assert.ok(
-      demo.courseHistory.every(item => typeof item.passed === 'boolean'),
+      history.every(item => typeof item.passed === 'boolean'),
       '每一筆都必須有 passed 布林，否則派生結果會靜默少算'
     );
   });
 
   test('H3 分類學分為 61/22/24/11，總學分為 118', () => {
-    assert.deepEqual(getEarnedCredits(demo.courseHistory), {
+    assert.deepEqual(getEarnedCredits(history), {
       required: 61,
       elective: 22,
       general: 24,
       external: 11,
       unspecified: 0,
     });
-    assert.equal(getTotalEarnedCredits(demo.courseHistory), 118);
+    assert.equal(getTotalEarnedCredits(history), 118);
   });
 
   test('H3 已通過課號為 53 個，且不含重複', () => {
-    const codes = getPassedCourseCodes(demo.courseHistory);
+    const codes = getPassedCourseCodes(history);
 
     assert.equal(codes.length, 53);
     assert.equal(new Set(codes).size, 53, '同一課號重複會讓已修排除的判定失去意義');
   });
 
-  test('H3 整併後的 users.json 不得再有派生欄位', () => {
-    // 這些欄位一旦被誰加回去，就會再度出現「同一份資料兩個代表」的漂移。
-    for (const field of [
-      'completedCourseCodes',
-      'completedCourseNames',
-      'completedCourseIds',
-      'completedCredits',
-      'earnedCredits',
-    ]) {
-      assert.ok(
-        !(field in demo),
-        `${field} 已整併進 courseHistory，不得再出現在 users.json`
-      );
-    }
-  });
 });

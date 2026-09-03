@@ -191,12 +191,37 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `profile_schema_version` | int | `profile.schemaVersion`；目前版本 `1`（migration 目標欄位） |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
-| `completed_courses` | json | **已停用**（2026-08-13）。本專案不再讀寫此欄位——已修排除改用 `users.json` 的 `courseHistory`，理由與遷移細節見 `docs/CHANGE_REPORTS/2026-08-13-part-a-course-history-scheduling-data.md`。欄位本身仍存在於共用表，本專案不自行 `ALTER TABLE`，清理需與組員協調 |
+| `completed_courses` | json | **已停用**。本專案不再讀寫；歷史修課唯一來源為 `User_Course_History` |
 | `max_credits` | int | `profile.targetCreditsMax` |
+| `admission_year` | smallint unsigned NULL | `profile.admissionYear`；入學學年度（民國），決定套用哪一版畢業規則（roadmap #23）。`NULL` 代表未知，此時 `resolveGraduationRule()` 退回最新版本並標示 `appliedFallbackVersion`。Migration 為 `005_admission-year`，執行方式見下方 |
 
-`student_id`、`class_name`、`profile_schema_version` 的 DDL 與安全 migration 已備妥，
+`student_id` 與 `profile_schema_version` 的 DDL 與安全 migration 已備妥，
 但 shared MySQL 尚未套用；必須先取得組員協調確認。程式會偵測欄位是否存在，
 因此 rollout 前可讀既有 v0 row，rollout 後改以 `student_id` 查詢。
+`class_name` 與 `admission_year` 已存在於 shared MySQL。
+
+**選用欄位的偵測方式**：`database.js` 對 `class_name`、`profile_schema_version`、
+`student_id`、`admission_year` 各有一支 `has...Column()`，用 `SHOW COLUMNS` 查一次並快取，
+查詢失敗一律退回 `false`。欄位不存在時該值為 `null`，不猜、不推導、不補預設值。
+組員新增欄位後重啟後端即自動生效，不需改程式。
+
+`User_Profiles` 另有組員新增的 `program_type`、`enrolled_programs`、`college` 三個欄位，
+**本專案目前完全沒有讀寫**。它們是 roadmap #13D（學制、學程與特殊身分）的材料，
+在 #13D 開始前不要當成不存在而重複新增。
+
+### `admission_year` 與版本化畢業規則（roadmap #23）
+
+```text
+npm run migrate:admission-year --prefix server
+npm run migrate:admission-year --prefix server -- --apply --confirm-shared-mysql
+npm run migrate:admission-year --prefix server -- --rollback --confirm-shared-mysql
+```
+
+回填**一律交叉驗證**：`grade_level + ACTIVE_TERM.academicYear` 推一次、
+`User_Course_History` 最早的 `academic_year` 推一次，兩者一致才寫入。不一致或只有
+單一來源時留 `NULL` 並在 dry-run 輸出說明理由——錯的入學年度會靜默選到錯的規則版本，
+留 `NULL` 至少會誠實回報「入學年度未知」。重複執行只回填仍為 `NULL` 的列，
+不覆蓋人工修正過的值。
 
 ### Profile schema v1 與 migration
 
@@ -297,19 +322,17 @@ store 的邏輯名稱。
 
 ### `users.json` 的職責
 
-`users.json` **只負責登入身分與 demo 展示資料**（`studentId`、`password`、`name`、
-`watchlist`、`skillTree`…），以及班別的後備儲存（見下方 `className`）。
+`users.json` **只負責登入身分與尚未遷移的 demo 資料**（`studentId`、`password`、`name`、
+`watchlist`、`skillTree`…），以及班別的後備儲存。它不再保存 `courseHistory`。
 
-**歷史修課只有 `courseHistory` 一個欄位。** 2026-08-11 前這裡另外存了
-`completedCredits`、`completedCourseIds`、`completedCourseCodes`、
-`completedCourseNames`、`earnedCredits` 五個衍生欄位——全部是 `courseHistory`
-逐門加總／篩選就能算出來的東西，同一份資料存六份必然漂移。已修課號、
-已修學分、分類學分彙總一律呼叫 `server/src/data/courseHistory.js` 的
+歷史修課唯一來源為 MySQL `User_Course_History`。已修課號、已修學分、分類學分彙總
+一律由查出的 11 欄 `courseHistory` 物件呼叫 `server/src/data/courseHistory.js` 的
 `getPassedCourseCodes()`／`getEarnedCredits()`／`getTotalEarnedCredits()`
-當場算，**不得**在 `users.json` 或任何 profile 物件上重新造出這幾個名字的
-派生欄位（`server/test/courseHistory.test.js` 的 H3 有回歸測試釘住這件事）。
+當場算，不得在 JSON 或 profile 上保存衍生欄位。
 
-`courseHistory` 項目：
+### `User_Course_History`
+
+資料庫以 snake_case 保存，`database.js` 映射為下列 `courseHistory` 項目：
 
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
@@ -330,6 +353,19 @@ store 的邏輯名稱。
 `passed: false` 且 `requirementType: 必修` 才成為自動重補修來源。`withdrawn`、
 `transferred`、`exempted` 等多狀態模型不屬於 #19，本次不新增欄位，改由 roadmap #23
 在畢業認列規則與來源可追溯性一併設計。
+
+`catalog_course_code` 不設 `Courses` FK，因為歷史課程可能已不在當期 catalog；只保留
+`user_id → User_Profiles.user_id` FK。唯一鍵為使用者、穩定課號、學年度與學期。
+Migration 為 `server/migrations/004_course-history-v1.*.sql`，執行方式：
+
+```text
+npm run migrate:course-history --prefix server
+npm run migrate:course-history --prefix server -- --apply --confirm-shared-mysql
+npm run migrate:course-history --prefix server -- --rollback --confirm-shared-mysql
+```
+
+查詢成功但 0 筆是合法空歷史；查詢失敗則回 `503 COURSE_HISTORY_UNAVAILABLE`，不得假裝
+成空歷史繼續排課或計算畢業進度。
 
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——

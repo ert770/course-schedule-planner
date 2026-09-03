@@ -65,6 +65,7 @@ System prompt 必須讓 Agent：
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
 | `update_preferences` | 更新使用者偏好 |
+| `update_student_profile` | 更正系所／年級／班別／入學年度（roadmap #24 兩段式確認；入學年度為 #23 選擇畢業規則版本用） |
 | `record_schedule_feedback` | 記錄使用者對已產生課表的最終評價（roadmap #2） |
 
 **沒有 `final_answer`**：原生 tool calling 的自然終止就是「模型回一則沒有
@@ -100,10 +101,11 @@ System prompt 必須讓 Agent：
 `completedCourseIds` 與 `courseHistory` 都不得出現在 `run_csp_scheduler` 的參數中。
 模型無法可靠得知使用者實際修過哪些課，讓模型提供這些值只會誘導它編造資料。
 
-同一次對話開始時，後端已把 profile（含 `courseHistory`）載入 `prefs`；
+同一次對話開始時，後端已從 MySQL `User_Course_History` 把 profile（含 `courseHistory`）載入 `prefs`；
 `agentService.js` 呼叫 `generateForUser(identity, { constraints: args }, { prefs })`，再由
 `buildScheduleConstraints()` 只取 `prefs.courseHistory`。因此已修排除會自動生效，
 即使模型自行在參數中加入 `courseHistory` 也會被忽略。
+資料庫查詢失敗時 Chat 回 `COURSE_HISTORY_UNAVAILABLE`，不得由模型假設為空歷史後繼續排課。
 
 `retakeCourseIds` 與 `failedRequiredCourseIds` 也不得成為工具參數。重補修只由後端讀取
 Profile 的 `courseHistory`，依最新一次修習結果自動推導，避免模型或 client 指定不存在的
@@ -147,6 +149,36 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 
 `get_easy_courses` 的排序依據是收縮後的 `adjustedEasiness`（樣本數少的課會被拉向全體平均），
 不是未收縮的 `easiness`；兩者皆會回傳，Agent 說明時以 `adjustedEasiness` 為準。
+
+**`easinessSource` 決定你能怎麼講涼度（Roadmap #10）**：排課結果每門課帶這個欄位。
+
+- `reviews`：有實際評價，可以講涼度，並說明是由幾則評價推得。
+- `proxy`：**沒有評價**，分數是依課程屬性（討論／實作比重、學分數）推估出來的排序訊號。
+  只能說「依課程屬性推估，這門課的負擔可能較輕」，**不得**說「這門課很涼／好拿分／甜」。
+- `none`：既沒有評價也沒有課程描述，不得做任何涼度宣稱。
+
+### 推薦理由的使用限制（Roadmap #26）
+
+排課結果每門課帶 `recommendationReason`。使用者問「為什麼推薦這門課」時，
+**Agent 只能轉述這個物件裡有的東西**，不得自行推測或補充課程事實——先前
+`compactCourse()` 根本沒把理由送給模型，模型只能講空泛的話，而講空泛的話最容易
+變成編造。
+
+| 欄位 | 能講什麼 |
+| --- | --- |
+| `matchedPreferences` | 空陣列＝**它沒有命中任何偏好**，就照實說，不要硬掰一個理由 |
+| `easinessSource` | `reviews` 才可引用評價；`proxy` 只能說「依課程屬性推估」；`none` 完全不得提涼度 |
+| `confidence` | `low` 通常代表資格待確認或系所範圍無法解析，不得把這門課講成確定可修 |
+| `alternativesRejected.status` | `no-competitors` ＝**沒有其他課與它競爭**，不得說成「它勝過其他所有課」 |
+| `dataSources` | 沒列到的來源就是沒查過。沒有 `Course_Reviews` 就不得引用任何評價數字 |
+
+**送給模型的是精簡版**：`scoreBreakdown`／`scoreTotal` 刻意不送——分數是內部排序用的，
+對使用者講「這門課得了 956 分」沒有意義，講「它命中了你的哪些偏好」才有，
+而且送了會把 input 撐大。
+
+`proxy` 存在的唯一理由是讓「涼課與高分優先」方案在評價稀薄時仍排得出一份不同的課表
+（實測 demo 帳號實際競爭的 10 門課只有 1 門有評價）。**它是排序用的推估，不是證據**——
+上面「沒有評價就不得宣稱涼」那條規則完全沒有放寬，`proxy` 就是「沒有評價」。
 
 ### 內容偏好的使用限制
 
@@ -227,11 +259,19 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 
 ## 工具結果（function_call_output）
 
-工具結果以 JSON 字串放回 `input`：
+工具結果以 JSON 字串放回 `input`，**先投影（見下方）、再包上統一信封
+（Roadmap #25，見「工具結果信封」）**：
 
 ```js
-{ type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(result) }
+{
+  type: 'function_call_output',
+  call_id: call.call_id,
+  output: JSON.stringify(buildToolResultEnvelope(call.name, modelResult)),
+}
 ```
+
+這一份**只給模型看**。前端消費的是 `applyToolOutcome()` 寫進 `/api/chat` 回應
+`data` 欄位的原始 `result`，完全不經過投影或信封，見 `docs/API_SPEC.md`。
 
 ### 單次請求的步數上限
 
@@ -242,6 +282,122 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 耗盡步數時不會丟掉模型沿途寫出來的內容：優先回傳最後一段非空的文字，真的一個字都
 沒有才用「任務過於複雜，已達最大思考步數」這句罐頭訊息，同時在伺服器記一筆
 `logger.warn`。
+
+### 永久寫入的兩段式確認（Roadmap #24）
+
+`update_preferences` 與 `update_student_profile` 的第一次呼叫**不寫入任何東西**，
+只回傳 `proposedChanges` 與 `confirmationToken`；模型必須把內容講給使用者確認，
+取得同意後帶著 token 再呼叫一次才生效。
+
+伺服器端有兩道保證，都不依賴模型自律：
+
+- **跨回合**：`pendingChangeService` 會拒絕「同一回合內自己暫存又自己確認」
+  （`turnId` 比對）。模型可以在同一回合連續呼叫兩次工具，但使用者在那中間根本
+  沒有機會說話；要求跨回合等於要求使用者真的又送出了一則訊息。
+- **只寫暫存內容**：確認時採用當初暫存的欄位，第二次呼叫夾帶的其他欄位一律忽略
+  ——否則模型可以拿一個使用者確認過的 token 偷渡他從沒同意過的變更。
+
+`confirmationToken` 與 `requestId`、`sectionId` 一樣**由伺服器補進 prompt**：工具
+結果不跨回合保存，模型下一回合不會記得自己拿過的 token（實測時它因此又重新暫存
+一次，永遠走不到寫入）。
+
+### 偏好強度：「絕對不」與「盡量不」（Roadmap #24）
+
+`allowRelaxation` 與 `nonNegotiablePreferenceIds` 兩個參數對應這個區分。
+
+`allowRelaxation` 與 `tryRelaxationLadder()` 在 `constraintService.js` 與
+`scheduler.js` 早就完整接好，但一直沒有出現在工具 schema 裡；schema 是
+`additionalProperties: false`，模型送不進來的參數等於不存在——**chat 這條路的
+放寬階梯先前是結構性死碼**，這才是這個區分至今無從實作的真正原因。
+
+`nonNegotiablePreferenceIds` 只作用於單次請求，**不從已儲存偏好回填**：
+「這次絕對不行」是當下這句話的語氣，不該靜默沉澱成永久設定。
+
+**語氣強硬時要整個省略 `allowRelaxation`，不是送 `allowRelaxation: false`。**
+`false` 本來就是預設值，多送一次不改變任何行為，卻會讓同一句話每次產生不同的參數
+——determinism 測試實測就抓到這種只有位元差異的不一致（run1/2 沒送、run3 送了
+`false`）。原本 prompt 只寫「不要設 allowRelaxation」，模型有時理解成「設成 false」，
+2026-08-31 起改為明講省略。理由與 `minCredits`／`maxCredits` 不得從偏好摘要抄同一條：
+**輸出空間愈小，同句重跑愈穩定**。
+
+### 選填欄位的兩個陷阱（2026-08-31 實測）
+
+JSON Schema 能表達「這個欄位可以不填」，但表達不了「沒有就別填」。在
+`update_student_profile` 加上 `admissionYear` 之後實測到兩種失敗，兩者都不是假設：
+
+1. **模型改成先追問，不再做該做的事。** 使用者說「我是資訊工程學系三年級、資訊三乙，
+   請幫我更正」，模型卻先問入學年度，不呼叫工具。A/B 確認因果：帶該欄位 **3/3 不呼叫**，
+   移除該欄位 **3/3 正常呼叫**。修法是在工具說明明講「欄位都是選填，只填使用者這次
+   真的講到的，沒講到就省略，**不要為了把欄位填滿而追問**」。
+2. **模型改用佔位值把欄位湊滿**（修好第 1 點後 4/4 都送 `admissionYear: 0`）。
+   prompt 擋不住這個，因此在**程式**裡擋：`agentService.sanitizeProfileScopeArgs()`
+   丟掉空字串與非正整數，`database.js` 的寫入層再拒絕一次不合法年度。
+   這條特別重要——`normalizeNumber(0, null)` 會回傳 `0`，寫進去就把使用者真實的
+   入學年度洗掉了。
+
+通則：**新增選填欄位時，要同時檢查它會不會讓模型改變既有行為。** 只看「新欄位能不能
+填對」會漏掉「加了它之後別的事做不成了」這一整類問題。
+
+### 結構化理解回講（Roadmap #24）
+
+`run_csp_scheduler` 有一個**必填**參數 `interpretation`，模型排課前必須先把理解
+攤開來：`nonNegotiable`（不可退讓）、`flexible`（可彈性）、`creditGoal`、
+`notMentioned`（它沒有資訊的部分）、`sourcePhrases`（參數 → 使用者原話）。
+
+**為什麼需要**：原生 tool calling 保證得了**參數格式**，保證不了**理解正確**
+——模型把「盡量不要早八」聽成「絕對不要」，參數一樣合法，使用者卻拿到不對的課表。
+
+**三個清單一律填代號，不填自由文字**（`NO_MORNING_CLASSES`、`PREFER_COMPACT`…，
+完整詞彙表見 `promptService.js` 的 `INTERPRETATION_TOPICS`），中文說明由伺服器的
+`describeInterpretation()` 依代號生成。
+
+**為什麼是代號**：實測同一句話跑三次，模型對語意的判斷完全一致，但自由文字每次
+寫法不同（「午休時段可以彈性安排」／「可以彈性安排」／「可以彈性調整」），學分
+也時而從偏好摘要抄、時而不抄。**變異全部來自「同一個意思有很多種寫法」，不是來自
+理解不穩。** 改成代號等於把輸出空間縮到每個意思只有一種寫法，同句重跑就能得到
+逐位元相同的結構化結果——這是驗收標準第四條前半句唯一可行的達成方式，因為模型
+本身無法變成確定性的（此模型連 `temperature` 都不接受，實測回 `400 Unsupported
+parameter`）。
+
+伺服器會檢查回講與實際參數是否自相矛盾（`nonNegotiable` 含 `NO_MORNING_CLASSES`
+就必須同時設好 `noMorningClasses` 與 `nonNegotiablePreferenceIds`），對不上就退回
+要求修正；**也會擋下缺漏的回講**——schema 的巢狀 `required` 在非 strict 模式下
+不被 API 強制，實測模型會送 `interpretation: {}` 過來。
+
+回講會跟著排課結果回傳給前端顯示，但**不寫進 log、不進 `Interaction_Events`**：
+`sourcePhrases` 含使用者原話，#33 明訂 log 只記 metadata 不記內容。
+
+**誠實界線**：這不會讓模型的解析變成確定性的，它讓解析**看得見、可被使用者當場
+糾正、可被 golden set 量測**。
+
+### 排課前的矛盾偵測（Roadmap #24）
+
+`requirementPreflight.js` 在進入排課引擎之前，檢查一整組不必真的排一次課就能斷定
+的矛盾。**這份清單就是「完整」的定義**——結構性矛盾（數字、時段、集合互相打架）
+可以窮舉，因此宣告完整：
+
+1. `minCredits > maxCredits`
+2. 學分為負、`maxCoursesPerDay` ≤ 0
+3. 兩門指定必修彼此衝堂
+4. 指定必修撞自訂封鎖時段
+5. 指定必修的學分總和超過學分上限
+6. 指定必修不在本學期開課
+7. 已選課程撞封鎖時段
+8. 時段偏好合起來把可用節次清空
+9. 系所／年級無法解析（先前會靜默照排，必修判定其實懸空）
+10. `nonNegotiablePreferenceIds` 指名了某項，但該偏好根本沒開
+11. 理解回講與實際參數自相矛盾
+12. 理解回講缺漏（chat 路徑才要求）
+
+**不宣稱完整的**：語意矛盾（「想輕鬆一點但也想學很多」）。那取決於語言理解而非
+數字比對，無法窮舉——這條界線要講清楚，不要含糊成一句「無法窮舉」。
+
+時段判定沿用 `scheduler.js` 的既有規則（早八 = 第 1 節、午休 = 第 5 節、
+晚間 = 第 12 節以後），不另立一套。
+
+回傳形狀與 `scheduler.js` 的 `buildClarification()` 完全一致，模型既有的 #22 澄清
+指令因此可以原封不動套用；`requirementPreflight.test.js` 有一項測試專門釘住兩者的
+欄位一致，避免日後漂移。
 
 ### 排課結果必須先投影
 
@@ -263,7 +419,52 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 
 **完整結果仍原封不動回傳給前端**渲染課表；被裁掉的只有送進模型的那一份。
 
-## 最終回答格式
+### 工具結果信封（Roadmap #25）
+
+七個工具的**政策**（是否可渲染、是否寫入、寫入要不要兩段式確認）統一登記在
+`server/src/services/agentToolRegistry.js`，不再分散成 `promptService.js` 的
+schema、`agentService.js` 的 switch、還有一份獨立的 `RENDERABLE_TOOLS` Set 三處
+各自維護——`agentToolRegistry.test.js` 直接讀原始碼比對三者的工具名稱集合，
+漏改一邊測試會失敗。這份登記表**只管政策**，參數的型別／enum／必填仍在
+`promptService.js` 的 schema 裡，兩者由契約測試保證一致。
+
+`agentService.buildToolResultEnvelope()` 把投影後的結果包成統一形狀，不論原始
+結果是陣列還是物件，模型都不必先判斷形狀：
+
+```json
+{
+  "schemaVersion": 1,
+  "dataSource": "mysql",
+  "term": { "academicYear": 114, "semester": "下學期" },
+  "warnings": [],
+  "errorCode": null,
+  "result": { "...": "投影後的原始內容" }
+}
+```
+
+- `dataSource` 為 `json-fallback` 代表 MySQL 暫時不可用，退回本機 JSON——
+  system prompt 要求模型把這講成「暫時性限制」，不能說成資料真的不存在。
+- `term` 只附加在會回傳課程物件的工具（`query_course_db`、`search_dcard_reviews`、
+  `get_easy_courses`、`run_csp_scheduler`）；偏好／身分寫入與排課後確認跟學期
+  無關，不附加。
+- `warnings` 是把 `result.warnings`（若有）提到信封層，模型不必自己去翻。
+- `errorCode` 不為 `null` 代表這次呼叫沒有成功；system prompt 要求模型依
+  `result.error` 的文字說明，不宣稱已完成。目前定義的錯誤碼：
+  `UNKNOWN_TOOL`、`MALFORMED_ARGUMENTS`、`TOOL_EXECUTION_FAILED`、
+  `REVIEWS_NOT_FOUND`、`NOTHING_TO_CHANGE`、`CONFIRMATION_INVALID`、
+  `PREFLIGHT_CLARIFICATION_REQUIRED`。
+
+### 非法課程 id：`watchingCourseIds` 會被濾掉
+
+`mustTakeCourseIds`／`selectedCourseIds` 撞到不存在的課程 id 時，Roadmap #22
+已經讓整次排課回報 `data-insufficient` 並回頭問使用者（`docs/TEST_PLAN.md` 的
+Z5）——這兩者是「這門課一定要在課表裡」的硬性宣告，答錯會讓整份課表偏離使用者
+真正要的東西，值得停下來問清楚。
+
+`watchingCourseIds` 只是追蹤用途，不佔時段也不計學分，因此**不套用同一個機制**：
+`agentService.js` 在呼叫 `generateSchedule()` 前把查無對應課程的 watching id
+直接濾掉——它們真的不會進入 `scheduler.js`——並在結果的 `warnings` 附上
+「關注課程 id X 查無對應課程，已略過。」，不中斷排課、也不回頭問。
 
 模型回傳一則沒有 `function_call` 的訊息即為最終回答，內容就是要顯示給使用者的文字。
 不需要（也不應該）再包一層 `final_answer` 工具。
@@ -333,9 +534,14 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 
 1. 更新 `promptService.js` 的 `getAgentTools()`（JSON Schema）。
 2. 更新 `agentService.js` 的 `executeAgentTool()` dispatch。
-3. 更新 `server/test/prompt.test.js` 的工具清單與 `server/test/agentTools.test.js`。
-4. 更新本文件。
+3. **在 `agentToolRegistry.js` 加一筆**（`renderable`／`writes`／`confirmation`）
+   ——漏這一步 `agentToolRegistry.test.js` 的 AR1 會先失敗，比漏改 dispatch 更早
+   被抓到。
+4. 更新 `server/test/prompt.test.js` 的工具清單、`server/test/agentTools.test.js`
+   與 `server/test/agentToolRegistry.test.js`。
+5. 更新本文件。
+6. 新增測試案例到 `docs/TEST_PLAN.md`。
 
 若新增的工具會回傳大型物件，必須一併決定它的投影方式（見「排課結果必須先投影」），
-不要直接把整包 JSON 餵回模型。
-4. 新增測試案例到 `docs/TEST_PLAN.md`。
+不要直接把整包 JSON 餵回模型。若工具結果含課程物件，`buildToolResultEnvelope()`
+的 `COURSE_BEARING_TOOLS` 也要一併加入，模型才會拿到 `term`。

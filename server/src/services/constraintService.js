@@ -112,7 +112,18 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     ),
     preferredTrack: input.preferredTrack || prefs.preferredTrack || null,
     preferredKeywords: pickList(input.preferredKeywords, prefs.preferredKeywords),
-    interests: pickList(input.interests, prefs.interests ?? prefs.preferenceTags),
+    // **不從 `preferenceTags` 回填**（roadmap #10）。
+    //
+    // 這裡原本是 `prefs.interests ?? prefs.preferenceTags`，而 `prefs.interests`
+    // 這個欄位並不存在，因此永遠退回偏好標籤——`#不排早八`、`#全英授課`、
+    // `#盡量集中排課` 這些**排課偏好**被當成**興趣主題**，拿去比對課程名稱、
+    // 課程介紹與 ragTag（見 scheduler.js 的 getInterestScore()）。那是兩件不同
+    // 的事：前者講「什麼時候上課、用什麼形式上課」，後者講「想學什麼主題」。
+    // 實測 demo 帳號 16 門可修課 0 門命中，「興趣」這個維度從來沒有真正生效過。
+    //
+    // 移除 fallback 後沒有興趣關鍵字時 `interests` 為空陣列，
+    // `hasExpressedPreference` 會據實回報，而不是靠比不中的標籤假裝有偏好。
+    interests: pickList(input.interests, prefs.interests),
 
     digitalCreditsNeeded: pickFlag(input.digitalCreditsNeeded, prefs.digitalCreditsNeeded),
 
@@ -124,6 +135,13 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // `['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES', 'NO_EVENING_CLASSES']`）；
     // 未提供時 `scheduler.js` 會退回 `constraintSchema.js` 的預設順序。
     timePreferencePriority: pickList(input.timePreferencePriority, prefs.timePreferencePriority),
+    // Roadmap #24：這次請求中絕對不可被自動放寬的偏好。
+    //
+    // **純 request、不從 prefs 回填**——「這次絕對不行」是當下這句話的語氣，
+    // 不該靜默沉澱成永久設定；使用者要永久固定應該走 update_preferences。
+    nonNegotiablePreferenceIds: Array.isArray(input.nonNegotiablePreferenceIds)
+      ? input.nonNegotiablePreferenceIds
+      : [],
   };
 }
 

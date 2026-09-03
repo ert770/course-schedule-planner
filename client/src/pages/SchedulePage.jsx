@@ -10,8 +10,8 @@ import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
+import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import { coursesAPI, profileAPI, scheduleAPI } from '../services/api';
-import { formatCourseTime } from '../utils/courseTime';
 
 const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
@@ -383,33 +383,11 @@ export default function SchedulePage() {
       />
 
       {/* Course Detail Modal */}
-      {detailCourse && (
-        <div className="modal-overlay" onClick={() => setDetailCourse(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setDetailCourse(null)}>✕</button>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>{detailCourse.name}</h2>
-            <span className="detail-code">{detailCourse.code}</span>
-            <div className="detail-meta">
-              <span>👤 {detailCourse.instructor}</span>
-              <span>📚 {detailCourse.credits} 學分</span>
-              <span>📍 {detailCourse.location}</span>
-              <span>⏰ {formatCourseTime(detailCourse)}</span>
-            </div>
-            {detailCourse.description && (
-              <div className="detail-desc">
-                <div className="detail-desc-label">課程說明</div>
-                <p>{detailCourse.description}</p>
-              </div>
-            )}
-            <button
-              className="action-btn secondary modal-remove-course"
-              onClick={() => handleRemoveClick(detailCourse)}
-            >
-              從課表移除
-            </button>
-          </div>
-        </div>
-      )}
+      <CourseDetailModal
+        course={detailCourse}
+        onClose={() => setDetailCourse(null)}
+        onRemove={handleRemoveClick}
+      />
     </div>
   );
 }

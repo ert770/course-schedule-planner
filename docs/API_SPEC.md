@@ -385,7 +385,7 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 `completedCourseIds` 已於 2026-08-13 移除——已修排除改用穩定的 `courseHistory`
 課號比對（`skills/scheduler.js` 呼叫 `data/courseHistory.js` 的
 `getPassedCourseCodes()`），不接受 request 傳入任何形式的已修課清單，
-一律以使用者已儲存的 `courseHistory` 為準。詳見「限制條件合併語意」。
+一律以 MySQL `User_Course_History` 映射出的 `courseHistory` 為準。詳見「限制條件合併語意」。
 
 `courseIds` 決定候選池，同時代表「使用者明確指定的課」。route 會把它併入
 `explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds` 同樣視為明確指定。
@@ -483,7 +483,7 @@ Roadmap #22 的 bounded backtracking repair 會在主推 greedy baseline 未通�
 request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
 
 - **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
-- **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 `prefs.courseHistory`。修課歷史沒有任何呼叫端會在 request 裡送（REST 不送，AI Agent 的 `run_csp_scheduler` 工具參數也不含它），寫成雙來源合併只會暗示一個不存在的覆蓋能力，還可能讓模型塞入捏造的修課紀錄。
+- **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 MySQL `User_Course_History` 載入的 `prefs.courseHistory`。查詢成功但 0 筆是合法空歷史；查詢失敗時 Profile、Schedule、Chat 與 Graduation 回 `503 COURSE_HISTORY_UNAVAILABLE`，不得以空陣列繼續。REST 與 AI Agent 都不能提交或覆蓋歷史修課。
 - **`courseReviews`**（Roadmap #4）：與 `courseHistory` 同理，**純伺服器端注入、不接受 request 覆蓋**。`scheduleService.js` 從 `getAll('reviews')` 取得 `Course_Reviews` 全表後放進 `context`，request body 與 AI Agent 的 tool 參數都不含這個欄位——沒有任何管道能讓客戶端塞入捏造的評價分數。
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
 - **`selectedCourseIds`、`watchingCourseIds`、`courseStates`**：屬於本次操作的當下狀態，不從已儲存偏好回填。
@@ -578,6 +578,8 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 | `eligibilitySource`（Roadmap #20） | `eligibility` 結論套用的規則代號，供追查來源 |
 | `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學期 |
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明 |
+| `easinessSource`（Roadmap #10） | 排序用涼度分數的來源：`reviews`（有實際評價）／`proxy`（無評價，依課程屬性推估）／`none`（兩者皆無）。**`proxy` 不是證據**——UI 與 Agent 只能說「依課程屬性推估」，不得說涼／好拿分。它也不會進入 `reviewCoverage` 或方案層 `preferenceBreakdown.easy`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度來源」 |
+| `recommendationReason`（Roadmap #26） | **這門課為什麼被推薦**的結構化理由，詳見下表。`reason` 那個字串仍保留（既有呼叫端在讀），這是它的證據版本，不是取代 |
 | `reviewEvidence`（Roadmap #4） | 課程評價證據物件，`null` 代表這門課沒有評價，**不是** 0 分。有值時包含 `reviewCount`、`avgSweetness`／`avgCoolness`／`avgWorkload`／`avgOverall`／`avgDifficulty`／`avgRecommend`、`positiveCount`／`negativeCount`／`neutralCount`、`easiness`（1–5，未收縮）、`adjustedEasiness`（1–5，m-estimate 收縮後）、`easyScore`（0–100，排課實際採用）、`priorEasiness`、`shrinkagePriorWeight`、`source`。詳見 `docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」 |
 | `formallyRequired`（Roadmap #21） | 布林，永遠存在（`true`／`false`）。`true` 代表這門課是這位學生本學期正式必修（`isRequiredForStudent()===true`），且排入時已無條件豁免 3 個時段類舒適偏好（不排早八／午休保留／不排晚課）；不含封鎖時段，也不含使用者手動指定的 `mustTakeCourseIds`。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」 |
 | `corequisiteCode`（Roadmap #15） | 字串或 `null`。有配對時為對應正課／實習的 `catalogCourseCode`；`null` 代表這門課沒有配對（含 P 後綴但候選池中找不到正課的例外情況） |
@@ -586,6 +588,36 @@ change；repository 外的呼叫端若曾讀取 `course.subid3`，必須改讀
 `category` 與 `track` 的解析見 `docs/SCHEDULING_LOGIC.md` 的「課程類別解析」；`term`／
 `eligibilitySource`／`scopeReason` 見同檔案的「Active Term」與「候選課程的可追溯
 metadata」兩節。
+
+### `recommendationReason` 的欄位（Roadmap #26）
+
+| 欄位 | 說明 |
+| --- | --- |
+| `reasonVersion` | 理由結構的版本（目前 `2026-08-31.v1`）。同一個值會寫進 `Interaction_Events.recommendation_reason_version`，讓曝光事件能回溯「當時是用哪一版理由算的」 |
+| `selectedBecause` | 主要原因代號：`REQUIRED_COURSE`／`RETAKE_REQUIRED`／`USER_SPECIFIED`／`COREQUISITE_PAIR`／`PREFERENCE_MATCH`／`CREDIT_FILL`／`WATCHING`。用代號不用自由文字，中文由呈現層決定 |
+| `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。元件名稱與 `VARIANT_WEIGHTS` 的鍵一致（`base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest`） |
+| `scoreTotal` | 這門課在勝出方案裡的總分。**含**被 `scoreBreakdown` 過濾掉的 0 值元件 |
+| `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣關鍵字）。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
+| `requiredRules` | 必修／分類的判定依據：`formallyRequired`、`category`、`sourceCategory`、`classificationSource`、`track`、`countsTowardGraduation`、`nonGraduationCategory` |
+| `reviewEvidence` | 同上表的 `reviewEvidence`；`null` 代表沒有評價 |
+| `easinessSource` | 同上表的 `easinessSource` |
+| `constraintTradeoffs` | 排入這門課付出的代價，例如必修無條件豁免了時段偏好：`[{ type, label, because }]` |
+| `alternativesRejected` | 見下方說明 |
+| `confidence` | `high`／`medium`／`low`，由**證據完整度**決定：資格待確認或系所範圍無法解析 → `low`；涼度只是推估或完全沒有評價 → `medium`；其餘 `high` |
+| `dataSources` | 這門課**實際查過**的來源。沒有評價的課不會列 `Course_Reviews` |
+
+`alternativesRejected` 的 `status` 有三種，**不可混為一談**：
+
+| `status` | 意義 |
+| --- | --- |
+| `had-competitors` | 有課在同一個決策點輸給它。`candidates` 為 `[{ sectionId, catalogCourseCode, name, scoreDelta, notScheduledBecause }]`，`notScheduledBecause` 是它最後不在課表的原因（通常是與勝出者衝堂） |
+| `no-competitors` | **確實沒有其他課與它競爭**，不是還沒算 |
+| `not-applicable` | 這條放置路徑不經過競爭（例如必修迴圈、關注課程） |
+
+只記錄「在該決策點被比下去」的課。**被更早的硬限制擋掉的課不算落選者**——那是
+`excludedCourses` 的 `constraintId` 在回答的問題。另外，當下排在後面、稍後自己也被
+排入的課會在 `finalizePlan()` 被剔除（實測 demo 帳號 18 筆原始記錄裡有 16 筆屬於這種
+情況），否則「A 輸給 B」會是假的。
 
 `watchOnly` 為 `true` 時表示沒有任何正式加選課程排入，課表上只有關注課程。此情境的 `success` 仍為 `true`，因為關注課程本身是合法且可顯示的結果。
 
@@ -731,8 +763,10 @@ Response:
 ——例如顯示「已記錄你的回饋」，但資料庫裡一筆都沒有。因此
 `agentService.applyToolOutcome()` 只在工具成功時更新它們。
 
-`data` 帶的是**完整**結果；送進模型的是投影後的精簡版（見 `docs/PROMPT_DESIGN.md`
-的「排課結果必須先投影」）。
+`data` 帶的是**完整、未經任何信封包裝的原始結果**——Roadmap #25 新增的
+tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`errorCode`）
+**只包在送給模型的那一份**，不影響這個欄位。送進模型的是投影後再包信封的版本
+（見 `docs/PROMPT_DESIGN.md` 的「排課結果必須先投影」與「工具結果信封」）。
 
 ## Profile
 
@@ -873,7 +907,9 @@ Response：
 Uses the authenticated session identity. Legacy `/api/graduation/:studentId` 暫時保留，
 但 path student ID 必須與 session 相同，否則回傳 `403`。
 
-畢業學分要求**依學生系所查 `server/src/data/graduationRequirements.js`**，沒有全校通用的預設值（總學分有 128／130／131／134／156 五種）。
+畢業學分要求**依 `program + degree + admissionYear` 解析版本化規則**
+（`server/src/data/graduationRuleVersions.js` 的 `resolveGraduationRule()`），沒有全校通用的
+預設值（總學分有 128／130／131／134／156 五種）。
 
 Response:
 
@@ -882,12 +918,45 @@ Response:
   "courseHistoryAvailable": true,
   "courseHistoryMessage": null,
   "totalRequired": 128,
-  "totalEarned": 107,
+  "totalEarned": 118,
   "required": { "required": 63, "elective": 28, "general": 28, "external": 9, "unspecified": 0 },
-  "earned": { "required": 50, "elective": 31, "general": 16, "external": 10 },
-  "gaps": { "required": 13, "elective": 0, "general": 12, "external": 0, "unspecified": 0 },
-  "warnings": [],
-  "recommendations": [],
+  "earned": { "required": 61, "elective": 22, "general": 24, "external": 11, "unspecified": 0 },
+  "gaps": { "required": 2, "elective": 6, "general": 4, "external": 0, "unspecified": 0 },
+  "attribution": {
+    "required": {
+      "credits": 61,
+      "courses": [
+        {
+          "courseCode": "IECS1005", "courseName": "計算機概論", "credits": 2,
+          "academicYear": 112, "semester": 1, "requirementType": "必修",
+          "ruleVersion": "114",
+          "ruleSource": "https://registration.fcu.edu.tw/news/...",
+          "needsVerification": false,
+          "attributionSource": "course_history_category"
+        }
+      ]
+    }
+  },
+  "admissionYear": 112,
+  "ruleVersion": "114",
+  "ruleSource": "https://registration.fcu.edu.tw/news/...",
+  "ruleCoverage": { "from": 114, "to": null },
+  "appliedFallbackVersion": true,
+  "warnings": ["目前只有 114 學年度必選修科目表，112 學年度入學適用的版本尚未取得，已套用 114 學年度規則；此結果僅供參考。"],
+  "recommendations": [
+    {
+      "type": "suggestion",
+      "title": "補足本系選修",
+      "message": "行動應用程式開發（3 學分）可計入本系選修，目前尚缺 6 學分。",
+      "course": { "id": 1295, "name": "行動應用程式開發", "credits": 3 },
+      "fillsGap": "elective",
+      "gapLabel": "本系選修",
+      "gapBefore": 6,
+      "credits": 3,
+      "ruleVersion": "114",
+      "ruleSource": "https://registration.fcu.edu.tw/news/..."
+    }
+  ],
   "watchlist": [],
   "skillTree": [],
   "overallScore": 80,
@@ -902,7 +971,31 @@ Response:
 | `required` | 該系所的畢業學分要求。`general` 為通識基礎與通識選修之和，`unspecified` 為未列明學分（通常是自由選修） |
 | `earned` | 使用者已修學分，key 與 `required` 一致 |
 | `gaps` | 每類的缺口，不會小於 0 |
-| `warnings` | 查不到系所對照、或該系資料標記為待人工複核時的說明。**查無對照時不會用臆測的數字填補** |
+| `attribution` | **逐門認列追溯**（roadmap #23）：每個分類列出湊出這些學分的課程，各帶課號、課名、學分、修課學年度／學期、規則版本、規則出處、是否待人工複核與認列來源。各分類的 `credits` **恆等於** `earned` 的對應值（與 `getEarnedCredits()` 共用同一組篩選，由 G10 測試釘住）。`courseHistoryAvailable` 為 `false` 時為 `null` |
+| `admissionYear` | 學生入學學年度（民國）。來自 `User_Profiles.admission_year`，未知時為 `null`，**不從年級推導** |
+| `generalEducation` | **通識拆成基礎必修／選修兩個缺口**（roadmap #23）。`gaps.general` 維持總數不變（向後相容），這裡是額外細分——先前系統只知道「通識共缺 N」，不知道缺在哪一邊。含 `basic`／`elective`（各有 `earned`／`required`／`gap`）、`ruleVersion`／`ruleSource`、`coreRequired`（要求／已完成／未完成的課號）、`disagreements`（兩個判定來源不一致、需人工確認的課）、`unverifiableRules`（有官方出處但目前無資料可執行的規則及其阻塞原因）、`notes`。`courseHistoryAvailable` 為 `false` 時為 `null` |
+| `recommendations[].needsEligibilityConfirmation` | 這門課的正式適用對象尚未確認（目前只有通識會是 `true`）。`message` 裡也會明講，前端不得只靠旗標 |
+| `ruleVersion`／`ruleSource`／`ruleCoverage` | 這次實際套用的畢業規則版本、官方出處與該版本涵蓋的入學年度範圍 |
+| `appliedFallbackVersion` | 是否因為該入學年度沒有對應版本而退回最新一版。為 `true` 時 `warnings` 會含說明——**目前只有 114 學年度一版真實資料**，因此 112／113 入學生一律為 `true` |
+| `warnings` | 查不到系所對照、該系資料標記為待人工複核、或規則版本退回時的說明。**查無對照時不會用臆測的數字填補** |
+| `recommendations[].fillsGap` | 這門課會補到哪一類缺口（`required`／`elective`／`general`／`external`）。**每筆推薦都已驗證該分類的 `gaps` 大於 0**；補不了任何缺口的課（例如 0 學分的班級活動、體育、國防科技）不會出現 |
+| `recommendations[].gapLabel`／`gapBefore` | 缺口的中文標籤與推薦前的缺口學分數，供前端直接顯示 |
+
+**補學分推薦的候選範圍**：本人班級課程 ＋ 通識 ＋ 系外選修的聯集，三者皆由
+`courseQuery.js` 的 `filterCategorizedCourses()` 取得（與搜尋、排課、Agent 同一套班級規則）。
+先前只撈本系開的課，因此 `general`／`external` 缺口實務上永遠推不出東西。
+
+**判定順序**：排除已修過並通過的課 → 排除不計入畢業學分的課
+（`countsTowardGraduation()`）→ 排除 `ineligible`；`unknown` 一律排除，
+**唯一例外是通識**（官方明載四大領域「不是班級，適用全校學生」，見
+`docs/COURSE_SELECTION_RULES.md`），放行時標記 `needsEligibilityConfirmation` 並在
+`message` 講明 → 對映到缺口分類 → 只留該分類缺口大於 0 者 → 排序（缺口大者優先 →
+學分高者優先 → 課號）→ 同一 `catalogCourseCode` 只留一筆 → **每個有缺口的分類各先取
+一門，再用剩餘名額輪流補**，總共 3 筆。
+
+最後那條是必要的：單純取前 3 名會讓最大的缺口吃光名額（實測本系選修缺 6、通識缺 4 時，
+三個名額全被本系選修佔滿），缺通識的使用者永遠看不到通識建議。所有缺口都補滿或
+`gaps` 為 `null` 時回傳空陣列，不硬推一門。
 
 **查不到系所對照表**（`getGraduationRequirement()` 回傳 `null`）時，`required`、
 `totalRequired`、`gaps` 皆為 `null`，`warnings` 固定含 `此系所不存在，請檢查是否輸入錯誤`。
