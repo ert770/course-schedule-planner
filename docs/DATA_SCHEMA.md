@@ -536,7 +536,8 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
     ],
     "displayedSet": [
       { "catalogCourseCode": "IECS3002", "sectionId": 101 }
-    ]
+    ],
+    "displayedPlanIds": ["plan-a", "plan-b"]
   },
   "versionSnapshot": {
     "profileSchemaVersion": 1,
@@ -564,7 +565,7 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `term` | object | `academicYear` + 正規化後的 `semester: first \| second` |
 | `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `required_first` 等產生策略 |
 | `position` | object | `planRank`／`courseRank` 一律從 1 起算；不適用者為 null |
-| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單 |
+| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單；`displayedPlanIds`（Roadmap #27）另列這次曝光顯示過的每一個方案 `planId`——見下方 `recommendation_accepted` 的說明 |
 | `versionSnapshot` | object | 當時的 Profile schema、模型與推薦理由版本；#26 尚未完成時理由版本必須為 null |
 | `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
@@ -577,7 +578,7 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `course_viewed` | 開啟課程詳情 |
 | `course_favorited`／`course_unfavorited` | 加入／移出收藏或關注 |
 | `course_selected`／`course_deselected` | 手動加入／移出排課輸入 |
-| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan`；`plan.planId` 必須對得上該 `requestId` 實際寫過的曝光紀錄，對不上一律拒絕 |
+| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan`；`plan.planId` 必須出現在該 `requestId` 曝光紀錄的 `exposureContext.displayedPlanIds` 裡，對不上一律拒絕。**Roadmap #27 之前這裡只認曝光紀錄的 `plan.planId`（主推方案）一個值**——方案切換列上線後，使用者切到非主推的方案再接受會被誤判成偽造來源而拒絕寫入，這是瀏覽器實測時發現的真實 bug，修法是曝光時記下**這次顯示過的每一個方案**，不是只記主推的那個。舊曝光事件沒有 `displayedPlanIds` 時退回只認 `plan.planId`，維持向後相容 |
 | `course_removed` | 在課表之外拒絕一個推薦。**本系統目前沒有這個介面，維持 forward contract，不埋** |
 | `course_withdrawn` | **退掉課表上的課**。本專案不連學校正式選課系統，沒有「已正式選上」這個外部狀態，因此以「課已進入使用者的課表、之後又被拿掉」對應之——roadmap #2 的「加選後退選」由這個事件承接。`source: "system_recommendation"` 時同樣要對得上曝光紀錄的 `displayedSet`，`explicit_selection`／`required` 沒有可驗證的曝光對象，維持格式驗證 |
 | `schedule_regenerated` | 修改條件後要求重新產生課表 |
@@ -585,6 +586,11 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 `candidateSet` 與 `displayedSet` 必須分開，後者也必須是前者的子集；未顯示的候選
 不得被解讀為「使用者看過但拒絕」。必修接受保留 `source=required`，衝堂移除保留
 `feedbackReason=time`，讓後續 #30 不會把兩者錯當成興趣正／負回饋。
+
+**Roadmap #27 之後，`displayedSet` 是這次曝光顯示過的每一個方案（`plans[]`）課程的聯集**，
+不是只有主推方案 `schedule` 那一份——使用者能切到方案切換列裡任何一個方案，切過去
+之後看到的課同樣算「顯示過」，`course_withdrawn` 的曝光比對（`displayedSectionIds`）
+才不會誤判「這門課只存在於使用者切過去的方案裡，沒被顯示過」。
 
 idempotency 的唯一範圍是 `(userId, idempotencyKey)`：不存在時可 append；相同 key
 與相同 logical payload 回傳既有事件（duplicate）；相同 key 但 payload 不同則回

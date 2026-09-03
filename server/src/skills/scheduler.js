@@ -364,18 +364,37 @@ function hardConstraintReason(course, constraints, options = {}) {
 // 不受必修豁免規則影響）。只用來組出必修豁免發生時的揭露警告文字，刻意與
 // `hardConstraintReason()` 的排除判斷分開：一個回答「該不該擋」，一個回答
 // 「擋的話警告要講什麼」，避免兩件事混在同一個函式裡。
+// 「早八」「午休」「晚課」的節次界線。roadmap #27 的方案比較要數「這個方案有
+// 幾門早八」，與這裡回答的「這門課違反了不排早八嗎」必須是同一條界線——
+// 兩處各寫一個 `startPeriod <= 1` 遲早會分岔（比較表說 0 門早八、限制檢查卻
+// 說違反不排早八，使用者無從判斷誰對）。抽成常數讓兩邊共用同一個定義。
+const MORNING_LAST_PERIOD = 1;
+const LUNCH_PERIOD = 5;
+const EVENING_FIRST_PERIOD = 12;
+
+function isMorningBlock(block) {
+  return block.startPeriod <= MORNING_LAST_PERIOD;
+}
+
+function isLunchBlock(block) {
+  return block.startPeriod <= LUNCH_PERIOD && block.endPeriod >= LUNCH_PERIOD;
+}
+
+function isEveningBlock(block) {
+  return block.startPeriod >= EVENING_FIRST_PERIOD;
+}
+
 function getViolatedTimePreferences(course, constraints) {
   const blocks = getTimeBlocks(course);
   const violated = [];
 
-  if (constraints.noMorningClasses && blocks.some(block => block.startPeriod <= 1)) {
+  if (constraints.noMorningClasses && blocks.some(isMorningBlock)) {
     violated.push(CONSTRAINTS.NO_MORNING_CLASSES.label);
   }
-  if (constraints.lunchBreakFree
-    && blocks.some(block => block.startPeriod <= 5 && block.endPeriod >= 5)) {
+  if (constraints.lunchBreakFree && blocks.some(isLunchBlock)) {
     violated.push(CONSTRAINTS.LUNCH_BREAK_FREE.label);
   }
-  if (constraints.noEveningClasses && blocks.some(block => block.startPeriod >= 12)) {
+  if (constraints.noEveningClasses && blocks.some(isEveningBlock)) {
     violated.push(CONSTRAINTS.NO_EVENING_CLASSES.label);
   }
 
@@ -671,6 +690,62 @@ function getEasiness(plan) {
 
   const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
   return clamp01(average / MAX_EASY_COURSE_SCORE);
+}
+
+// roadmap #27：方案之間拿來比較的指標。
+//
+// 學分、偏好符合度、評價涵蓋率原本就算好了，這裡補的是「上課天數、早八、空堂」
+// 三項。**刻意算在後端**：`getCompactness()` 已經在用 `getUsedDays()` 決定
+// 「用了幾天」，前端若自己從 `timeBlocks` 再算一次，兩邊對「什麼算一天」的
+// 定義遲早分岔，而比較表正是最容易讓人相信數字的地方。同 #26 抽
+// `computeScoreComponents()` 的理由：一份定義，兩個出口。
+//
+// `gapPeriods` 定義為**每天第一節到最後一節之間沒有課的節次總和**，不含
+// 上課日之前與之後的空檔——「早上沒課」不是空堂，那是使用者要的結果。
+function computePlanMetrics(plan) {
+  const blocksByDay = new Map();
+  let morningCourses = 0;
+  let eveningCourses = 0;
+
+  for (const course of plan.schedule) {
+    const blocks = getTimeBlocks(course);
+    if (blocks.some(isMorningBlock)) morningCourses += 1;
+    if (blocks.some(isEveningBlock)) eveningCourses += 1;
+
+    for (const block of blocks) {
+      if (!blocksByDay.has(block.dayOfWeek)) blocksByDay.set(block.dayOfWeek, []);
+      blocksByDay.get(block.dayOfWeek).push(block);
+    }
+  }
+
+  let gapPeriods = 0;
+  for (const blocks of blocksByDay.values()) {
+    const occupied = new Set();
+    for (const block of blocks) {
+      for (let period = block.startPeriod; period <= block.endPeriod; period += 1) {
+        occupied.add(period);
+      }
+    }
+    const first = Math.min(...occupied);
+    const last = Math.max(...occupied);
+    for (let period = first; period <= last; period += 1) {
+      if (!occupied.has(period)) gapPeriods += 1;
+    }
+  }
+
+  return {
+    courseCount: plan.schedule.length + plan.unscheduledCourses.length,
+    scheduledCourseCount: plan.schedule.length,
+    totalCredits: plan.totalCredits,
+    graduationCredits: plan.graduationCredits,
+    usedDays: blocksByDay.size,
+    morningCourses,
+    eveningCourses,
+    gapPeriods,
+    preferenceScore: plan.preferenceScore,
+    preferenceBreakdown: plan.preferenceBreakdown,
+    reviewCoverage: plan.reviewCoverage,
+  };
 }
 
 function evaluatePreference(plan, constraints, profile) {
@@ -2196,6 +2271,8 @@ function runRepair(prepared, constraints, preferenceProfile, baselinePlans, runt
       candidate.preferenceScore = evaluatePreference(candidate, constraints, preferenceProfile).score;
       candidate.preferenceBreakdown = evaluatePreference(candidate, constraints, preferenceProfile).breakdown;
       candidate.reviewCoverage = buildReviewCoverage(candidate);
+      // roadmap #27：修復方案也會進 `plans`，比較表對它一視同仁，指標不能缺。
+      candidate.planMetrics = computePlanMetrics(candidate);
       repairPlan = candidate;
     } else {
       finalViolations = check.violations;
@@ -2259,23 +2336,36 @@ function buildReviewCoverage(plan) {
 // 並附上「可競爭課程數」——因為最常見的原因根本不是排序邏輯，而是**可修的課太少**
 // （demo 帳號實測 227 門候選裡 211 門因 #13C 適用對象規則未確認而保守排除，
 // 真正能競爭的只有 16 門）。少了這句，使用者會以為系統只想得出這幾種方案。
-function describePlanCollapse(allPlans, dedupedPlans, prepared, constraints) {
-  const collapsed = allPlans.length - dedupedPlans.length;
-  if (collapsed <= 0) return null;
-
+// roadmap #27：塌縮資訊的**結構化**版本。
+//
+// 這件事原本只以中文句子存在（見下方 `describePlanCollapse()`），而句子是混在
+// `warnings` 陣列裡的一則。前端要照驗收標準「誠實顯示實際方案數與重複原因」，
+// 就只能去 parse 中文字串——那是必然會壞的作法。改成先算出結構，句子再從結構
+// 產生：兩個出口，一份資料。
+function buildPlanDiversity(allPlans, dedupedPlans, prepared) {
   const survivingIds = new Set(dedupedPlans.map(plan => plan.id));
-  const collapsedPlans = allPlans.filter(plan => !survivingIds.has(plan.id));
-  const titles = collapsedPlans.map(plan => plan.title);
+  return {
+    requestedVariants: allPlans.length,
+    distinctPlans: dedupedPlans.length,
+    collapsed: allPlans
+      .filter(plan => !survivingIds.has(plan.id))
+      .map(plan => ({ variantId: plan.id, title: plan.title })),
+    competablePoolSize: prepared?.courses?.length ?? 0,
+  };
+}
 
-  const poolSize = prepared?.courses?.length ?? 0;
+function describePlanCollapse(diversity, constraints) {
+  if (!diversity || diversity.collapsed.length === 0) return null;
+
+  const titles = diversity.collapsed.map(item => item.title);
   let message = `${titles.join('、')}排出的課表與其他方案相同，已合併，`
-    + `目前提供 ${dedupedPlans.length} 種方案。`
-    + `可競爭的課程僅 ${poolSize} 門，方案之間的差異空間有限。`;
+    + `目前提供 ${diversity.distinctPlans} 種方案。`
+    + `可競爭的課程僅 ${diversity.competablePoolSize} 門，方案之間的差異空間有限。`;
 
   // 「集中排課」方案與其他方案相同，最常見的原因是使用者本來就勾了集中排課——
   // 那麼每一份方案都已經是集中的，這個取向自然不會產生第二種答案。
   // 這是合理結果，不是缺陷，講清楚比只說「已合併」有用。
-  if (constraints?.preferCompact && collapsedPlans.some(plan => plan.id === 'compact')) {
+  if (constraints?.preferCompact && diversity.collapsed.some(item => item.variantId === 'compact')) {
     message += '（你已設定「盡量集中排課」，因此每個方案本來就會集中，'
       + '集中排課方案不會再產生不同的結果。）';
   }
@@ -2472,6 +2562,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       plan.preferenceScore = score;
       plan.preferenceBreakdown = breakdown;
       plan.reviewCoverage = buildReviewCoverage(plan);
+      // roadmap #27：比較用的指標必須在這裡算完，前端只負責呈現。
+      plan.planMetrics = computePlanMetrics(plan);
       return plan;
     })
     .sort(comparePlans);
@@ -2480,7 +2572,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   // roadmap #10：方案數少於 variant 數時要說出**為什麼**，不能讓使用者以為
   // 系統只想得出這幾種。原因有兩類且處置完全不同：候選池太小（等 #13C 的
   // 適用對象規則）與某個 variant 沒有可用訊號（資料缺口）。
-  const collapsedVariantWarning = describePlanCollapse(allVariantPlans, plans, prepared, constraints);
+  // roadmap #27：同一份資料另外以 `planDiversity` 結構化回傳給前端。
+  const planDiversity = buildPlanDiversity(allVariantPlans, plans, prepared);
+  const collapsedVariantWarning = describePlanCollapse(planDiversity, constraints);
 
   const baselinePrimary = plans[0];
   const baselineCheck = baselinePrimary?.success
@@ -2559,6 +2653,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
         relaxed.plan.preferenceScore = score;
         relaxed.plan.preferenceBreakdown = breakdown;
         relaxed.plan.reviewCoverage = buildReviewCoverage(relaxed.plan);
+        // roadmap #27：放寬後的方案同樣會進 `plans`，指標不能缺。
+        relaxed.plan.planMetrics = computePlanMetrics(relaxed.plan);
 
         const relaxedWarnings = [...new Set([
           ...relaxed.plan.warnings,
@@ -2604,6 +2700,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       success: false,
       schedule: [],
       plans,
+      planDiversity,
       totalCredits: 0,
       graduationCredits: 0,
       nonGraduationCredits: 0,
@@ -2644,6 +2741,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       success: false,
       schedule: [],
       plans,
+      planDiversity,
       totalCredits: 0,
       graduationCredits: 0,
       nonGraduationCredits: 0,
@@ -2729,6 +2827,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     watchOnly: primary.watchOnly,
     schedule: primary.schedule,
     plans,
+    planDiversity,
     totalCredits: primary.totalCredits,
     graduationCredits: primary.graduationCredits,
     nonGraduationCredits: primary.nonGraduationCredits,

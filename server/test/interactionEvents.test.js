@@ -436,6 +436,72 @@ describe('#2 provenance enforced at the single write path (not just the Agent to
     })], { allowExposureWrite: true });
     assert.equal(result.results[0].status, 'append');
   });
+
+  // roadmap #27：實測瀏覽器時發現的真實 bug——切到方案切換列裡的第二個
+  // 方案再按「符合」，被這裡的驗證拒絕，因為曝光事件當時只記了主推方案的
+  // planId。修法是曝光事件改記 `displayedPlanIds`（這次真的顯示過的所有
+  // 方案），這裡直接釘住「接受非主推、但確實顯示過的方案」必須成功，
+  // 「接受一個從沒顯示過的方案」仍然必須失敗——兩者都測，才不會顧此失彼。
+  async function recordMultiPlanExposure(identity = identityA) {
+    return recordInteractionEvents(identity, [baseDraft({
+      eventType: 'recommendation_exposed',
+      course: null,
+      feedbackReason: null,
+      actionId: 'fffffffe-ffff-4fff-8fff-ffffffffffff',
+      plan: { planId: `${REQUEST_ID}:required_first`, variantId: 'required_first' },
+      position: { planRank: 1, courseRank: null },
+      exposureContext: {
+        surface: 'dashboard',
+        trigger: 'initial_load',
+        candidateSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
+        displayedSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
+        displayedPlanIds: [`${REQUEST_ID}:required_first`, `${REQUEST_ID}:easy_score`],
+      },
+    })], { allowExposureWrite: true });
+  }
+
+  test('IL-17e 接受曝光時顯示過、但不是主推的方案必須成功', async () => {
+    await grantPersonalization(identityA);
+    await recordMultiPlanExposure();
+    const result = await recordInteractionEvents(identityA, [baseDraft({
+      eventType: 'recommendation_accepted',
+      course: null,
+      feedbackReason: null,
+      source: 'system_recommendation',
+      plan: { planId: `${REQUEST_ID}:easy_score`, variantId: 'easy_score' },
+      position: { planRank: 2, courseRank: null },
+    })]);
+    assert.equal(result.results[0].status, 'append', result.results[0].errors?.join('; '));
+  });
+
+  test('IL-17f 接受一個曝光事件裡從未顯示過的方案仍然要被拒絕', async () => {
+    await grantPersonalization(identityA);
+    await recordMultiPlanExposure();
+    const result = await recordInteractionEvents(identityA, [baseDraft({
+      eventType: 'recommendation_accepted',
+      course: null,
+      feedbackReason: null,
+      source: 'system_recommendation',
+      plan: { planId: `${REQUEST_ID}:interest`, variantId: 'interest' },
+      position: { planRank: 3, courseRank: null },
+    })]);
+    assert.equal(result.results[0].status, 'rejected');
+    assert.match(result.results[0].errors[0], /不是該次推薦實際顯示過的方案之一/u);
+  });
+
+  test('IL-17g 舊曝光事件沒有 displayedPlanIds 時，退回只認主推 planId（相容性）', async () => {
+    await grantPersonalization(identityA);
+    await recordExposure(); // 沒有 displayedPlanIds 的舊格式曝光
+    const result = await recordInteractionEvents(identityA, [baseDraft({
+      eventType: 'recommendation_accepted',
+      course: null,
+      feedbackReason: null,
+      source: 'system_recommendation',
+      plan: { planId: `${REQUEST_ID}:required_first`, variantId: 'required_first' },
+      position: { planRank: 1, courseRank: null },
+    })]);
+    assert.equal(result.results[0].status, 'append', result.results[0].errors?.join('; '));
+  });
 });
 
 describe('#2 recommendation identifiers and post-schedule confirmation', () => {

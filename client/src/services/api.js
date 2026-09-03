@@ -127,6 +127,13 @@ export const scheduleAPI = {
       }),
     }),
   getSaved: () => request('/schedule/saved'),
+  // roadmap #27：counterfactual——只在使用者展開比較面板時才呼叫，
+  // 不併入 `generate`（見 `scheduleService.counterfactualForUser()` 的效能說明）。
+  counterfactual: (data) =>
+    request('/schedule/counterfactual', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 // Profile API

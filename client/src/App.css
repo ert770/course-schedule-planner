@@ -295,6 +295,17 @@
   padding: 1px; /* To show grid borders properly */
 }
 
+/* roadmap #27：確認列／提示／方案切換／方案比較的文字量不設邊界，會把
+   `.schedule-wrapper`（課表格）擠到只剩幾十像素——`.schedule-area` 是
+   `overflow:hidden`，超出的內容不會有捲軸，等於課表格憑空消失。
+   這裡自己設一個上限並內建捲動，課表格永遠保有合理空間。 */
+.schedule-top-stack {
+  flex-shrink: 0;
+  max-height: 42vh;
+  overflow-y: auto;
+  padding-right: 2px; /* 捲軸不擋住內容 */
+}
+
 /* 排課結果提示：失敗原因、警告與被排除課程 */
 .schedule-notice {
   margin: 12px 20px 0;

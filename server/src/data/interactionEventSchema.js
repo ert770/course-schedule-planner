@@ -106,6 +106,15 @@ function normalizeCourseRefList(value) {
   return value.map(normalizeCourseRef);
 }
 
+// Roadmap #27：一次推薦可能同時顯示好幾個方案（方案切換列），使用者接受的
+// 不一定是 `plan`（主推）那一個。`displayedPlanIds` 記下**這次曝光實際顯示過
+// 的每一個方案 id**，讓 `interactionEventService.assertProvenance()` 判斷
+// `recommendation_accepted` 時不會誤判「使用者切到別的方案再接受」是偽造。
+function normalizePlanIdList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(asTrimmedString).filter(Boolean))];
+}
+
 function normalizePlan(plan) {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return null;
   return {
@@ -144,6 +153,9 @@ function normalizeExposureContext(context) {
     trigger: asTrimmedString(context.trigger),
     candidateSet: normalizeCourseRefList(context.candidateSet),
     displayedSet: normalizeCourseRefList(context.displayedSet),
+    // roadmap #27：省略時（例如遷移前寫入的舊事件）視為空陣列，
+    // `assertProvenance()` 會另外 fallback 到 `plan.planId` 維持相容。
+    displayedPlanIds: normalizePlanIdList(context.displayedPlanIds),
   };
 }
 

@@ -287,9 +287,15 @@ async function assertProvenance(identity, event, exposureCache) {
   }
 
   if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED) {
-    if (!exposure.planId || event.plan?.planId !== exposure.planId) {
+    // roadmap #27：使用者可能切到方案切換列裡任一個當次曝光顯示過的方案再
+    // 接受，不是只有主推方案（`exposure.planId`）——用 `displayedPlanIds`
+    // 判斷「這是不是真的顯示過」，而不是「是不是主推的那一個」。
+    if (exposure.displayedPlanIds.length === 0
+      || !event.plan?.planId
+      || !exposure.displayedPlanIds.includes(event.plan.planId)) {
       throw new Error(
-        `planId 不是該次推薦實際顯示的方案（應為 ${exposure.planId ?? '無可接受方案'}）。`
+        `planId 不是該次推薦實際顯示過的方案之一`
+        + `（應為 ${exposure.displayedPlanIds.join('、') || '無可接受方案'}）。`
       );
     }
     return;
@@ -484,10 +490,18 @@ export async function findExposure(identity, requestId) {
   }
   if (!row) return null;
   const event = rowToEvent(row, identity.canonicalId);
+  // roadmap #27：`displayedPlanIds` 才是「使用者這次真的看得到、能接受的
+  // 方案清單」。舊事件（#27 之前寫入的）沒有這個欄位，退回只認主推
+  // `plan.planId` 那一個——維持既有資料的相容性，不因為補了欄位就讓歷史
+  // 事件全部驗證失敗。
+  const displayedPlanIds = event.exposureContext?.displayedPlanIds?.length > 0
+    ? event.exposureContext.displayedPlanIds
+    : [event.plan?.planId].filter(Boolean);
   return {
     requestId: event.requestId,
     planId: event.plan?.planId ?? null,
     variantId: event.plan?.variantId ?? null,
+    displayedPlanIds,
     // 學期取自曝光事件本身，而不是回饋當下的 ACTIVE_TERM——回饋可能跨到
     // 下一個學期才送出，那時的系統常數已經不是當初推薦的那個學期。
     term: event.term,

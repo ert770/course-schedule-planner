@@ -95,7 +95,7 @@
 | 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ✅ 已完成（2026-08-31，兩輪）——四條驗收標準全數達成（第 4 條前提為「無歧義的需求」） | #18、#21（均已完成） |
 | 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ✅ 已完成（2026-08-31）——四條驗收標準全數達成：OpenAI 原生 tool calling／JSON Schema、誠實 intent/data、同回合 scope 重建、矛盾參數排課前擋下、正式 tool allowlist（`agentToolRegistry.js`）、非法 course ID 過濾（`watchingCourseIds`）與統一結果信封均已完成 | #20、#21、#24（均已完成） |
 | 26 | 建立每門課的 evidence-based recommendation reason | ✅ 已完成（2026-08-31）——8 個欄位全數交付並接到前端與 Agent；`recommendationReasonVersion` 已填。**內容量受 #13C 的候選池限制**：demo 帳號實測 8 門課有 7 門「沒有競爭者」，那是真實情況並已明講，不是缺漏 | #4、#5A、#21、#22（均已完成）；落選者與分數取捨的**內容豐富度**另受 #13C 限制 |
-| 27 | 完成多方案比較 UI 與 counterfactual explanation | ⬜ **未開始，但兩個前置都已具備（2026-08-31）**——#10 讓方案內容真的不同、#26 提供了每門課的 reason 物件。剩下純粹是前端工作：目前 `client/src` 只有 `interactionLog.js` 讀 `plans`，使用者只看得到 `plans[0]` | #10、#26（均已完成） |
+| 27 | 完成多方案比較 UI 與 counterfactual explanation | ✅ **已完成（2026-09-03）**——見下方 #27 段落與[變更報告](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)。方案切換、比較表、counterfactual 端點皆已上線；「保留部分課程再重排」未做，明確記錄未完成 | #10、#26（均已完成） |
 | 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成——**可完成**：#2 已於 2026-08-26 開始記錄互動事件，「互動事件不交叉」這條驗收先前無事件可測，現在可以測了；只剩雙帳號實機驗收 | 無（#18、#2 均已完成） |
 | 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ⬜ **可開始（前置相依已全部完成）** | #2、#5A、#29（均已完成） |
@@ -106,7 +106,7 @@
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成——**前置相依已全部完成，可繼續**。Z1–Z7 已提供最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 | #15、#21、#22（均已完成） |
 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成（卡 #30 那條鏈） | #5B、#7、#30、#31（四者最終都卡在 #30） |
 | 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ **未開始，前置已全部完成（2026-08-31）**——#26 的 reason 物件正是「把每個句子對應回 Profile／DB／review／rule」所需要的結構，`dataSources` 與 `confidence` 可直接當比對基準 | #25、#26（均已完成） |
-| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始 | #33（已完成）；#27、#28、#34、#35、#36、#37 |
+| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #36、#37；#27 已完成，不再是阻塞） | #33、#27（均已完成）；#28、#34、#35（前置皆已解除）；#36、#37（仍有上游未完成） |
 | 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
 
 ## 現在可以動工的任務（2026-08-31 盤點）
@@ -1707,25 +1707,46 @@ id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 
 
 ## #27 完成多方案比較 UI 與 counterfactual explanation
 
-**狀態**：⬜ **未開始，但兩個前置都已於 2026-08-31 具備**——#10 讓方案之間是
-課程集合不同（不是只有排序不同），#26 提供了每門課的 reason 物件。
-**剩下的是純前端工作。**
+**狀態**：✅ **已完成（2026-09-03）**——見[變更報告](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)。
 
 **相依**：#10、#26（均已完成）
 
-**開始前必須具備**：後端能穩定回傳真正不同的方案（**已具備**，見 #10 的量測表）；
-每個方案與課程已有 reason object（**已具備**，見 #26）；定義方案差異度，
-不以排序不同冒充內容不同。
+### 2026-09-03 完成內容
 
-**動工時要知道的現況**：前端目前**完全沒有讀 `plans`**（`client/src` 只有
-`interactionLog.js` 用到，且只取 `planId` 寫曝光事件），使用者只看得到 `plans[0]`。
-方案數與合併原因目前僅出現在 `warnings` 文字裡。
+- **方案切換**：`PlanSwitcher.jsx`，Dashboard 與 SchedulePage 兩頁都接上，切換時
+  課表、提示、每門課的 `#26` 推薦理由跟著換成選中方案的。
+- **方案比較**：`PlanComparison.jsx` + 後端新增的 `planMetrics`（每個方案的上課
+  天數／早八／空堂，與偏好符合度／評價涵蓋率並列）。**明講「哪幾項完全相同，只有
+  哪一項真的有差」**，不排出裝飾性的重複數字。
+- **counterfactual**：新端點 `POST /api/schedule/counterfactual`，對使用者目前開著
+  的每項偏好回答「取消它課表會不會變」，三態表達（`changed`／`unchanged`／
+  `not-applicable`），`unchanged` 附原因，不留白。
+- **方案數不足的誠實顯示**：`planDiversity` 結構化回傳合併數與可競爭池大小，
+  `PlanSwitcher` 據此顯示「目前只有 N 個方案」與合併原因。
+- **watched／explicit／time-unscheduled 不遺失**：`ScheduleContext` 新增
+  `plans`／`selectedPlanId`／`activePlan`，切換方案時這些讀選中方案自己的欄位，
+  不是沿用前一個方案的。
+- **順手修正**：`acceptRecommendation()` 原本寫死 `planRank:1`，能切換方案後改送
+  真實排名。
 
-### 問題與目的
+**過程中發現並修的真實 bug**：切到非主推方案再接受，被 `assertProvenance()` 拒絕
+——曝光事件原本只記主推方案的 `planId`。修法是 `exposureContext` 新增
+`displayedPlanIds`，見變更報告第 4.5／6 節。
+
+**內容量受 `#13C` 限制**（與 `#10`、`#26` 同一個瓶頸）：demo 帳號現況只有 2 個方案，
+六項比較指標裡只有「空堂節數」真的不同；counterfactual 的 13 項偏好裡，5 項開著的
+全部落在 `unchanged`。機制已就緒，`#13C` 一解就有內容。
+
+### 未完成，明確記錄
+
+- **「保留部分課程再重排」未做**——需要把使用者鎖定的課當成新的硬限制重排，是一條
+  獨立的排課路徑，本次只做了「接受方案」與「要求重新規劃」。
+
+### 原始問題與目的（規劃時記錄）
 
 專題核心是多個可比較的推薦課表，但目前前端主要顯示單一 primary schedule。使用者也無法知道取消某項偏好後會交換哪些課。
 
-### 實作範圍
+### 原始實作範圍（規劃時記錄）
 
 - 提供方案切換或並排比較。
 - 比較學分、上課天數、早八、空堂、評價、興趣命中、限制放寬與差異課程。
@@ -1735,9 +1756,10 @@ id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 
 ### 驗收標準
 
 - 至少三個具內容差異的方案可比較；不足時誠實顯示實際方案數與重複原因。
-- 使用者能指出主推方案勝出的偏好與代價。
-- 切換方案不會遺失 watched、explicit 或 time-unscheduled courses。
-- 正常與資料不足情境均完成瀏覽器 A/B 驗收。
+  **今天只有 2 個方案，已誠實顯示；「至少三個」受 `#13C` 限制，機制已備妥。**
+- 使用者能指出主推方案勝出的偏好與代價。**已完成**（比較表 + counterfactual）。
+- 切換方案不會遺失 watched、explicit 或 time-unscheduled courses。**已完成**。
+- 正常與資料不足情境均完成瀏覽器 A/B 驗收。**已完成**（見變更報告第 6 節六張截圖）。
 
 ---
 
@@ -2178,9 +2200,9 @@ LLM 能寫出流暢理由不代表理由正確。需要驗證每個課名、教�
 
 ## #38 進行學生使用者測試並整理量化結果
 
-**狀態**：⬜ 未開始（卡 #27、#28、#34～#37）
+**狀態**：⬜ 未開始（卡 #36、#37；#27 已於 2026-09-03 完成，不再是阻塞）
 
-**相依**：#33（已完成）；#28、#34、#35（前置皆已解除，可繼續）；#27、#36、#37（仍有上游未完成）
+**相依**：#33、#27（均已完成）；#28、#34、#35（前置皆已解除，可繼續）；#36、#37（仍有上游未完成）
 
 **開始前必須具備**：Demo 身分與資料隔離、隱私 consent、穩定 UI、多方案解釋、Agent／solver／個人化／hallucination 自動 eval 均已通過；先完成研究問題、招募條件與問卷／訪談設計。
 

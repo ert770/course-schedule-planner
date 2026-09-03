@@ -584,6 +584,41 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 `server/test/agentTools.test.js` 的 AG6 另驗：理由有送進模型、`scoreBreakdown` 不送、
 沒有理由時不憑空生一個。
 
+### 方案比較與 counterfactual（Roadmap #27）
+
+`server/test/scheduler.test.js` 的 PM1-PM6（`planMetrics`／`planDiversity`，不需網路或資料庫）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PM1 | 上課天數一致性 | `planMetrics.usedDays` 與 `preferenceBreakdown.compact` 用的日集合大小相同（防兩份定義漂移） |
+| PM2 | 早八／空堂界線 | 早八課只算 `startPeriod<=1`；空堂只算「同一天有課、中間沒課」的節次，不含上課日前後 |
+| PM3 | 塌縮結構化 | `planDiversity` 的合併數、方案數、可競爭池大小三個數字與 `describePlanCollapse()` 產生的句子一致；沒有塌縮時 `collapsed` 是空陣列不是 `null` |
+| PM4 | 涵蓋每條路徑 | 成功、失敗、放寬、repair 路徑回傳的每個 plan 都帶 `planMetrics` |
+| PM5 | 欄位一致 | `planMetrics.preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位相同 |
+| PM6 | 不改變決策 | 加了 `planMetrics` 前後，排出來的課程集合不變 |
+
+`server/test/planComparison.test.js` 的 CF1-CF4（純函式，不需網路或資料庫）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| CF1 | 方案差異比較 | `diffPlans()` 只比課程集合，不比排序；`unscheduledCourses` 也算在比較範圍內 |
+| CF2 | 裝飾性重複判定 | `summarizeMetricDifferences()` 分辨真的有差異與到處相同；浮點數尾數誤差不誤判為有差異 |
+| CF3 | 三態不得混用 | 沒開的偏好一律 `not-applicable`（不去重排）；開著但不影響結果時是 `unchanged` 並附原因，不是空陣列充數；`changed` 必須附 `removed`／`added`／`metricsDelta` |
+| CF4 | 不改變決策 | 呼叫 `buildCounterfactuals()` 前後，同一組輸入排課結果不變 |
+
+`server/test/scheduleService.test.js` 另驗 `buildExposureDraft()`（純函式）：`displayedSet`
+是全部方案課程的聯集、不是只有主推方案；`displayedPlanIds` 列出這次曝光顯示過的每個
+`planId`；`plan`／`position` 仍指向主推方案；同一門課出現在多個方案裡只列一次。
+
+`server/test/interactionEvents.test.js` 的 IL-17e/f/g（實測瀏覽器時發現的真實 bug 的
+回歸測試——切到非主推方案再按「符合」被誤判成偽造來源而拒絕寫入）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| IL-17e | 接受曝光時顯示過、但非主推的方案 | 必須成功（`append`），不是被 `assertProvenance()` 誤判成偽造 |
+| IL-17f | 接受一個從未顯示過的方案 | 仍然要被拒絕（`rejected`）——修法不能連基本的來源驗證都放寬 |
+| IL-17g | 舊曝光事件沒有 `displayedPlanIds` | 退回只認主推 `planId`，維持相容 |
+
 ### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
 
 **這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。
