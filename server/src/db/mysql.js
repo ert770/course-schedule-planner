@@ -45,6 +45,20 @@ export function getPool() {
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME,
+      // 找出的過程：roadmap #28 清理測試帳號時，`DELETE /api/privacy/data`
+      // 對真實 MySQL 一律回「刪除確認已失效或不正確」——deletion intent
+      // 剛建立就被判定已過期。`privacyService.js` 全程用 UTC 寫入
+      // `DATETIME(3)` 欄位（`toMysqlDate()` 是 `toISOString()` 去掉時區字尾），
+      // 但 mysql2 讀回 DATETIME 時，沒有明講時區就會**用執行環境的本地時區**
+      // 建構 JS Date——伺服器在 UTC+8，讀回的值因此比寫入時晚了 8 小時，
+      // `new Date(expires_at) <= now` 於是永遠成立。加 `timezone: 'Z'`
+      // 讓驅動把讀到的每個 DATETIME／TIMESTAMP 都當成 UTC 解析，
+      // 才會跟寫入時的語意一致；這是驅動層設定，一次修正全部受影響的欄位
+      // （deletion intent 過期判定、consent／subject state 的顯示時間等），
+      // 不必逐一修改各處的比較邏輯。既有的 SQL 端比較（例如
+      // `Chat_Messages` 用 `WHERE expires_at > UTC_TIMESTAMP(3)`）本來就不
+      // 經過這個轉換，不受影響。
+      timezone: 'Z',
       waitForConnections: true,
       connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
       ssl: getSslConfig(),

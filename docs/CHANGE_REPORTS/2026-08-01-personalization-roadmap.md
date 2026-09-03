@@ -96,7 +96,7 @@
 | 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ✅ 已完成（2026-08-31）——四條驗收標準全數達成：OpenAI 原生 tool calling／JSON Schema、誠實 intent/data、同回合 scope 重建、矛盾參數排課前擋下、正式 tool allowlist（`agentToolRegistry.js`）、非法 course ID 過濾（`watchingCourseIds`）與統一結果信封均已完成 | #20、#21、#24（均已完成） |
 | 26 | 建立每門課的 evidence-based recommendation reason | ✅ 已完成（2026-08-31）——8 個欄位全數交付並接到前端與 Agent；`recommendationReasonVersion` 已填。**內容量受 #13C 的候選池限制**：demo 帳號實測 8 門課有 7 門「沒有競爭者」，那是真實情況並已明講，不是缺漏 | #4、#5A、#21、#22（均已完成）；落選者與分數取捨的**內容豐富度**另受 #13C 限制 |
 | 27 | 完成多方案比較 UI 與 counterfactual explanation | ✅ **已完成（2026-09-03）**——見下方 #27 段落與[變更報告](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)。方案切換、比較表、counterfactual 端點皆已上線；「保留部分課程再重排」未做，明確記錄未完成 | #10、#26（均已完成） |
-| 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | 🟡 部分完成——**可完成**：#2 已於 2026-08-26 開始記錄互動事件，「互動事件不交叉」這條驗收先前無事件可測，現在可以測了；只剩雙帳號實機驗收 | 無（#18、#2 均已完成） |
+| 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | ✅ **已完成（2026-09-03）**——見下方 #28 段落與[變更報告](./2026-09-03-roadmap-28-account-isolation.md)。兩帳號實機驗收全數通過；過程中發現並修復共用 MySQL 的日期時區 bug（刪除功能原本一律失敗） | 無（#18、#2 均已完成） |
 | 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ⬜ **可開始（前置相依已全部完成）** | #2、#5A、#29（均已完成） |
 | 31 | 建立冷啟動、偏好重設、時間衰減與資料不足策略 | 🟡 部分完成 | #18、#30 |
@@ -106,7 +106,7 @@
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成——**前置相依已全部完成，可繼續**。Z1–Z7 已提供最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 | #15、#21、#22（均已完成） |
 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 部分完成（卡 #30 那條鏈） | #5B、#7、#30、#31（四者最終都卡在 #30） |
 | 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ **未開始，前置已全部完成（2026-08-31）**——#26 的 reason 物件正是「把每個句子對應回 Profile／DB／review／rule」所需要的結構，`dataSources` 與 `confidence` 可直接當比對基準 | #25、#26（均已完成） |
-| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #36、#37；#27 已完成，不再是阻塞） | #33、#27（均已完成）；#28、#34、#35（前置皆已解除）；#36、#37（仍有上游未完成） |
+| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #36、#37；#27、#28 已完成，不再是阻塞） | #33、#27、#28（均已完成）；#34、#35（前置皆已解除）；#36、#37（仍有上游未完成） |
 | 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
 
 ## 現在可以動工的任務（2026-08-31 盤點）
@@ -146,7 +146,7 @@
 | --- | --- | --- | --- |
 | Gate 0 — 身分與資料真實性 | 確保學到的是正確學生、正確課程與正確學期 | #12、#13A、#13B、#18、#19、#20、#23 的適用部分（#13C、#13D 阻塞中，以 `unknown` 標記通過） | Agent、學習與 solver 開發 |
 | Gate 1 — 限制與可行性 | 統一定義硬限制、軟偏好、共修與無解原因 | #3、#15、#21、#22 | 多方案、解釋與 feasibility benchmark |
-| Gate 2 — Agent 需求理解 | 讓自然語言先變成可驗證需求，再允許工具執行 | #24、#25、#28 | Agent-level 自動排課與對話 eval |
+| Gate 2 — Agent 需求理解 | 讓自然語言先變成可驗證需求，再允許工具執行 | #24、#25、#28（**三項均已完成，2026-09-03 起本 Gate 全數通過**） | Agent-level 自動排課與對話 eval |
 | Gate 3 — 偏好資料與學習 | 先合法、安全記錄互動，再更新個人權重 | #29、#33、#2（已完成）、#30、#31、#7 | 協同過濾、探索與 hybrid 比較 |
 | Gate 4 — 推薦解釋與比較 | 讓每門課與每個方案都有可追溯理由 | #4、#5A、#10、#26、#27 | 教授展示與使用者研究 |
 | Gate 5 — 系統驗證 | 證明需求理解、可行性、個人化與解釋均有效 | #34～#38 | 宣稱完成 AI 個人化課程規劃 Agent |
@@ -1765,17 +1765,47 @@ id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 
 
 ## #28 統一 Dashboard、Schedule、Chat 的登入使用者 context
 
-**狀態**：🟡 部分完成（2026-08-14）——authenticated context、API 身分與 per-user setup 狀態已完成；雙帳號完整資料隔離驗收尚未完成
+**狀態**：✅ **已完成（2026-09-03）**——見[變更報告](./2026-09-03-roadmap-28-account-isolation.md)。
 
-**相依**：#18
+**相依**：#18（已完成）
 
 **開始前必須具備**：canonical user ID 與 authenticated context 已由 #18 完成；前端 `default` user、student ID fallback 及 localStorage setup flag 已完成盤點與修正。
 
-### 問題與目的
+### 2026-09-03 完成內容
+
+建第二個測試帳號（`AC28TEST2`，企業管理學系／大一，刻意與 demo 帳號 `D1249697`
+不同系所年級），在同一瀏覽器連續走過一輪：登入 A → 設偏好 → 排課 → 聊天 → 存課表
+→ 登出 → 登入 B → 確認乾淨 → 設不同偏好 → 排課 → 聊天 → 存課表 → 重新載入 → 登出
+→ 登回 A → 確認乾淨且沒沾到 B。逐項核對 Profile、已存課表、Chat、互動事件、
+localStorage、未登入 401、跨帳號冒用 403，全部通過（見變更報告 4.2 的完整比對表）。
+
+**過程中發現並修的真實 bug**：驗收結束要清理 B 時，系統自己的「刪除我的資料」
+一律回「刪除確認已失效或不正確」——`mysql2` 讀回 `DATETIME` 欄位用執行環境的本地
+時區（`Asia/Taipei`，UTC+8）解析，比對得到的到期時間永遠是「已過期」。修法是連線池
+加 `timezone: 'Z'`，一次修正這個檔案裡所有受影響的比較。見變更報告 4.4。
+
+**兩處補強**（發現但未達實際重現門檻，比照既有防護模式補齊，見變更報告 4.3）：
+`saveCurrentSchedule()` 補上帳號世代檢查；`fcu_theme` 裁定為裝置偏好，
+不加使用者前綴，加註解記下判斷依據，避免下次驗收又被誤判成 bug。
+
+**發現但明確不在這輪處理**：`DashboardPage.jsx` 的「我的專業技能樹」是寫死的假資料
+（不讀任何使用者欄位），B 帳號看到跟 A 一模一樣的「Lv.4/5」——這不是跨帳號洩漏
+（兩帳號看到同一份假資料，不是彼此的真資料），已另開任務追蹤，不計入本輪範圍。
+
+新增 `server/test/accountIsolation.test.js`（AC1-AC6），用真的能登入的固定帳號走
+HTTP + cookie，取代先前手工 identity 物件的隔離測試。
+
+驗收結束後，`AC28TEST2` 已透過系統自己的刪除功能清除，並直接查共用 MySQL 逐表
+確認（`User_Profiles`／`User_Course_History`／`Interaction_Events`／`Chat_Messages`
+均為 0 列，`users.json`／`saved_schedules.json` 只剩 A）；`Privacy_Subject_State`／
+`Consents`／`Audit_Log`／`Data_Requests` 依政策保留少量記錄，只含 HMAC subject_id，
+不含學號。
+
+### 原始問題與目的（規劃時記錄）
 
 目前不同頁面對 user ID 的傳遞方式不同，`ChatPanel` 可能使用預設 user。這會讓聊天記憶、偏好更新、互動 log 與排課結果寫到錯誤學生。
 
-### 實作範圍
+### 原始實作範圍（規劃時記錄）
 
 - 所有頁面從同一 Auth/Profile context 取得使用者。
 - API client 不再為 user-scoped operation 自動補 `default`。
@@ -1784,14 +1814,12 @@ id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 
 
 ### 驗收標準
 
-- 兩個測試帳號輪流登入，Profile、Chat、課表與互動事件不交叉。
-- Dashboard 與 SchedulePage 的 Chat 產生相同 user-scoped 結果。
-- 未登入時所有 user-scoped routes 被拒絕，而非落到 default user。
-- 瀏覽器測試覆蓋登入、切換、登出與重新載入。
+- 兩個測試帳號輪流登入，Profile、Chat、課表與互動事件不交叉。**已完成**（2026-09-03，見變更報告 4.2）。
+- Dashboard 與 SchedulePage 的 Chat 產生相同 user-scoped 結果。**已完成**（A 換頁後 Agent 仍記得同一份對話記憶）。
+- 未登入時所有 user-scoped routes 被拒絕，而非落到 default user。**已完成**（`AC6`，7 條路由全數 401）。
+- 瀏覽器測試覆蓋登入、切換、登出與重新載入。**已完成**。
 
-### 目前進度（2026-08-14 重新核對）
-
-**已完成**
+### 2026-08-14 完成內容（統一身分來源，此輪之前）
 
 - `client/src/contexts/AuthContext.jsx` 已是**唯一的登入狀態來源**，搭配 `useAuth.js` 供各頁面取用。
 - DashboardPage、SchedulePage、SearchPage、SetupPage **都已改成從 `useAuth()` 取得 `user`**，不再各自從 localStorage 或 props 推定身分。
@@ -1801,12 +1829,6 @@ id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 
 - onboarding／setup key 已改為 `fcu:<studentId>:onboarded` 與 `fcu:<studentId>:setupDone`；登出只移除目前帳號的 key 與目前登入快取，不再使用 `localStorage.clear()`。
 - GraduationPage 已移除硬編碼學號 fallback；未登入時不發送個人資料請求。
 - #18 的 route／session 測試已固定 401、403、cookie 簽名與 `/auth/me` canonical student ID。
-
-**尚未完成**
-
-- 尚未建立兩個可登入測試帳號，在同一瀏覽器依序完成登入、Profile 更新、Chat、儲存課表、登出、切換及重新載入，證明所有資料均不交叉。
-- 現有瀏覽器 A/B fixture 驗證的是「失敗必修／通過／未開課」排課差異，不等同雙帳號切換驗收，不能拿來宣稱 #28 完成。
-- interaction event schema 已由 #29 完成，但實際產品埋點仍須等待 #33、#2；因此「互動事件不交叉」這條驗收目前仍無事件可測，#2 完成後須補回 #28 的跨帳號驗證。
 
 ---
 
@@ -2200,9 +2222,9 @@ LLM 能寫出流暢理由不代表理由正確。需要驗證每個課名、教�
 
 ## #38 進行學生使用者測試並整理量化結果
 
-**狀態**：⬜ 未開始（卡 #36、#37；#27 已於 2026-09-03 完成，不再是阻塞）
+**狀態**：⬜ 未開始（卡 #36、#37；#27、#28 已於 2026-09-03 完成，不再是阻塞）
 
-**相依**：#33、#27（均已完成）；#28、#34、#35（前置皆已解除，可繼續）；#36、#37（仍有上游未完成）
+**相依**：#33、#27、#28（均已完成）；#34、#35（前置皆已解除，可繼續）；#36、#37（仍有上游未完成）
 
 **開始前必須具備**：Demo 身分與資料隔離、隱私 consent、穩定 UI、多方案解釋、Agent／solver／個人化／hallucination 自動 eval 均已通過；先完成研究問題、招募條件與問卷／訪談設計。
 

@@ -4,8 +4,9 @@
 
 ## 2026-09-03
 
-1. [Roadmap #27：多方案比較 UI 與 counterfactual explanation](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)
-2. [解決 PR #14（多格式課表匯出）與 main 的合併衝突](./2026-09-03-pr14-schedule-export-conflict-resolution.md)
+1. [Roadmap #28：雙帳號資料隔離驗收](./2026-09-03-roadmap-28-account-isolation.md)
+2. [Roadmap #27：多方案比較 UI 與 counterfactual explanation](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)
+3. [解決 PR #14（多格式課表匯出）與 main 的合併衝突](./2026-09-03-pr14-schedule-export-conflict-resolution.md)
 
 ## 2026-08-31
 

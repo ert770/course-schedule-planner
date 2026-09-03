@@ -619,6 +619,32 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 | IL-17f | 接受一個從未顯示過的方案 | 仍然要被拒絕（`rejected`）——修法不能連基本的來源驗證都放寬 |
 | IL-17g | 舊曝光事件沒有 `displayedPlanIds` | 退回只認主推 `planId`，維持相容 |
 
+### 帳號隔離驗收（Roadmap #28）
+
+`server/test/accountIsolation.test.js` 的 AC1-AC6——與既有 IL-9、privacy chat 隔離、
+I1/I2 不同，這組**用真的能登入的固定帳號**（`test/fixtures/account-isolation/users.json`，
+`DATA_DIR` 指向該 fixture，不碰 `server/data/`）走真正的 `/api/auth/login` → cookie →
+後續請求，比對實際的 HTTP 邊界，而不是手工捏 identity 物件在 service 層測：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| AC1 | 已存課表跨帳號可見性 | A 存的課表不出現在 B 的 `GET /schedule/saved`；A 自己的清單只有 A 存的那筆 |
+| AC2 | 存課表時冒充另一學號 | `POST /schedule/save` 帶 `userId=B` 被 403 擋下，A、B 的清單都不多出這筆 |
+| AC3 | 冒充更新關注清單 | `POST /auth/update-watchlist` 帶另一學號被 403 擋下，對方的關注清單不受影響 |
+| AC4 | 冒充查詢畢業進度 | `GET /graduation/:studentId` 查另一人被 403 擋下 |
+| AC5 | 冒充聊天（query string） | `POST /chat?studentId=B` 被 403 擋下——`requireIdentity` 對任何路由都認 `query.studentId`，不只限有明寫該欄位的路由 |
+| AC6 | 未登入 | `schedule/saved`、`schedule/save`、`update-watchlist`、`chat`、`graduation/me`、`graduation/:id`、`profile` 一律 401，不落到任何使用者 |
+
+這組跑在 `PRIVACY_STORE=memory` 且刪除 `DB_*` 環境變數（比照 `authRoutes.test.js`），
+不需要連真實 MySQL；`afterEach` 清掉 fixture 目錄下測試自己寫出的 `saved_schedules.json`，
+不留下執行痕跡。
+
+**只能靠瀏覽器人工驗收的部分**（無法在這組自動化測試裡重現）：Profile 偏好、修課歷史、
+`Interaction_Events`、`Chat_Messages` 這幾個真正落在共用 MySQL 的表，跨帳號隔離已在
+2026-09-03 用兩個真帳號（demo 帳號與臨時建立的測試帳號）實際跑過一輪並直接查表確認，
+記錄在對應的變更報告；沒有寫成自動化測試——需要一個第二個能登入且已寫進共用 MySQL
+`User_Profiles` 的帳號，不適合留在會被 CI 反覆執行的測試裡。
+
 ### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
 
 **這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。

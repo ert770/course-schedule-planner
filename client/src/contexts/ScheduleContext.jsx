@@ -303,12 +303,21 @@ export function ScheduleProvider({ children }) {
     }
   }, [emit, requestIdForAction, watchlist]);
 
+  // roadmap #28：與 `addCourse`／`toggleWatchlist` 同一個世代檢查——這裡原本
+  // 沒有。`await` 之後才回傳，若使用者在請求送出後、回應回來前切換帳號，
+  // 畫面會用**新帳號的 session**去存**舊帳號畫面上的課表**，儲存結果落到
+  // 錯的人身上。時間窗很窄（切帳號快到能插進一次 HTTP 往返之間），雙帳號
+  // 驗收沒有實際重現，但與既有兩處的防護是同一類漏洞，補齊避免不對稱。
   const saveCurrentSchedule = useCallback(async (name = '我的課表') => {
+    const requestedGeneration = accountGenerationRef.current;
     setSaving(true);
     try {
       const current = scheduleRef.current;
       const totalCredits = current.reduce((sum, course) => sum + Number(course?.credits || 0), 0);
       const result = await scheduleAPI.save(name, current, totalCredits);
+      if (requestedGeneration !== accountGenerationRef.current) {
+        return { success: false, message: '登入帳號已變更，未儲存課表。' };
+      }
       return { success: true, saved: result?.schedule };
     } catch (err) {
       return { success: false, message: `課表儲存失敗：${err.message}` };
