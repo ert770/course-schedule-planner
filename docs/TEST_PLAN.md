@@ -584,6 +584,111 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 `server/test/agentTools.test.js` 的 AG6 另驗：理由有送進模型、`scoreBreakdown` 不送、
 沒有理由時不憑空生一個。
 
+### 方案比較與 counterfactual（Roadmap #27）
+
+`server/test/scheduler.test.js` 的 PM1-PM6（`planMetrics`／`planDiversity`，不需網路或資料庫）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PM1 | 上課天數一致性 | `planMetrics.usedDays` 與 `preferenceBreakdown.compact` 用的日集合大小相同（防兩份定義漂移） |
+| PM2 | 早八／空堂界線 | 早八課只算 `startPeriod<=1`；空堂只算「同一天有課、中間沒課」的節次，不含上課日前後 |
+| PM3 | 塌縮結構化 | `planDiversity` 的合併數、方案數、可競爭池大小三個數字與 `describePlanCollapse()` 產生的句子一致；沒有塌縮時 `collapsed` 是空陣列不是 `null` |
+| PM4 | 涵蓋每條路徑 | 成功、失敗、放寬、repair 路徑回傳的每個 plan 都帶 `planMetrics` |
+| PM5 | 欄位一致 | `planMetrics.preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位相同 |
+| PM6 | 不改變決策 | 加了 `planMetrics` 前後，排出來的課程集合不變 |
+
+`server/test/planComparison.test.js` 的 CF1-CF4（純函式，不需網路或資料庫）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| CF1 | 方案差異比較 | `diffPlans()` 只比課程集合，不比排序；`unscheduledCourses` 也算在比較範圍內 |
+| CF2 | 裝飾性重複判定 | `summarizeMetricDifferences()` 分辨真的有差異與到處相同；浮點數尾數誤差不誤判為有差異 |
+| CF3 | 三態不得混用 | 沒開的偏好一律 `not-applicable`（不去重排）；開著但不影響結果時是 `unchanged` 並附原因，不是空陣列充數；`changed` 必須附 `removed`／`added`／`metricsDelta` |
+| CF4 | 不改變決策 | 呼叫 `buildCounterfactuals()` 前後，同一組輸入排課結果不變 |
+
+`server/test/scheduleService.test.js` 另驗 `buildExposureDraft()`（純函式）：`displayedSet`
+是全部方案課程的聯集、不是只有主推方案；`displayedPlanIds` 列出這次曝光顯示過的每個
+`planId`；`plan`／`position` 仍指向主推方案；同一門課出現在多個方案裡只列一次。
+
+`server/test/interactionEvents.test.js` 的 IL-17e/f/g（實測瀏覽器時發現的真實 bug 的
+回歸測試——切到非主推方案再按「符合」被誤判成偽造來源而拒絕寫入）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| IL-17e | 接受曝光時顯示過、但非主推的方案 | 必須成功（`append`），不是被 `assertProvenance()` 誤判成偽造 |
+| IL-17f | 接受一個從未顯示過的方案 | 仍然要被拒絕（`rejected`）——修法不能連基本的來源驗證都放寬 |
+| IL-17g | 舊曝光事件沒有 `displayedPlanIds` | 退回只認主推 `planId`，維持相容 |
+
+### 帳號隔離驗收（Roadmap #28）
+
+`server/test/accountIsolation.test.js` 的 AC1-AC6——與既有 IL-9、privacy chat 隔離、
+I1/I2 不同，這組**用真的能登入的固定帳號**（`test/fixtures/account-isolation/users.json`，
+`DATA_DIR` 指向該 fixture，不碰 `server/data/`）走真正的 `/api/auth/login` → cookie →
+後續請求，比對實際的 HTTP 邊界，而不是手工捏 identity 物件在 service 層測：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| AC1 | 已存課表跨帳號可見性 | A 存的課表不出現在 B 的 `GET /schedule/saved`；A 自己的清單只有 A 存的那筆 |
+| AC2 | 存課表時冒充另一學號 | `POST /schedule/save` 帶 `userId=B` 被 403 擋下，A、B 的清單都不多出這筆 |
+| AC3 | 冒充更新關注清單 | `POST /auth/update-watchlist` 帶另一學號被 403 擋下，對方的關注清單不受影響 |
+| AC4 | 冒充查詢畢業進度 | `GET /graduation/:studentId` 查另一人被 403 擋下 |
+| AC5 | 冒充聊天（query string） | `POST /chat?studentId=B` 被 403 擋下——`requireIdentity` 對任何路由都認 `query.studentId`，不只限有明寫該欄位的路由 |
+| AC6 | 未登入 | `schedule/saved`、`schedule/save`、`update-watchlist`、`chat`、`graduation/me`、`graduation/:id`、`profile` 一律 401，不落到任何使用者 |
+
+這組跑在 `PRIVACY_STORE=memory` 且刪除 `DB_*` 環境變數（比照 `authRoutes.test.js`），
+不需要連真實 MySQL；`afterEach` 清掉 fixture 目錄下測試自己寫出的 `saved_schedules.json`，
+不留下執行痕跡。
+
+**只能靠瀏覽器人工驗收的部分**（無法在這組自動化測試裡重現）：Profile 偏好、修課歷史、
+`Interaction_Events`、`Chat_Messages` 這幾個真正落在共用 MySQL 的表，跨帳號隔離已在
+2026-09-03 用兩個真帳號（demo 帳號與臨時建立的測試帳號）實際跑過一輪並直接查表確認，
+記錄在對應的變更報告；沒有寫成自動化測試——需要一個第二個能登入且已寫進共用 MySQL
+`User_Profiles` 的帳號，不適合留在會被 CI 反覆執行的測試裡。
+
+### Per-user 偏好學習管線（Roadmap #30）
+
+`server/test/preferenceLearning.test.js` 的 PL1-PL10——純函式測試，覆蓋
+`server/src/skills/preferenceLearning.js` 的 `learnPreferenceWeights()`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PL1 | 可重播 | 同一批事件跑兩次逐位元相同；打亂輸入順序結果不變 |
+| PL2 | 兩位互動不同的學生分化 | 顯式設定相同，一位常以 `time` 退課、一位常以 `workload` 退課（或分別接受 `compact`／`easy_score` 方案），學到的軸不同 |
+| PL3 | 單次誤點不翻盤 | 一長串一致行為後插入一次相反的單一事件，主要偏好方向不變 |
+| PL4 | 顯式優先 | 顯式設定的軸沒有任何行為訊號時仍維持顯式值；訊號足夠時可以往上調（不能被壓到基準以下） |
+| PL5 | 三態不得混用 | 事件不足回 `insufficient` 並附還差多少（權重回退為顯式設定）；沒有事件時 `missingAxes` 列出全部三軸 |
+| PL6 | 可追溯 | 每個非零權重都能列出貢獻它的 `eventId` 與規則代號 |
+| PL8 | 弱訊號不得翻盤 | 30 筆 `course_viewed` 對 1 筆強訊號，累計貢獻的效果恰好等於再一筆強訊號（不隨筆數線性成長） |
+| PL9 | 看了又退不算正向 | 同一門課先看後退，那次瀏覽被排除；時間對調後（先退後看）該次瀏覽要被計入——證明真的在看時序 |
+| PL10 | 事件類型邊界 | `recommendation_exposed`／`schedule_regenerated` 不投票；接受方案沒有對照組（只有 1 個曝光方案）或找不到對應曝光時不計入 |
+
+`server/test/preferenceLearningService.test.js` 的 PL7——服務層對隱私路徑的整合測試，
+刻意刪除 `DB_*` 環境變數走純記憶體 store（比照 `authRoutes.test.js`），不連真實 MySQL：
+
+| 情境 | 預期結果 |
+| --- | --- |
+| 未同意 `personalization_learning` | 回 `no-consent`，不寫入任何列 |
+| 同意後重算 | 寫入一列，讀回內容與計算結果一致 |
+| 刪除 | 直接用讀取路徑再查一次確認沒有殘留，不只信刪除回報的數字 |
+| 重複重算 | 覆寫同一列（`subject_id` 為主鍵），不是往後累加；同一批事件兩次重算逐位元相同 |
+
+`GET /api/privacy/export` 帶 `data.learnedPreferenceWeights`（沒算過時為 `null`，
+不是整個欄位缺席）**沒有寫成 CI 測試**——這條路由本來就需要真實 MySQL 讀 Profile
+（既有限制，與這次改動無關），CI 刻意不設定 DB secret（見 `.github/workflows/ci.yml`
+的註解）。第一次嘗試把它寫進 `privacyRoutes.test.js` 時 CI 就以 `500` 打回來，
+才發現這個檔案先前只測 `/chat`、`/consents`，從沒有案例真正走到過 MySQL。這條欄位
+的接線邏輯很薄（就是把 `getStoredLearnedWeights()` 的結果接上 response），實質行為
+已由下面完全不連 MySQL 的 PL7 覆蓋，因此不另外補一條會在 CI 出錯的測試。
+
+**真實 MySQL 的驗證**（不寫進自動化測試，記錄在對應的變更報告）：對 demo 帳號
+（`D1249697`）跑過一次完整管線——讀到真實的 92 筆事件、正確篩出可用的行為事件、
+`sufficiency.status` 為 `insufficient`（`31/50`，符合實測「今天資料不夠」的結論）；
+對同一批真實事件重播兩次結果逐位元相同；直接查表確認一個合成 subject 的
+`Learned_Preference_Weights` 列在呼叫 `deleteLearnedWeights()` 後真的消失，不只信
+回傳值。
+
+**這輪不接進排課**：`buildPreferenceProfile()` 不讀這張表，`#5B` 仍記為未完成。
+
 ### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
 
 **這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。

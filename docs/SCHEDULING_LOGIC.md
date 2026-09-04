@@ -709,21 +709,46 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 
 ## 多方案課表
 
-系統不應只產生一份課表。至少應支援：
+`generateSchedule()` 一次產生 5 個 variant 的方案（見「方案分化：每個 variant 一張權重表
+（Roadmap #10）」）：必修與重補修優先、集中排課、涼課與高分優先、興趣與路徑優先、
+學分最大化，另有第 6 個非常態成員——`#22` bounded backtracking 失敗時才插入的
+`限制修復方案`。每個方案帶：
 
-- 學分最大化方案。
-- 集中排課方案。
-- 興趣優先方案。
-- 涼課/高分優先方案。
-- 必修與重補修優先方案。
+- 課程清單（`schedule`／`unscheduledCourses`／`watchedCourses`）。
+- 總學分（`totalCredits`／`graduationCredits`／`nonGraduationCredits`）。
+- 每門課的推薦理由（`recommendationReason`，見上方「推薦理由（Roadmap #26）」）。
+- 被排除課程與原因（`excludedCourses`）。
+- 比較用指標（`planMetrics`，見「方案比較與 counterfactual（Roadmap #27）」）。
 
-每個方案應包含：
+去重後方案數常常少於 5——`uniquePlans()` 判斷「相同」的標準是**課程 id 集合**，不是排序；
+少於 5 時 `planDiversity` 結構化記錄哪些取向被合併、可競爭課程池多大，`describePlanCollapse()`
+從同一份結構產生給使用者看的中文句子。
 
-- 課程清單。
-- 總學分。
-- 方案類型。
-- 推薦理由。
-- 被排除課程與原因。
+### 方案比較與 counterfactual（Roadmap #27）
+
+`#10`（方案真的是不同課程集合）與 `#26`（每門課有理由物件）都完成後，前端才第一次讀取
+`plans[0]` 以外的方案——先前 5 個方案裡有 4 個算完就丟。
+
+**比較指標算在後端，不在前端重算。** `computePlanMetrics()` 補上前端要的「上課天數、
+早八課數、空堂節數」三項，`usedDays` 直接沿用 `getCompactness()` 判斷「用了幾天」的
+`getUsedDays()`；早八／午休／晚課的節次界線（`MORNING_LAST_PERIOD`／`LUNCH_PERIOD`／
+`EVENING_FIRST_PERIOD`）與 `getViolatedTimePreferences()` 判斷「這門課違反時段偏好嗎」
+共用同一組常數——兩處各自定義 `startPeriod <= 1` 遲早會分岔，而比較表正是最容易讓人
+相信數字的地方。
+
+**counterfactual（「取消這項偏好會怎樣」）用獨立端點，不塞進 `/generate`。**
+`planComparison.js` 的 `buildCounterfactuals()` 對使用者目前開著的每一項偏好，關掉它、
+用**同一個** `generateSchedule()` 重跑一次、跟基準方案比對課程集合差異——不自己判斷
+「這門課應該會被換掉」，那樣會與真正的排課邏輯分岔。狀態用三態表達，跟 `#26` 的
+`alternativesRejected.status` 同一個原則：`changed`（真的換課）／`unchanged`（算過了，
+確實不變，附上原因）／`not-applicable`（這項偏好目前沒開）。demo 帳號實測：13 項偏好裡
+5 項目前開著，全部落在 `unchanged`——可競爭的課只有 16 門，候選用完就停了，偏好沒有
+發揮空間；把候選池放大模擬 `#13C` 已解後，同一支端點對同一組偏好回傳真正的 `changed`。
+
+**曝光紀錄要記下「這次顯示過的每一個方案」，不是只記主推的那一個。** 這是瀏覽器實測時
+發現的真實 bug：切到方案切換列的第二個方案再按「符合」，被 `assertProvenance()` 拒絕，
+因為 `recommendation_exposed` 事件當時只存了主推方案的 `planId`。修法見
+`docs/DATA_SCHEMA.md` 的 `exposureContext.displayedPlanIds`。
 
 ## 目前程式差距
 

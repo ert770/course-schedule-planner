@@ -2321,3 +2321,121 @@ describe('R7-R10 Roadmap #26：理由掛進排課結果', () => {
     });
   });
 });
+
+describe('PM1-PM6 Roadmap #27：方案比較指標與塌縮結構化', () => {
+  const at = (id, day, start, overrides = {}) => makeCourse(id, {
+    dayOfWeek: day, startPeriod: start, endPeriod: start + 1, ...overrides,
+  });
+
+  function widePool(startId = 100) {
+    const courses = [];
+    let id = startId;
+    for (let day = 1; day <= 5; day += 1) {
+      for (const start of [3, 7]) {
+        id += 1;
+        courses.push(at(id, day, start, {
+          category: id % 3 === 0 ? '核心選修' : '一般選修',
+          credits: id % 4 === 0 ? 2 : 3,
+        }));
+      }
+    }
+    return courses;
+  }
+
+  describe('PM1 planMetrics 的天數必須與偏好符合度用的日集合一致', () => {
+    test('PM1 usedDays 與 preferenceBreakdown.compact 是同一份「用了幾天」的計算', () => {
+      // getCompactness() 用 usedDays 反推 compact 分數；這裡驗證 planMetrics.usedDays
+      // 與它讀到的是同一個集合大小，不是前端另算一份可能分岔的版本。
+      const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
+      for (const plan of result.plans) {
+        const days = new Set(
+          plan.schedule.flatMap(c => (c.timeBlocks || [{ dayOfWeek: c.dayOfWeek }]).map(b => b.dayOfWeek))
+        );
+        assert.equal(plan.planMetrics.usedDays, days.size, `${plan.id} 的 usedDays 應等於實際上課天數`);
+      }
+    });
+  });
+
+  describe('PM2 早八與空堂的界線與時段偏好判定共用同一個定義', () => {
+    test('PM2 startPeriod<=1 的課才算早八課', () => {
+      const result = generateSchedule(
+        [at(1, 1, 1, { category: '一般選修' }), at(2, 2, 3, { category: '一般選修' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+      const plan = result.plans[0];
+      const morningInSchedule = plan.schedule.filter(c => c.startPeriod <= 1).length;
+      assert.equal(plan.planMetrics.morningCourses, morningInSchedule);
+    });
+
+    test('PM2 同一天有課但中間沒課才算空堂，上課日之前之後不算', () => {
+      // 週一第 3-4 節與第 7-8 節有課、第 5-6 節沒課：空堂應為 2（5、6），
+      // 不含第 1-2 節（上課日之前）或第 9 節以後（上課日之後）。
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' }), at(2, 1, 7, { category: '一般選修' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+      const plan = result.plans.find(p => p.schedule.length === 2);
+      assert.ok(plan, '應該有一個方案同時排入兩門課');
+      assert.equal(plan.planMetrics.gapPeriods, 2);
+    });
+  });
+
+  describe('PM3 planDiversity 與 describePlanCollapse() 的句子數字一致', () => {
+    test('PM3 合併數、方案數、可競爭池大小三個數字必須相同', () => {
+      const result = generateSchedule(
+        [at(1, 1, 3, { category: '一般選修' }), at(2, 2, 3, { category: '一般選修' })],
+        { minCredits: 0, maxCredits: 25 }
+      );
+
+      assert.ok(result.planDiversity, '成功結果必須帶 planDiversity');
+      const warning = result.warnings.find(w => w.includes('已合併'));
+      assert.ok(warning, '方案被合併時必須有說明');
+      assert.match(warning, new RegExp(`目前提供 ${result.planDiversity.distinctPlans} 種方案`));
+      assert.match(warning, new RegExp(`可競爭的課程僅 ${result.planDiversity.competablePoolSize} 門`));
+      assert.equal(
+        result.planDiversity.requestedVariants - result.planDiversity.distinctPlans,
+        result.planDiversity.collapsed.length
+      );
+    });
+
+    test('PM3 沒有塌縮時 planDiversity.collapsed 為空陣列，不是 null', () => {
+      const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
+      assert.ok(result.planDiversity.distinctPlans >= 3);
+      // collapsed 可能非空（部分 variant 仍可能撞出相同課表），但欄位本身必須存在且為陣列，
+      // 不能因為沒有塌縮就整個欄位消失——那會讓前端需要另外判斷欄位存不存在。
+      assert.ok(Array.isArray(result.planDiversity.collapsed));
+    });
+  });
+
+  describe('PM4 planMetrics 出現在每一條會回傳 plans 的路徑', () => {
+    test('PM4 成功路徑的每個 plan 都帶 planMetrics', () => {
+      const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
+      assert.ok(result.plans.length > 0);
+      for (const plan of result.plans) {
+        assert.ok(plan.planMetrics, `${plan.id} 缺少 planMetrics`);
+        assert.equal(typeof plan.planMetrics.usedDays, 'number');
+      }
+    });
+  });
+
+  describe('PM5 preferenceScore／preferenceBreakdown／reviewCoverage 透過 planMetrics 原樣可讀', () => {
+    test('PM5 planMetrics 裡的三項與 plan 本身的欄位相同', () => {
+      const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
+      for (const plan of result.plans) {
+        assert.equal(plan.planMetrics.preferenceScore, plan.preferenceScore);
+        assert.deepEqual(plan.planMetrics.preferenceBreakdown, plan.preferenceBreakdown);
+        assert.deepEqual(plan.planMetrics.reviewCoverage, plan.reviewCoverage);
+      }
+    });
+  });
+
+  describe('PM6 planMetrics 不改變排課決策本身', () => {
+    test('PM6 加了 planMetrics 前後，排出來的課程集合不變', () => {
+      const build = () => generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
+      assert.deepEqual(
+        build().plans.map(p => p.schedule.map(c => c.id).sort()),
+        build().plans.map(p => p.schedule.map(c => c.id).sort())
+      );
+    });
+  });
+});

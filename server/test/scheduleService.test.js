@@ -12,7 +12,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadCourseReviewsSafely, buildNoCandidatesResult } from '../src/services/scheduleService.js';
+import { loadCourseReviewsSafely, buildNoCandidatesResult, buildExposureDraft } from '../src/services/scheduleService.js';
 
 describe('loadCourseReviewsSafely：評價查詢失敗不得讓排課請求整體失敗', () => {
   test('loader 成功時回傳其解析結果', async () => {
@@ -65,5 +65,56 @@ describe('buildNoCandidatesResult：無候選課的回應必須帶 reviewDataLoa
     assert.equal(result.clarification.required, true);
     assert.equal(result.clarification.reason, 'data-insufficient');
     assert.ok(result.clarification.questions.some(question => question.type === 'schedule-goal'));
+  });
+});
+
+describe('buildExposureDraft：roadmap #27 之後 displayedSet／displayedPlanIds 要涵蓋全部方案', () => {
+  // 實測瀏覽器時發現的真實 bug：切到方案切換列的第二個方案再按「符合」被
+  // 拒絕，因為這裡原本只用 `result.schedule`（等於 plans[0] 的副本）組
+  // `displayedSet`，且完全沒有記錄「這次曝光顯示過哪些方案」。使用者能
+  // 切換到的每個方案都要算「顯示過」，不能只認主推那一個。
+  const courseA = { id: 1, catalogCourseCode: 'IECS3002', sectionId: 1 };
+  const courseB = { id: 2, catalogCourseCode: 'IECS3059', sectionId: 2 };
+  const courseC = { id: 3, catalogCourseCode: 'IECS3099', sectionId: 3 };
+
+  function makeResult() {
+    return {
+      schedule: [courseA],
+      excludedCourses: [],
+      // 真實流程裡 `variantId` 由 `annotateScheduleIdentifiers()` 在
+      // `buildExposureDraft()` 執行前就已經設好（`= plan.id`），這裡照樣附上。
+      plans: [
+        { id: 'required_first', variantId: 'required_first', planId: 'req-1:required_first', schedule: [courseA] },
+        { id: 'easy_score', variantId: 'easy_score', planId: 'req-1:easy_score', schedule: [courseB] },
+        { id: 'interest', variantId: 'interest', planId: 'req-1:interest', schedule: [courseC] },
+      ],
+    };
+  }
+
+  test('displayedSet 是全部方案課程的聯集，不是只有主推方案', () => {
+    const draft = buildExposureDraft(makeResult(), 'req-1', { surface: 'dashboard', trigger: 'initial_load' });
+    const sectionIds = draft.exposureContext.displayedSet.map(c => c.sectionId).sort();
+    assert.deepEqual(sectionIds, [1, 2, 3]);
+  });
+
+  test('displayedPlanIds 列出這次曝光顯示過的每一個 planId', () => {
+    const draft = buildExposureDraft(makeResult(), 'req-1', { surface: 'dashboard', trigger: 'initial_load' });
+    assert.deepEqual(draft.exposureContext.displayedPlanIds, [
+      'req-1:required_first', 'req-1:easy_score', 'req-1:interest',
+    ]);
+  });
+
+  test('plan／position 仍指向主推方案（plans[0]），不因為改記全部方案而跟著變', () => {
+    const draft = buildExposureDraft(makeResult(), 'req-1', { surface: 'dashboard', trigger: 'initial_load' });
+    assert.deepEqual(draft.plan, { planId: 'req-1:required_first', variantId: 'required_first' });
+    assert.equal(draft.position.planRank, 1);
+  });
+
+  test('同一門課出現在多個方案裡只列一次，不重複', () => {
+    const result = makeResult();
+    result.plans[1].schedule = [courseA, courseB]; // courseA 同時在 required_first 與 easy_score
+    const draft = buildExposureDraft(result, 'req-1', { surface: 'dashboard', trigger: 'initial_load' });
+    const sectionIds = draft.exposureContext.displayedSet.map(c => c.sectionId).sort();
+    assert.deepEqual(sectionIds, [1, 2, 3]);
   });
 });

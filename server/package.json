@@ -13,6 +13,7 @@
     "migrate:interactions": "node scripts/interactionEventsMigration.js",
     "migrate:course-history": "node scripts/courseHistoryMigration.js",
     "migrate:admission-year": "node scripts/admissionYearMigration.js",
+    "migrate:learned-weights": "node scripts/learnedWeightsMigration.js",
     "configure:privacy": "node scripts/configurePrivacyEnvironment.js",
     "cleanup:privacy": "node scripts/privacyCleanup.js",
     "cleanup:legacy-chat": "node scripts/legacyChatCleanup.js"

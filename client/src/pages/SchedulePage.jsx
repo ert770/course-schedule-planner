@@ -11,6 +11,10 @@ import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmation
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
+import ScheduleNotice from '../components/Schedule/ScheduleNotice';
+import PlanSwitcher from '../components/Schedule/PlanSwitcher';
+import PlanComparison from '../components/Schedule/PlanComparison';
+import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { coursesAPI, profileAPI, scheduleAPI } from '../services/api';
 
 const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
@@ -30,6 +34,11 @@ export default function SchedulePage() {
     logScheduleRegenerated,
     acceptRecommendation,
     personalizationEnabled,
+    // roadmap #27
+    plans,
+    selectedPlanId,
+    planDiversity,
+    selectPlan,
   } = useSchedule();
 
   const [courses, setCourses] = useState([]);
@@ -53,7 +62,7 @@ export default function SchedulePage() {
     // 未登入時不呼叫，也不退回 `default` 使用者——那會讀到共用假帳號的 scope，
     // 畫面看起來正常但資料是別人的。
     if (!user?.studentId) {
-      setNotice({ level: 'error', text: '尚未登入，請重新登入後再操作。' });
+      setNotice(makeNotice({ level: 'error', message: '尚未登入，請重新登入後再操作。' }));
       return () => { cancelled = true; };
     }
 
@@ -64,12 +73,12 @@ export default function SchedulePage() {
         setCourseSearchScope(scope);
         setFilters(prev => ({ ...prev, department: scope?.department || '' }));
         if (!scope?.className) {
-          setNotice({ level: 'error', text: CLASS_REQUIRED_MESSAGE });
+          setNotice(makeNotice({ level: 'error', message: CLASS_REQUIRED_MESSAGE }));
         }
       })
       .catch(err => {
         if (!cancelled) {
-          setNotice({ level: 'error', text: err.message || CLASS_REQUIRED_MESSAGE });
+          setNotice(makeNotice({ level: 'error', message: err.message || CLASS_REQUIRED_MESSAGE }));
         }
       });
 
@@ -78,7 +87,7 @@ export default function SchedulePage() {
 
   const searchCourses = async () => {
     if (!courseSearchScope?.className) {
-      setNotice({ level: 'error', text: CLASS_REQUIRED_MESSAGE });
+      setNotice(makeNotice({ level: 'error', message: CLASS_REQUIRED_MESSAGE }));
       return;
     }
 
@@ -89,7 +98,7 @@ export default function SchedulePage() {
       setShowCourses(true);
     } catch (err) {
       console.error('Search failed:', err);
-      setNotice({ level: 'error', text: `課程搜尋失敗：${err.message}` });
+      setNotice(makeNotice({ level: 'error', message: `課程搜尋失敗：${err.message}` }));
     } finally {
       setLoading(false);
     }
@@ -122,30 +131,40 @@ export default function SchedulePage() {
 
       logScheduleRegenerated(data.requestId, { surface: 'schedule', trigger: 'manual_generate' });
 
+      // 原本這裡只看 `data.warnings`，excludedCourses／unscheduledCourses
+      // 完全沒讀——排除原因在這一頁靜默消失。改用跟 DashboardPage 同一份
+      // `buildScheduleNotice()`，兩頁的提示內容才一致。
+      setNotice(buildScheduleNotice(data));
+
       if (data.success) {
-        replaceSchedule(data.schedule, buildRecommendation(data));
+        replaceSchedule(data.schedule, buildRecommendation(data), data.plans, data.planDiversity);
         setConfirmation(data.requestId ? { state: 'pending' } : null);
         setShowCourses(false);
-        const warnings = data.warnings || [];
-        setNotice(
-          warnings.length > 0
-            ? { level: 'warning', text: data.message, details: warnings }
-            : null
-        );
-      } else {
-        setNotice({ level: 'error', text: data.message || '無法產生符合限制的課表。' });
       }
     } catch (err) {
-      setNotice({ level: 'error', text: `排課失敗：${err.message}` });
+      setNotice(makeNotice({ level: 'error', message: `排課失敗：${err.message}` }));
     } finally {
       setLoading(false);
     }
   };
 
+  // roadmap #27：切換方案後，提示訊息也要換成選中方案自己的排除原因與
+  // 時間未定課程——理由與 DashboardPage 的 handleSelectPlan 相同。
+  const handleSelectPlan = (variantId) => {
+    const target = plans.find(plan => plan.id === variantId);
+    if (!selectPlan(variantId)) return;
+    setNotice(prev => buildScheduleNoticeForPlan({ success: true, message: prev?.message }, target));
+  };
+
   // ChatPanel 只回傳課表陣列；帶得到完整結果時一併顯示確認提示。曝光事件
   // 已由伺服器在 `agentService.js` 呼叫排課時直接寫入，前端不用也不能回報。
   const handleScheduleFromChat = (newSchedule, result = null) => {
-    replaceSchedule(newSchedule, result ? buildRecommendation(result) : null);
+    replaceSchedule(
+      newSchedule,
+      result ? buildRecommendation(result) : null,
+      result?.plans,
+      result?.planDiversity
+    );
     if (result) {
       setConfirmation(result.requestId ? { state: 'pending' } : null);
     }
@@ -181,10 +200,10 @@ export default function SchedulePage() {
 
   const handleSave = async () => {
     const result = await saveCurrentSchedule();
-    setNotice({
+    setNotice(makeNotice({
       level: result.success ? 'success' : 'error',
-      text: result.success ? '課表已儲存到目前登入帳號。' : result.message,
-    });
+      message: result.success ? '課表已儲存到目前登入帳號。' : result.message,
+    }));
   };
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
@@ -277,35 +296,37 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          <ScheduleConfirmationBar
-            confirmation={confirmation}
-            personalizationEnabled={personalizationEnabled}
-            onConfirmFit={handleConfirmFit}
-            onRequestAdjust={() => setConfirmation({ state: 'adjusting' })}
-            onDismiss={() => setConfirmation(null)}
-          />
+          {/* roadmap #27：同 DashboardPage 的理由——`.schedule-wrapper` 是
+              `flex:1`，方案切換／比較的文字量不設邊界會把課表格擠到幾乎消失。 */}
+          <div className="schedule-top-stack">
+            <ScheduleConfirmationBar
+              confirmation={confirmation}
+              personalizationEnabled={personalizationEnabled}
+              onConfirmFit={handleConfirmFit}
+              onRequestAdjust={() => setConfirmation({ state: 'adjusting' })}
+              onDismiss={() => setConfirmation(null)}
+            />
 
-          {notice && (
-            <div className={`schedule-notice ${notice.level}`} id="schedule-page-notice">
-              <div className="schedule-notice-head">
-                <span>{notice.text}</span>
-                <button
-                  className="schedule-notice-close"
-                  onClick={() => setNotice(null)}
-                  aria-label="關閉提示"
-                >
-                  ✕
-                </button>
-              </div>
-              {/* 只顯示 message 的話，使用者看得到「計入畢業 0 學分」卻不知道原因，
-                  也就無從決定要不要移除那門課。 */}
-              {notice.details?.length > 0 && (
-                <ul className="schedule-notice-list">
-                  {notice.details.map(detail => <li key={detail}>{detail}</li>)}
-                </ul>
-              )}
-            </div>
-          )}
+            <ScheduleNotice
+              notice={notice}
+              onDismiss={() => setNotice(null)}
+              domId="schedule-page-notice"
+            />
+
+            <PlanSwitcher
+              plans={plans}
+              selectedPlanId={selectedPlanId}
+              planDiversity={planDiversity}
+              onSelectPlan={handleSelectPlan}
+            />
+
+            <PlanComparison
+              plans={plans}
+              constraints={{}}
+              courseIds={selectedCourses.map(c => c.id)}
+              surface="schedule"
+            />
+          </div>
 
           {showCourses && (
             <div className="course-browser" id="course-browser">

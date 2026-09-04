@@ -11,46 +11,17 @@ import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
 import { formatCourseTime } from '../utils/courseTime';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import { X, Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, AlertTriangle } from 'lucide-react';
+import ScheduleNotice from '../components/Schedule/ScheduleNotice';
+import PlanSwitcher from '../components/Schedule/PlanSwitcher';
+import PlanComparison from '../components/Schedule/PlanComparison';
+import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
+import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles } from 'lucide-react';
 
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
 //
 // 這裡原本寫死一份 `PREFS`，用的是**排課旗標的 key**（`preferCompact` 等）
 // 而不是標籤，而且**漏掉 `#不點名`**——它只有 12 項，後端有 13 項。
 // 同一份資訊在前端兩處、後端一處各自維護，漂移只是時間問題，而它已經發生了。
-
-const MAX_EXCLUDED_SHOWN = 5;
-
-// 把排課回應整理成畫面上要顯示的提示。成功但有警告時也要顯示，
-// 否則「學分不足」「偏好未滿足」這類訊息同樣會消失。
-// notice 的渲染會無條件讀 `warnings` / `unscheduled` / `excluded` 的 `.length`，
-// 少任何一個都會讓整個 Dashboard 白畫面。**錯誤路徑正是最容易漏欄位的地方**
-// ——也就是最需要顯示訊息的時候反而整頁掛掉。一律經過這裡補齊。
-function makeNotice({ level, message, warnings = [], excluded = [], unscheduled = [] }) {
-  return { level, message, warnings, excluded, unscheduled };
-}
-
-function buildScheduleNotice(data) {
-  const excluded = data.excludedCourses || [];
-  // 尚未排定時間的課程有學分卻不會出現在課表格上，必須讓使用者看得到。
-  const unscheduled = data.unscheduledCourses || [];
-  const message = data.message || '無法產生符合限制的課表。';
-  // 排課失敗時後端會把 warnings[0] 當作 message，直接全部渲染會重複一次。
-  const warnings = (data.warnings || []).filter(warning => warning !== message);
-
-  if (!data.success) {
-    return makeNotice({ level: 'error', message, warnings, excluded, unscheduled });
-  }
-
-  // 成功排出課表不代表所有候選課都被採用。已修課程會由 A3 主動放進
-  // excludedCourses；若這裡只看 warnings／時間未定課程，排除原因仍會在畫面上
-  // 靜默消失，使用者無法知道候選池為何少了那些課。
-  if (data.watchOnly || warnings.length > 0 || excluded.length > 0 || unscheduled.length > 0) {
-    return makeNotice({ level: 'warning', message, warnings, excluded, unscheduled });
-  }
-
-  return null;
-}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -68,6 +39,11 @@ export default function DashboardPage() {
     logScheduleRegenerated,
     acceptRecommendation,
     personalizationEnabled,
+    // roadmap #27
+    plans,
+    selectedPlanId,
+    planDiversity,
+    selectPlan,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
@@ -164,7 +140,7 @@ export default function DashboardPage() {
       }
 
       if (data.success) {
-        replaceSchedule(data.schedule, buildRecommendation(data));
+        replaceSchedule(data.schedule, buildRecommendation(data), data.plans, data.planDiversity);
         setConfirmation(data.requestId ? { state: 'pending' } : null);
       } else {
         setChatHistory(prev => [...prev, {
@@ -282,7 +258,7 @@ export default function DashboardPage() {
         // Chat 路徑同樣不再由前端回報曝光——`agentService.js` 呼叫
         // `generateForUser()` 時已經固定帶 `surface:'chat', trigger:'chat_tool'`，
         // 伺服器在算出結果時就直接寫入了。
-        replaceSchedule(res.data.schedule, buildRecommendation(res.data));
+        replaceSchedule(res.data.schedule, buildRecommendation(res.data), res.data.plans, res.data.planDiversity);
         setChatHistory(prev => [...prev, { 
           role: 'bot', 
           text: `成功生成課表！共 ${res.data.schedule.length} 門課，${res.data.totalCredits} 學分。`,
@@ -326,6 +302,18 @@ export default function DashboardPage() {
   const handleOpenDetail = (course) => {
     setDetailCourse(course);
     logCourseViewed(course);
+  };
+
+  // roadmap #27：切換方案後，提示訊息（排除原因、時間未定課程）也要換成
+  // 選中方案自己的，不是繼續顯示前一個方案的——否則畫面上的課表已經換了，
+  // 底下的「有 N 門課未被排入」卻還是舊方案的數字。
+  const handleSelectPlan = (variantId) => {
+    const target = plans.find(plan => plan.id === variantId);
+    if (!selectPlan(variantId)) return;
+    setScheduleNotice(prev => buildScheduleNoticeForPlan(
+      { success: true, message: prev?.message },
+      target
+    ));
   };
 
   const handleSave = async () => {
@@ -471,74 +459,39 @@ export default function DashboardPage() {
             </div>
           </div>
           
-          <ScheduleConfirmationBar
-            confirmation={confirmation}
-            personalizationEnabled={personalizationEnabled}
-            onConfirmFit={handleConfirmFit}
-            onRequestAdjust={() => setConfirmation({ state: 'adjusting' })}
-            onDismiss={() => setConfirmation(null)}
-          />
+          {/* roadmap #27：`.schedule-area` 是 `overflow:hidden`、`.schedule-wrapper`
+              是 `flex:1`——這個區塊（確認列／提示／方案切換／方案比較）加了
+              PlanSwitcher 與 PlanComparison 之後文字量可能很大，若不設邊界，
+              `.schedule-wrapper` 的可用高度會被擠到只剩幾十像素，課表格實質上
+              消失不見。用自己的捲動邊界把它圍起來，確保課表格永遠有合理空間。 */}
+          <div className="schedule-top-stack">
+            <ScheduleConfirmationBar
+              confirmation={confirmation}
+              personalizationEnabled={personalizationEnabled}
+              onConfirmFit={handleConfirmFit}
+              onRequestAdjust={() => setConfirmation({ state: 'adjusting' })}
+              onDismiss={() => setConfirmation(null)}
+            />
 
-          {scheduleNotice && (
-            <div className={`schedule-notice ${scheduleNotice.level}`} id="schedule-notice">
-              <div className="schedule-notice-head">
-                <AlertTriangle size={16} />
-                <span>{scheduleNotice.message}</span>
-                <button
-                  className="schedule-notice-close"
-                  onClick={() => setScheduleNotice(null)}
-                  aria-label="關閉提示"
-                >
-                  <X size={14} />
-                </button>
-              </div>
+            <ScheduleNotice
+              notice={scheduleNotice}
+              onDismiss={() => setScheduleNotice(null)}
+              domId="schedule-notice"
+            />
 
-              {scheduleNotice.warnings.length > 0 && (
-                <ul className="schedule-notice-list">
-                  {scheduleNotice.warnings.map((warning, i) => (
-                    <li key={i}>{warning}</li>
-                  ))}
-                </ul>
-              )}
+            <PlanSwitcher
+              plans={plans}
+              selectedPlanId={selectedPlanId}
+              planDiversity={planDiversity}
+              onSelectPlan={handleSelectPlan}
+            />
 
-              {scheduleNotice.unscheduled.length > 0 && (
-                <details className="schedule-notice-excluded">
-                  <summary>
-                    有 {scheduleNotice.unscheduled.length} 門課時間未定，查看清單
-                  </summary>
-                  <ul className="schedule-notice-list">
-                    {scheduleNotice.unscheduled.slice(0, MAX_EXCLUDED_SHOWN).map((course, i) => (
-                      <li key={i}>
-                        <strong>{course.name}</strong>（{course.credits} 學分）
-                        {course.department ? `｜${course.department}` : ''}
-                      </li>
-                    ))}
-                    {scheduleNotice.unscheduled.length > MAX_EXCLUDED_SHOWN && (
-                      <li>其餘 {scheduleNotice.unscheduled.length - MAX_EXCLUDED_SHOWN} 門未列出。</li>
-                    )}
-                  </ul>
-                </details>
-              )}
-
-              {scheduleNotice.excluded.length > 0 && (
-                <details className="schedule-notice-excluded">
-                  <summary>
-                    有 {scheduleNotice.excluded.length} 門課未被排入，查看原因
-                  </summary>
-                  <ul className="schedule-notice-list">
-                    {scheduleNotice.excluded.slice(0, MAX_EXCLUDED_SHOWN).map((item, i) => (
-                      <li key={i}>
-                        <strong>{item.course?.name || '未知課程'}</strong>：{item.reason}
-                      </li>
-                    ))}
-                    {scheduleNotice.excluded.length > MAX_EXCLUDED_SHOWN && (
-                      <li>其餘 {scheduleNotice.excluded.length - MAX_EXCLUDED_SHOWN} 門未列出。</li>
-                    )}
-                  </ul>
-                </details>
-              )}
-            </div>
-          )}
+            <PlanComparison
+              plans={plans}
+              constraints={{ maxCredits: 25, minCredits: 12 }}
+              surface="dashboard"
+            />
+          </div>
 
           <div className="schedule-wrapper">
             {isScheduling && (

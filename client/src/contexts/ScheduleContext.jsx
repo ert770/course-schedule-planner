@@ -92,6 +92,15 @@ export function ScheduleProvider({ children }) {
   const privacyRef = useRef(privacyStatus);
   privacyRef.current = privacyStatus;
 
+  // roadmap #27：這次排課回傳的**全部**方案，供方案切換與比較讀取。
+  // 從 saved_schedules 載回或尚未排課時為空陣列——那份課表不屬於任何一次
+  // 推薦，沒有「其他方案」可以切換。
+  const [plans, setPlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState(null);
+  // 塌縮說明（原本幾個 variant、合併成幾個、可競爭池多大）。屬於整次排課
+  // 結果，不屬於單一方案，切換方案不受影響。
+  const [planDiversity, setPlanDiversity] = useState(null);
+
   // 回傳 promise 供需要知道結果的呼叫端使用（目前只有確認列）。
   // 其餘埋點一律忽略回傳值，維持 fire-and-forget。
   const emit = useCallback((events) => (
@@ -104,12 +113,54 @@ export function ScheduleProvider({ children }) {
     recommendationRef.current?.requestId || newUuid()
   ), []);
 
-  const replaceSchedule = useCallback((nextSchedule, recommendation = null) => {
+  // `resultPlans` 是這次排課回傳的**全部**方案（`result.plans`），不是只有
+  // 選中的那一個。省略時（帳號切換清空、從已存課表載回）方案清單一併清空——
+  // 那些情境本來就沒有「其他方案」。
+  const replaceSchedule = useCallback((nextSchedule, recommendation = null, resultPlans = [], diversity = null) => {
     const normalized = Array.isArray(nextSchedule) ? nextSchedule : [];
+    const normalizedPlans = Array.isArray(resultPlans) ? resultPlans : [];
     scheduleRef.current = normalized;
     recommendationRef.current = recommendation;
     setSchedule(normalized);
+    setPlans(normalizedPlans);
+    setSelectedPlanId(recommendation?.variantId ?? normalizedPlans[0]?.id ?? null);
+    setPlanDiversity(diversity);
   }, []);
+
+  // roadmap #27：切換到方案清單裡的另一個方案。
+  //
+  // 不是重新排課，是把畫面換成**同一次排課結果**裡的另一個方案——`requestId`
+  // 沿用，`plans` 不變，只有 `schedule`／`recommendationRef`／`selectedPlanId`
+  // 跟著換。watched／explicit／時間未定課程不會遺失：它們本來就是每個 plan
+  // 各自帶著的欄位（`watchedCourses`／`unscheduledCourses`），切換時自然跟著
+  // 選中的方案換過去，不需要另外保存。
+  const selectPlan = useCallback((variantId) => {
+    const target = plans.find(plan => plan.id === variantId);
+    if (!target) return false;
+
+    const baseRecommendation = recommendationRef.current;
+    scheduleRef.current = target.schedule;
+    recommendationRef.current = {
+      requestId: baseRecommendation?.requestId ?? null,
+      planId: target.planId ?? null,
+      variantId: target.id,
+      systemRecommendedIds: new Set(
+        target.schedule.map(course => String(course.id ?? course.sectionId))
+      ),
+    };
+    setSchedule(target.schedule);
+    setSelectedPlanId(variantId);
+    return true;
+  }, [plans]);
+
+  // 目前選中的完整方案物件——課表以外的欄位（`unscheduledCourses`／
+  // `watchedCourses`／`warnings`／`excludedCourses`／`planMetrics` 讀不到就得
+  // 去 `plans` 裡自己找，這裡先找好給頁面用）。`planDiversity` 是整次排課
+  // 結果的欄位、不屬於單一方案，另外用 `planDiversityRef` 保存。
+  const activePlan = useMemo(
+    () => plans.find(plan => plan.id === selectedPlanId) ?? null,
+    [plans, selectedPlanId]
+  );
 
   useEffect(() => {
     accountGenerationRef.current += 1;
@@ -252,12 +303,21 @@ export function ScheduleProvider({ children }) {
     }
   }, [emit, requestIdForAction, watchlist]);
 
+  // roadmap #28：與 `addCourse`／`toggleWatchlist` 同一個世代檢查——這裡原本
+  // 沒有。`await` 之後才回傳，若使用者在請求送出後、回應回來前切換帳號，
+  // 畫面會用**新帳號的 session**去存**舊帳號畫面上的課表**，儲存結果落到
+  // 錯的人身上。時間窗很窄（切帳號快到能插進一次 HTTP 往返之間），雙帳號
+  // 驗收沒有實際重現，但與既有兩處的防護是同一類漏洞，補齊避免不對稱。
   const saveCurrentSchedule = useCallback(async (name = '我的課表') => {
+    const requestedGeneration = accountGenerationRef.current;
     setSaving(true);
     try {
       const current = scheduleRef.current;
       const totalCredits = current.reduce((sum, course) => sum + Number(course?.credits || 0), 0);
       const result = await scheduleAPI.save(name, current, totalCredits);
+      if (requestedGeneration !== accountGenerationRef.current) {
+        return { success: false, message: '登入帳號已變更，未儲存課表。' };
+      }
       return { success: true, saved: result?.schedule };
     } catch (err) {
       return { success: false, message: `課表儲存失敗：${err.message}` };
@@ -302,17 +362,21 @@ export function ScheduleProvider({ children }) {
     const recommendation = recommendationRef.current;
     // 這份課表不是本次推薦產生的（例如從已存課表載回），沒有方案可以接受。
     if (!recommendation?.planId) return { recorded: false, reason: 'NO_PLAN' };
+    // roadmap #27：能切換方案之後，接受的不一定是第 1 名。`plans` 已依
+    // `comparePlans()` 排序，索引 + 1 就是使用者實際接受的排名——固定寫死
+    // 1 會在使用者切到別的方案後說謊。
+    const rank = plans.findIndex(plan => plan.id === recommendation.variantId);
     return emit({
       eventType: INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED,
       requestId: recommendation.requestId,
       actionId: newActionId(),
       term: firstTerm(scheduleRef.current) || { academicYear: 114, semester: '下學期' },
       plan: { planId: recommendation.planId, variantId: recommendation.variantId },
-      position: { planRank: 1, courseRank: null },
+      position: { planRank: rank >= 0 ? rank + 1 : 1, courseRank: null },
       source: INTERACTION_SOURCES.SYSTEM_RECOMMENDATION,
       versionSnapshot: { recommendationReasonVersion: null },
     });
-  }, [emit]);
+  }, [emit, plans]);
 
   // 沒同意個人化學習的人不該被問移除原因——問了也不會記錄，只是白白多一步。
   const personalizationEnabled = hasPersonalizationConsent(privacyStatus);
@@ -333,10 +397,17 @@ export function ScheduleProvider({ children }) {
     logCourseViewed,
     logScheduleRegenerated,
     acceptRecommendation,
+    // roadmap #27
+    plans,
+    selectedPlanId,
+    activePlan,
+    planDiversity,
+    selectPlan,
   }), [
-    acceptRecommendation, addCourse, loading, logCourseViewed,
-    logScheduleRegenerated, personalizationEnabled, removeCourse, replaceSchedule,
-    saveCurrentSchedule, saving, schedule, toggleWatchlist, validating, watchlist,
+    acceptRecommendation, activePlan, addCourse, loading, logCourseViewed,
+    logScheduleRegenerated, personalizationEnabled, planDiversity, plans,
+    removeCourse, replaceSchedule, saveCurrentSchedule, saving, schedule,
+    selectedPlanId, selectPlan, toggleWatchlist, validating, watchlist,
   ]);
 
   return <ScheduleContext.Provider value={value}>{children}</ScheduleContext.Provider>;

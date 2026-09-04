@@ -380,3 +380,134 @@ input, textarea, select {
   font-size: 0.74rem;
   color: var(--text-muted);
 }
+
+/* roadmap #27：方案切換與比較。 */
+.plan-switcher {
+  margin-bottom: 16px;
+}
+.plan-switcher-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plan-switcher-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+.plan-switcher-tab:hover {
+  border-color: var(--accent-blue);
+}
+.plan-switcher-tab.active {
+  border-color: var(--accent-blue);
+  background: var(--bg-card-hover);
+  box-shadow: var(--shadow-sm);
+}
+.plan-switcher-tab-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.plan-switcher-tab-meta {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.plan-switcher-single-note,
+.plan-switcher-collapse-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.6;
+}
+
+.plan-comparison {
+  margin-bottom: 16px;
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+.plan-comparison-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.plan-comparison-summary {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+.plan-comparison-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 10px;
+}
+.plan-comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.plan-comparison-table th,
+.plan-comparison-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+.plan-comparison-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.plan-comparison-course-diffs {
+  margin-bottom: 10px;
+}
+.plan-comparison-course-diff {
+  font-size: 0.82rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.plan-comparison-diff-removed { color: var(--accent-red); }
+.plan-comparison-diff-added { color: var(--accent-emerald); }
+.plan-comparison-cf-toggle {
+  font-size: 0.82rem;
+}
+.plan-comparison-counterfactual {
+  margin-top: 10px;
+}
+.plan-comparison-cf-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.plan-comparison-cf-error {
+  color: var(--accent-red);
+  font-size: 0.82rem;
+}
+.plan-comparison-cf-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.plan-comparison-cf-item {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+/* changed：真的會換課，用強調色標出來；其餘兩態刻意用中性色，
+   不讓「不會變」看起來像沒算過。 */
+.plan-comparison-cf-item.cf-changed { border-left: 3px solid var(--accent-blue); }
+.plan-comparison-cf-item.cf-unchanged { color: var(--text-secondary); }
+.plan-comparison-cf-item.cf-not-applicable { color: var(--text-muted); }

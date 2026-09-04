@@ -52,6 +52,34 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 - `exposure_json` 存 `surface`／`trigger`／ordered `candidateSet`／`displayedSet`。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
 
+### `Learned_Preference_Weights`（Roadmap #30）
+
+`server/migrations/006_learned-preference-weights.up.sql`，由
+`server/scripts/learnedWeightsMigration.js` 套用（同一套 dry-run／`--apply
+--confirm-shared-mysql` 契約）。`subject_id` 對 `Privacy_Subject_State` 的 FK
+與命名慣例都與 `Interaction_Events` 一致。
+
+- **`subject_id` 是主鍵，不是外鍵欄位——一個使用者一列。** 這張表存的是
+  **推導狀態**，不是像 `Interaction_Events` 那樣的事實紀錄：重算永遠整列覆寫
+  （`INSERT ... ON DUPLICATE KEY UPDATE`），不保留歷史版本。真正的事實來源是
+  互動事件本身，這裡的權重永遠可以從那裡重新推導——保留多版本歷史只會製造
+  第二個要保持同步的真相來源。
+- `interest_weight`／`compact_weight`／`easy_weight`：`DECIMAL(4,3)`，範圍
+  `[0, 1]`，對應 `scheduler.js` 的 `preferenceProfile` 三軸。**這輪尚未接進
+  排課**（`buildPreferenceProfile()` 不讀這張表）——`sufficiency_status` 為
+  `insufficient` 時，這三個值等於使用者當時的顯式設定，不是半調子的學習值。
+- `sufficiency_status`：`sufficient`／`insufficient`／不落地（未同意時整批不寫，
+  與 `Interaction_Events` 同一個 consent-first 原則）。`usable_event_count`／
+  `required_event_count` 讓「還差多少」可以直接查表回答，不必重新跑一次推導。
+- `evidence_json`：`{ interest: [...], compact: [...], easy: [...] }`，每筆
+  `{ ruleId, eventId, occurredAt }`——每個非零權重都指得回是哪些事件、依哪條
+  規則算出來的（見 `server/src/skills/preferenceLearning.js`）。
+- `expires_at` 沿用 `PRIVACY_RETENTION.interactionEventDays`（180 天）的語意，
+  由 `npm run cleanup:privacy` 與 `Interaction_Events`、Raw Chat 一起清理。
+- 刪除／匯出路徑已接上 `#33`：`DELETE /api/privacy/data` 會一併刪這張表，
+  `GET /api/privacy/export` 的 `data.learnedPreferenceWeights` 會帶出目前存的
+  那一列（從未算過則為 `null`，如實回報，不是空物件）。
+
 ### `Courses`
 
 | Column | Type | API mapping |
@@ -536,7 +564,8 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
     ],
     "displayedSet": [
       { "catalogCourseCode": "IECS3002", "sectionId": 101 }
-    ]
+    ],
+    "displayedPlanIds": ["plan-a", "plan-b"]
   },
   "versionSnapshot": {
     "profileSchemaVersion": 1,
@@ -564,7 +593,7 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `term` | object | `academicYear` + 正規化後的 `semester: first \| second` |
 | `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `required_first` 等產生策略 |
 | `position` | object | `planRank`／`courseRank` 一律從 1 起算；不適用者為 null |
-| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單 |
+| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單；`displayedPlanIds`（Roadmap #27）另列這次曝光顯示過的每一個方案 `planId`——見下方 `recommendation_accepted` 的說明 |
 | `versionSnapshot` | object | 當時的 Profile schema、模型與推薦理由版本；#26 尚未完成時理由版本必須為 null |
 | `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
@@ -577,7 +606,7 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `course_viewed` | 開啟課程詳情 |
 | `course_favorited`／`course_unfavorited` | 加入／移出收藏或關注 |
 | `course_selected`／`course_deselected` | 手動加入／移出排課輸入 |
-| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan`；`plan.planId` 必須對得上該 `requestId` 實際寫過的曝光紀錄，對不上一律拒絕 |
+| `recommendation_accepted` | 接受系統推薦的課程或方案；至少指定一個 `course` 或 `plan`；`plan.planId` 必須出現在該 `requestId` 曝光紀錄的 `exposureContext.displayedPlanIds` 裡，對不上一律拒絕。**Roadmap #27 之前這裡只認曝光紀錄的 `plan.planId`（主推方案）一個值**——方案切換列上線後，使用者切到非主推的方案再接受會被誤判成偽造來源而拒絕寫入，這是瀏覽器實測時發現的真實 bug，修法是曝光時記下**這次顯示過的每一個方案**，不是只記主推的那個。舊曝光事件沒有 `displayedPlanIds` 時退回只認 `plan.planId`，維持向後相容 |
 | `course_removed` | 在課表之外拒絕一個推薦。**本系統目前沒有這個介面，維持 forward contract，不埋** |
 | `course_withdrawn` | **退掉課表上的課**。本專案不連學校正式選課系統，沒有「已正式選上」這個外部狀態，因此以「課已進入使用者的課表、之後又被拿掉」對應之——roadmap #2 的「加選後退選」由這個事件承接。`source: "system_recommendation"` 時同樣要對得上曝光紀錄的 `displayedSet`，`explicit_selection`／`required` 沒有可驗證的曝光對象，維持格式驗證 |
 | `schedule_regenerated` | 修改條件後要求重新產生課表 |
@@ -585,6 +614,11 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 `candidateSet` 與 `displayedSet` 必須分開，後者也必須是前者的子集；未顯示的候選
 不得被解讀為「使用者看過但拒絕」。必修接受保留 `source=required`，衝堂移除保留
 `feedbackReason=time`，讓後續 #30 不會把兩者錯當成興趣正／負回饋。
+
+**Roadmap #27 之後，`displayedSet` 是這次曝光顯示過的每一個方案（`plans[]`）課程的聯集**，
+不是只有主推方案 `schedule` 那一份——使用者能切到方案切換列裡任何一個方案，切過去
+之後看到的課同樣算「顯示過」，`course_withdrawn` 的曝光比對（`displayedSectionIds`）
+才不會誤判「這門課只存在於使用者切過去的方案裡，沒被顯示過」。
 
 idempotency 的唯一範圍是 `(userId, idempotencyKey)`：不存在時可 append；相同 key
 與相同 logical payload 回傳既有事件（duplicate）；相同 key 但 payload 不同則回

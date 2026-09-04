@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { validateSchedule } from '../skills/scheduler.js';
 import { validateScheduleAgainstConstraints } from '../skills/scheduleValidator.js';
 import { saveSchedule, getSavedSchedules } from '../services/memoryService.js';
-import { generateForUser } from '../services/scheduleService.js';
+import { generateForUser, counterfactualForUser } from '../services/scheduleService.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
 
@@ -20,6 +20,22 @@ router.post('/generate', requireIdentity, requireServiceConsent, async (req, res
     res.json(result);
   } catch (err) {
     if (!err.status) console.error('Schedule error:', err);
+    res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
+  }
+});
+
+// Roadmap #27：counterfactual——「取消某項偏好，課表會怎麼變」。
+//
+// 只在使用者展開比較面板時才呼叫，不併進 `/generate`（見
+// `scheduleService.counterfactualForUser()` 的效能說明）。這條路徑不會寫
+// 任何互動事件、不記曝光——使用者只是在問假設性問題。
+router.post('/counterfactual', requireIdentity, requireServiceConsent, async (req, res) => {
+  try {
+    const { courseIds = [], filters = {}, constraints = {} } = req.body;
+    const result = await counterfactualForUser(req.identity, { courseIds, filters, constraints });
+    res.json(result);
+  } catch (err) {
+    if (!err.status) console.error('Counterfactual error:', err);
     res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 });

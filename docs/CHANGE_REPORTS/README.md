@@ -2,9 +2,15 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-04
+
+1. [Roadmap #30：可重現的 per-user preference update pipeline](./2026-09-04-roadmap-30-preference-learning-pipeline.md)
+
 ## 2026-09-03
 
-1. [解決 PR #14（多格式課表匯出）與 main 的合併衝突](./2026-09-03-pr14-schedule-export-conflict-resolution.md)
+1. [Roadmap #28：雙帳號資料隔離驗收](./2026-09-03-roadmap-28-account-isolation.md)
+2. [Roadmap #27：多方案比較 UI 與 counterfactual explanation](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)
+3. [解決 PR #14（多格式課表匯出）與 main 的合併衝突](./2026-09-03-pr14-schedule-export-conflict-resolution.md)
 
 ## 2026-08-31
 

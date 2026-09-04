@@ -26,6 +26,7 @@ import { ACTIVE_TERM } from '../data/activeTerm.js';
 import { INTERACTION_EVENT_TYPES, INTERACTION_SOURCES } from '../data/interactionEventSchema.js';
 import { recordInteractionEvents } from './interactionEventService.js';
 import { RECOMMENDATION_REASON_VERSION } from '../skills/recommendationReason.js';
+import { buildCounterfactuals } from '../skills/planComparison.js';
 import { logger } from '../utils/logger.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
@@ -70,10 +71,27 @@ function courseRef(course) {
 // 的資料。`interactionEventService.recordInteractionEvents()` 只有帶
 // `allowExposureWrite:true` 才接受這個事件類型，一般呼叫端（含
 // `/api/interactions`）一律拒絕，因此這是唯一合法的寫入點。
-function buildExposureDraft(result, requestId, { surface, trigger } = {}) {
-  const displayedSet = (result.schedule || []).map(courseRef).filter(Boolean);
+// exported 供 scheduleService.test.js 直接測試——純資料整形，不碰 DB，
+// 跟 loadCourseReviewsSafely／buildNoCandidatesResult 同樣的理由。
+export function buildExposureDraft(result, requestId, { surface, trigger } = {}) {
+  // roadmap #27：使用者現在能切換到 `plans[0]` 以外的方案，所以「這次曝光
+  // 顯示過哪些課」不能只看主推方案的 `result.schedule`——那是 plans[0] 的
+  // 副本。用全部方案的課程聯集，否則使用者切到別的方案後接受推薦、或退掉
+  // 只存在於那個方案的課，會被 `assertProvenance()` 誤判成偽造證據
+  // （這正是實測時發現的真實情況：切到「涼課與高分優先」按下「符合」，
+  // 因為 planId 對不上曝光紀錄裡只存的主推 planId 而被拒絕寫入）。
+  const plans = Array.isArray(result.plans) ? result.plans : [];
+  const displayedSetMap = new Map();
+  for (const plan of plans) {
+    for (const course of (plan.schedule || [])) {
+      const ref = courseRef(course);
+      if (ref) displayedSetMap.set(ref.sectionId, ref);
+    }
+  }
+  const displayedSet = [...displayedSetMap.values()];
+
   const excluded = (result.excludedCourses || []).map(item => courseRef(item?.course)).filter(Boolean);
-  const seen = new Set(displayedSet.map(ref => ref.sectionId));
+  const seen = new Set(displayedSetMap.keys());
   const candidateSet = [...displayedSet];
   for (const ref of excluded) {
     if (seen.has(ref.sectionId)) continue;
@@ -83,15 +101,18 @@ function buildExposureDraft(result, requestId, { surface, trigger } = {}) {
   // 沒有任何候選課可談，寫一筆空曝光沒有意義。
   if (candidateSet.length === 0) return null;
 
-  const primary = Array.isArray(result.plans) ? result.plans[0] : null;
+  const primary = plans[0] ?? null;
+  const displayedPlanIds = plans.map(plan => plan.planId).filter(Boolean);
   return {
     eventType: INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED,
     requestId,
     actionId: crypto.randomUUID(),
     term: { academicYear: ACTIVE_TERM.academicYear, semester: ACTIVE_TERM.semester },
+    // `plan`／`position` 仍記主推方案——這是預設顯示、Agent 回覆引用的那一個。
+    // 使用者實際能接受的完整清單在 `exposureContext.displayedPlanIds`。
     plan: primary?.planId ? { planId: primary.planId, variantId: primary.variantId } : null,
     position: { planRank: primary?.planId ? 1 : null, courseRank: null },
-    exposureContext: { surface, trigger, candidateSet, displayedSet },
+    exposureContext: { surface, trigger, candidateSet, displayedSet, displayedPlanIds },
     source: INTERACTION_SOURCES.SYSTEM_RECOMMENDATION,
     // roadmap #26：這個欄位從 #2／#29 建好之後就一直是 `null`，註記寫著「等 #26」。
     // 現在有真的理由結構了，記下它的版本——日後理由的欄位語意改變時，
@@ -189,20 +210,15 @@ export async function loadCourseReviewsSafely(loadReviews) {
   }
 }
 
-/**
- * 為指定使用者產生課表。
- *
- * @param identity `resolveIdentity()` 的結果，不是原始 userId。
- * @param input    `{ courseIds, filters, constraints, surface, trigger }`；
- *                 除 `surface`／`trigger` 外皆可省略。REST 從 body 取得，
- *                 Chat 從模型的 tool 參數取得；`surface`／`trigger` 只用來
- *                 標記這次推薦曝光是在哪個畫面、被什麼動作觸發，不參與
- *                 候選池或排課邏輯——省略時單純不記錄這次曝光，不用猜的。
- * @param options  `{ prefs }` 已載入的 profile，避免同一次對話重複查詢。
- */
-export async function generateForUser(identity, input = {}, options = {}) {
-  const { courseIds = [], filters = {}, constraints = {}, surface, trigger } = input;
-  const requestId = options.requestId || crypto.randomUUID();
+// 候選池與限制的組裝。
+//
+// roadmap #27 的 counterfactual 需要用**完全相同的候選池與限制**重跑排課，
+// 只換掉一個偏好旗標。若它自己複製一份這段流程，就正好犯下這個檔案開頭警告的
+// 錯誤——兩條路徑看似相同，其中一條加了前置條件另一條靜默落後，而
+// counterfactual 的答案會因此變成「取消偏好會換掉這些課」的假因果。
+// 抽成共用函式，兩邊只能有同一份。
+async function prepareGenerationInputs(identity, input = {}, options = {}) {
+  const { courseIds = [], filters = {}, constraints = {} } = input;
 
   const prefs = options.prefs ?? await getUserPreferences(identity);
 
@@ -248,6 +264,56 @@ export async function generateForUser(identity, input = {}, options = {}) {
     }
   }
 
+  return { candidates, mergedConstraints, reviewDataLoaded };
+}
+
+/**
+ * Roadmap #27：counterfactual——「取消某項偏好，課表會怎麼變」。
+ *
+ * **刻意不併進 `/generate`**：一次 counterfactual 是一次完整重排，實測候選池
+ * 放大後（#13C 解掉之後的真實情況）一次排課 289ms、逐項重跑 13 項偏好會是
+ * 數秒等級。多數使用者不會展開這個面板，讓每次排課都付這個代價不合理。
+ *
+ * 這條路徑**不寫任何互動事件**——使用者只是在問假設性問題，沒有推薦被曝光，
+ * 把它記成曝光會汙染 #2 的訓練資料。
+ */
+export async function counterfactualForUser(identity, input = {}, options = {}) {
+  const { candidates, mergedConstraints, reviewDataLoaded } =
+    await prepareGenerationInputs(identity, input, options);
+
+  if (candidates.length === 0) {
+    return { baseline: null, competablePoolSize: 0, counterfactuals: [], reviewDataLoaded };
+  }
+
+  return {
+    ...buildCounterfactuals(candidates, mergedConstraints),
+    reviewDataLoaded,
+  };
+}
+
+/**
+ * 為指定使用者產生課表。
+ *
+ * @param identity `resolveIdentity()` 的結果，不是原始 userId。
+ * @param input    `{ courseIds, filters, constraints, surface, trigger }`；
+ *                 除 `surface`／`trigger` 外皆可省略。REST 從 body 取得，
+ *                 Chat 從模型的 tool 參數取得；`surface`／`trigger` 只用來
+ *                 標記這次推薦曝光是在哪個畫面、被什麼動作觸發，不參與
+ *                 候選池或排課邏輯——省略時單純不記錄這次曝光，不用猜的。
+ * @param options  `{ prefs }` 已載入的 profile，避免同一次對話重複查詢。
+ */
+export async function generateForUser(identity, input = {}, options = {}) {
+  const { courseIds = [], filters = {}, constraints = {}, surface, trigger } = input;
+  const requestId = options.requestId || crypto.randomUUID();
+
+  const prefs = options.prefs ?? await getUserPreferences(identity);
+
+  const { candidates, mergedConstraints, reviewDataLoaded } = await prepareGenerationInputs(
+    identity,
+    { courseIds, filters, constraints },
+    { ...options, prefs }
+  );
+
   if (candidates.length === 0) {
     return annotateScheduleIdentifiers(buildNoCandidatesResult(reviewDataLoaded), requestId);
   }
@@ -259,6 +325,7 @@ export async function generateForUser(identity, input = {}, options = {}) {
 
 export default {
   generateForUser,
+  counterfactualForUser,
   loadCourseReviewsSafely,
   buildNoCandidatesResult,
   annotateScheduleIdentifiers,

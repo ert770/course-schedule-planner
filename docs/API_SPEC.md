@@ -642,6 +642,119 @@ metadata」兩節。
 由 1／8 門課推得」是完全不同的兩件事，只讀 `preferenceBreakdown.easy` 而不看 `reviewCoverage` 會誤判
 可信度。
 
+### `planMetrics`（Roadmap #27）
+
+每個 `plans[]` 元素另含 `planMetrics`，是方案比較 UI 要用的指標，**在後端算好、前端不重算**——
+`usedDays` 沿用 `getCompactness()` 判斷「用了幾天」的同一份邏輯（`getUsedDays()`），
+避免前端從 `timeBlocks` 自己再數一次而與偏好符合度算出不同答案：
+
+```json
+{
+  "courseCount": 8,
+  "scheduledCourseCount": 8,
+  "totalCredits": 23,
+  "graduationCredits": 23,
+  "usedDays": 5,
+  "morningCourses": 0,
+  "eveningCourses": 0,
+  "gapPeriods": 0,
+  "preferenceScore": 0.333,
+  "preferenceBreakdown": { "interest": 0, "compact": 0.33, "easy": 0.72 },
+  "reviewCoverage": { "rated": 1, "total": 8, "ratio": 0.125 }
+}
+```
+
+`morningCourses`／`gapPeriods` 的節次界線與 `constraintSchema.js` 的
+`NO_MORNING_CLASSES`／`LUNCH_BREAK_FREE`／`NO_EVENING_CLASSES` 判定共用同一組常數
+（`MORNING_LAST_PERIOD`／`LUNCH_PERIOD`／`EVENING_FIRST_PERIOD`），不是另一份定義。
+`gapPeriods` 只算「當天第一節到最後一節之間沒課的節次」，不含上課日之前或之後的空檔——
+「早上沒課」是使用者要的結果，不算空堂。
+
+`preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位完全相同，
+在這裡重複一份是為了讓前端只讀 `planMetrics` 就能組出整張比較表，不必同時讀兩個地方。
+
+### `planDiversity`（Roadmap #27）
+
+頂層新增 `planDiversity`，是「方案塌縮」的結構化版本——原本這件事只以中文句子存在於
+`warnings`（見下方 `已合併` 範例），前端要顯示「實際方案數與重複原因」只能 parse 字串。
+現在同一份資料同時有結構化欄位與句子兩個出口，句子由結構產生，不是兩份各自維護：
+
+```json
+{
+  "requestedVariants": 5,
+  "distinctPlans": 2,
+  "collapsed": [
+    { "variantId": "compact", "title": "集中排課" },
+    { "variantId": "interest", "title": "興趣與路徑優先" },
+    { "variantId": "max_credits", "title": "學分最大化" }
+  ],
+  "competablePoolSize": 16
+}
+```
+
+失敗回應（`success:false`）也會帶這個欄位；`collapsed` 沒有塌縮時為空陣列，不是 `null`。
+
+### `POST /api/schedule/counterfactual`（Roadmap #27）
+
+「取消某項偏好，課表會怎麼變」。**獨立端點，不併入 `/generate`**——實測候選池放大後
+（`#13C` 解決後的規模）一次完整排課約 289ms，若把使用者目前開啟的每項偏好都逐一重排，
+單次請求會變成數百 ms 到數秒；多數使用者不會展開比較面板，讓每次排課都付這個代價不划算。
+
+Request（與 `/generate` 同一組輸入形狀）：
+
+```json
+{
+  "courseIds": [],
+  "filters": {},
+  "constraints": { "maxCredits": 25, "minCredits": 12 }
+}
+```
+
+伺服器端用同一組輸入**自己重跑一次基準**，不接受前端傳課表進來比對——那份宣稱是瀏覽器
+自己說的，用來當「取消偏好前後有沒有差」的基準不可信。
+
+Response：
+
+```json
+{
+  "baseline": { "planId": "req-1:required_first", "variantId": "required_first" },
+  "competablePoolSize": 16,
+  "counterfactuals": [
+    {
+      "preferenceId": "preferCompact",
+      "label": "盡量集中排課",
+      "status": "unchanged",
+      "removed": [],
+      "added": [],
+      "reason": "取消這項偏好後，排出來的課表完全相同——可競爭的課程只有 16 門，候選課程用完就停了，這項偏好沒有可以發揮的空間。"
+    },
+    {
+      "preferenceId": "lunchBreakFree",
+      "label": "午休務必空出",
+      "status": "not-applicable",
+      "removed": [],
+      "added": [],
+      "reason": "你目前沒有開啟這項偏好。"
+    }
+  ],
+  "reviewDataLoaded": true
+}
+```
+
+`status` 三態，理由與 `recommendationReason.alternativesRejected.status` 同一個原則——
+空陣列會讓「算過、沒有差異」與「沒算」長得一樣，所以要有明確的狀態值：
+
+| `status` | 意義 |
+| --- | --- |
+| `changed` | 取消這項偏好，主推方案確實會換課；`removed`／`added` 為 `[{ sectionId, catalogCourseCode, name, credits }]`，並附 `metricsDelta`（`planMetrics` 幾個欄位的差值） |
+| `unchanged` | **算過了，確實不會變**，`reason` 說明原因（例如可競爭課程數不足） |
+| `not-applicable` | 使用者目前沒有開啟這項偏好，沒有「取消」這件事可談 |
+
+只對使用者**目前開著**的偏好計算 `changed`／`unchanged`；沒開的一律 `not-applicable`，
+不會浪費一次重排去確認「開啟一個沒開的偏好會怎樣」——那不是這個端點要回答的問題。
+
+這條路徑**不寫任何互動事件、不記曝光**——使用者只是在問假設性問題，沒有推薦被曝光。
+
 ### `POST /api/schedule/validate`
 
 Request:
