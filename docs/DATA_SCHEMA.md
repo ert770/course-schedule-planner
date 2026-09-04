@@ -52,6 +52,34 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 - `exposure_json` 存 `surface`／`trigger`／ordered `candidateSet`／`displayedSet`。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
 
+### `Learned_Preference_Weights`（Roadmap #30）
+
+`server/migrations/006_learned-preference-weights.up.sql`，由
+`server/scripts/learnedWeightsMigration.js` 套用（同一套 dry-run／`--apply
+--confirm-shared-mysql` 契約）。`subject_id` 對 `Privacy_Subject_State` 的 FK
+與命名慣例都與 `Interaction_Events` 一致。
+
+- **`subject_id` 是主鍵，不是外鍵欄位——一個使用者一列。** 這張表存的是
+  **推導狀態**，不是像 `Interaction_Events` 那樣的事實紀錄：重算永遠整列覆寫
+  （`INSERT ... ON DUPLICATE KEY UPDATE`），不保留歷史版本。真正的事實來源是
+  互動事件本身，這裡的權重永遠可以從那裡重新推導——保留多版本歷史只會製造
+  第二個要保持同步的真相來源。
+- `interest_weight`／`compact_weight`／`easy_weight`：`DECIMAL(4,3)`，範圍
+  `[0, 1]`，對應 `scheduler.js` 的 `preferenceProfile` 三軸。**這輪尚未接進
+  排課**（`buildPreferenceProfile()` 不讀這張表）——`sufficiency_status` 為
+  `insufficient` 時，這三個值等於使用者當時的顯式設定，不是半調子的學習值。
+- `sufficiency_status`：`sufficient`／`insufficient`／不落地（未同意時整批不寫，
+  與 `Interaction_Events` 同一個 consent-first 原則）。`usable_event_count`／
+  `required_event_count` 讓「還差多少」可以直接查表回答，不必重新跑一次推導。
+- `evidence_json`：`{ interest: [...], compact: [...], easy: [...] }`，每筆
+  `{ ruleId, eventId, occurredAt }`——每個非零權重都指得回是哪些事件、依哪條
+  規則算出來的（見 `server/src/skills/preferenceLearning.js`）。
+- `expires_at` 沿用 `PRIVACY_RETENTION.interactionEventDays`（180 天）的語意，
+  由 `npm run cleanup:privacy` 與 `Interaction_Events`、Raw Chat 一起清理。
+- 刪除／匯出路徑已接上 `#33`：`DELETE /api/privacy/data` 會一併刪這張表，
+  `GET /api/privacy/export` 的 `data.learnedPreferenceWeights` 會帶出目前存的
+  那一列（從未算過則為 `null`，如實回報，不是空物件）。
+
 ### `Courses`
 
 | Column | Type | API mapping |

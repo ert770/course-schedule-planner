@@ -6,6 +6,7 @@ import {
 } from '../services/privacyService.js';
 import { deleteUserServiceData, getSavedSchedules, getUserPreferences } from '../services/memoryService.js';
 import { deleteInteractionEvents, getInteractionEventsForExport } from '../services/interactionEventService.js';
+import { deleteLearnedWeights, getStoredLearnedWeights } from '../services/preferenceLearningService.js';
 import { buildClearSessionCookie } from '../services/sessionService.js';
 
 const router = Router();
@@ -34,9 +35,13 @@ router.put('/consents', requireIdentity, async (req, res) => {
 
 router.get('/export', requireIdentity, async (req, res) => {
   try {
-    const [profile, schedules, privacy, interactionEvents] = await Promise.all([
+    const [profile, schedules, privacy, interactionEvents, learnedPreferenceWeights] = await Promise.all([
       getUserPreferences(req.identity), getSavedSchedules(req.identity.canonicalId), getConsentStatus(req.identity),
       getInteractionEventsForExport(req.identity),
+      // roadmap #30：匯出目前**已存**的權重，不在匯出當下重算——匯出應該反映
+      // 「系統實際在用什麼」，不是「現在重跑一次會得到什麼」。從未算過（consent
+      // 從未開啟過或還沒觸發過計算）時為 null，如實回報，不假裝有資料。
+      getStoredLearnedWeights(req.identity),
     ]);
     const { userId: _userId, studentId: _studentId, displayName: _displayName, ...portableProfile } = profile;
     const payload = {
@@ -49,6 +54,9 @@ router.get('/export', requireIdentity, async (req, res) => {
         // roadmap #2：本人可取回自己的互動事件。刻意不含 subject ID——
         // 匯出它等於把假名與本人身分綁在同一份檔案裡。
         interactionEvents,
+        // roadmap #30：`privacyPolicy.js` 的 `personalization_learning.data`
+        // 早就列了 `learned_preference_weights`，這裡是把那個承諾兌現。
+        learnedPreferenceWeights,
       },
       excluded: ['password', 'internal subject ID', 'Raw Chat plaintext', 'model thought', 'research event rows'],
     };
@@ -86,14 +94,19 @@ router.delete('/data', requireIdentity, async (req, res) => {
     await markServiceWithdrawn(req.identity);
     await clearChatHistory(req.identity);
     const interactionsDeleted = await deleteInteractionEvents(subjectId);
-    const deleted = { ...(await deleteUserServiceData(req.identity)), ...interactionsDeleted };
+    const learnedWeightsDeleted = await deleteLearnedWeights(subjectId);
+    const deleted = {
+      ...(await deleteUserServiceData(req.identity)),
+      ...interactionsDeleted,
+      ...learnedWeightsDeleted,
+    };
     await writeAudit(subjectId, 'delete', 'service_data', 'success', deleted, requestId(req));
     res.setHeader('Clear-Site-Data', '"cache", "storage"');
     res.setHeader('Set-Cookie', buildClearSessionCookie());
     res.json({
       success: true,
       status: 'deleted',
-      message: '服務帳號、Profile、修課歷史、已存課表、互動事件與 Raw Chat 已刪除；最小同意／稽核記錄依政策保留。',
+      message: '服務帳號、Profile、修課歷史、已存課表、互動事件、學習權重與 Raw Chat 已刪除；最小同意／稽核記錄依政策保留。',
       deleted,
     });
   } catch (err) { sendPrivacyError(res, err); }

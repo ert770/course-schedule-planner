@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-04
+
+1. [Roadmap #30：可重現的 per-user preference update pipeline](./2026-09-04-roadmap-30-preference-learning-pipeline.md)
+
 ## 2026-09-03
 
 1. [Roadmap #28：雙帳號資料隔離驗收](./2026-09-03-roadmap-28-account-isolation.md)

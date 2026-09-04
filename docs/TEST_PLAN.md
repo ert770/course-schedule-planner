@@ -645,6 +645,50 @@ I1/I2 不同，這組**用真的能登入的固定帳號**（`test/fixtures/acco
 記錄在對應的變更報告；沒有寫成自動化測試——需要一個第二個能登入且已寫進共用 MySQL
 `User_Profiles` 的帳號，不適合留在會被 CI 反覆執行的測試裡。
 
+### Per-user 偏好學習管線（Roadmap #30）
+
+`server/test/preferenceLearning.test.js` 的 PL1-PL10——純函式測試，覆蓋
+`server/src/skills/preferenceLearning.js` 的 `learnPreferenceWeights()`：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PL1 | 可重播 | 同一批事件跑兩次逐位元相同；打亂輸入順序結果不變 |
+| PL2 | 兩位互動不同的學生分化 | 顯式設定相同，一位常以 `time` 退課、一位常以 `workload` 退課（或分別接受 `compact`／`easy_score` 方案），學到的軸不同 |
+| PL3 | 單次誤點不翻盤 | 一長串一致行為後插入一次相反的單一事件，主要偏好方向不變 |
+| PL4 | 顯式優先 | 顯式設定的軸沒有任何行為訊號時仍維持顯式值；訊號足夠時可以往上調（不能被壓到基準以下） |
+| PL5 | 三態不得混用 | 事件不足回 `insufficient` 並附還差多少（權重回退為顯式設定）；沒有事件時 `missingAxes` 列出全部三軸 |
+| PL6 | 可追溯 | 每個非零權重都能列出貢獻它的 `eventId` 與規則代號 |
+| PL8 | 弱訊號不得翻盤 | 30 筆 `course_viewed` 對 1 筆強訊號，累計貢獻的效果恰好等於再一筆強訊號（不隨筆數線性成長） |
+| PL9 | 看了又退不算正向 | 同一門課先看後退，那次瀏覽被排除；時間對調後（先退後看）該次瀏覽要被計入——證明真的在看時序 |
+| PL10 | 事件類型邊界 | `recommendation_exposed`／`schedule_regenerated` 不投票；接受方案沒有對照組（只有 1 個曝光方案）或找不到對應曝光時不計入 |
+
+`server/test/preferenceLearningService.test.js` 的 PL7——服務層對隱私路徑的整合測試，
+刻意刪除 `DB_*` 環境變數走純記憶體 store（比照 `authRoutes.test.js`），不連真實 MySQL：
+
+| 情境 | 預期結果 |
+| --- | --- |
+| 未同意 `personalization_learning` | 回 `no-consent`，不寫入任何列 |
+| 同意後重算 | 寫入一列，讀回內容與計算結果一致 |
+| 刪除 | 直接用讀取路徑再查一次確認沒有殘留，不只信刪除回報的數字 |
+| 重複重算 | 覆寫同一列（`subject_id` 為主鍵），不是往後累加；同一批事件兩次重算逐位元相同 |
+
+`GET /api/privacy/export` 帶 `data.learnedPreferenceWeights`（沒算過時為 `null`，
+不是整個欄位缺席）**沒有寫成 CI 測試**——這條路由本來就需要真實 MySQL 讀 Profile
+（既有限制，與這次改動無關），CI 刻意不設定 DB secret（見 `.github/workflows/ci.yml`
+的註解）。第一次嘗試把它寫進 `privacyRoutes.test.js` 時 CI 就以 `500` 打回來，
+才發現這個檔案先前只測 `/chat`、`/consents`，從沒有案例真正走到過 MySQL。這條欄位
+的接線邏輯很薄（就是把 `getStoredLearnedWeights()` 的結果接上 response），實質行為
+已由下面完全不連 MySQL 的 PL7 覆蓋，因此不另外補一條會在 CI 出錯的測試。
+
+**真實 MySQL 的驗證**（不寫進自動化測試，記錄在對應的變更報告）：對 demo 帳號
+（`D1249697`）跑過一次完整管線——讀到真實的 92 筆事件、正確篩出可用的行為事件、
+`sufficiency.status` 為 `insufficient`（`31/50`，符合實測「今天資料不夠」的結論）；
+對同一批真實事件重播兩次結果逐位元相同；直接查表確認一個合成 subject 的
+`Learned_Preference_Weights` 列在呼叫 `deleteLearnedWeights()` 後真的消失，不只信
+回傳值。
+
+**這輪不接進排課**：`buildPreferenceProfile()` 不讀這張表，`#5B` 仍記為未完成。
+
 ### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
 
 **這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。
