@@ -143,18 +143,22 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 ### 個人化偏好的必要性
 
 `preferredKeywords`、`interests`、`preferCompact`、`preferEasyCourses`、
-`preferChallengingCourses` 決定多方案中主推哪一個。
+`preferChallengingCourses` 同時影響單門課挑選與多方案主推排序。
 
 使用者表達興趣、想集中排課或想修涼課／挑戰難課時，Agent **必須**把對應參數帶進
-`run_csp_scheduler`。未帶入時系統只能改以總學分挑選方案，推薦會失去個人化，且回應的
-`hasExpressedPreference` 會是 `false`。
+`run_csp_scheduler`。未帶入時系統只產生不假設偏好方向的綜合與較多學分策略，推薦會失去
+個人化，且回應的 `hasExpressedPreference` 會是 `false`。
 
 `preferEasyCourses` 與 `preferChallengingCourses` 方向相反，**不得同時帶入 `true`**。
 使用者若話裡同時提到兩者（例如「我想要涼一點但也想挑戰自己」），Agent 應先向使用者
 確認實際想要哪一個方向，不得自行猜測或兩個都帶——排課引擎會把矛盾視為未表態並發出
 警告，但那是最後一道防線，不是 Agent 可以依賴的擋修機制。
 
-排課結果的每個方案含 `preferenceScore`（0~1 的偏好符合度），Agent 應用它向使用者說明為何主推該方案。**Roadmap #5B 起 `preferenceProfile` 三軸可能帶負號**（`easy` 為負代表使用者要挑戰難課），符合度的計算方式因此也把負權重的軸值翻面——Agent 不需要處理這個細節，`preferenceScore` 仍然是 0~1 之間、可以直接向使用者說明的值。
+排課結果的每個方案含 `generationPolicy` 與 `preferenceScore`（0~1 的偏好符合度）。
+Roadmap #7 起方案不是固定五種；Agent 應依 policy、課程差異及比較指標說明取捨，不得從
+`variantId` 猜使用者的偏好。替代策略可能加重一個軸，但 `preferenceScore` 一律用原始
+使用者權重公平比較。`preferenceProfile` 三軸可能帶負號（`easy` 為負代表使用者要挑戰
+難課），符合度的計算會翻轉該軸；Agent 不需自行重算，直接使用 0~1 的結果即可。
 
 ### 評價證據的使用限制
 
@@ -501,7 +505,7 @@ Z5）——這兩者是「這門課一定要在課表裡」的硬性宣告，答
 ```text
 最近一次推薦（使用者目前看到的那一份課表）：
 - requestId：<uuid>
-- planId：<uuid>:interest
+- planId：<uuid>:personalized
 - 這份課表包含的課，record_schedule_feedback 的 sectionId 只能從這裡挑：
   - sectionId 1303：資訊安全管理
   …

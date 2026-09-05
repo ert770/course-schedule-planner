@@ -9,8 +9,10 @@ function describeCollapse(diversity) {
   if (!diversity || diversity.collapsed.length === 0) return null;
   const titles = diversity.collapsed.map(item => item.title).join('、');
   return `${titles}排出的課表與其他方案相同，已合併，目前提供 `
-    + `${diversity.distinctPlans} 種方案。可競爭的課程僅 ${diversity.competablePoolSize} 門，`
-    + '方案之間的差異空間有限。';
+    + `${diversity.distinctPlans} 種方案。可競爭的課程共 ${diversity.competablePoolSize} 門。`
+    + (diversity.reason === 'same-course-combination'
+      ? '本次調整取捨仍得到相同組合，不能僅憑重複結果判定是候選池不足。'
+      : '這些取向未產生不同的課程組合。');
 }
 
 export default function PlanSwitcher({ plans = [], selectedPlanId, planDiversity, onSelectPlan }) {

@@ -146,6 +146,22 @@ function normalizeTerm(term) {
   };
 }
 
+// #7 對 v1 增加的附加欄位：歷史事件可缺席；新事件依 scoring policy 版本回放。
+function normalizePlanPolicies(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return value;
+  return value.map(item => ({
+    planId: asTrimmedString(item?.planId), variantId: asTrimmedString(item?.variantId),
+    version: asTrimmedString(item?.version),
+    weights: Object.fromEntries(['interest', 'compact', 'easy'].map(axis => [axis, item?.weights?.[axis]])),
+    categoryCoefficient: item?.categoryCoefficient,
+    creditCoefficient: item?.creditCoefficient,
+    stopWhen: asTrimmedString(item?.stopWhen),
+    source: { learnedApplied: item?.source?.learnedApplied,
+      reason: asTrimmedString(item?.source?.reason), modelVersion: asTrimmedString(item?.source?.modelVersion) },
+  }));
+}
+
 function normalizeExposureContext(context) {
   if (!context || typeof context !== 'object' || Array.isArray(context)) return null;
   return {
@@ -156,6 +172,7 @@ function normalizeExposureContext(context) {
     // roadmap #27：省略時（例如遷移前寫入的舊事件）視為空陣列，
     // `assertProvenance()` 會另外 fallback 到 `plan.planId` 維持相容。
     displayedPlanIds: normalizePlanIdList(context.displayedPlanIds),
+    planPolicies: normalizePlanPolicies(context.planPolicies),
   };
 }
 
@@ -363,6 +380,25 @@ export function validateInteractionEvent(input) {
     }
     if (!TRIGGER_SET.has(event.exposureContext.trigger)) {
       errors.push('exposureContext.trigger 不在允許清單');
+    }
+    const policies = event.exposureContext.planPolicies;
+    if (!Array.isArray(policies) || policies.length > 6) {
+      errors.push('planPolicies 必須是至多 6 筆的陣列');
+    } else {
+      const seenPlans = new Set();
+      for (const policy of policies) {
+        if (!policy.planId || !event.exposureContext.displayedPlanIds.includes(policy.planId)
+          || seenPlans.has(policy.planId) || !policy.variantId || !policy.version
+          || !Object.entries(policy.weights).every(([axis, value]) => Number.isFinite(value)
+            && value >= (axis === 'easy' ? -3 : 0) && value <= 3)
+          || ![0.35, 1].includes(policy.categoryCoefficient)
+          || ![1, 3].includes(policy.creditCoefficient)
+          || !['no-credit-progress', 'candidate-exhausted'].includes(policy.stopWhen)
+          || typeof policy.source.learnedApplied !== 'boolean') {
+          errors.push('planPolicies 含無效方案、版本或權重');
+        }
+        seenPlans.add(policy.planId);
+      }
     }
     validateCourseRefList(event.exposureContext.candidateSet, 'exposureContext.candidateSet', errors);
     validateCourseRefList(event.exposureContext.displayedSet, 'exposureContext.displayedSet', errors);

@@ -158,6 +158,33 @@ describe('PL2 兩位互動不同的學生排名分化', () => {
     assert.ok(resultA.weights.compact > resultA.weights.easy);
     assert.ok(resultB.weights.easy > resultB.weights.compact);
   });
+
+  test('#7 混合權重方案被接受時不猜成任何單一偏好軸', () => {
+    const requestId = 'req-personalized-1';
+    const displayedPlanIds = [
+      `${requestId}:personalized`, `${requestId}:personalized_interest`,
+    ];
+    const events = [
+      {
+        ...exposedEvent({
+          requestId, displayedPlanIds, t: '2026-01-01T00:00:00.000Z',
+        }),
+        exposureContext: {
+          displayedPlanIds,
+          planPolicies: [{
+            planId: `${requestId}:personalized`, version: 'personalized-scoring-v1',
+          }],
+        },
+      },
+      acceptedEvent({
+        requestId, variantId: 'personalized_interest', t: '2026-01-01T00:00:30.000Z',
+      }),
+    ];
+
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.sufficiency.usableEventCount, 0);
+    assert.deepEqual(result.weights, { interest: 0, compact: 0, easy: 0 });
+  });
 });
 
 describe('PL3 單次誤點不翻盤', () => {

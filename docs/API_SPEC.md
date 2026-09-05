@@ -123,10 +123,9 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
 ```
 
 `source` 為 `no-consent` / `insufficient` / `explicit` / `learned` 四選一；`insufficient`
-時 `weights` 等於 `explicitProfile` 原樣。**`appliedToScheduling`（Roadmap #5B 起恆為
-`true`）只承諾學到的權重已經進入排課決策的**方案層****——`scheduler.js` 的
-`evaluatePreference()`（決定五個方案哪一個主推）會讀取；單一門課的排序
-（`computeScoreComponents()`／`scoreCourse()`）仍然沒有接，那是 `#7` 的工作。
+時 `weights` 等於 `explicitProfile` 原樣。`appliedToScheduling`（Roadmap #5B 起恆為
+`true`）表示可用的學習結果已進入排課決策；Roadmap #7 起，同一組帶號連續權重同時用於
+單一門課排序與方案比較。學到的 boost 只加強已由顯式設定決定的方向。
 
 ⚠️ **這支 GET 有寫入副作用**：已存結果過期時（版本不符、有新事件、或超過一天沒更新）
 會順手重算並覆寫 `Learned_Preference_Weights` 的那一列——冪等的快取填充，不是新的寫入
@@ -614,9 +613,9 @@ Response:
 }
 ```
 
-`preferenceProfile`（Roadmap #5B 起為**帶號連續值**，改動前恆為 0 或 1）：三軸權重的
-絕對值決定該軸在偏好符合度加權平均裡佔多少，**符號**決定涼度分數對這個人是加分還是
-扣分——`easy` 為負代表使用者勾了 `#挑戰難課`，此時涼度分數越低（課越硬）符合度越高。
+`preferenceProfile`（Roadmap #5B 起為**帶號連續值**）：三軸權重的絕對值決定該軸在
+單門課排序及偏好符合度加權平均裡佔多少，**符號**決定涼度分數對這個人是加分還是扣分
+——`easy` 為負代表使用者勾了 `#挑戰難課`，此時涼度分數越低（課越硬）符合度越高。
 未表態的軸恆為 `0`；同時勾選 `#涼課優先` 與 `#挑戰難課` 時 `easy` 也會被歸零並在
 `warnings` 說明矛盾。`preferenceProfileSource` 是附加的可觀察欄位，讓呼叫端不必解讀
 `preferenceProfile` 的數值就能直接知道學到的權重是否套用：`reason` 為
@@ -674,9 +673,10 @@ metadata」兩節。
 
 | 欄位 | 說明 |
 | --- | --- |
-| `reasonVersion` | 理由結構的版本（目前 `2026-08-31.v1`）。同一個值會寫進 `Interaction_Events.recommendation_reason_version`，讓曝光事件能回溯「當時是用哪一版理由算的」 |
+| `reasonVersion` | 理由結構的版本（目前 `2026-09-05.v2`）。同一個值會寫進 `Interaction_Events.recommendation_reason_version`，讓曝光事件能回溯「當時是用哪一版理由算的」 |
 | `selectedBecause` | 主要原因代號：`REQUIRED_COURSE`／`RETAKE_REQUIRED`／`USER_SPECIFIED`／`COREQUISITE_PAIR`／`PREFERENCE_MATCH`／`CREDIT_FILL`／`WATCHING`。用代號不用自由文字，中文由呈現層決定 |
-| `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。元件名稱與 `VARIANT_WEIGHTS` 的鍵一致（`base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest`） |
+| `scoringPolicy` | 這個排序決策使用的版本化權重快照；必修預置、關注等不經一般 scorer 的放置路徑為 `null` |
+| `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。元件為 `base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest` |
 | `scoreTotal` | 這門課在勝出方案裡的總分。**含**被 `scoreBreakdown` 過濾掉的 0 值元件 |
 | `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣關鍵字）。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
 | `requiredRules` | 必修／分類的判定依據：`formallyRequired`、`category`、`sourceCategory`、`classificationSource`、`track`、`countsTowardGraduation`、`nonGraduationCategory` |
@@ -706,13 +706,31 @@ metadata」兩節。
 
 ```json
 {
+  "variantId": "personalized_easy",
+  "generationPolicy": {
+    "version": "personalized-scoring-v1",
+    "weights": { "interest": 1, "compact": 0, "easy": -2.1 },
+    "categoryCoefficient": 0.35,
+    "creditCoefficient": 1,
+    "source": {
+      "learnedApplied": true,
+      "reason": "applied",
+      "modelVersion": "preference-learning-v2"
+    }
+  },
+  "stopWhen": "no-credit-progress",
   "preferenceScore": 0.214,
   "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0.68 },
   "reviewCoverage": { "rated": 5, "total": 8, "ratio": 0.625 }
 }
 ```
 
-`plans` 依 `success` → 是否達最低學分 → `preferenceScore` → `totalCredits` 排序，`plans[0]` 即為主推方案，其內容會複製到頂層 `schedule`。
+`generationPolicy` 是實際產生該方案的評分規則。系統先建立個人化綜合方案，再只為使用者
+已表態的軸建立加重比較方案，最後建立較多學分方案，總數上限為 5；因此方案不是固定五種，
+呼叫端不得從 `variantId` 猜測使用者偏好。`stopWhen` 為 `no-credit-progress` 或
+`candidate-exhausted`。`plans` 依 `success` → 是否達最低學分 → `preferenceScore` →
+`totalCredits` 排序，`preferenceScore` 一律用原始使用者權重計算，不讓加重策略替自己評分；
+`plans[0]` 即主推方案，其內容會複製到頂層 `schedule`。
 
 `preferenceBreakdown.easy`（Roadmap #4）改為由已排入且**有評價**課程的 `adjustedEasiness` 平均而得，
 不再是課程描述關鍵字命中率。**可能為 `null`**——代表這個方案排入的課全部沒有評價，無法評分，
@@ -762,18 +780,21 @@ metadata」兩節。
 
 ```json
 {
-  "requestedVariants": 5,
+  "requestedVariants": 4,
   "distinctPlans": 2,
+  "reason": "same-course-combination",
   "collapsed": [
-    { "variantId": "compact", "title": "集中排課" },
-    { "variantId": "interest", "title": "興趣與路徑優先" },
-    { "variantId": "max_credits", "title": "學分最大化" }
+    { "variantId": "personalized_compact", "title": "更集中排課" },
+    { "variantId": "personalized_credits", "title": "較多學分方案" }
   ],
   "competablePoolSize": 16
 }
 ```
 
-失敗回應（`success:false`）也會帶這個欄位；`collapsed` 沒有塌縮時為空陣列，不是 `null`。
+`requestedVariants` 是這次實際嘗試的策略數，不保證為 5。`reason` 在課程集合重複時為
+`same-course-combination`，沒有塌縮時為 `null`；重複只能證明策略得到相同組合，不能單憑
+這個欄位推論候選池不足。失敗回應（`success:false`）也會帶這個欄位；`collapsed` 沒有
+塌縮時為空陣列，不是 `null`。
 
 ### `POST /api/schedule/counterfactual`（Roadmap #27）
 

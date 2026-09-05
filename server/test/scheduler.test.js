@@ -556,7 +556,7 @@ describe('S7-S10 硬性限制', () => {
 });
 
 describe('S13-S14 偏好符合度決定主推方案', () => {
-  // 讓選修填充階段有足夠空間，否則必修就會塞滿學分上限，看不出 variant 差異。
+  // 讓選修填充階段有足夠空間，否則必修就會塞滿學分上限，看不出策略差異。
   function makeCandidates() {
     return [
       makeCourse(1, { name: '網路安全概論', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3 }),
@@ -567,7 +567,7 @@ describe('S13-S14 偏好符合度決定主推方案', () => {
     ];
   }
 
-  test('S13 表達興趣偏好時，興趣方案成為 plans[0]', () => {
+  test('S13 表達興趣偏好時，個人化方案帶正向偏好分數', () => {
     const result = generateSchedule(makeCandidates(), {
       preferredKeywords: ['網路'],
       minCredits: 0,
@@ -1127,7 +1127,7 @@ describe('C1-C6 學分上下限與每日課程數', () => {
 });
 
 describe('V20-V28 評價驅動的涼度評分', () => {
-  // 兩門課同天同時段，只能擇一排入，用來觀察 easy_score 方案的選擇差異。
+  // 兩門課同天同時段，只能擇一排入，用來觀察涼課權重的選擇差異。
   function makeConflictingPair() {
     return [
       makeCourse(1, {
@@ -1148,19 +1148,20 @@ describe('V20-V28 評價驅動的涼度評分', () => {
     }));
   }
 
-  test('V20 A/B：帶評價 vs 不帶評價，easy_score 方案的選擇不同，且不帶評價時 breakdown.easy 為 null', () => {
+  test('V20 A/B：帶評價 vs 不帶評價，涼課權重的選擇不同，且不帶評價時 breakdown.easy 為 null', () => {
     const withReviews = generateSchedule(makeConflictingPair(), {
+      preferEasyCourses: true,
       minCredits: 0,
       maxCredits: 3,
       courseReviews: [makeToughReview(1), makeEasyReview(2)],
     });
-    const withoutReviews = generateSchedule(makeConflictingPair(), { minCredits: 0, maxCredits: 3 });
+    const withoutReviews = generateSchedule(makeConflictingPair(), { preferEasyCourses: true, minCredits: 0, maxCredits: 3 });
 
-    const easyPlanWith = withReviews.plans.find(plan => plan.id === 'easy_score');
-    assert.ok(easyPlanWith, '評價證據讓 easy_score 方案與其他方案產出不同課表，不會被 uniquePlans 去重掉');
+    const easyPlanWith = withReviews.plans[0];
+    assert.ok(easyPlanWith, '個人化主推方案存在');
     assert.equal(easyPlanWith.schedule[0].id, 2, '有評價時應選涼課 Y');
 
-    // 沒有評價時，easy_score 與其他方案對這兩門課的評分完全相同（中性分為常數），
+    // 沒有評價時，涼課權重對這兩門課的評分完全相同（中性分為常數），
     // `uniquePlans()` 會把它們去重成同一份課表——這正是 roadmap #10「五方案塌縮」
     // 的具體例證，本次改動只解除「有評價資料時」的塌縮，不是全部塌縮成因。
     assert.equal(withoutReviews.plans.length, 1);
@@ -1172,11 +1173,12 @@ describe('V20-V28 評價驅動的涼度評分', () => {
     const courseReviews = [makeToughReview(1), ...makeBackgroundReviews()];
 
     const result = generateSchedule(makeConflictingPair(), {
+      preferEasyCourses: true,
       minCredits: 0,
       maxCredits: 3,
       courseReviews,
     });
-    const easyPlan = result.plans.find(plan => plan.id === 'easy_score');
+    const easyPlan = result.plans[0];
 
     assert.equal(easyPlan.schedule[0].id, 2, '沒有評價的課應優先於有評價但很硬的課');
   });
@@ -1196,11 +1198,12 @@ describe('V20-V28 評價驅動的涼度評分', () => {
     const courseReviews = [makeEasyReview(2), ...makeBackgroundReviews()];
 
     const result = generateSchedule([misleadingCourse, genuinelyEasyCourse], {
+      preferEasyCourses: true,
       minCredits: 0,
       maxCredits: 3,
       courseReviews,
     });
-    const easyPlan = result.plans.find(plan => plan.id === 'easy_score');
+    const easyPlan = result.plans[0];
 
     assert.equal(
       easyPlan.schedule[0].id,
@@ -1284,7 +1287,7 @@ describe('V20-V28 評價驅動的涼度評分', () => {
 
     assert.equal(result.reviewDataLoaded, false);
     assert.ok(result.warnings.some(w => w.includes('沒有取得任何課程評價資料')));
-    // 沒有評價資料不影響既有的興趣偏好排序邏輯：興趣方案仍應成為主推方案，
+    // 沒有評價資料不影響既有的興趣偏好排序邏輯：個人化方案仍有正向興趣分數，
     // 與 S13 建立的既有行為一致——這正是「排序結果與改動前逐項相同」的證據。
     assert.equal(result.hasExpressedPreference, true);
     assert.ok(result.plans[0].preferenceScore > 0);
@@ -1949,7 +1952,7 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
     dayOfWeek: day, startPeriod: start, endPeriod: start + 1, ...overrides,
   });
 
-  // 每天兩個時段、共 10 門課，學分與屬性各異，讓五個取向有分化空間。
+  // 每天兩個時段、共 10 門課，學分與屬性各異，讓個人化策略有分化空間。
   function widePool(startId = 100) {
     const courses = [];
     let id = startId;
@@ -1969,7 +1972,7 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
   }
 
   describe('P10-1 必修的絕對優先不得被權重表破壞', () => {
-    // 本次最高回歸風險：類別分變成 variant 可調之後，一門「替代涼度極高」的
+    // 本次最高回歸風險：類別係數變成 strategy 可調之後，一門「替代涼度極高」的
     // 一般選修可能壓過必修。必修先排是規則，不是偏好。
     const required = at(1, 1, 3, { category: '必修', description: '實作專題與實驗' });
     const veryEasyElective = at(2, 1, 3, {
@@ -1981,7 +1984,7 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
     // （比照 S3 的寫法）。`makeCourse` 預設 department 為 `資訊三甲`。
     const scope = { department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲' };
 
-    test('P10-1 五個 variant 都先排必修，不排與它衝堂的超涼選修', () => {
+    test('P10-1 每個個人化策略都先排必修，不排與它衝堂的超涼選修', () => {
       const result = generateSchedule([required, veryEasyElective], {
         ...scope, minCredits: 0, maxCredits: 25,
       });
@@ -2003,7 +2006,7 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
     // 刻意**不**斷言 `plan.schedule` 的陣列順序：實測（含改動前對照）該陣列
     // 本來就不是依優先度排列，必修可能出現在選修之後。斷言陣列位置會釘住一個
     // 從來不成立的實作細節，而不是「必修優先」這條真正的規則。
-    test('P10-1 學分只夠一門時，五個 variant 都選必修而不是超涼選修', () => {
+    test('P10-1 學分只夠一門時，每個策略都選必修而不是超涼選修', () => {
       const result = generateSchedule(
         [veryEasyElective, at(3, 2, 3, { category: '必修', credits: 3 })],
         { ...scope, minCredits: 0, maxCredits: 3 }
@@ -2019,13 +2022,11 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
   });
 
   describe('P10-2 候選池夠大時方案之間真的不同', () => {
-    test('P10-2 至少產生 3 種內容不同的方案（改動前同樣輸入只有 1 種）', () => {
+    test('P10-2 無顯式偏好只嘗試通用與學分策略，不擅自假設涼課方向', () => {
       const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
 
-      assert.ok(
-        result.plans.length >= 3,
-        `方案數應 >= 3，實際 ${result.plans.length}：${result.plans.map(p => p.id).join(',')}`
-      );
+      assert.equal(result.planDiversity.requestedVariants, 2);
+      assert.ok(result.plans.every(plan => Object.values(plan.generationPolicy.weights).every(w => w === 0)));
     });
 
     test('P10-2 各方案的課程集合兩兩不同', () => {
@@ -2037,19 +2038,19 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
       assert.equal(new Set(keys).size, keys.length, '方案不得有重複的課程集合');
     });
 
-    test('P10-2 interest 方案會把命中興趣關鍵字的課排進去', () => {
+    test('P10-2 興趣權重會把命中興趣關鍵字的課排進去', () => {
       const pool = widePool();
       pool.push(at(999, 1, 5, { category: '一般選修', description: '資訊安全與網路防禦' }));
 
       const result = generateSchedule(pool, {
         minCredits: 0, maxCredits: 12, interests: ['資訊安全'],
       });
-      const interestPlan = result.plans.find(p => p.id === 'interest');
+      const interestPlan = result.plans[0];
 
-      assert.ok(interestPlan, 'interest 方案應該存在且與其他方案不同');
+      assert.ok(interestPlan, '主推方案應存在');
       assert.equal(
         interestPlan.schedule.some(c => c.id === 999), true,
-        'interest 方案應排入命中關鍵字的課'
+        '個人化方案應排入命中關鍵字的課'
       );
     });
   });
@@ -2063,10 +2064,10 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
 
       const warning = result.warnings.find(w => w.includes('已合併'));
       assert.ok(warning, '方案被合併時必須有說明');
-      assert.match(warning, /可競爭的課程僅 2 門/);
+      assert.match(warning, /可競爭的課程共 2 門/);
     });
 
-    test('P10-3 已勾集中排課時額外說明該方案為何不會不同', () => {
+    test('P10-3 已勾集中排課且方案重複時，不把原因直接歸咎於候選池', () => {
       const result = generateSchedule(
         [at(1, 1, 3, { category: '一般選修' }), at(2, 1, 5, { category: '一般選修' })],
         { minCredits: 0, maxCredits: 25, preferCompact: true }
@@ -2074,7 +2075,7 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
 
       const warning = result.warnings.find(w => w.includes('已合併')) || '';
       if (warning.includes('集中排課')) {
-        assert.match(warning, /你已設定「盡量集中排課」/);
+        assert.match(warning, /本次調整取捨仍得到相同組合/);
       }
     });
 
@@ -2388,22 +2389,28 @@ describe('PM1-PM6 Roadmap #27：方案比較指標與塌縮結構化', () => {
       );
 
       assert.ok(result.planDiversity, '成功結果必須帶 planDiversity');
+      assert.equal(result.planDiversity.reason, 'same-course-combination');
       const warning = result.warnings.find(w => w.includes('已合併'));
       assert.ok(warning, '方案被合併時必須有說明');
       assert.match(warning, new RegExp(`目前提供 ${result.planDiversity.distinctPlans} 種方案`));
-      assert.match(warning, new RegExp(`可競爭的課程僅 ${result.planDiversity.competablePoolSize} 門`));
+      assert.match(warning, new RegExp(`可競爭的課程共 ${result.planDiversity.competablePoolSize} 門`));
       assert.equal(
         result.planDiversity.requestedVariants - result.planDiversity.distinctPlans,
         result.planDiversity.collapsed.length
       );
     });
 
-    test('PM3 沒有塌縮時 planDiversity.collapsed 為空陣列，不是 null', () => {
-      const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
-      assert.ok(result.planDiversity.distinctPlans >= 3);
-      // collapsed 可能非空（部分 variant 仍可能撞出相同課表），但欄位本身必須存在且為陣列，
-      // 不能因為沒有塌縮就整個欄位消失——那會讓前端需要另外判斷欄位存不存在。
-      assert.ok(Array.isArray(result.planDiversity.collapsed));
+    test('PM3 沒有塌縮時 collapsed 為空陣列且 reason 為 null', () => {
+      // 同時段二選一：綜合策略保留類別優先，較多學分策略因 credits 係數提高而
+      // 選 5 學分的一般選修，確保兩個實際嘗試的策略產生不同課程集合。
+      const result = generateSchedule([
+        at(1, 1, 3, { category: '核心選修', credits: 1 }),
+        at(2, 1, 3, { category: '一般選修', credits: 5 }),
+      ], { minCredits: 0, maxCredits: 5 });
+      assert.equal(result.planDiversity.distinctPlans, result.plans.length);
+      assert.equal(result.planDiversity.requestedVariants, result.planDiversity.distinctPlans);
+      assert.deepEqual(result.planDiversity.collapsed, []);
+      assert.equal(result.planDiversity.reason, null);
     });
   });
 
@@ -2445,11 +2452,8 @@ describe('PD1-PD11 Roadmap #5B：per-user 加權方向', () => {
     dayOfWeek: day, startPeriod: start, endPeriod: start + 1, ...overrides,
   });
 
-  // 每天兩個時段、共 10 門課，一半涼課評價一半硬課評價——只有 `easy_score`
-  // variant（`weights.easy > 0`）在選課時看評價分數，其餘 variant 選出的課程
-  // 集合完全不受影響，因此五個方案的平均涼度天然會不一樣，不需要另外設計
-  // 特殊的塌縮防護。實測（見變更報告）此池固定產出 4 個不重複方案，
-  // `breakdown.easy` 落在 `{0.375, 0.5, 0.75}`，足以驗證方向翻轉。
+  // 每天兩個時段、共 10 門課，一半涼課評價、一半硬課評價，讓正負 easy
+  // 權重直接改變入選課程，也保留足夠分化來驗證方案層的方向翻轉。
   function widePoolWithReviews(startId = 300) {
     const courses = [];
     let id = startId;
@@ -2476,33 +2480,21 @@ describe('PD1-PD11 Roadmap #5B：per-user 加權方向', () => {
       minCredits: 0, maxCredits: 12, courseReviews: reviews, preferChallengingCourses: true,
     });
 
-    // 先確認方案本身有分化，否則翻轉排序無從觀察（roadmap #10 的塌縮陷阱）。
-    assert.ok(withEasy.plans.length >= 2, `方案數應 >= 2，實際 ${withEasy.plans.length}`);
-
-    assert.notEqual(
-      withEasy.plans[0].id, withChallenge.plans[0].id,
-      '涼課優先與挑戰難課應該選出不同的主推方案'
-    );
-
-    // 核心不變量：同一個方案在兩次呼叫裡的 breakdown.easy（涼度測量值）
-    // 完全相同——方向不改變測量，只改變偏好分數；而偏好分數必為互補
-    // （score + (1-score) = 1），這是符號相反在數學上的直接體現，
-    // 不依賴 fixture 恰好產生哪些方案。
-    const byId = result => Object.fromEntries(result.plans.map(p => [p.id, p]));
-    const easyPlans = byId(withEasy);
-    const challengePlans = byId(withChallenge);
-    for (const id of Object.keys(easyPlans)) {
-      const easyPlan = easyPlans[id];
-      const challengePlan = challengePlans[id];
-      assert.equal(
-        easyPlan.preferenceBreakdown.easy, challengePlan.preferenceBreakdown.easy,
-        `方案 ${id} 的涼度測量值不該因使用者方向而改變`
-      );
-      assert.ok(
-        Math.abs(easyPlan.preferenceScore + challengePlan.preferenceScore - 1) < 1e-9,
-        `方案 ${id} 的兩個偏好分數應互補（相反符號）`
-      );
+    assert.notDeepEqual(withEasy.schedule.map(c => c.id), withChallenge.schedule.map(c => c.id));
+    assert.ok(withEasy.plans[0].preferenceBreakdown.easy > withChallenge.plans[0].preferenceBreakdown.easy);
+    for (const plan of withEasy.plans) {
+      assert.equal(plan.preferenceScore, plan.preferenceBreakdown.easy);
     }
+    for (const plan of withChallenge.plans) {
+      assert.equal(plan.preferenceScore, 1 - plan.preferenceBreakdown.easy);
+    }
+    // #7 會改變入選課程；固定相同課程組合後，仍須保留 #5B 的測量值／方向不變量。
+    const fixed = courses.slice(0, 2);
+    const common = { minCredits: 0, maxCredits: 12, selectedCourseIds: fixed.map(c => c.id), courseReviews: reviews };
+    const a = generateSchedule(fixed, { ...common, preferEasyCourses: true }).plans[0];
+    const b = generateSchedule(fixed, { ...common, preferChallengingCourses: true }).plans[0];
+    assert.equal(a.preferenceBreakdown.easy, b.preferenceBreakdown.easy);
+    assert.ok(Math.abs(a.preferenceScore + b.preferenceScore - 1) < 1e-9);
   });
 
   test('PD2 單軸挑戰方向：preferenceScore === 1 - breakdown.easy', () => {

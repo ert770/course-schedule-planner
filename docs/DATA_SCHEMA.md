@@ -113,9 +113,8 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
   `personalization_learning` 那一列——它本來就有完整歷史與稽核，不需要另建
   狀態機。
 - **`appliedToScheduling` 從 Roadmap #5B（2026-09-05）起恆為 `true`**：
-  `scheduler.js` 的 `evaluatePreference()`（方案層）已經讀取這張表；
-  `computeScoreComponents()`／`scoreCourse()`（單一門課的排序）仍然沒有接，
-  那是 `#7` 的工作，`appliedToScheduling` 的語意只承諾前者。
+  Roadmap #7 起，`scheduler.js` 的方案比較與單一門課排序都讀取這組權重。
+  排課輸出與曝光事件會保存 `personalized-scoring-v1` policy 快照，以便回放。
 - **時間衰減在今天的真實資料上是數學上的 no-op**：實測全部 92 筆互動事件
   都在 4 天內、全部標記 114 學年下學期（即當前學期），衰減係數 > 0.977、
   學期係數恆為 1，權重到小數第三位完全不變。半衰期與跨學期降權的邏輯已用
@@ -614,7 +613,7 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
   "idempotencyKey": "sha256:<64 lowercase hex>",
   "course": null,
   "term": { "academicYear": 114, "semester": "second" },
-  "plan": { "planId": "plan-a", "variantId": "required_first" },
+  "plan": { "planId": "plan-a", "variantId": "personalized" },
   "position": { "planRank": 1, "courseRank": null },
   "exposureContext": {
     "surface": "dashboard",
@@ -626,12 +625,28 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
     "displayedSet": [
       { "catalogCourseCode": "IECS3002", "sectionId": 101 }
     ],
-    "displayedPlanIds": ["plan-a", "plan-b"]
+    "displayedPlanIds": ["plan-a", "plan-b"],
+    "planPolicies": [
+      {
+        "planId": "plan-a",
+        "variantId": "personalized",
+        "version": "personalized-scoring-v1",
+        "weights": { "interest": 1, "compact": 0, "easy": -1.4 },
+        "categoryCoefficient": 0.35,
+        "creditCoefficient": 1,
+        "stopWhen": "no-credit-progress",
+        "source": {
+          "learnedApplied": true,
+          "reason": "applied",
+          "modelVersion": "preference-learning-v2"
+        }
+      }
+    ]
   },
   "versionSnapshot": {
     "profileSchemaVersion": 1,
-    "modelVersion": "scheduler-greedy-v1",
-    "recommendationReasonVersion": null
+    "modelVersion": "personalized-scoring-v1",
+    "recommendationReasonVersion": "2026-09-05.v2"
   },
   "source": "system_recommendation",
   "feedbackReason": null
@@ -652,12 +667,16 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `idempotencyKey` | `sha256:<hex>` | 由 request/action/event/plan/course subject 決定，不含 `eventId`／`timestamp` |
 | `course` | object \| null | `catalogCourseCode` 是穩定課號，`sectionId` 是實際班次；非單課事件可為 null |
 | `term` | object | `academicYear` + 正規化後的 `semester: first \| second` |
-| `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `required_first` 等產生策略 |
+| `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `personalized`／`personalized_easy` 等當次產生策略；方案不是固定五種 |
 | `position` | object | `planRank`／`courseRank` 一律從 1 起算；不適用者為 null |
-| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單；`displayedPlanIds`（Roadmap #27）另列這次曝光顯示過的每一個方案 `planId`——見下方 `recommendation_accepted` 的說明 |
-| `versionSnapshot` | object | 當時的 Profile schema、模型與推薦理由版本；#26 尚未完成時理由版本必須為 null |
+| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單；`displayedPlanIds` 列出所有顯示方案；`planPolicies`（Roadmap #7）逐一保存方案使用的 `variantId`、policy 版本、三軸權重、類別／學分係數、停止條件與學習來源，供後續回放與來源驗證 |
+| `versionSnapshot` | object | 當時的 Profile schema、排課模型與推薦理由版本 |
 | `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
+
+`planPolicies` 是既有 JSON envelope 的附加欄位，因此事件 `schemaVersion` 維持 1，MySQL
+也不需要 migration。歷史曝光缺少此欄位時正規化為空陣列，仍可重播；新曝光必須讓每個
+policy 的 `planId` 對得上 `displayedPlanIds`，接受方案時也會核對 `variantId`。
 
 ### Event types
 

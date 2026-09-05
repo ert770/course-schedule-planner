@@ -592,7 +592,7 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 | --- | --- | --- |
 | PM1 | 上課天數一致性 | `planMetrics.usedDays` 與 `preferenceBreakdown.compact` 用的日集合大小相同（防兩份定義漂移） |
 | PM2 | 早八／空堂界線 | 早八課只算 `startPeriod<=1`；空堂只算「同一天有課、中間沒課」的節次，不含上課日前後 |
-| PM3 | 塌縮結構化 | `planDiversity` 的合併數、方案數、可競爭池大小三個數字與 `describePlanCollapse()` 產生的句子一致；沒有塌縮時 `collapsed` 是空陣列不是 `null` |
+| PM3 | 塌縮結構化 | `planDiversity` 的合併數、方案數、可競爭池大小三個數字與 `describePlanCollapse()` 產生的句子一致；塌縮時 `reason` 為 `same-course-combination`，沒有塌縮時 `collapsed` 是空陣列、`reason` 是 `null` |
 | PM4 | 涵蓋每條路徑 | 成功、失敗、放寬、repair 路徑回傳的每個 plan 都帶 `planMetrics` |
 | PM5 | 欄位一致 | `planMetrics.preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位相同 |
 | PM6 | 不改變決策 | 加了 `planMetrics` 前後，排出來的課程集合不變 |
@@ -608,7 +608,8 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 
 `server/test/scheduleService.test.js` 另驗 `buildExposureDraft()`（純函式）：`displayedSet`
 是全部方案課程的聯集、不是只有主推方案；`displayedPlanIds` 列出這次曝光顯示過的每個
-`planId`；`plan`／`position` 仍指向主推方案；同一門課出現在多個方案裡只列一次。
+`planId`；`planPolicies` 保存每個方案的版本化生成權重與停止條件；`plan`／`position` 仍
+指向主推方案；同一門課出現在多個方案裡只列一次。
 
 `server/test/interactionEvents.test.js` 的 IL-17e/f/g（實測瀏覽器時發現的真實 bug 的
 回歸測試——切到非主推方案再按「符合」被誤判成偽造來源而拒絕寫入）：
@@ -731,7 +732,7 @@ no-op，只由 PL11–PL17 的合成事件驗證過真正的衰減行為。瀏�
 
 | 編號 | 情境 | 預期結果 |
 | --- | --- | --- |
-| PD1 | 驗收標準本身 | 同一批課、同一份評價，`preferEasyCourses` 與 `preferChallengingCourses` 給出不同的主推方案；比對相同 `plan.id`，`preferenceBreakdown.easy`（測量值）相同，但兩次呼叫的 `preferenceScore` 相加為 1（相反符號） |
+| PD1 | 驗收標準本身 | 同一批課、同一份評價，`preferEasyCourses` 與 `preferChallengingCourses` 實際排入不同課程；固定相同課程組合後，`preferenceBreakdown.easy`（測量值）相同，但兩次呼叫的 `preferenceScore` 相加為 1（相反符號） |
 | PD2 | 單軸挑戰方向 | `preferenceScore === 1 - breakdown.easy` |
 | PD3 | 雙軸（compact + 挑戰難課） | 分數等於 `Σ\|weight\| × orientAxisValue(value, weight) / Σ\|weight\|` 的手算結果 |
 | PD4 | 只勾挑戰難課 | `hasExpressedPreference === true`，不出現「個人化程度有限」警告（改用絕對值判定） |
@@ -765,6 +766,24 @@ fail-open 行為（reject／同步拋出例外皆退回 `applied:false, reason:'
 
 `server/test/prompt.test.js` 的 P1：`SCHEDULER_PARAMS` 加入 `preferChallengingCourses`
 （新增排課參數但沒有同步 `promptService.js` 會被這個測試擋下，這正是 P1 存在的目的）。
+
+### 個人化連續評分與策略（Roadmap #7）
+
+`server/test/scoringPolicy.test.js` 與 `server/test/planStrategies.test.js` 驗證評分 policy
+和搜尋策略本身；`server/test/scheduler.test.js` 驗證接進實際選課後的結果：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PS1 | 顯式偏好與 learned boost | 未表態軸為 0；有效 boost 只加強已宣告方向；每軸原始權重絕對值不超過 2 |
+| PS2 | 涼課／挑戰難課 | 相同涼度特徵產生相反分數，且正規化後分數有限；缺資料走母體先驗 |
+| PS3 | 興趣與集中度特徵 | 興趣用命中率正規化；新開上課日扣分、重疊既有上課日加分 |
+| PS4 | 動態策略 | 只為非 0 軸建立加重方案，順序固定、總數不超過 5；無偏好時不建立涼課等假設方案 |
+| PS5 | 實際課程選擇 A/B | 同一候選池與評價下，`preferEasyCourses` 與 `preferChallengingCourses` 排入不同課程 |
+| PS6 | 必修安全邊界 | 所有策略仍先排正式必修，偏好權重不能覆蓋必修優先規則 |
+
+互動回放另由 `interactionEventSchema.test.js` 驗證 `planPolicies` 的版本、權重邊界、
+方案對應與舊事件缺欄位相容；`preferenceLearning.test.js` 驗證接受新版混合策略時不會
+從 `variantId` 捏造單一軸投票。`scheduleService.test.js` 確認曝光快照包含 policy。
 
 **CI 限制，與 `#30`／`#31` 同一個坑，不重蹈覆轍**：`getSchedulingPreferenceWeights()`
 未套用 `options.prefs` 時會呼叫 `getUserPreferences()` → MySQL；`POST

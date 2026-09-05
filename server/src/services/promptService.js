@@ -494,7 +494,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
   依 \`result.error\` 的文字向使用者說明，不要宣稱已完成。
 
 排課偏好使用說明：
-- preferredKeywords、interests、preferCompact、preferEasyCourses、preferChallengingCourses 會決定多個課表方案中要主推哪一個。
+- preferredKeywords、interests、preferCompact、preferEasyCourses、preferChallengingCourses 會影響單門課挑選及多個方案的主推排序。
 - preferEasyCourses 與 preferChallengingCourses 方向相反，不得同時設為 true；使用者若兩者都提到，要先確認實際想要哪一個。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
@@ -560,6 +560,8 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 評價證據使用說明：
 - 排課結果每門課帶 reviewEvidence（來自 Course_Reviews 的評價統計）；為 null 代表這門課沒有評價。
 - reviewEvidence 為 null 時，不得宣稱這門課「涼」「好拿分」「甜」——沒有評價就是沒有依據，只能說「這門課沒有評價資料」。
+- generationPolicy 是方案生成時使用的權重與來源；替代方案的權重可能調整，但 preferenceScore 一律以原始使用者權重評比。方案不是固定五種取向，不要從 ID 猜偏好；依 title、課程差異及指標說明取捨。
+- 推薦理由 scoringPolicy 為 null 時表示該放置步驟未記錄排序分數，不可捏造權重理由。
 - 方案的 preferenceBreakdown.easy 可能為 null（代表排入的課全部沒有評價可評分），請改讀該方案的 reviewCoverage（rated/total/ratio）向使用者說明證據有多少，不要把 null 講成 0%。
 - 若回傳 reviewDataLoaded 為 false，代表本次排課完全沒有取得評價資料，涼度是以中性值計算，應照實告知使用者，不可宣稱已依評價排序。
 

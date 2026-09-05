@@ -113,7 +113,13 @@ export function buildExposureDraft(result, requestId, { surface, trigger } = {})
     // 使用者實際能接受的完整清單在 `exposureContext.displayedPlanIds`。
     plan: primary?.planId ? { planId: primary.planId, variantId: primary.variantId } : null,
     position: { planRank: primary?.planId ? 1 : null, courseRank: null },
-    exposureContext: { surface, trigger, candidateSet, displayedSet, displayedPlanIds },
+    exposureContext: {
+      surface, trigger, candidateSet, displayedSet, displayedPlanIds,
+      planPolicies: plans.filter(plan => plan.generationPolicy).map(plan => ({
+        planId: plan.planId, variantId: plan.variantId,
+        ...plan.generationPolicy, stopWhen: plan.stopWhen,
+      })),
+    },
     source: INTERACTION_SOURCES.SYSTEM_RECOMMENDATION,
     // roadmap #26：這個欄位從 #2／#29 建好之後就一直是 `null`，註記寫著「等 #26」。
     // 現在有真的理由結構了，記下它的版本——日後理由的欄位語意改變時，

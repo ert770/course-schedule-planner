@@ -209,9 +209,13 @@ function collectVotes(sortedEvents, { now, activeTerm } = {}) {
     }
 
     if (event.eventType === 'recommendation_accepted') {
+      const exposure = exposureByRequestId.get(event.requestId);
+      // #7 的混合權重無法單憑「接受方案」判定是哪一軸造成的。舊事件維持原有
+      // 重播語意；新方案不得從 strategy ID 憑空製造單軸投票。
+      if (exposure?.exposureContext?.planPolicies?.length
+        || event.plan?.variantId?.startsWith('personalized')) continue;
       const axis = VARIANT_AXIS[event.plan?.variantId];
       if (!axis) continue;
-      const exposure = exposureByRequestId.get(event.requestId);
       const displayedCount = exposure?.exposureContext?.displayedPlanIds?.length ?? 0;
       // 只有曝光時真的有兩個以上方案可選，接受其中一個才算「看過對照組之後的
       // 選擇」；只有一個方案時，接受它說明不了使用者比較過什麼。

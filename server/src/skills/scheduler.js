@@ -2,6 +2,8 @@
 // Rule-based scheduler that keeps hard constraints verifiable and leaves
 // explanation/comparison to the AI Agent.
 
+import { resolveScoringPolicy, normalizeCourseFeatures, computePreferenceComponents } from './scoringPolicy.js';
+import { buildPlanStrategies } from './planStrategies.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
 import {
   buildStudentScope,
@@ -60,11 +62,6 @@ const GREEDY_RUNNERS_UP_RECORDED = 3;
 // 不能讓使用者把它當成整份課表的涼度。
 const LOW_REVIEW_COVERAGE_RATIO = 0.5;
 
-// 內容偏好軟性加分的單一量級（roadmap #3）。與 INTEREST_KEYWORD_SCORE 同量級
-// （同屬「使用者陳述的關鍵字類偏好」），小於一個 category priority 級距（120），
-// 大於 3 學分的差距（36）——單一命中應能撼動排序，但不該讓一門課單靠內容偏好
-// 就跳過整個類別優先度（必修 > 核心選修 > 一般選修 > 通識 > 系外選修）。
-const CONTENT_PREFERENCE_SCORE = 40;
 // 候選池中某內容偏好的關鍵字命中率低於此比例：幾乎沒有課符合，加分近乎無效。
 const CONTENT_PREFERENCE_LOW_SIGNAL_RATIO = 0.05;
 // 高於此比例：幾乎每門課都符合，等於不篩選，使用者卻可能以為有效。
@@ -94,57 +91,6 @@ const CATEGORY_WEIGHT = 120;
 // 不另寫一份 `isRequiredForStudent()` 判斷——否則「非本人必修要降級」這條規則
 // 會有兩個實作，遲早漂移。
 const REQUIRED_COURSE_BONUS = 5000;
-
-// roadmap #10：每個 variant 一張權重表，取代「共用基礎分 + 各自一點小加分」。
-//
-// **改動前實測的量級失衡**（demo 帳號真實候選池）：類別項每差一級 120 分，
-// 而 variant 專屬項只有 25～40 分（`max_credits` 的 2→3 學分只差 25），
-// 主題訊號被類別分完全蓋過，五個 variant 排出同一份課表，去重後只剩 1 份。
-//
-// 係數是「相對於既有基準」的倍率，因此 `required_first` 全部維持 1／0，
-// 行為與改動前**逐項相同**，可作為對照組。其餘 variant 降低類別係數、
-// 拉高自己的主題係數，讓主題真的能重排選修——但必修永遠不受影響（見上方常數）。
-const VARIANT_WEIGHTS = {
-  required_first: { category: 1, credits: 1, easy: 0, interest: 0, compact: 0 },
-  // `compact` 的係數要明顯高於「使用者自己勾了集中排課」的基準（下方 scoreCourse
-  // 對 `constraints.preferCompact` 給的係數 1）。實測 demo 帳號本來就開著
-  // 「盡量集中排課」，係數只設 2 時這個方案與其他方案幾乎排出同一份課表——
-  // 這個方案的語意是「比你平常更集中」，不是「跟你平常一樣集中」。
-  compact: { category: 0.35, credits: 1, easy: 0, interest: 0, compact: 4 },
-  easy_score: { category: 0.35, credits: 1, easy: 3, interest: 0, compact: 0 },
-  interest: { category: 0.35, credits: 1, easy: 0, interest: 6, compact: 0 },
-  max_credits: { category: 0.35, credits: 10, easy: 0, interest: 0, compact: 0 },
-};
-
-const DEFAULT_VARIANT_WEIGHT = VARIANT_WEIGHTS.required_first;
-
-const PLAN_VARIANTS = [
-  {
-    id: 'required_first',
-    title: '必修與重補修優先',
-    description: '優先放入必修、重補修與指定加選課程，再補足選修與通識。',
-  },
-  {
-    id: 'compact',
-    title: '集中排課',
-    description: '偏好把課集中在較少天數，保留完整休息日。',
-  },
-  {
-    id: 'easy_score',
-    title: '涼課與高分優先',
-    description: '偏好描述中具有高分、涼課、報告或容易通過特徵的課程。',
-  },
-  {
-    id: 'interest',
-    title: '興趣與路徑優先',
-    description: '偏好符合關鍵字、修課路徑或學生指定類別的課程。',
-  },
-  {
-    id: 'max_credits',
-    title: '學分最大化',
-    description: '在不衝堂與不超過上限的前提下，盡量補足較多學分。',
-  },
-];
 
 // 警告訊息中只列出前幾個課名。全部列出會有數十行，反而讓其他警告看不到。
 function summarizeNames(names, limit = UNSCHEDULED_NAMES_IN_WARNING) {
@@ -259,7 +205,8 @@ function collectContentPreferenceHits(course, constraints) {
       preferenceId: rule.flag,
       label: rule.label,
       mode: rule.mode,
-      score: rule.mode === 'avoid' ? -CONTENT_PREFERENCE_SCORE : CONTENT_PREFERENCE_SCORE,
+      score: (rule.mode === 'avoid' ? -1 : 1) * Object.values(CONSTRAINTS)
+        .find(entry => entry.flag === rule.flag && entry.category === 'soft').weight,
     });
   }
   return hits;
@@ -271,7 +218,7 @@ function getContentPreferenceScore(course, constraints) {
 }
 
 // 候選池中每個「使用者實際啟用」的內容偏好旗標，其關鍵字命中率。獨立於任何
-// 一個排課方案——5 個 PLAN_VARIANTS 共用同一批候選池，這個訊號對所有方案
+// 一個排課方案——所有生成策略共用同一批候選池，這個訊號對所有方案
 // 完全相同，因此只算一次（見 prepareCandidates()），不必等特定方案選出來。
 function computeContentPreferenceSignal(courses, constraints) {
   if (courses.length === 0) return [];
@@ -655,52 +602,9 @@ function resolveEasyDirection(constraints) {
   return { direction: 0, label: EASY_DIRECTION.NONE };
 }
 
-// roadmap #5B：學到的權重只提供**強度**，方向永遠來自上面的顯式設定。
-// `constraints.learnedPreference` 由 `scheduleService.js` 注入（見該檔案的
-// `getSchedulingPreferenceWeights()`），`applied !== true` 時（未同意、沒算過、
-// 資料不足、版本過期、讀取失敗……）一律回 0，退回今天的純顯式行為。
-function learnedBoostFor(constraints, axis) {
-  const learned = constraints.learnedPreference;
-  if (!learned || learned.applied !== true) return 0;
-  const value = Number(learned.boosts?.[axis]);
-  return Number.isFinite(value) ? clamp01(value) : 0;
-}
-
-// 顯式方向決定符號，`1 + 學到的強度` 決定大小——`boost` 由呼叫端保證恆為
-// `[0,1]`（見 `preferenceLearning.js` 的 `computeLearnedBoosts()`：只取學到的
-// 值**超出**顯式先驗的部分），因此權重的絕對值恆在 `[1,2]`，符號恆等於顯式
-// 方向。**顯式設定只能被行為加強，不能被行為推翻**——這裡是型別上的保證，
-// 不是口頭約定。
-const EXPLICIT_AXIS_BASE = 1;
-const LEARNED_WEIGHT_GAIN = 1;
-
-function axisWeight(direction, boost) {
-  return direction === 0 ? 0 : direction * (EXPLICIT_AXIS_BASE + LEARNED_WEIGHT_GAIN * boost);
-}
-
-// 方案偏好符合度：所有方案都用「同一組使用者權重」評分，方案不得用自己的
-// variant 偏誤自評，否則彼此無從比較。
-//
-// roadmap #5B：權重改為帶號且連續——同一個 easiness 數值對不同使用者會產生
-// 相反的符合度。**這輪只到方案層**：`computeScoreComponents()`（決定單一門課
-// 的名次）完全不讀這個 profile，那是 `#7` 用連續權重向量取代 5 個固定
-// variant 時的工作；這裡動它會讓五個方案一起往同一方向傾斜，加劇 `#10`
-// 才修好的方案塌縮。
+// 生成與比較共用原始使用者權重；替代策略不能用自己加重過的權重替自己評分。
 function buildPreferenceProfile(constraints) {
-  return {
-    interest: axisWeight(
-      collectInterestKeywords(constraints).length > 0 ? 1 : 0,
-      learnedBoostFor(constraints, 'interest')
-    ),
-    compact: axisWeight(
-      constraints.preferCompact ? 1 : 0,
-      learnedBoostFor(constraints, 'compact')
-    ),
-    easy: axisWeight(
-      resolveEasyDirection(constraints).direction,
-      learnedBoostFor(constraints, 'easy')
-    ),
-  };
+  return resolveScoringPolicy(constraints).weights;
 }
 
 function clamp01(value) {
@@ -855,53 +759,34 @@ function evaluatePreference(plan, constraints, profile) {
 // 與排序用的版本不可能漂移。這個專案已經被「同一份邏輯兩個實作」咬過好幾次
 // （`constraintService` 的抽出就是為此），不重蹈覆轍。
 //
-// 每個元件對應 `VARIANT_WEIGHTS` 的一個鍵，數值已乘上該 variant 的係數，
+// 每個元件都來自版本化 policy，數值已乘上本次生成策略的係數，
 // 因此「這門課贏在哪一項」直接讀得出來，也看得出換一個方案為什麼結果不同。
 function computeScoreComponents(
   course, schedule, constraints, variant, requiredIds, scope,
   neutralEasyScore = EASY_SCORE_MAX / 2
 ) {
-  const weights = VARIANT_WEIGHTS[variant.id] ?? DEFAULT_VARIANT_WEIGHT;
+  const policy = variant.scoringPolicy ?? resolveScoringPolicy(constraints);
   const categoryPriority = getEffectiveCategoryPriority(course, scope);
+  const usedDays = new Set(schedule.flatMap(c => [...getUsedDays(c)]));
+  const courseDays = [...getUsedDays(course)];
+  const features = normalizeCourseFeatures({
+    interestHits: collectInterestHits(course, constraints).length,
+    interestCount: collectInterestKeywords(constraints).length,
+    easiness: resolveEasiness(course).score,
+    neutralEasiness: neutralEasyScore,
+    easyMax: EASY_SCORE_MAX,
+    overlappingDays: courseDays.filter(day => usedDays.has(day)).length,
+    courseDays: courseDays.length,
+  });
   const components = {
     base: 1000,
-    // 使用者明確指名要修的課。
     requiredSelection: requiredIds.has(Number(course.id)) ? 10000 : 0,
-    // **本人必修的絕對優先與權重表無關**：權重表只排序選修。少了這一段，
-    // 把類別係數調低的 variant 會讓替代涼度高的一般選修壓過必修。
     requiredCourse: categoryPriority === CATEGORY_PRIORITY['必修'] ? REQUIRED_COURSE_BONUS : 0,
-    category: -categoryPriority * CATEGORY_WEIGHT * weights.category,
-    credits: (course.credits || 0) * 12 * weights.credits,
-    // 內容偏好（roadmap #3）不分 variant 一律套用，比照 category/credits 的
-    // 基礎分寫法——這 8 個旗標原本就是候選篩選層級，不是特定 variant 的行為。
+    category: -categoryPriority * CATEGORY_WEIGHT * policy.categoryCoefficient,
+    credits: (course.credits || 0) * 12 * policy.creditCoefficient,
     contentPreference: getContentPreferenceScore(course, constraints),
-    compact: 0,
-    easy: 0,
-    interest: 0,
+    ...computePreferenceComponents(features, policy),
   };
-
-  if (weights.compact > 0 || constraints.preferCompact) {
-    const usedDays = new Set(schedule.flatMap(c => [...getUsedDays(c)]));
-    const courseDays = [...getUsedDays(course)];
-    const overlapping = courseDays.filter(day => usedDays.has(day)).length;
-    // `preferCompact` 是使用者的顯式偏好，即使 variant 不主打集中排課也要生效，
-    // 因此係數至少為 1（維持改動前的量級）。
-    const compactWeight = Math.max(weights.compact, constraints.preferCompact ? 1 : 0);
-    components.compact =
-      (overlapping > 0 ? 120 * overlapping : -20 * Math.max(1, courseDays.length)) * compactWeight;
-  }
-
-  if (weights.easy > 0) {
-    // 有評價走評價；沒有評價改用替代訊號（見 resolveEasiness()）。
-    // 兩者都沒有時才退回母體先驗換算的中性分——給 0 會讓沒有評價的課全部沉底，
-    // 等於用「查不到」冒充「很硬」。
-    const { score: easiness } = resolveEasiness(course);
-    components.easy = (easiness ?? neutralEasyScore) * weights.easy;
-  }
-
-  if (weights.interest > 0) {
-    components.interest = getInterestScore(course, constraints) * weights.interest;
-  }
 
   return components;
 }
@@ -1024,6 +909,7 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
       course,
       placementReason: reason,
       scoreComponents: options.scoreComponents ?? null,
+      scoringPolicy: options.scoringPolicy ?? null,
       contentHits: collectContentPreferenceHits(course, constraints),
       interestHits: collectInterestHits(course, constraints),
       alternatives: options.alternatives ?? null,
@@ -1164,6 +1050,8 @@ function createEmptyPlan(variant, constraints) {
     id: variant.id,
     title: variant.title,
     description: variant.description,
+    generationPolicy: variant.scoringPolicy ?? resolveScoringPolicy(constraints),
+    stopWhen: variant.stopWhen ?? 'no-credit-progress',
     schedule: [],
     unscheduledCourses: [],
     watchedCourses: [],
@@ -1484,7 +1372,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     );
   }
 
-  // 內容偏好的關鍵字命中率是候選池本身的性質，5 個 PLAN_VARIANTS 共用同一批
+  // 內容偏好的關鍵字命中率是候選池本身的性質，所有生成策略共用同一批
   // 候選池、這個訊號對所有方案完全相同，因此在候選層算一次即可（不必等某個
   // 方案選出來才算，也不必逐一方案重算五次）。
   warnings.push(...buildContentPreferenceWarnings(computeContentPreferenceSignal(courses, constraints)));
@@ -1814,6 +1702,7 @@ function buildPlan(prepared, constraints, variant) {
     remaining.sort((a, b) => (
       scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
       - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
+      || Number(a.id) - Number(b.id)
     ));
 
     const course = remaining.shift();
@@ -1834,7 +1723,7 @@ function buildPlan(prepared, constraints, variant) {
     const scoreComponents = computeScoreComponents(
       course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
     );
-    const explain = { alternatives, scoreComponents };
+    const explain = { alternatives, scoreComponents, scoringPolicy: plan.generationPolicy };
 
     if (course.corequisiteRole === 'regular') {
       // roadmap #15：貪婪填充選中一門帶共同必修的正課時，兩者一併嘗試
@@ -1852,7 +1741,7 @@ function buildPlan(prepared, constraints, variant) {
       addCourseToPlan(plan, course, constraints, variant.title, explain);
     }
 
-    if (plan.totalCredits >= plan.minCredits && variant.id !== 'max_credits') {
+    if (plan.totalCredits >= plan.minCredits && variant.stopWhen !== 'candidate-exhausted') {
       // 只計入還能推進學分的課程。0 學分課程恆滿足學分上限條件，
       // 會讓這個中止判斷永遠為真，迴圈跑到候選清單耗盡。
       const canAddMore = remaining.some(next => (
@@ -2261,10 +2150,11 @@ function runRepair(prepared, constraints, preferenceProfile, baselinePlans, runt
     ? runtimeOptions.now
     : () => performance.now();
   const repairStartedAt = clock();
+  const repairStrategy = { ...REPAIR_VARIANT, scoringPolicy: resolveScoringPolicy(constraints) };
   const { groups, requiredGroupIds, context } = buildDecisionGroups(
-    prepared, constraints, REPAIR_VARIANT, seed
+    prepared, constraints, repairStrategy, seed
   );
-  const initialPlan = createEmptyPlan(REPAIR_VARIANT, constraints);
+  const initialPlan = createEmptyPlan(repairStrategy, constraints);
   initialPlan.excludedCourses.push(...prepared.exclusions);
 
   for (const course of prepared.courses) {
@@ -2408,7 +2298,7 @@ function buildReviewCoverage(plan) {
 
 // roadmap #10：方案塌縮的誠實說明。
 //
-// 去重後少於 `PLAN_VARIANTS.length` 時，指出哪些取向沒能排出不同的課表，
+// 去重後少於實際策略數時，指出哪些取向沒能排出不同的課表，
 // 並附上「可競爭課程數」——因為最常見的原因根本不是排序邏輯，而是**可修的課太少**
 // （demo 帳號實測 227 門候選裡 211 門因 #13C 適用對象規則未確認而保守排除，
 // 真正能競爭的只有 16 門）。少了這句，使用者會以為系統只想得出這幾種方案。
@@ -2423,6 +2313,7 @@ function buildPlanDiversity(allPlans, dedupedPlans, prepared) {
   return {
     requestedVariants: allPlans.length,
     distinctPlans: dedupedPlans.length,
+    reason: allPlans.length > dedupedPlans.length ? 'same-course-combination' : null,
     collapsed: allPlans
       .filter(plan => !survivingIds.has(plan.id))
       .map(plan => ({ variantId: plan.id, title: plan.title })),
@@ -2430,23 +2321,11 @@ function buildPlanDiversity(allPlans, dedupedPlans, prepared) {
   };
 }
 
-function describePlanCollapse(diversity, constraints) {
+function describePlanCollapse(diversity) {
   if (!diversity || diversity.collapsed.length === 0) return null;
-
-  const titles = diversity.collapsed.map(item => item.title);
-  let message = `${titles.join('、')}排出的課表與其他方案相同，已合併，`
-    + `目前提供 ${diversity.distinctPlans} 種方案。`
-    + `可競爭的課程僅 ${diversity.competablePoolSize} 門，方案之間的差異空間有限。`;
-
-  // 「集中排課」方案與其他方案相同，最常見的原因是使用者本來就勾了集中排課——
-  // 那麼每一份方案都已經是集中的，這個取向自然不會產生第二種答案。
-  // 這是合理結果，不是缺陷，講清楚比只說「已合併」有用。
-  if (constraints?.preferCompact && diversity.collapsed.some(item => item.variantId === 'compact')) {
-    message += '（你已設定「盡量集中排課」，因此每個方案本來就會集中，'
-      + '集中排課方案不會再產生不同的結果。）';
-  }
-
-  return message;
+  return `${diversity.collapsed.map(item => item.title).join('、')}排出的課表與其他方案相同，已合併，`
+    + `目前提供 ${diversity.distinctPlans} 種方案。可競爭的課程共 ${diversity.competablePoolSize} 門；`
+    + '本次調整取捨仍得到相同組合，不能僅憑重複結果判定是候選池不足。';
 }
 
 function uniquePlans(plans) {
@@ -2646,7 +2525,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     constraints
   );
 
-  const allVariantPlans = PLAN_VARIANTS
+  const scoringPolicy = resolveScoringPolicy(constraints);
+  const strategies = buildPlanStrategies(scoringPolicy);
+  const allVariantPlans = strategies
     .map(variant => {
       const plan = buildPlan(prepared, constraints, variant);
       const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
@@ -2665,7 +2546,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   // 適用對象規則）與某個 variant 沒有可用訊號（資料缺口）。
   // roadmap #27：同一份資料另外以 `planDiversity` 結構化回傳給前端。
   const planDiversity = buildPlanDiversity(allVariantPlans, plans, prepared);
-  const collapsedVariantWarning = describePlanCollapse(planDiversity, constraints);
+  const collapsedVariantWarning = describePlanCollapse(planDiversity);
 
   const baselinePrimary = plans[0];
   const baselineCheck = baselinePrimary?.success
@@ -2734,7 +2615,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     // roadmap #21：opt-in 放寬階梯，預設不啟用（constraints.allowRelaxation
     // 未設定或為 false 時，以下整段不會執行，行為與改動前完全相同）。
     if (constraints.allowRelaxation) {
-      const requiredFirstVariant = PLAN_VARIANTS.find(v => v.id === 'required_first');
+      const requiredFirstVariant = strategies[0];
       const relaxed = tryRelaxationLadder(prepared, constraints, requiredFirstVariant);
 
       if (relaxed) {

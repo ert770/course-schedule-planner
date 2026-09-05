@@ -342,17 +342,21 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 6. 依照偏好產生多個課表方案。
 7. 回傳課表、學分、衝堂資訊、推薦理由與備選課程。
 
-### 方案分化：每個 variant 一張權重表（Roadmap #10）
+### 方案分化：個人化權重與有限替代策略（Roadmap #7）
 
-五個 variant **不是**「共用一組基礎分，各自再加一點小分」——那樣會塌縮。
-量測過的失衡：類別項每差一級 120 分，而 variant 專屬項只有 25～40 分
-（`max_credits` 的 2→3 學分只差 25），主題訊號被類別分完全蓋過，五個方案排出
-同一份課表，去重後只剩 1 份。
+排課器先由顯式偏好與可用的學習結果建立一份版本化 `generationPolicy`，再用同一份
+權重決定單門課排序與方案比較。正式軸為 `interest`／`compact`／`easy`；未表態的軸為
+0，已表態軸的絕對值落在 `[1,2]`，其中學到的 boost 只能加強顯式方向，不能自行新增
+方向或推翻方向。`easy < 0` 代表挑戰難課。
 
-現在 `scheduler.js` 的 `VARIANT_WEIGHTS` 給每個 variant 一組係數
-（`category`／`credits`／`easy`／`interest`／`compact`）。`required_first` 全部維持
-1／0，行為與改動前逐項相同，是其餘 variant 的對照組；其餘 variant 降低類別係數、
-拉高自己的主題係數，讓主題真的能重排選修。
+系統不再固定產生五種預設取向。每次先建立「個人化綜合方案」，再只針對使用者已表達的
+軸建立加重 1.5 倍的比較方案，最後加入一個提高學分係數的方案；總數上限仍為 5。沒有
+偏好時只嘗試綜合與較多學分兩種策略，不把「涼課」或其他未表態取向塞給使用者。
+
+`scoringPolicy.js` 負責權重範圍、特徵正規化與各軸分數；`planStrategies.js` 只建立有限且
+可重現的搜尋策略；`scheduler.js` 套用策略。方案 ID 是生成策略的識別值，不能當成使用者
+接受某一偏好軸的證據。每個方案都保存實際 `generationPolicy`，每門經排序加入的課也在
+`recommendationReason.scoringPolicy` 保存同一快照。
 
 **必修的絕對優先不受權重表影響。** 「必修先排」是規則不是偏好，因此本人必修改由
 固定加分（`REQUIRED_COURSE_BONUS`）取得絕對優先，權重表只負責排序**選修**。
@@ -537,13 +541,10 @@ explicitProfile)` 算出，是「學到的值**超出**顯式基準的部分」�
 `preferenceBreakdown` 本身**維持方向無關**（永遠是涼度測量值，不是偏好值）
 ——翻它會讓同一份課表在兩個人眼中顯示不同的「涼度」，把偏好偽裝成事實。
 
-**生效範圍只到方案層，這是刻意的邊界**：`evaluatePreference()`（決定五個方案
-哪一個主推）會讀取這組帶號權重；`computeScoreComponents()`／`scoreCourse()`
-（決定單一門課在方案內部的名次，仍然只由 `VARIANT_WEIGHTS` 決定）**完全沒有
-被觸碰**。因此「挑戰難課」的使用者拿到的是五個既有方案裡**最不涼**的那一個，
-不是一份刻意排進難課的課表——沒有任何 variant 為「難」最佳化。把使用者的
-權重接進單門課排序、用連續向量取代五個固定 variant，是 `#7` 的範圍；這裡先做
-會讓五個方案一起往同一方向傾斜，加劇 `#10` 才修好的方案塌縮。
+**Roadmap #7 已把相同方向接進單門課排序。** `computeScoreComponents()`／
+`scoreCourse()` 與方案層 `evaluatePreference()` 現在共用同一份原始使用者權重；替代
+策略可以加重一個軸來產生比較方案，但不能拿加重後的權重替自己評高分。挑戰難課的
+負權重因此會直接讓較低涼度的課在選課時加分，而不只是在既有方案中改選主推項。
 
 **在今天的真實資料上是可驗證但不可見的功能**：demo 帳號的學到權重三軸皆為
 `0.000`、`sufficiency` 為 `insufficient`（31/50），`getSchedulingPreferenceWeights()`
@@ -753,20 +754,21 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 
 ## 多方案課表
 
-`generateSchedule()` 一次產生 5 個 variant 的方案（見「方案分化：每個 variant 一張權重表
-（Roadmap #10）」）：必修與重補修優先、集中排課、涼課與高分優先、興趣與路徑優先、
-學分最大化，另有第 6 個非常態成員——`#22` bounded backtracking 失敗時才插入的
-`限制修復方案`。每個方案帶：
+`generateSchedule()` 依當次個人化權重產生最多 5 個策略方案（見「方案分化：個人化權重
+與有限替代策略（Roadmap #7）」）：個人化綜合方案、已啟用偏好軸的加重方案，以及較多
+學分方案。`#22` bounded backtracking 失敗時可插入非常態的 `限制修復方案`。每個方案帶：
 
 - 課程清單（`schedule`／`unscheduledCourses`／`watchedCourses`）。
 - 總學分（`totalCredits`／`graduationCredits`／`nonGraduationCredits`）。
 - 每門課的推薦理由（`recommendationReason`，見上方「推薦理由（Roadmap #26）」）。
+- 生成時實際使用的版本化權重（`generationPolicy`）與停止條件（`stopWhen`）。
 - 被排除課程與原因（`excludedCourses`）。
 - 比較用指標（`planMetrics`，見「方案比較與 counterfactual（Roadmap #27）」）。
 
-去重後方案數常常少於 5——`uniquePlans()` 判斷「相同」的標準是**課程 id 集合**，不是排序；
-少於 5 時 `planDiversity` 結構化記錄哪些取向被合併、可競爭課程池多大，`describePlanCollapse()`
-從同一份結構產生給使用者看的中文句子。
+去重後方案數可能少於實際嘗試的策略數——`uniquePlans()` 判斷「相同」的標準是**課程 id
+集合**，不是排序；`planDiversity` 結構化記錄哪些策略被合併、可競爭課程池多大與
+`reason: same-course-combination`。重複結果只證明這次調整取捨仍得到相同組合，不能單憑
+這點判定候選池不足；`describePlanCollapse()` 從同一份結構產生使用者可讀的說明。
 
 ### 方案比較與 counterfactual（Roadmap #27）
 
@@ -815,14 +817,12 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 - 涼課評分改用結構化評價（`Course_Reviews`），取代課程描述關鍵字（見「涼度評分與評價覆蓋率」）。
 - 8 個內容偏好改為軟性加分並附訊號可靠度警告，取代硬性排除（roadmap #3，見「內容偏好評分與訊號可靠度警告」）。
 - roadmap #21 的正式 `hard`／`soft` constraint schema（`weight`／`relaxable`／`source`／`confidence` 欄位）、與方案產生器分離的獨立 validator、opt-in 放寬階梯、結構化 conflict set，見「Hard/Soft Constraint Schema（Roadmap #21）」。
-- 評價分數的 per-user 加權方向：`preferenceProfile` 三軸帶號，同一涼度分數對挑戰難課的使用者與涼課優先的使用者給相反符合度，但只在**方案層**生效（見「Per-user 加權方向（Roadmap #5B）」）。
+- 評價分數的 per-user 加權方向：`preferenceProfile` 三軸帶號，同一涼度分數對挑戰難課的使用者與涼課優先的使用者給相反符合度（見「Per-user 加權方向（Roadmap #5B）」）。
+- Roadmap #7 的版本化個人化 scorer：連續權重已接進單門課排序，並以動態、有限的比較策略取代固定五個 variant。
 
 仍需補強：
 
 - 數位課程畢業門檻。
-- 評價分數的 per-user 個人化加權**接進單一門課的排序**（目前只接進方案層的
-  `evaluatePreference()`，`computeScoreComponents()`／`scoreCourse()` 仍是母體
-  共用的涼度）；用連續權重向量取代五個固定 variant，屬 roadmap #7。
 - `has_midterm`／`has_group_project`／`grading_scheme`／`language` 課程欄位仍不存在；8 個內容偏好因此仍以描述關鍵字軟性計分（見「內容偏好評分與訊號可靠度警告」），欄位化需要對共用 MySQL 做 `ALTER TABLE`，屬需與組員協調的 D 類 rollout，不在 roadmap #3 範圍內。
 - roadmap #21 的先修／共修（prerequisite/co-requisite）強制執行：schema 已定義這個層級（`enforced:false`），但完全沒有資料來源可查（無先修表），validator 誠實回報 `unchecked`，不強制執行；資料模型屬 roadmap #8，尚未開始。
 - 通識基礎 16 學分的完整對照（目前只實作「不計畢業學分」的那 3 學分）。

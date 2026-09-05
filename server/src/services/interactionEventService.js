@@ -30,10 +30,11 @@ import {
   resolveIdempotentAppend,
 } from '../data/interactionEventSchema.js';
 import { logger } from '../utils/logger.js';
+import { SCORING_POLICY_VERSION } from '../skills/scoringPolicy.js';
 
 // 產生這批推薦的模型版本。#7 用連續權重向量取代固定 variant 時要一併改這個值，
 // 否則 #30 會把兩種不同模型產生的曝光混為一談。
-export const INTERACTION_MODEL_VERSION = 'scheduler-greedy-v1';
+export const INTERACTION_MODEL_VERSION = SCORING_POLICY_VERSION;
 
 const memoryStore = { events: [] };
 
@@ -298,6 +299,10 @@ async function assertProvenance(identity, event, exposureCache) {
         + `（應為 ${exposure.displayedPlanIds.join('、') || '無可接受方案'}）。`
       );
     }
+    const policy = exposure.planPolicies.find(item => item.planId === event.plan.planId);
+    if (policy && policy.variantId !== event.plan.variantId) {
+      throw new Error('variantId 與伺服器記錄的方案不符');
+    }
     return;
   }
 
@@ -335,6 +340,8 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
     try {
       event = createInteractionEvent(identity, {
         ...draft,
+        exposureContext: draft?.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED
+          ? draft?.exposureContext : null,
         // 版本快照是**系統當下的事實**，不是呼叫端可以宣告的東西。
         // 前端送什麼都以 server 目前的版本為準。
         versionSnapshot: {
@@ -502,6 +509,7 @@ export async function findExposure(identity, requestId) {
     planId: event.plan?.planId ?? null,
     variantId: event.plan?.variantId ?? null,
     displayedPlanIds,
+    planPolicies: event.exposureContext?.planPolicies ?? [],
     // 學期取自曝光事件本身，而不是回饋當下的 ACTIVE_TERM——回饋可能跨到
     // 下一個學期才送出，那時的系統常數已經不是當初推薦的那個學期。
     term: event.term,
