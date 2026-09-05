@@ -634,13 +634,72 @@ function getInterestScore(course, constraints) {
   return collectInterestHits(course, constraints).length * INTEREST_KEYWORD_SCORE;
 }
 
+// roadmap #5B：難度**方向**。事件 schema 的 `feedbackReason` 只有 `workload`
+// （太重），沒有任何欄位能表達「太簡單、我要更難」——方向因此永遠不從行為
+// 推論，只能由使用者自己勾的兩個標籤決定（見 `data/preferenceTags.js`）。
+//
+// 兩個都勾是使用者自己的條件互相矛盾，這裡不猜哪一個才是真的：一律視為
+// 未表態並在 `generateSchedule()` 的 warnings 說出來。刻意不在儲存層做
+// 互斥（`preferenceTags.js` 沒有把兩個標籤設計成單選）——那會靜默丟掉
+// 使用者真的存過的標籤，是「偏好靜默消失」那一類 bug，比顯示一句警告更糟。
+const EASY_DIRECTION = Object.freeze({
+  EASY: 'easy', CHALLENGE: 'challenge', NONE: 'none', CONTRADICTORY: 'contradictory',
+});
+
+function resolveEasyDirection(constraints) {
+  const wantsEasy = Boolean(constraints.preferEasyCourses ?? constraints.preferEasy);
+  const wantsChallenge = Boolean(constraints.preferChallengingCourses);
+  if (wantsEasy && wantsChallenge) return { direction: 0, label: EASY_DIRECTION.CONTRADICTORY };
+  if (wantsEasy) return { direction: 1, label: EASY_DIRECTION.EASY };
+  if (wantsChallenge) return { direction: -1, label: EASY_DIRECTION.CHALLENGE };
+  return { direction: 0, label: EASY_DIRECTION.NONE };
+}
+
+// roadmap #5B：學到的權重只提供**強度**，方向永遠來自上面的顯式設定。
+// `constraints.learnedPreference` 由 `scheduleService.js` 注入（見該檔案的
+// `getSchedulingPreferenceWeights()`），`applied !== true` 時（未同意、沒算過、
+// 資料不足、版本過期、讀取失敗……）一律回 0，退回今天的純顯式行為。
+function learnedBoostFor(constraints, axis) {
+  const learned = constraints.learnedPreference;
+  if (!learned || learned.applied !== true) return 0;
+  const value = Number(learned.boosts?.[axis]);
+  return Number.isFinite(value) ? clamp01(value) : 0;
+}
+
+// 顯式方向決定符號，`1 + 學到的強度` 決定大小——`boost` 由呼叫端保證恆為
+// `[0,1]`（見 `preferenceLearning.js` 的 `computeLearnedBoosts()`：只取學到的
+// 值**超出**顯式先驗的部分），因此權重的絕對值恆在 `[1,2]`，符號恆等於顯式
+// 方向。**顯式設定只能被行為加強，不能被行為推翻**——這裡是型別上的保證，
+// 不是口頭約定。
+const EXPLICIT_AXIS_BASE = 1;
+const LEARNED_WEIGHT_GAIN = 1;
+
+function axisWeight(direction, boost) {
+  return direction === 0 ? 0 : direction * (EXPLICIT_AXIS_BASE + LEARNED_WEIGHT_GAIN * boost);
+}
+
 // 方案偏好符合度：所有方案都用「同一組使用者權重」評分，方案不得用自己的
 // variant 偏誤自評，否則彼此無從比較。
+//
+// roadmap #5B：權重改為帶號且連續——同一個 easiness 數值對不同使用者會產生
+// 相反的符合度。**這輪只到方案層**：`computeScoreComponents()`（決定單一門課
+// 的名次）完全不讀這個 profile，那是 `#7` 用連續權重向量取代 5 個固定
+// variant 時的工作；這裡動它會讓五個方案一起往同一方向傾斜，加劇 `#10`
+// 才修好的方案塌縮。
 function buildPreferenceProfile(constraints) {
   return {
-    interest: collectInterestKeywords(constraints).length > 0 ? 1 : 0,
-    compact: constraints.preferCompact ? 1 : 0,
-    easy: (constraints.preferEasyCourses ?? constraints.preferEasy) ? 1 : 0,
+    interest: axisWeight(
+      collectInterestKeywords(constraints).length > 0 ? 1 : 0,
+      learnedBoostFor(constraints, 'interest')
+    ),
+    compact: axisWeight(
+      constraints.preferCompact ? 1 : 0,
+      learnedBoostFor(constraints, 'compact')
+    ),
+    easy: axisWeight(
+      resolveEasyDirection(constraints).direction,
+      learnedBoostFor(constraints, 'easy')
+    ),
   };
 }
 
@@ -748,27 +807,44 @@ function computePlanMetrics(plan) {
   };
 }
 
+// roadmap #5B：權重可能帶號（見 `buildPreferenceProfile()`）。**大小**決定這個軸
+// 在加權平均裡佔多少（取絕對值才不會讓負權重被 `> 0` 濾掉或把 weightSum 弄壞），
+// **符號**只決定要不要把軸值翻面——同一個 0.8 的涼度，對想要涼課的人是 0.8 分，
+// 對想挑戰難課的人就是 0.2 分。兩者分開處理，score 才會維持在 [0,1]，
+// `comparePlans()`、`PREFERENCE_SCORE_EPSILON` 與「偏好符合度 N%」都不必跟著改。
+// 權重全為正時 `Math.abs(w) === w` 且這裡回傳原值，算術與翻面之前逐位元相同。
+function orientAxisValue(value, weight) {
+  return weight >= 0 ? value : 1 - value;
+}
+
 function evaluatePreference(plan, constraints, profile) {
   const breakdown = {
     interest: getInterestCoverage(plan, constraints),
     compact: getCompactness(plan),
     // number|null；null = 排入的課全部沒有評價證據，見 getEasiness() 的說明。
+    // **這是測量值，不是偏好值**：不論使用者要涼還是要硬，這裡永遠是涼度。
+    // 方向只作用在下面的 score，不作用在這裡——否則同一份課表在兩個人眼中
+    // 會看到不同的「涼度」，那是把偏好偽裝成事實，`#27` 的方案比較表也會
+    // 對不同使用者代表不同意思。
     easy: getEasiness(plan),
   };
 
   // 無證據的軸連同它的權重一起排除，不是以 0 分參與加權。以 0 參與會讓
   // 「查不到涼度」直接扣掉使用者的偏好符合度，連帶稀釋其他有證據的軸——
   // 那是用資料缺口懲罰使用者，不是誠實回報「這個維度無法評分」。
+  // 判定用絕對值：權重非零就是「有表達」，不論正負。
   const axes = [
     { value: breakdown.interest, weight: profile.interest },
     { value: breakdown.compact, weight: profile.compact },
     { value: breakdown.easy, weight: profile.easy },
-  ].filter(axis => axis.weight > 0 && axis.value !== null);
+  ].filter(axis => Math.abs(axis.weight) > 0 && axis.value !== null);
 
-  const weightSum = axes.reduce((sum, axis) => sum + axis.weight, 0);
+  const weightSum = axes.reduce((sum, axis) => sum + Math.abs(axis.weight), 0);
   const score = weightSum === 0
     ? 0
-    : axes.reduce((sum, axis) => sum + axis.value * axis.weight, 0) / weightSum;
+    : axes.reduce(
+      (sum, axis) => sum + orientAxisValue(axis.value, axis.weight) * Math.abs(axis.weight), 0
+    ) / weightSum;
 
   return { score, breakdown };
 }
@@ -2537,7 +2613,22 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   }
 
   const preferenceProfile = buildPreferenceProfile(constraints);
-  const hasExpressedPreference = Object.values(preferenceProfile).some(weight => weight > 0);
+  // roadmap #5B：權重可能為負（挑戰難課），`> 0` 會把「明確表態要挑戰難課」
+  // 誤判成「沒表達偏好」——判定改用絕對值，正負都算「有表達」。
+  const hasExpressedPreference = Object.values(preferenceProfile)
+    .some(weight => Number.isFinite(weight) && Math.abs(weight) > 0);
+
+  // roadmap #5B：附加式的可觀察欄位，讓「學到的權重是否真的套用」不必解讀
+  // `preferenceProfile` 的數值就能直接讀出來——供瀏覽器驗收與測試使用。
+  const easyIntent = resolveEasyDirection(constraints);
+  const preferenceProfileSource = {
+    learnedApplied: Boolean(constraints.learnedPreference?.applied),
+    reason: constraints.learnedPreference?.reason ?? 'absent',
+    modelVersion: constraints.learnedPreference?.modelVersion ?? null,
+    computedAt: constraints.learnedPreference?.computedAt ?? null,
+    boosts: constraints.learnedPreference?.boosts ?? null,
+    easyDirection: easyIntent.label,
+  };
 
   // 評價索引與母體先驗對五個方案完全相同，在此做一次。母體先驗刻意由
   // **傳進來的全部評價**計算，不是候選池——否則同一門課在不同搜尋條件下
@@ -2687,6 +2778,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
             fallbackUsed: solver.repairAttempted,
           },
           preferenceProfile,
+          preferenceProfileSource,
           hasExpressedPreference,
           reviewDataLoaded,
           message: `已放寬部分時段偏好以產生可行課表：${relaxed.plan.schedule.length} 門課，`
@@ -2778,29 +2870,48 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   const allWarnings = [...new Set(plans.flatMap(plan => plan.warnings))];
   if (collapsedVariantWarning) allWarnings.push(collapsedVariantWarning);
   if (!hasExpressedPreference) {
-    allWarnings.push('未設定興趣關鍵字、集中排課或涼課偏好，主推方案改以總學分決定，個人化程度有限。');
+    allWarnings.push('未設定興趣關鍵字、集中排課或涼課／挑戰難課偏好，主推方案改以總學分決定，個人化程度有限。');
+  }
+
+  // roadmap #5B：兩個難度標籤同時勾選時，`preferenceProfile.easy` 已在
+  // `buildPreferenceProfile()` 被歸零（未表態），但那件事本身值得讓使用者
+  // 知道——沉默地忽略其中一個標籤，跟沉默地丟掉使用者存過的資料是同一類問題。
+  if (easyIntent.label === EASY_DIRECTION.CONTRADICTORY) {
+    allWarnings.push(
+      '你同時勾選了「涼課優先」與「挑戰難課」，兩者方向相反，'
+      + '本次排課的涼課／挑戰難課偏好視為未表態；請在偏好設定裡只保留其中一項。'
+    );
   }
 
   // 評價相關的誠實性警告。第一條不受偏好限制——沒有取得評價資料是接線壞掉的
   // 訊號，必須大聲；專案已被「兩邊恆空、已修排除數月未生效」教訓過
   // （見 `constraintService.js` 的 courseHistory 註解），同樣的靜默失效不能再發生。
+  //
+  // roadmap #5B：`easy === 1` 改成 `!== 0`——權重現在可能是負值（挑戰難課）
+  // 或帶學到的強度（絕對值可達 2），文案依方向切換涼度／難度用詞。
+  // 「難易度」而非「難度」——`outsideElective.js` 的系外選修年級落差警告
+  // 也用「難度」這個詞，兩者概念完全無關，但 `generateSchedule()` 把全部
+  // warnings 混在同一個陣列裡，用字重疊會讓依關鍵字過濾／彙整的呼叫端
+  // 誤把兩種警告算成同一類。
+  const easyMetric = easyIntent.direction < 0 ? '難易度' : '涼度';
+  const easyLabel = easyIntent.direction < 0 ? '挑戰難課偏好' : '涼課偏好';
   if (!reviewDataLoaded) {
     allWarnings.push(
       '本次排課沒有取得任何課程評價資料，涼度無法評分；所有課程一律以中性涼度計算。'
     );
-  } else if (preferenceProfile.easy === 1 && primary.reviewCoverage.rated === 0) {
+  } else if (preferenceProfile.easy !== 0 && primary.reviewCoverage.rated === 0) {
     allWarnings.push(
-      `你設定了涼課偏好，但方案「${primary.title}」排入的 ${primary.reviewCoverage.total} 門課`
-      + '全部沒有課程評價，涼度無法評分，主推方案改由其他偏好與總學分決定。'
+      `你設定了${easyLabel}，但方案「${primary.title}」排入的 ${primary.reviewCoverage.total} 門課`
+      + `全部沒有課程評價，${easyMetric}無法評分，主推方案改由其他偏好與總學分決定。`
     );
   } else if (
-    preferenceProfile.easy === 1
+    preferenceProfile.easy !== 0
     && primary.reviewCoverage.total > 0
     && primary.reviewCoverage.ratio < LOW_REVIEW_COVERAGE_RATIO
   ) {
     allWarnings.push(
-      `方案「${primary.title}」的涼度僅由 ${primary.reviewCoverage.rated}／`
-      + `${primary.reviewCoverage.total} 門有評價的課推得，其餘課程沒有評價、未計入涼度。`
+      `方案「${primary.title}」的${easyMetric}僅由 ${primary.reviewCoverage.rated}／`
+      + `${primary.reviewCoverage.total} 門有評價的課推得，其餘課程沒有評價、未計入${easyMetric}。`
     );
   }
 
@@ -2843,6 +2954,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     solver,
     warnings: allWarnings,
     preferenceProfile,
+    preferenceProfileSource,
     hasExpressedPreference,
     reviewDataLoaded,
     message,

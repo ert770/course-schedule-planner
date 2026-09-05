@@ -31,6 +31,19 @@ export const PREFERENCE_TAG_GROUPS = [
     category: '課程型態與互動',
     tags: ['#無分組報告', '#高度課堂討論', '#全英授課', '#學到許多知識', '#不點名'],
   },
+  // Roadmap #5B：難度**方向**必須由使用者自己講。
+  //
+  // 互動事件的 `feedbackReason` 只有 `workload`（太重），**沒有任何欄位能表達
+  // 「太簡單、我要更難」**——方向若從行為推論，那個符號只能是憑空編的。
+  // 因此方向一律來自這兩個標籤，`#30` 學到的權重只提供強度。
+  //
+  // `#涼課優先` 不只是補一個 checkbox：`preferEasyCourses` 這個旗標從 `#5A`
+  // 起就被 `scheduler.js` 讀取，但**從來沒有任何 UI 或儲存路徑設定過它**，
+  // 排課時恆為 undefined。這個標籤才真正把那條路接通。
+  {
+    category: '課程難度',
+    tags: ['#涼課優先', '#挑戰難課'],
+  },
 ];
 
 // 標籤 → 排課旗標。
@@ -51,6 +64,11 @@ export const TAG_TO_FLAG = new Map([
   ['#全英授課', 'englishTaught'],
   ['#學到許多知識', 'learnMore'],
   ['#不點名', 'noRollCall'],
+  // Roadmap #5B：兩者互斥（同時勾選由 `scheduler.js` 的 `resolveEasyDirection()`
+  // 視為未表態並發出警告）。**刻意不在這裡做互斥**——儲存層丟掉使用者真的存過
+  // 的標籤，正是上方註解記載的「偏好靜默消失」那一類 bug。
+  ['#涼課優先', 'preferEasyCourses'],
+  ['#挑戰難課', 'preferChallengingCourses'],
 ]);
 
 export const FLAG_TO_TAG = new Map(

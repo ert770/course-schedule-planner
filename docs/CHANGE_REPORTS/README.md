@@ -2,9 +2,14 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-05
+
+1. [Roadmap #5B：per-user 加權方向（同一評價分數對不同使用者相反符號）](./2026-09-05-roadmap-5b-per-user-preference-direction.md)
+
 ## 2026-09-04
 
-1. [Roadmap #30：可重現的 per-user preference update pipeline](./2026-09-04-roadmap-30-preference-learning-pipeline.md)
+1. [Roadmap #31：冷啟動、偏好重設、時間衰減與資料不足策略](./2026-09-04-roadmap-31-cold-start-reset-decay-and-source.md)
+2. [Roadmap #30：可重現的 per-user preference update pipeline](./2026-09-04-roadmap-30-preference-learning-pipeline.md)
 
 ## 2026-09-03
 

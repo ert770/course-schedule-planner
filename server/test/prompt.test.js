@@ -21,7 +21,7 @@ const SCHEDULER_PARAMS = [
   'selectedCourseIds', 'watchingCourseIds', 'courseStates',
   'noMidterm', 'noGroupReport', 'discussion', 'learnMore',
   'weightDaily', 'practicalExam', 'finalReport', 'englishTaught',
-  'preferCompact', 'preferEasyCourses', 'preferredKeywords', 'interests', 'preferredTrack',
+  'preferCompact', 'preferEasyCourses', 'preferChallengingCourses', 'preferredKeywords', 'interests', 'preferredTrack',
   'digitalCreditsNeeded',
   // Roadmap #24：接通既有放寬階梯 + 這次不可放寬的指名。
   'allowRelaxation', 'nonNegotiablePreferenceIds',

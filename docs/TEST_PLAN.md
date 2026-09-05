@@ -645,14 +645,14 @@ I1/I2 不同，這組**用真的能登入的固定帳號**（`test/fixtures/acco
 記錄在對應的變更報告；沒有寫成自動化測試——需要一個第二個能登入且已寫進共用 MySQL
 `User_Profiles` 的帳號，不適合留在會被 CI 反覆執行的測試裡。
 
-### Per-user 偏好學習管線（Roadmap #30）
+### Per-user 偏好學習管線（Roadmap #30／#31）
 
-`server/test/preferenceLearning.test.js` 的 PL1-PL10——純函式測試，覆蓋
+`server/test/preferenceLearning.test.js` 的 PL1-PL17——純函式測試，覆蓋
 `server/src/skills/preferenceLearning.js` 的 `learnPreferenceWeights()`：
 
 | 編號 | 情境 | 預期結果 |
 | --- | --- | --- |
-| PL1 | 可重播 | 同一批事件跑兩次逐位元相同；打亂輸入順序結果不變 |
+| PL1 | 可重播 | **`#31` 之後敘述變嚴格**：省略 `now`／`activeTerm`（不衰減）時同一批事件跑兩次逐位元相同；打亂輸入順序結果不變；給定同一個 `now` ＋ 同一個 `activeTerm` 時也逐位元相同 |
 | PL2 | 兩位互動不同的學生分化 | 顯式設定相同，一位常以 `time` 退課、一位常以 `workload` 退課（或分別接受 `compact`／`easy_score` 方案），學到的軸不同 |
 | PL3 | 單次誤點不翻盤 | 一長串一致行為後插入一次相反的單一事件，主要偏好方向不變 |
 | PL4 | 顯式優先 | 顯式設定的軸沒有任何行為訊號時仍維持顯式值；訊號足夠時可以往上調（不能被壓到基準以下） |
@@ -661,16 +661,39 @@ I1/I2 不同，這組**用真的能登入的固定帳號**（`test/fixtures/acco
 | PL8 | 弱訊號不得翻盤 | 30 筆 `course_viewed` 對 1 筆強訊號，累計貢獻的效果恰好等於再一筆強訊號（不隨筆數線性成長） |
 | PL9 | 看了又退不算正向 | 同一門課先看後退，那次瀏覽被排除；時間對調後（先退後看）該次瀏覽要被計入——證明真的在看時序 |
 | PL10 | 事件類型邊界 | `recommendation_exposed`／`schedule_regenerated` 不投票；接受方案沒有對照組（只有 1 個曝光方案）或找不到對應曝光時不計入 |
+| PL11 | 半衰期時間衰減 | 恰好一個半衰期（`PREFERENCE_DECAY_HALF_LIFE_DAYS` = 120 天）前的事件，`effectiveSampleSize` 的貢獻是新事件的一半 |
+| PL12 | 跨學期降權 | 舊學期事件的權重低於同一事件在當前學期時；省略 `activeTerm` 時兩者相同（不做學期降權） |
+| PL13 | 衰減不影響 `usableEventCount` | 同一批事件在相差一年的兩個 `now` 下，`usableEventCount` 完全相同——它是整數量閘，不隨時間漂移 |
+| PL14 | 衰減後仍是強訊號 | 衰減到 0.3 的強訊號不得被歸進弱訊號 cap——釘死「按數值分類」的陷阱（見下方 bug 說明） |
+| PL15 | 弱訊號 cap 在衰減之後才套用 | 全新瀏覽飽和在 cap；同樣筆數衰減 0.5 後嚴格小於 cap |
+| PL16 | 時鐘純度 | 省略 `now` 時 `decay.appliedAt` 為 `null`，且結果與「`now` 設為事件當下」相同；未來時間戳不得讓衰減係數大於 1 |
+| PL17 | 單調性 | 既有強訊號上加一筆同軸弱訊號，權重不得下降——釘死 `#30` 版本 `foldAxis()` 的單調性 bug（見下方） |
 
-`server/test/preferenceLearningService.test.js` 的 PL7——服務層對隱私路徑的整合測試，
-刻意刪除 `DB_*` 環境變數走純記憶體 store（比照 `authRoutes.test.js`），不連真實 MySQL：
+**`#31` 過程中發現並修掉一個 `#30` 遺留的單調性 bug**：原本的 `foldAxis()` 讓弱訊號通道
+不管衰減與否都在樣本數上固定貢獻整數 1，但在原始加總上只貢獻它的實際值——分子被稀釋、
+分母卻整數增加，導致「多一筆支持性弱證據，權重反而下降」（實測：1 筆強訊號算出
+`0.16667`，1 筆強訊號 + 1 筆未飽和弱訊號只有 `0.16429`，比什麼弱訊號都沒有還低）。改寫成
+「樣本數 = 衰減後的證據總量」之後這個 bug 連帶修掉，PL17 把「新不變量：多一筆同軸弱訊號
+權重不得下降」明文釘住。
 
-| 情境 | 預期結果 |
-| --- | --- |
-| 未同意 `personalization_learning` | 回 `no-consent`，不寫入任何列 |
-| 同意後重算 | 寫入一列，讀回內容與計算結果一致 |
-| 刪除 | 直接用讀取路徑再查一次確認沒有殘留，不只信刪除回報的數字 |
-| 重複重算 | 覆寫同一列（`subject_id` 為主鍵），不是往後累加；同一批事件兩次重算逐位元相同 |
+`server/test/preferenceLearningService.test.js` 的 PL7、PL18-PL21——服務層測試，刻意刪除
+`DB_*` 環境變數走純記憶體 store（比照 `authRoutes.test.js`），不連真實 MySQL：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PL7 | 隱私路徑（`#30`） | 未同意回 `no-consent` 不寫入；同意後重算寫入一列且讀回一致；刪除後直接查讀取路徑確認無殘留；重複重算覆寫同一列，同一批事件＋同一個 `now` 兩次重算逐位元相同 |
+| PL18 | `resetPersonalization()` | 清空學到的權重**與**作為其輸入的互動事件；`profilePreserved: true`；直接查讀取路徑確認兩者都真的消失，不只信刪除回報的數字 |
+| PL19 | `getPersonalizationSource()` 四態 | 未同意 → `no-consent`；同意但不足 → `insufficient`（`weights` 等於顯式設定）；顯式全空 → `explicitProfileEmpty: true`；同意且充足、行為指向與顯式不同 → `learned`；行為沒有指向額外方向 → `explicit` |
+| PL20 | 過期判定 | 連續呼叫兩次、中間沒有新事件，`computedAt` 不變（不重算）；加一筆新事件後再呼叫，`computedAt` 前進（重算） |
+| PL21 | `modelVersion` 過期 | 用測試專用的 `seedStaleModelVersionForTests()`（比照 `privacyService.js` 的 `seedOutdatedConsentForTests()`）種一列 `preference-learning-v1`，讀取時視為過期並重算成現行版本 |
+
+`server/test/privacyRoutes.test.js` 的 PL22-PL23——路由層測試，只測不會碰
+`getUserPreferences()`／MySQL 的兩支：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PL22 | `DELETE /api/privacy/personalization` | 200，`profilePreserved: true`，`learnedWeightsDeleted`／`interactionEventsDeleted` 皆 ≥ 1；直接查 service 讀取路徑確認無殘留 |
+| PL23 | `PUT /api/privacy/consents` 撤回 | `personalization_learning` 從 `true` 改 `false` 後，已學到的權重與互動事件透過 service 讀取路徑確認都已刪除 |
 
 `GET /api/privacy/export` 帶 `data.learnedPreferenceWeights`（沒算過時為 `null`，
 不是整個欄位缺席）**沒有寫成 CI 測試**——這條路由本來就需要真實 MySQL 讀 Profile
@@ -678,16 +701,94 @@ I1/I2 不同，這組**用真的能登入的固定帳號**（`test/fixtures/acco
 的註解）。第一次嘗試把它寫進 `privacyRoutes.test.js` 時 CI 就以 `500` 打回來，
 才發現這個檔案先前只測 `/chat`、`/consents`，從沒有案例真正走到過 MySQL。這條欄位
 的接線邏輯很薄（就是把 `getStoredLearnedWeights()` 的結果接上 response），實質行為
-已由下面完全不連 MySQL 的 PL7 覆蓋，因此不另外補一條會在 CI 出錯的測試。
+已由上面完全不連 MySQL 的 PL7 覆蓋，因此不另外補一條會在 CI 出錯的測試。
+
+**`GET /api/privacy/personalization`（`#31`）同一個限制，同一個決定**：已同意時內部會呼叫
+`getUserPreferences()` → `getUserCourseHistory()` → MySQL，這是 `#30` 已經踩過一次的坑
+（見上一段），不重蹈覆轍。它的來源分類邏輯已經在 PL19–PL21 用 `options.prefs` 注入、
+完全不連 MySQL 的方式驗證過；`privacyRoutes.test.js` 只測不會走到 `getUserPreferences()`
+的 `DELETE /personalization`（PL22）與 `PUT /consents` 撤回鉤子（PL23）。
 
 **真實 MySQL 的驗證**（不寫進自動化測試，記錄在對應的變更報告）：對 demo 帳號
 （`D1249697`）跑過一次完整管線——讀到真實的 92 筆事件、正確篩出可用的行為事件、
 `sufficiency.status` 為 `insufficient`（`31/50`，符合實測「今天資料不夠」的結論）；
 對同一批真實事件重播兩次結果逐位元相同；直接查表確認一個合成 subject 的
 `Learned_Preference_Weights` 列在呼叫 `deleteLearnedWeights()` 後真的消失，不只信
-回傳值。
+回傳值。`#31` 額外驗證：對同一批真實事件套用時間衰減，衰減係數全部 > 0.977（92 筆事件
+都在 4 天內），權重到小數第三位不變——如實確認時間衰減在今天的真實資料上是數學上的
+no-op，只由 PL11–PL17 的合成事件驗證過真正的衰減行為。瀏覽器實機驗收：`/privacy` 的
+重設按鈕與撤回同意的確認對話框皆用 stub `window.confirm` 回傳 `false` 的方式驗證
+「取消時不送出任何刪除請求」，避免在共用 MySQL 上真的刪除demo 帳號的既有資料
+（見下方變更報告的完整記錄）。
 
-**這輪不接進排課**：`buildPreferenceProfile()` 不讀這張表，`#5B` 仍記為未完成。
+**`#5B`（2026-09-05）之後 `buildPreferenceProfile()` 已經讀這張表**，`#31` 的
+`LEARNED_WEIGHTS_APPLIED_TO_SCHEDULING` 旗標已翻成 `true`；見下一節 PD1-PD11。
+
+### Per-user 加權方向（Roadmap #5B）
+
+`server/test/scheduler.test.js` 的 PD1-PD11——純函式測試，覆蓋
+`buildPreferenceProfile()` 帶號權重與 `evaluatePreference()` 的正規化：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PD1 | 驗收標準本身 | 同一批課、同一份評價，`preferEasyCourses` 與 `preferChallengingCourses` 給出不同的主推方案；比對相同 `plan.id`，`preferenceBreakdown.easy`（測量值）相同，但兩次呼叫的 `preferenceScore` 相加為 1（相反符號） |
+| PD2 | 單軸挑戰方向 | `preferenceScore === 1 - breakdown.easy` |
+| PD3 | 雙軸（compact + 挑戰難課） | 分數等於 `Σ\|weight\| × orientAxisValue(value, weight) / Σ\|weight\|` 的手算結果 |
+| PD4 | 只勾挑戰難課 | `hasExpressedPreference === true`，不出現「個人化程度有限」警告（改用絕對值判定） |
+| PD5 | 兩個難度標籤都勾 | `easy` 軸歸零、矛盾警告、`easyDirection === 'contradictory'`，其他軸不受影響 |
+| PD6 | 挑戰方向但候選全無評價 | `breakdown.easy === null`，警告文案用「難易度」／「挑戰難課偏好」——刻意避開「難度」二字，因為 `outsideElective.js` 的系外選修年級落差警告也用這個詞，兩者概念無關但共用同一個 `warnings` 陣列，用字重疊會讓依關鍵字過濾的呼叫端（例如 `outsideElective.test.js` 的彙整計數）誤把兩種警告算成同一類——這正是實作時真的踩到的一個回歸 |
+| PD7 | 注入 `learnedPreference.boosts.easy = 1` | `easy === -2`（`direction × (1 + boost)`） |
+| PD8 | `learnedPreference` 缺席／未套用／不足 | `preferenceProfile` 與 `#5B` 之前的顯式 0/1 行為深度相等（回歸鎖） |
+| PD9 | 有 boost 但沒勾任何難度標籤 | `easy` 仍為 `0`——學習不能自己開一個使用者沒宣告的軸，也不能提供方向 |
+| PD10 | `boost ∈ {0, 0.5, 1}` | 符號恆等於顯式方向，`\|weight\| ∈ [1,2]` |
+| PD11 | 放寬階梯路徑（`relaxedFlags` 重建 profile） | 仍帶號、仍帶學到的強度 |
+
+`server/test/preferenceLearning.test.js` 的 PL24——純函式，`computeLearnedBoosts()`：
+超出顯式基準的部分、先驗已飽和時 boost 為 0（不回歸的關鍵案例）、`weights` 為
+`null` 時整個回傳 `null`、省略 `explicitProfile` 時視為三軸皆 0。
+
+`server/test/preferenceLearningService.test.js` 的 PL25-27——記憶體 store，
+`getSchedulingPreferenceWeights()`：未同意／從未算過／資料不足／版本過期四種
+`applied:false` 情境，並確認**這支只讀不重算**（與 `getPersonalizationSource()`
+的關鍵差異——排課是熱路徑，不能把一次讀取變成一次全量事件掃描加一次寫入）。
+
+`server/test/scheduleService.test.js`：`loadLearnedPreferenceSafely()` 的
+fail-open 行為（reject／同步拋出例外皆退回 `applied:false, reason:'unavailable'`），
+比照既有的 `loadCourseReviewsSafely()`。
+
+`server/test/constraints.test.js`：`preferChallengingCourses` 走既有的布林合併
+語意；`learnedPreference` 從 `context` 直通、不與 request／偏好合併、缺席時為
+`null`。
+
+`server/test/requirementPreflight.test.js` 的 RP14：chat 路徑的難度方向矛盾
+偵測（只涵蓋 chat，UI 勾選路徑靠 `scheduler.js` 自己的警告）。
+
+`server/test/prompt.test.js` 的 P1：`SCHEDULER_PARAMS` 加入 `preferChallengingCourses`
+（新增排課參數但沒有同步 `promptService.js` 會被這個測試擋下，這正是 P1 存在的目的）。
+
+**CI 限制，與 `#30`／`#31` 同一個坑，不重蹈覆轍**：`getSchedulingPreferenceWeights()`
+未套用 `options.prefs` 時會呼叫 `getUserPreferences()` → MySQL；`POST
+/api/schedule/generate` 端到端測試同理需要真實資料庫。兩者皆**不寫成 CI 測試**——
+接線本身只有一行（`prepareGenerationInputs()` 把結果放進 `context.learnedPreference`），
+行為已由 PD7/PD8（scheduler 端注入）、PL25-27（service 端純函式）、
+`loadLearnedPreferenceSafely` 的 fail-open 測試（scheduleService 端）三層覆蓋。
+
+**真實 MySQL 的驗證**（不寫進自動化測試，記錄在對應的變更報告）：對 demo 帳號
+（`D1249697`）跑過 `POST /api/schedule/generate`，勾選 `#挑戰難課` 後
+`preferenceProfile.easy` 為負值、`preferenceProfileSource.reason` 為
+`insufficient`（與 `#31` 量測的 `31/50` 一致，`boost` 為 0）——課表因此與
+`#5B` 之前逐位元相同，如實確認這輪對今天的真實使用者是不可見的功能，
+驗收標準本身只由 PD1 的合成資料證明。瀏覽器實機驗收：Setup／Dashboard 都
+正確顯示新的「課程難度」標籤群組；勾選並儲存後，`GET /api/profile` 讀回
+`preferChallengingCourses: true`；同時勾兩個標籤時 `easyDirection` 正確變成
+`contradictory` 且警告文字出現。
+
+**修掉一個順手發現的既有測試 flake**：`preferenceLearningService.test.js` 的
+PL20（`getPersonalizationSource()` 過期判定）在跑完整檔案時偶發失敗
+（約 4/5 次），原因是事件時間戳與 `computedAt` 都來自真實時鐘的毫秒精度，
+記憶體 store 沒有 I/O 等待，快到有機率落在同一毫秒。加一個 5ms 的
+`setTimeout` 讓「新事件確定晚於前一次 `computedAt`」後穩定通過（8/8 次）。
+與 `#5B` 本身無關，是本輪跑測試時順手發現並修掉的。
 
 ### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
 

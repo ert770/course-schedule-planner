@@ -14,6 +14,7 @@ import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PlanComparison from '../components/Schedule/PlanComparison';
+import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles } from 'lucide-react';
 
@@ -367,6 +368,10 @@ export default function DashboardPage() {
         <aside className="left-sidebar">
           <div className="sidebar-section">
             <h3 className="sidebar-section-title">我的排課偏好</h3>
+            {/* roadmap #31：目前這份課表的個人化來源——顯式、學習到但尚未套用、
+                還是資料不足。自己抓資料（不傳 personalization prop），跟隱私中心
+                各自獨立載入，不必把 PrivacyPage 的 state 提到這裡共用。 */}
+            <PreferenceSourceBadge variant="compact" />
             {prefsError && (
               <div className="error-text" role="alert" id="prefs-error">{prefsError}</div>
             )}

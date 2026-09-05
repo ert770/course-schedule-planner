@@ -93,7 +93,7 @@ System prompt 必須讓 Agent：
 | 課程指定 | `mustTakeCourseIds` |
 | 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
 | 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
-| 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
+| 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferChallengingCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
 | 畢業門檻 | `digitalCreditsNeeded` |
 
 ### 修課歷史不屬於工具參數
@@ -120,6 +120,18 @@ Profile 的 `courseHistory`，依最新一次修習結果自動推導，避免�
 `buildScheduleConstraints()` 的 `context` 參數注入，兩條路徑（REST 與 Chat）共用同一份資料，
 Agent 完全不需要、也不能夠自己提供評價分數。
 
+### 學到的偏好權重不屬於工具參數（Roadmap #5B）
+
+`learnedPreference` 不得出現在 `run_csp_scheduler` 的參數中，理由與
+`courseHistory`／`courseReviews` 相同：模型無法可靠得知系統從使用者行為學到了
+什麼，讓模型自行提供只會誘導編造一份假的學習結果。
+
+`scheduleService.js` 透過 `loadLearnedPreferenceSafely()` 呼叫
+`getSchedulingPreferenceWeights()` 取得後，經 `buildScheduleConstraints()` 的
+`context` 參數注入——與 `courseReviews` 同一扇門，Agent 完全不需要、也不能夠
+自己提供。**方向（涼課或挑戰難課）永遠由使用者顯式勾選的參數決定，學到的
+只是強度**：見上方「個人化偏好的必要性」與 `docs/DECISIONS.md` ADR-022。
+
 ### 學分上下限與超修
 
 未指定 `minCredits` / `maxCredits` 時，排課引擎依校規給預設值：上限 **25**、下限 **12**（`gradeLevel` 為 4 時下限 **9**）。
@@ -130,11 +142,19 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 
 ### 個人化偏好的必要性
 
-`preferredKeywords`、`interests`、`preferCompact`、`preferEasyCourses` 決定多方案中主推哪一個。
+`preferredKeywords`、`interests`、`preferCompact`、`preferEasyCourses`、
+`preferChallengingCourses` 決定多方案中主推哪一個。
 
-使用者表達興趣、想集中排課或想修涼課時，Agent **必須**把對應參數帶進 `run_csp_scheduler`。未帶入時系統只能改以總學分挑選方案，推薦會失去個人化，且回應的 `hasExpressedPreference` 會是 `false`。
+使用者表達興趣、想集中排課或想修涼課／挑戰難課時，Agent **必須**把對應參數帶進
+`run_csp_scheduler`。未帶入時系統只能改以總學分挑選方案，推薦會失去個人化，且回應的
+`hasExpressedPreference` 會是 `false`。
 
-排課結果的每個方案含 `preferenceScore`（0~1 的偏好符合度），Agent 應用它向使用者說明為何主推該方案。
+`preferEasyCourses` 與 `preferChallengingCourses` 方向相反，**不得同時帶入 `true`**。
+使用者若話裡同時提到兩者（例如「我想要涼一點但也想挑戰自己」），Agent 應先向使用者
+確認實際想要哪一個方向，不得自行猜測或兩個都帶——排課引擎會把矛盾視為未表態並發出
+警告，但那是最後一道防線，不是 Agent 可以依賴的擋修機制。
+
+排課結果的每個方案含 `preferenceScore`（0~1 的偏好符合度），Agent 應用它向使用者說明為何主推該方案。**Roadmap #5B 起 `preferenceProfile` 三軸可能帶負號**（`easy` 為負代表使用者要挑戰難課），符合度的計算方式因此也把負權重的軸值翻面——Agent 不需要處理這個細節，`preferenceScore` 仍然是 0~1 之間、可以直接向使用者說明的值。
 
 ### 評價證據的使用限制
 

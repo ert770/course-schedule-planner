@@ -565,6 +565,29 @@ export async function getInteractionEventsForExport(identity) {
   });
 }
 
+// Roadmap #31：這個 subject 最新一筆事件的時間，用來判定已存的學習權重是否
+// 過期（見 `preferenceLearningService.js` 的 `getPersonalizationSource()`）。
+// 沒有事件時回傳 null，不猜測。刻意只查 `MAX(occurred_at)`，不撈整批事件
+// ——這支只是「有沒有新資料」的便宜檢查，真正要重算才會呼叫
+// `getInteractionEventsForExport()`。
+export async function getLatestInteractionEventTime(identity) {
+  const subjectId = deriveSubjectId(identity.canonicalId);
+  if (useMemoryStore()) {
+    const times = memoryStore.events
+      .filter(row => row.subjectId === subjectId)
+      .map(row => new Date(row.occurredAt).getTime());
+    return times.length > 0 ? new Date(Math.max(...times)) : null;
+  }
+  if (!isMysqlConfigured()) return null;
+  // 走既有的 idx_interaction_subject_time（subject_id, occurred_at），
+  // 不需要新索引。
+  const [row] = await queryRows(
+    'SELECT MAX(occurred_at) AS latest FROM Interaction_Events WHERE subject_id = ?',
+    [subjectId]
+  );
+  return row?.latest ? new Date(row.latest) : null;
+}
+
 export async function deleteInteractionEvents(subjectId) {
   if (useMemoryStore()) {
     const before = memoryStore.events.length;
@@ -599,6 +622,7 @@ export default {
   countRecentEvents,
   wouldExceedDailyQuota,
   getInteractionEventsForExport,
+  getLatestInteractionEventTime,
   deleteInteractionEvents,
   cleanupExpiredInteractionEvents,
   resetInteractionEventStoreForTests,

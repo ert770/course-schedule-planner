@@ -25,6 +25,7 @@ import { getFailedRequiredCourseCodes } from '../data/courseHistory.js';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
 import { INTERACTION_EVENT_TYPES, INTERACTION_SOURCES } from '../data/interactionEventSchema.js';
 import { recordInteractionEvents } from './interactionEventService.js';
+import { getSchedulingPreferenceWeights } from './preferenceLearningService.js';
 import { RECOMMENDATION_REASON_VERSION } from '../skills/recommendationReason.js';
 import { buildCounterfactuals } from '../skills/planComparison.js';
 import { logger } from '../utils/logger.js';
@@ -210,6 +211,23 @@ export async function loadCourseReviewsSafely(loadReviews) {
   }
 }
 
+// roadmap #5B：學到的偏好權重是加分項，不是排課的必要條件——跟上面
+// `loadCourseReviewsSafely()` 同一個原則。未同意、沒算過、資料庫暫時不可用
+// 或任何例外，一律退回今天的顯式 0/1 行為，絕不讓使用者因為個人化管線壞掉
+// 而排不出課表。
+//
+// `loadWeights` 可注入，測試不必連真實資料庫就能驗證 fail-open 行為。
+export async function loadLearnedPreferenceSafely(loadWeights) {
+  try {
+    return await loadWeights();
+  } catch (err) {
+    logger.warn(`學到的偏好權重讀取失敗，本次排課改用顯式設定：${err.message}`, { label: 'Schedule' });
+    return {
+      applied: false, reason: 'unavailable', boosts: null, modelVersion: null, computedAt: null, sufficiency: null,
+    };
+  }
+}
+
 // 候選池與限制的組裝。
 //
 // roadmap #27 的 counterfactual 需要用**完全相同的候選池與限制**重跑排課，
@@ -227,6 +245,14 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
   const courseReviews = await loadCourseReviewsSafely(() => getAll('reviews'));
   const reviewDataLoaded = Array.isArray(courseReviews) && courseReviews.length > 0;
 
+  // roadmap #5B：`options.prefs` 已經在手上，傳給 `getSchedulingPreferenceWeights()`
+  // 避免它再查一次 Profile——與 `#30` 的 `recomputeLearnedWeights()` 同一個
+  // `options.prefs` 注入模式。這裡讀的是**已存**的權重，不重算、不寫入
+  // （見該函式的說明），排課因此不會把一次讀取變成一次全量事件掃描。
+  const learnedPreference = await loadLearnedPreferenceSafely(
+    () => getSchedulingPreferenceWeights(identity, { prefs })
+  );
+
   const mergedConstraints = buildScheduleConstraints(
     {
       ...constraints,
@@ -236,7 +262,7 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
       explicitCourseIds: [...(constraints.explicitCourseIds || []), ...courseIds],
     },
     prefs,
-    { courseReviews }
+    { courseReviews, learnedPreference }
   );
 
   const studentScope = buildStudentScope(mergedConstraints);

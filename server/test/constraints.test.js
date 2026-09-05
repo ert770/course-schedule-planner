@@ -114,3 +114,33 @@ describe('本次操作狀態不從已儲存偏好回填', () => {
     assert.deepEqual(merged.watchingCourseIds, []);
   });
 });
+
+describe('roadmap #5B：preferChallengingCourses 與 learnedPreference', () => {
+  test('preferChallengingCourses 走既有的布林合併語意（request 覆蓋、未提供退回已存偏好）', () => {
+    const fromRequest = buildScheduleConstraints(
+      { preferChallengingCourses: true },
+      { preferChallengingCourses: false }
+    );
+    assert.equal(fromRequest.preferChallengingCourses, true);
+
+    const fromPrefs = buildScheduleConstraints({}, { preferChallengingCourses: true });
+    assert.equal(fromPrefs.preferChallengingCourses, true);
+
+    const explicitFalseOverride = buildScheduleConstraints(
+      { preferChallengingCourses: false },
+      { preferChallengingCourses: true }
+    );
+    assert.equal(explicitFalseOverride.preferChallengingCourses, false);
+  });
+
+  test('learnedPreference 從 context 直通，不與 request／偏好合併', () => {
+    const learnedPreference = { applied: true, reason: 'applied', boosts: { interest: 0, compact: 0, easy: 0.4 } };
+    const merged = buildScheduleConstraints({}, {}, { learnedPreference });
+    assert.equal(merged.learnedPreference, learnedPreference);
+  });
+
+  test('context 沒有 learnedPreference 時為 null，不是 undefined', () => {
+    const merged = buildScheduleConstraints({}, {});
+    assert.equal(merged.learnedPreference, null);
+  });
+});

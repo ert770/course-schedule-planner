@@ -12,7 +12,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadCourseReviewsSafely, buildNoCandidatesResult, buildExposureDraft } from '../src/services/scheduleService.js';
+import {
+  loadCourseReviewsSafely, loadLearnedPreferenceSafely, buildNoCandidatesResult, buildExposureDraft,
+} from '../src/services/scheduleService.js';
 
 describe('loadCourseReviewsSafely：評價查詢失敗不得讓排課請求整體失敗', () => {
   test('loader 成功時回傳其解析結果', async () => {
@@ -36,6 +38,34 @@ describe('loadCourseReviewsSafely：評價查詢失敗不得讓排課請求整�
     });
 
     assert.deepEqual(result, []);
+  });
+});
+
+// roadmap #5B：學到的偏好權重跟評價資料同一個原則——它是加分項，讀取失敗
+// 不得讓排課請求整體失敗，退回今天的顯式 0/1 行為即可。
+describe('loadLearnedPreferenceSafely：學習權重讀取失敗不得讓排課請求整體失敗', () => {
+  const ABSENT = {
+    applied: false, reason: 'unavailable', boosts: null, modelVersion: null, computedAt: null, sufficiency: null,
+  };
+
+  test('loader 成功時回傳其解析結果', async () => {
+    const applied = { applied: true, reason: 'applied', boosts: { interest: 0, compact: 0, easy: 0.5 } };
+    const result = await loadLearnedPreferenceSafely(async () => applied);
+    assert.equal(result, applied);
+  });
+
+  test('loader reject 時回傳 applied:false/unavailable，不向外拋出例外', async () => {
+    const result = await loadLearnedPreferenceSafely(async () => {
+      throw new Error('DB timeout');
+    });
+    assert.deepEqual(result, ABSENT);
+  });
+
+  test('loader 同步拋出例外時同樣回傳 applied:false/unavailable', async () => {
+    const result = await loadLearnedPreferenceSafely(() => {
+      throw new Error('subject id derivation failed');
+    });
+    assert.deepEqual(result, ABSENT);
   });
 });
 

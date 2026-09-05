@@ -105,6 +105,12 @@ const SCHEDULER_PARAMETERS = {
     description: '使用者的興趣領域，用途同 preferredKeywords。',
   },
   preferEasyCourses: { type: 'boolean', description: '使用者想要涼課或好拿高分的課時設為 true。' },
+  // roadmap #5B：難度方向的另一半。與 preferEasyCourses 語意相反，
+  // 兩者同時為 true 由排課引擎視為矛盾、難度偏好一律視為未表態。
+  preferChallengingCourses: {
+    type: 'boolean',
+    description: '使用者想挑戰較硬、投入較多的課時設為 true。與 preferEasyCourses 方向相反，不得同時為 true。',
+  },
   digitalCreditsNeeded: { type: 'boolean', description: '使用者還需要數位學分時為 true。' },
 
   // Roadmap #24：把既有的放寬階梯接通。
@@ -156,6 +162,7 @@ export const INTERPRETATION_TOPICS = Object.freeze({
   MUST_TAKE_COURSES: { label: '指定一定要修的課', flag: null },
   PREFER_COMPACT: { label: '集中排課', flag: 'preferCompact' },
   PREFER_EASY: { label: '偏好涼課', flag: 'preferEasyCourses' },
+  PREFER_CHALLENGE: { label: '挑戰難課', flag: 'preferChallengingCourses' },
   INTERESTS: { label: '興趣領域', flag: null },
   ENGLISH_TAUGHT: { label: '全英授課', flag: 'englishTaught' },
   NO_MIDTERM: { label: '沒有期中考', flag: 'noMidterm' },
@@ -487,7 +494,8 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
   依 \`result.error\` 的文字向使用者說明，不要宣稱已完成。
 
 排課偏好使用說明：
-- preferredKeywords、interests、preferCompact、preferEasyCourses 會決定多個課表方案中要主推哪一個。
+- preferredKeywords、interests、preferCompact、preferEasyCourses、preferChallengingCourses 會決定多個課表方案中要主推哪一個。
+- preferEasyCourses 與 preferChallengingCourses 方向相反，不得同時設為 true；使用者若兩者都提到，要先確認實際想要哪一個。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
 
@@ -577,6 +585,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 不排晚間：${userPrefs.noEveningClasses ? '是' : '否'}
 - 偏好集中排課：${userPrefs.preferCompact ? '是' : '否'}
 - 偏好涼課：${(userPrefs.preferEasyCourses ?? userPrefs.preferEasy) ? '是' : '否'}
+- 偏好挑戰難課：${userPrefs.preferChallengingCourses ? '是' : '否'}
 - 興趣關鍵字：${formatList(userPrefs.preferredKeywords, userPrefs.interests, userPrefs.preferenceTags)}
 - 修課路徑：${userPrefs.preferredTrack || '未設定'}${latestRecommendation}${pendingBlock}`;
 }

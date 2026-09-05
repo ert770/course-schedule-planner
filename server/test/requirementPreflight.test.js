@@ -161,7 +161,31 @@ describe('RP5 學分區間自相矛盾', () => {
 
     assert.equal(r.required, false);
   });
+});
 
+describe('RP14 roadmap #5B：難度方向自相矛盾', () => {
+  test('同時勾涼課優先與挑戰難課 → 擋下', () => {
+    const r = checkPreflightContradictions({
+      ...ok, constraints: { preferEasyCourses: true, preferChallengingCourses: true },
+    });
+
+    assert.equal(r.required, true);
+    assert.ok(ids(r).includes('confirm-difficulty-direction'));
+  });
+
+  test('只勾其中一個不觸發', () => {
+    const onlyEasy = checkPreflightContradictions({ ...ok, constraints: { preferEasyCourses: true } });
+    const onlyChallenge = checkPreflightContradictions({ ...ok, constraints: { preferChallengingCourses: true } });
+
+    assert.equal(onlyEasy.required, false);
+    assert.equal(onlyChallenge.required, false);
+  });
+
+  test('都沒勾不觸發', () => {
+    const r = checkPreflightContradictions({ ...ok, constraints: {} });
+
+    assert.equal(r.required, false);
+  });
   test('負學分擋下', () => {
     const r = checkPreflightContradictions({ ...ok, constraints: { minCredits: -3 } });
 

@@ -509,6 +509,48 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 也不得讓方案層 `preferenceBreakdown.easy` 冒出數字——那兩者只認真實評價
 （見上一段）。`server/test/scheduler.test.js` 的 P10-5 釘住這條界線。
 
+## Per-user 加權方向（Roadmap #5B）
+
+**問題**：`preferenceProfile` 三軸原本恆為 0 或 1，同一個涼度分數對每個使用者
+的意義都一樣——系統學到了行為權重（`#30`），但沒有任何東西把它接進排課決策。
+驗收標準要求「同一評價分數對不同使用者要有相反符號」，而事件 schema 的退課
+原因只有 `workload`（太重），沒有任何欄位能表達「太簡單、我要更難」，方向因此
+**只能宣告，不能從行為推論**。
+
+**方向：顯式，兩個互斥標籤**。`#涼課優先`（`preferEasyCourses`）／
+`#挑戰難課`（`preferChallengingCourses`，`server/src/data/preferenceTags.js`）。
+`scheduler.js` 的 `resolveEasyDirection(constraints)` 換算成 `+1`／`-1`／`0`；
+兩個都勾時視為 `0`（未表態）並在 `warnings` 說明矛盾，不猜測使用者真正的意思。
+
+**強度：學到的權重，但只能加強、不能推翻**。`axisWeight(方向, boost) =
+方向 × (1 + boost)`，因此權重的絕對值恆在 `[1, 2]`、符號恆等於顯式方向。
+`boost` 由 `preferenceLearning.js` 的 `computeLearnedBoosts(storedWeights,
+explicitProfile)` 算出，是「學到的值**超出**顯式基準的部分」，恆 `>= 0`——
+不是學到的原值。這個減法是必要的：`foldAxis()`（`#30`）把輸出下限釘在顯式
+先驗，對已經勾了集中排課的使用者 `compact` 的學到值恆為 `1`，若直接拿原值
+當強度，這類使用者會在功能上線當天無證據地被加重權重。
+
+**`evaluatePreference()` 的正規化**：分母改用 `Σ|weight|`，負權重把軸值翻面
+（`orientAxisValue(value, weight) = weight >= 0 ? value : 1 - value`）。
+`score` 因此仍落在 `[0,1]`，`comparePlans()`、`PREFERENCE_SCORE_EPSILON`
+與「偏好符合度 N%」都不必改；權重全為正時算術與改動前逐位元相同。
+`preferenceBreakdown` 本身**維持方向無關**（永遠是涼度測量值，不是偏好值）
+——翻它會讓同一份課表在兩個人眼中顯示不同的「涼度」，把偏好偽裝成事實。
+
+**生效範圍只到方案層，這是刻意的邊界**：`evaluatePreference()`（決定五個方案
+哪一個主推）會讀取這組帶號權重；`computeScoreComponents()`／`scoreCourse()`
+（決定單一門課在方案內部的名次，仍然只由 `VARIANT_WEIGHTS` 決定）**完全沒有
+被觸碰**。因此「挑戰難課」的使用者拿到的是五個既有方案裡**最不涼**的那一個，
+不是一份刻意排進難課的課表——沒有任何 variant 為「難」最佳化。把使用者的
+權重接進單門課排序、用連續向量取代五個固定 variant，是 `#7` 的範圍；這裡先做
+會讓五個方案一起往同一方向傾斜，加劇 `#10` 才修好的方案塌縮。
+
+**在今天的真實資料上是可驗證但不可見的功能**：demo 帳號的學到權重三軸皆為
+`0.000`、`sufficiency` 為 `insufficient`（31/50），`getSchedulingPreferenceWeights()`
+因此回傳 `applied:false`，`boost` 恆為 `0`——`preferenceProfile.easy` 只由顯式
+方向決定，課表與 `#5B` 之前完全相同。驗收標準本身（相反符號讓主推方案互換）
+已用合成資料在 `server/test/scheduler.test.js` 的 PD1 驗證過。
+
 ## 內容偏好評分與訊號可靠度警告
 
 Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／重視平時成績／實作評量／
@@ -572,7 +614,9 @@ Constraint Schema（Roadmap #21）」一節。
 軟性偏好可用於排序不同課表方案，不會排除課程：
 
 - 集中排課（`preferCompact`）。
-- 涼課／高分優先（`preferEasyCourses`，見「涼度評分與評價覆蓋率」）。
+- 涼課／高分優先（`preferEasyCourses`）或挑戰難課（`preferChallengingCourses`，
+  Roadmap #5B）——兩者方向相反，同時為 `true` 時排課引擎視為未表態並在
+  `warnings` 說明矛盾。見「涼度評分與評價覆蓋率」與下方「Per-user 加權方向」。
 - 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`）。
 - 8 個內容偏好——免期中考（`noMidterm`）、免分組報告（`noGroupReport`）、討論課
   （`discussion`）、重視平時成績（`weightDaily`）、實作評量（`practicalExam`）、
@@ -771,11 +815,14 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 - 涼課評分改用結構化評價（`Course_Reviews`），取代課程描述關鍵字（見「涼度評分與評價覆蓋率」）。
 - 8 個內容偏好改為軟性加分並附訊號可靠度警告，取代硬性排除（roadmap #3，見「內容偏好評分與訊號可靠度警告」）。
 - roadmap #21 的正式 `hard`／`soft` constraint schema（`weight`／`relaxable`／`source`／`confidence` 欄位）、與方案產生器分離的獨立 validator、opt-in 放寬階梯、結構化 conflict set，見「Hard/Soft Constraint Schema（Roadmap #21）」。
+- 評價分數的 per-user 加權方向：`preferenceProfile` 三軸帶號，同一涼度分數對挑戰難課的使用者與涼課優先的使用者給相反符合度，但只在**方案層**生效（見「Per-user 加權方向（Roadmap #5B）」）。
 
 仍需補強：
 
 - 數位課程畢業門檻。
-- 評價分數的 per-user 個人化加權（同一難度數值對不同使用者相反符號）；目前是母體共用的涼度，屬 roadmap #5B。
+- 評價分數的 per-user 個人化加權**接進單一門課的排序**（目前只接進方案層的
+  `evaluatePreference()`，`computeScoreComponents()`／`scoreCourse()` 仍是母體
+  共用的涼度）；用連續權重向量取代五個固定 variant，屬 roadmap #7。
 - `has_midterm`／`has_group_project`／`grading_scheme`／`language` 課程欄位仍不存在；8 個內容偏好因此仍以描述關鍵字軟性計分（見「內容偏好評分與訊號可靠度警告」），欄位化需要對共用 MySQL 做 `ALTER TABLE`，屬需與組員協調的 D 類 rollout，不在 roadmap #3 範圍內。
 - roadmap #21 的先修／共修（prerequisite/co-requisite）強制執行：schema 已定義這個層級（`enforced:false`），但完全沒有資料來源可查（無先修表），validator 誠實回報 `unchecked`，不強制執行；資料模型屬 roadmap #8，尚未開始。
 - 通識基礎 16 學分的完整對照（目前只實作「不計畢業學分」的那 3 學分）。

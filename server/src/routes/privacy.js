@@ -4,9 +4,12 @@ import {
   PrivacyError, clearChatHistory, consumeDeletionIntent, createDeletionIntent,
   deriveSubjectId, getConsentStatus, getPrivacyPolicy, markServiceWithdrawn, recordConsentChoices, writeAudit,
 } from '../services/privacyService.js';
+import { PRIVACY_PURPOSES, PRIVACY_POLICY_VERSION } from '../data/privacyPolicy.js';
 import { deleteUserServiceData, getSavedSchedules, getUserPreferences } from '../services/memoryService.js';
 import { deleteInteractionEvents, getInteractionEventsForExport } from '../services/interactionEventService.js';
-import { deleteLearnedWeights, getStoredLearnedWeights } from '../services/preferenceLearningService.js';
+import {
+  deleteLearnedWeights, getStoredLearnedWeights, resetPersonalization, getPersonalizationSource,
+} from '../services/preferenceLearningService.js';
 import { buildClearSessionCookie } from '../services/sessionService.js';
 
 const router = Router();
@@ -29,8 +32,47 @@ router.get('/consents', requireIdentity, async (req, res) => {
 
 router.put('/consents', requireIdentity, async (req, res) => {
   try {
-    res.json(await recordConsentChoices(req.identity, req.body?.consents, { requestId: requestId(req) }));
+    // 撤回必須先落地、再刪除——與下面 `DELETE /data` 的順序同一個理由（見該
+    // 路由註解）：先寫入撤回，並行中的 `POST /api/interactions` 就只剩「搶在
+    // 撤回前落地並被下面刪掉」或「看到已撤回而被拒絕」兩種結局，不會在刪除
+    // 跑完之後補寫。
+    const status = await recordConsentChoices(req.identity, req.body?.consents, { requestId: requestId(req) });
+
+    // roadmap #31：撤回「從互動持續改善個人化」等於硬性暫停——連同已學到的
+    // 權重與作為輸入的互動事件一起刪除，不是留著不用。判定用**寫入後的權威
+    // 狀態**，不是 `req.body`；`policyVersion` 也必須對到現行版本，與
+    // `hasPersonalizationConsent()` 用的是同一個標準（舊版政策下同意過不算
+    // 現在仍然同意）。
+    const learning = status.consents?.[PRIVACY_PURPOSES.PERSONALIZATION_LEARNING];
+    const stillGranted = Boolean(learning?.granted && learning.policyVersion === PRIVACY_POLICY_VERSION);
+    if (!stillGranted) {
+      await resetPersonalization(req.identity, { requestId: requestId(req) });
+    }
+
+    res.json(status);
   } catch (err) { sendPrivacyError(res, err); }
+});
+
+// roadmap #31：目前個人化用的是顯式設定、學到的權重、還是資料不足／未同意。
+// 只掛 `requireIdentity`，不掛 consent 中介層——沒同意的人正是要看到
+// `no-consent` 這個狀態，擋在 consent 檢查後面反而讓這個狀態永遠讀不到。
+//
+// 這支 GET 在結果過期時會順手重算並寫回一列（見
+// `preferenceLearningService.js` 的 `getPersonalizationSource()`）——它是
+// 冪等的快取填充，不是新的寫入語意，但呼叫端不該假設 `GET /privacy/*`
+// 一律唯讀。
+router.get('/personalization', requireIdentity, async (req, res) => {
+  try { res.json(await getPersonalizationSource(req.identity)); }
+  catch (err) { sendPrivacyError(res, err); }
+});
+
+// roadmap #31：只清學習結果與其輸入的互動事件，顯式 Profile（偏好標籤、
+// 避開時段、學分上限）完全不受影響——與 `DELETE /data`（清整個帳號）是
+// 不同量級的操作，因此不套用它的確認詞儀式；前端用 `window.confirm` 把
+// 「會刪除什麼、不會刪除什麼」講清楚後才送出這個請求。
+router.delete('/personalization', requireIdentity, async (req, res) => {
+  try { res.json({ success: true, ...(await resetPersonalization(req.identity, { requestId: requestId(req) })) }); }
+  catch (err) { sendPrivacyError(res, err); }
 });
 
 router.get('/export', requireIdentity, async (req, res) => {

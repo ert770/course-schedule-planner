@@ -51,6 +51,9 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
   由 `npm run cleanup:privacy` 一併清理。
 - `exposure_json` 存 `surface`／`trigger`／ordered `candidateSet`／`displayedSet`。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
+- **Roadmap #31**：`academic_year`／`semester` 從這輪起不再只是來源標記，也是
+  `preferenceLearning.js` 時間衰減的**實質輸入**——`learnPreferenceWeights()` 用它們
+  判定一筆事件是否屬於舊學期並降權（見下方 `Learned_Preference_Weights` 的說明）。
 
 ### `Learned_Preference_Weights`（Roadmap #30）
 
@@ -65,20 +68,78 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
   互動事件本身，這裡的權重永遠可以從那裡重新推導——保留多版本歷史只會製造
   第二個要保持同步的真相來源。
 - `interest_weight`／`compact_weight`／`easy_weight`：`DECIMAL(4,3)`，範圍
-  `[0, 1]`，對應 `scheduler.js` 的 `preferenceProfile` 三軸。**這輪尚未接進
-  排課**（`buildPreferenceProfile()` 不讀這張表）——`sufficiency_status` 為
-  `insufficient` 時，這三個值等於使用者當時的顯式設定，不是半調子的學習值。
+  `[0, 1]`，是**無號的學習強度**，不是排課要用的最終權重——`sufficiency_status`
+  為 `insufficient` 時，這三個值等於使用者當時的顯式設定，不是半調子的學習值。
+  **Roadmap #5B 起，`scheduler.js` 會讀取它們**（經
+  `getSchedulingPreferenceWeights()` 與 `computeLearnedBoosts()` 換算成「超出
+  顯式基準的部分」），但只用在方案層的 `evaluatePreference()`；方向仍然由
+  `User_Profiles.preference_tags` 的 `#涼課優先`／`#挑戰難課` 決定，這三個欄位
+  本身**不儲存也不需要儲存方向**（見下方 Roadmap #5B 更新）。
 - `sufficiency_status`：`sufficient`／`insufficient`／不落地（未同意時整批不寫，
   與 `Interaction_Events` 同一個 consent-first 原則）。`usable_event_count`／
   `required_event_count` 讓「還差多少」可以直接查表回答，不必重新跑一次推導。
 - `evidence_json`：`{ interest: [...], compact: [...], easy: [...] }`，每筆
-  `{ ruleId, eventId, occurredAt }`——每個非零權重都指得回是哪些事件、依哪條
-  規則算出來的（見 `server/src/skills/preferenceLearning.js`）。
+  `{ ruleId, eventId, occurredAt, decay }`——每個非零權重都指得回是哪些事件、
+  依哪條規則、以多少衰減係數算出來的（見 `server/src/skills/preferenceLearning.js`）。
 - `expires_at` 沿用 `PRIVACY_RETENTION.interactionEventDays`（180 天）的語意，
   由 `npm run cleanup:privacy` 與 `Interaction_Events`、Raw Chat 一起清理。
 - 刪除／匯出路徑已接上 `#33`：`DELETE /api/privacy/data` 會一併刪這張表，
   `GET /api/privacy/export` 的 `data.learnedPreferenceWeights` 會帶出目前存的
   那一列（從未算過則為 `null`，如實回報，不是空物件）。
+
+**Roadmap #31 更新**：
+
+- `model_version` 從這輪起是 `preference-learning-v2`（`#30` 留下的舊列是
+  `v1`）——`foldAxis()` 的折疊公式改寫、加上時間衰減，語意已經不同，
+  舊版本號的列在下一次讀取時會被視為過期並自動重算，**不需要 backfill 腳本**。
+- `preferenceLearningService.js` 新增 `resetPersonalization()`：清空這張表的
+  對應列**與** `Interaction_Events` 裡這個 subject 的全部事件，`User_Profiles`
+  完全不受影響。連事件一起刪是刻意的——權重是事件的純推導，只刪推導出的
+  那一列，下一次讀取（見下方過期判定）會用一模一樣的事件重新算出一模一樣的
+  值，一個會自己復原的「重設」不成立。接進 `DELETE /api/privacy/personalization`
+  與 `PUT /api/privacy/consents`（`personalization_learning` 從 true 改 false
+  時自動觸發，等同硬性暫停）。
+- 新增 `getPersonalizationSource()`：**已存 + 精確過期判定**，不是每次讀取都
+  重算。已存列滿足以下任一條件就視為過期並在讀取時重算並覆寫：從沒算過、
+  `model_version` 不是現行版本、有比 `computed_at` 新的事件、或 `computed_at`
+  超過一天沒更新（純時間衰減即使沒有新事件也會讓結果隨時間改變，一天遠低於
+  120 天半衰期，成本可忽略）。回傳 `source: no-consent|insufficient|explicit|learned`
+  與 `appliedToScheduling`（見下一點）。
+- **本輪不需要新的 migration。** 三個理由：(1) 學期戳記本來就在
+  `Interaction_Events.academic_year`／`semester`，不需另外加欄位；(2) 衰減
+  metadata（半衰期、有效樣本數等）只在讀取時計算，不持久化，唯一持久化的
+  形狀變化是 `evidence_json` 多了 `decay` 欄位，那是 `JSON` 欄位可以直接容納；
+  (3) 不需要「暫停」欄位，因為暫停就是 `Privacy_Consents` 裡的
+  `personalization_learning` 那一列——它本來就有完整歷史與稽核，不需要另建
+  狀態機。
+- **`appliedToScheduling` 從 Roadmap #5B（2026-09-05）起恆為 `true`**：
+  `scheduler.js` 的 `evaluatePreference()`（方案層）已經讀取這張表；
+  `computeScoreComponents()`／`scoreCourse()`（單一門課的排序）仍然沒有接，
+  那是 `#7` 的工作，`appliedToScheduling` 的語意只承諾前者。
+- **時間衰減在今天的真實資料上是數學上的 no-op**：實測全部 92 筆互動事件
+  都在 4 天內、全部標記 114 學年下學期（即當前學期），衰減係數 > 0.977、
+  學期係數恆為 1，權重到小數第三位完全不變。半衰期與跨學期降權的邏輯已用
+  合成事件驗證過（見 `server/test/preferenceLearning.test.js` 的 PL11–PL17），
+  只是還沒有真實資料能顯出差異。
+
+**Roadmap #5B 更新**：
+
+- **方向來自 `User_Profiles.preference_tags`，不是這張表。** 新增兩個互斥標籤
+  `#涼課優先`（`preferEasyCourses`，`#5A` 起就被排課引擎讀取但先前無 UI／儲存
+  路徑可設定）與 `#挑戰難課`（`preferChallengingCourses`，全新）——見
+  `server/src/data/preferenceTags.js`。事件 schema 的退課原因只有 `workload`
+  （太重），沒有任何欄位能表達「太簡單、我要更難」，方向因此**只能宣告，
+  不能從行為推論**。
+- **`easy_weight` 只提供強度，不提供方向。** 排課端用
+  `computeLearnedBoosts(storedWeights, explicitProfile)`
+  （`server/src/skills/preferenceLearning.js`）換算成「學到的值超出顯式基準的
+  部分」，恆 `>= 0`；`scheduler.js` 的 `axisWeight(方向, boost)` 再乘上顯式方向
+  的正負號。**不能直接拿 `easy_weight` 原值當強度**——`foldAxis()`
+  （`#30`）把輸出下限釘在顯式先驗，對已經勾了集中排課的使用者
+  `compact_weight` 恆為 `1`，若排課端誤用原值會讓這類使用者在功能上線當天
+  無證據地被加重權重。
+- 本輪同樣**不需要 migration**：`easy_weight` 欄位的型別與範圍都沒變，
+  它一直都是 `[0,1]` 的無號值，只是消費端（`scheduler.js`）多讀了它一次。
 
 ### `Courses`
 

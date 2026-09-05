@@ -2439,3 +2439,186 @@ describe('PM1-PM6 Roadmap #27：方案比較指標與塌縮結構化', () => {
     });
   });
 });
+
+describe('PD1-PD11 Roadmap #5B：per-user 加權方向', () => {
+  const at = (id, day, start, overrides = {}) => makeCourse(id, {
+    dayOfWeek: day, startPeriod: start, endPeriod: start + 1, ...overrides,
+  });
+
+  // 每天兩個時段、共 10 門課，一半涼課評價一半硬課評價——只有 `easy_score`
+  // variant（`weights.easy > 0`）在選課時看評價分數，其餘 variant 選出的課程
+  // 集合完全不受影響，因此五個方案的平均涼度天然會不一樣，不需要另外設計
+  // 特殊的塌縮防護。實測（見變更報告）此池固定產出 4 個不重複方案，
+  // `breakdown.easy` 落在 `{0.375, 0.5, 0.75}`，足以驗證方向翻轉。
+  function widePoolWithReviews(startId = 300) {
+    const courses = [];
+    let id = startId;
+    for (let day = 1; day <= 5; day += 1) {
+      for (const start of [3, 7]) {
+        id += 1;
+        courses.push(at(id, day, start, {
+          category: id % 3 === 0 ? '核心選修' : '一般選修',
+          credits: id % 4 === 0 ? 2 : 3,
+        }));
+      }
+    }
+    const reviews = courses.map(c => (c.id % 2 === 0 ? makeEasyReview(c.id) : makeToughReview(c.id)));
+    return { courses, reviews };
+  }
+
+  test('PD1（驗收標準本身）同一評價分數對不同方向的使用者給出相反的方案排序', () => {
+    const { courses, reviews } = widePoolWithReviews();
+
+    const withEasy = generateSchedule(courses, {
+      minCredits: 0, maxCredits: 12, courseReviews: reviews, preferEasyCourses: true,
+    });
+    const withChallenge = generateSchedule(courses, {
+      minCredits: 0, maxCredits: 12, courseReviews: reviews, preferChallengingCourses: true,
+    });
+
+    // 先確認方案本身有分化，否則翻轉排序無從觀察（roadmap #10 的塌縮陷阱）。
+    assert.ok(withEasy.plans.length >= 2, `方案數應 >= 2，實際 ${withEasy.plans.length}`);
+
+    assert.notEqual(
+      withEasy.plans[0].id, withChallenge.plans[0].id,
+      '涼課優先與挑戰難課應該選出不同的主推方案'
+    );
+
+    // 核心不變量：同一個方案在兩次呼叫裡的 breakdown.easy（涼度測量值）
+    // 完全相同——方向不改變測量，只改變偏好分數；而偏好分數必為互補
+    // （score + (1-score) = 1），這是符號相反在數學上的直接體現，
+    // 不依賴 fixture 恰好產生哪些方案。
+    const byId = result => Object.fromEntries(result.plans.map(p => [p.id, p]));
+    const easyPlans = byId(withEasy);
+    const challengePlans = byId(withChallenge);
+    for (const id of Object.keys(easyPlans)) {
+      const easyPlan = easyPlans[id];
+      const challengePlan = challengePlans[id];
+      assert.equal(
+        easyPlan.preferenceBreakdown.easy, challengePlan.preferenceBreakdown.easy,
+        `方案 ${id} 的涼度測量值不該因使用者方向而改變`
+      );
+      assert.ok(
+        Math.abs(easyPlan.preferenceScore + challengePlan.preferenceScore - 1) < 1e-9,
+        `方案 ${id} 的兩個偏好分數應互補（相反符號）`
+      );
+    }
+  });
+
+  test('PD2 單軸挑戰方向：preferenceScore === 1 - breakdown.easy', () => {
+    const { courses, reviews } = widePoolWithReviews();
+    const result = generateSchedule(courses, {
+      minCredits: 0, maxCredits: 12, courseReviews: reviews, preferChallengingCourses: true,
+    });
+    const primary = result.plans[0];
+    assert.equal(primary.preferenceScore, 1 - primary.preferenceBreakdown.easy);
+  });
+
+  test('PD3 雙軸（compact + 挑戰難課）：分數等於絕對值加權平均，且與翻面後的值一致', () => {
+    const { courses, reviews } = widePoolWithReviews();
+    const result = generateSchedule(courses, {
+      minCredits: 0, maxCredits: 12, courseReviews: reviews,
+      preferCompact: true, preferChallengingCourses: true,
+    });
+    assert.deepEqual(result.preferenceProfile, { interest: 0, compact: 1, easy: -1 });
+
+    const primary = result.plans[0];
+    const { compact, easy } = primary.preferenceBreakdown;
+    const expected = (1 * compact + 1 * (1 - easy)) / (1 + 1);
+    assert.ok(Math.abs(primary.preferenceScore - expected) < 1e-9);
+  });
+
+  test('PD4 只勾挑戰難課：hasExpressedPreference 為 true，不出現個人化程度有限警告', () => {
+    const result = generateSchedule([makeCourse(1)], {
+      minCredits: 0, maxCredits: 3, preferChallengingCourses: true,
+    });
+    assert.equal(result.hasExpressedPreference, true);
+    assert.ok(!result.warnings.some(w => w.includes('個人化程度有限')));
+  });
+
+  test('PD5 兩個難度標籤都勾：easy 軸歸零、發出矛盾警告，其他軸不受影響', () => {
+    const { courses, reviews } = widePoolWithReviews();
+    const result = generateSchedule(courses, {
+      minCredits: 0, maxCredits: 12, courseReviews: reviews,
+      preferCompact: true, preferEasyCourses: true, preferChallengingCourses: true,
+    });
+    assert.equal(result.preferenceProfile.easy, 0);
+    assert.equal(result.preferenceProfile.compact, 1, '難度矛盾不該波及其他軸');
+    assert.equal(result.preferenceProfileSource.easyDirection, 'contradictory');
+    assert.ok(result.warnings.some(w => w.includes('涼課優先') && w.includes('挑戰難課') && w.includes('相反')));
+  });
+
+  test('PD6 挑戰方向但候選全無評價：breakdown.easy 為 null、警告使用難度用詞', () => {
+    const candidates = [
+      makeCourse(1, { name: '課A', dayOfWeek: 1, startPeriod: 2, endPeriod: 3, credits: 3 }),
+      makeCourse(2, { name: '課B', dayOfWeek: 2, startPeriod: 2, endPeriod: 3, credits: 3 }),
+    ];
+    const courseReviews = [90, 91, 92].map(id => makeReview({
+      id, courseId: id, reviewCount: 5, sweetness: 3, coolness: 3, workload: 3, overall: 3,
+    }));
+
+    const result = generateSchedule(candidates, {
+      minCredits: 0, maxCredits: 22, preferChallengingCourses: true, courseReviews,
+    });
+
+    assert.equal(result.hasExpressedPreference, true);
+    assert.equal(result.plans[0].preferenceBreakdown.easy, null);
+    assert.ok(result.warnings.some(w => w.includes('挑戰難課偏好') && w.includes('沒有課程評價')));
+  });
+
+  test('PD7 學到的強度只加大權重的絕對值，符號仍由顯式方向決定', () => {
+    const result = generateSchedule([makeCourse(1)], {
+      minCredits: 0, maxCredits: 3, preferChallengingCourses: true,
+      learnedPreference: { applied: true, reason: 'applied', boosts: { interest: 0, compact: 0, easy: 1 } },
+    });
+    assert.equal(result.preferenceProfile.easy, -2);
+    assert.equal(result.preferenceProfileSource.learnedApplied, true);
+    assert.deepEqual(result.preferenceProfileSource.boosts, { interest: 0, compact: 0, easy: 1 });
+  });
+
+  test('PD8 learnedPreference 缺席／未套用／資料不足時，profile 與今天的顯式行為完全相同', () => {
+    const base = { minCredits: 0, maxCredits: 3, preferCompact: true, preferEasyCourses: true, interests: ['x'] };
+    const expected = { interest: 1, compact: 1, easy: 1 };
+
+    const absent = generateSchedule([makeCourse(1)], base);
+    assert.deepEqual(absent.preferenceProfile, expected);
+
+    const notApplied = generateSchedule([makeCourse(1)], {
+      ...base, learnedPreference: { applied: false, reason: 'insufficient', boosts: null },
+    });
+    assert.deepEqual(notApplied.preferenceProfile, expected);
+  });
+
+  test('PD9 有 boost 但沒有勾任何難度標籤：easy 仍為 0（學習不能自己開一個未宣告的軸）', () => {
+    const result = generateSchedule([makeCourse(1)], {
+      minCredits: 0, maxCredits: 3,
+      learnedPreference: { applied: true, reason: 'applied', boosts: { interest: 0, compact: 0, easy: 1 } },
+    });
+    assert.equal(result.preferenceProfile.easy, 0);
+  });
+
+  test('PD10 符號不變性：boost 在 0~1 之間變化，符號恆等於顯式方向、絕對值恆在 [1,2]', () => {
+    for (const boost of [0, 0.5, 1]) {
+      const result = generateSchedule([makeCourse(1)], {
+        minCredits: 0, maxCredits: 3, preferChallengingCourses: true,
+        learnedPreference: { applied: true, reason: 'applied', boosts: { interest: 0, compact: 0, easy: boost } },
+      });
+      const weight = result.preferenceProfile.easy;
+      assert.ok(weight < 0, `boost=${boost} 時符號應為負`);
+      assert.ok(Math.abs(weight) >= 1 && Math.abs(weight) <= 2, `boost=${boost} 時絕對值應在 [1,2]，實際 ${weight}`);
+    }
+  });
+
+  test('PD11 放寬階梯路徑：仍帶號、仍帶學到的強度', () => {
+    const course = makeCourse(1, { startPeriod: 1, endPeriod: 2 });
+    const result = generateSchedule([course], {
+      noMorningClasses: true, minCredits: 0, allowRelaxation: true,
+      preferChallengingCourses: true,
+      learnedPreference: { applied: true, reason: 'applied', boosts: { interest: 0, compact: 0, easy: 1 } },
+    });
+    assert.equal(result.success, true);
+    assert.equal(result.preferenceProfile.easy, -2);
+    assert.equal(result.preferenceProfileSource.easyDirection, 'challenge');
+    assert.deepEqual(result.preferenceProfileSource.boosts, { interest: 0, compact: 0, easy: 1 });
+  });
+});
