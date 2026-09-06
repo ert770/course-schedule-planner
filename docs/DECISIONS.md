@@ -924,3 +924,48 @@ Consequences:
   direction could migrate from declared to learned without changing the
   weight math (`resolveEasyDirection()` is the only place that would change).
   Until then, the honest state is that direction is opt-in, not observed.
+
+## ADR-023: Baseline Measurement Reuses the Production Preference Ruler
+
+Date: 2026-09-06
+
+Context:
+
+Roadmap #36 needs to compare no-personalization, form-only, and learned-personalization
+conditions. Recomputing a second score inside the benchmark would make a ranking change
+look meaningful even when production would not make that choice.
+
+Decision:
+
+`personalizationMetrics.js` calls the scheduler's exported `buildPreferenceProfile()` and
+`evaluatePreference()` for every measured plan. The benchmark is measurement-only: it does
+not add a scoring override to an API request or alter production plan generation.
+
+Consequences:
+
+- Utility deltas are comparable across B0, B1, P and sensitivity sweeps.
+- A result can be unchanged or negative and still be reported; the benchmark does not force
+  a positive effect.
+- Any future scoring formula change must update the scheduler and the metric tests together.
+
+## ADR-024: Review Priority Is a Data-Availability Axis
+
+Date: 2026-09-06
+
+Context:
+
+Review evidence affects the easy/challenging feature, but an empty review set is not a user
+preference. Treating it as an off preference would conflate missing data with a deliberate
+choice.
+
+Decision:
+
+The review-priority sensitivity sweep keeps the same course pool and toggles only
+`courseReviews`. It reports review coverage separately from preference utility and never
+claims that missing reviews represent a negative preference.
+
+Consequences:
+
+- PB11 can verify data availability without changing candidate eligibility.
+- A future review source can be compared by evidence coverage before interpreting ranking
+  changes as personalization.

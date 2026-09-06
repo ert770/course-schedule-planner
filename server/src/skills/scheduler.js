@@ -2,7 +2,10 @@
 // Rule-based scheduler that keeps hard constraints verifiable and leaves
 // explanation/comparison to the AI Agent.
 
-import { resolveScoringPolicy, normalizeCourseFeatures, computePreferenceComponents } from './scoringPolicy.js';
+import {
+  resolveScoringPolicy, normalizeCourseFeatures, computePreferenceComponents,
+  EASY_DIRECTION, resolveEasyDirection,
+} from './scoringPolicy.js';
 import { buildPlanStrategies } from './planStrategies.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
 import {
@@ -581,29 +584,13 @@ function getInterestScore(course, constraints) {
   return collectInterestHits(course, constraints).length * INTEREST_KEYWORD_SCORE;
 }
 
-// roadmap #5B：難度**方向**。事件 schema 的 `feedbackReason` 只有 `workload`
-// （太重），沒有任何欄位能表達「太簡單、我要更難」——方向因此永遠不從行為
-// 推論，只能由使用者自己勾的兩個標籤決定（見 `data/preferenceTags.js`）。
-//
-// 兩個都勾是使用者自己的條件互相矛盾，這裡不猜哪一個才是真的：一律視為
-// 未表態並在 `generateSchedule()` 的 warnings 說出來。刻意不在儲存層做
-// 互斥（`preferenceTags.js` 沒有把兩個標籤設計成單選）——那會靜默丟掉
-// 使用者真的存過的標籤，是「偏好靜默消失」那一類 bug，比顯示一句警告更糟。
-const EASY_DIRECTION = Object.freeze({
-  EASY: 'easy', CHALLENGE: 'challenge', NONE: 'none', CONTRADICTORY: 'contradictory',
-});
-
-function resolveEasyDirection(constraints) {
-  const wantsEasy = Boolean(constraints.preferEasyCourses ?? constraints.preferEasy);
-  const wantsChallenge = Boolean(constraints.preferChallengingCourses);
-  if (wantsEasy && wantsChallenge) return { direction: 0, label: EASY_DIRECTION.CONTRADICTORY };
-  if (wantsEasy) return { direction: 1, label: EASY_DIRECTION.EASY };
-  if (wantsChallenge) return { direction: -1, label: EASY_DIRECTION.CHALLENGE };
-  return { direction: 0, label: EASY_DIRECTION.NONE };
-}
+// roadmap #5B：難度方向的判定（`EASY_DIRECTION`／`resolveEasyDirection`）已搬進
+// `scoringPolicy.js`，這裡與 `resolveScoringPolicy()` 共用同一份實作，不重寫
+// 第二份——見該檔案的說明。
 
 // 生成與比較共用原始使用者權重；替代策略不能用自己加重過的權重替自己評分。
-function buildPreferenceProfile(constraints) {
+// 供 #36 的離線量測重用同一份正式偏好權重公式；不改變生產排課路徑。
+export function buildPreferenceProfile(constraints) {
   return resolveScoringPolicy(constraints).weights;
 }
 
@@ -721,7 +708,8 @@ function orientAxisValue(value, weight) {
   return weight >= 0 ? value : 1 - value;
 }
 
-function evaluatePreference(plan, constraints, profile) {
+// 供 #36 以同一把尺重新評估不同條件的方案；只讀既有方案資料。
+export function evaluatePreference(plan, constraints, profile) {
   const breakdown = {
     interest: getInterestCoverage(plan, constraints),
     compact: getCompactness(plan),

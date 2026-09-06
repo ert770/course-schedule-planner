@@ -9,6 +9,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   resolveIdentityFrom,
+  identityMatchesUser,
   identityErrorResponse,
   isNumericId,
 } from '../src/services/identityService.js';
@@ -51,6 +52,26 @@ describe('I1 canonical identity 解析', () => {
     assert.equal(identity.canonicalId, 'X9999999');
     assert.equal(identity.numericId, null);
     assert.equal(identity.canWriteMysqlProfile, false);
+  });
+
+  test('I1 null 或空白學號退回各自 numeric id，不共用字串 null 身分', () => {
+    const demoUsers = [
+      { id: 2, studentId: null, name: '黃廷崴' },
+      { id: 3, studentId: '  ', name: '陳彥齊' },
+    ];
+
+    const second = resolveIdentityFrom(demoUsers, '2');
+    const third = resolveIdentityFrom(demoUsers, '3');
+
+    assert.equal(second.canonicalId, '2');
+    assert.equal(second.studentId, null);
+    assert.equal(second.numericId, '2');
+    assert.equal(third.canonicalId, '3');
+    assert.equal(third.studentId, null);
+    assert.notEqual(second.canonicalId, third.canonicalId);
+    assert.equal(resolveIdentityFrom(demoUsers, 'null').found, false);
+    assert.equal(identityMatchesUser(demoUsers[0], second), true);
+    assert.equal(identityMatchesUser(demoUsers[1], second), false);
   });
 
   test('I1 isNumericId 只認純數字', () => {

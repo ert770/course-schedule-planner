@@ -1,0 +1,56 @@
+{
+  "_comment": "#36 固定 candidate set。所有 sweep 共用相同課程、評價、term、seed 與 hard constraints。",
+  "cases": [
+    {
+      "id": "wide_pool",
+      "description": "六天、十二門課的可分化課程池",
+      "clock": { "now": "2026-09-06T04:00:00.000Z", "activeTerm": { "academicYear": 114, "semester": "second" } },
+      "candidateCourses": [
+        { "id": 101, "catalogCourseCode": "DEMO0101", "name": "資訊安全導論", "code": "DEMO0101", "instructor": "教師A", "department": "資訊四乙", "credits": 3, "dayOfWeek": 1, "startPeriod": 3, "endPeriod": 4, "category": "一般選修", "description": "資訊安全與網路防禦概念" },
+        { "id": 102, "catalogCourseCode": "DEMO0102", "name": "資料庫實務", "code": "DEMO0102", "instructor": "教師B", "department": "資訊四乙", "credits": 3, "dayOfWeek": 1, "startPeriod": 7, "endPeriod": 8, "category": "一般選修", "description": "資料庫設計與查詢" },
+        { "id": 103, "catalogCourseCode": "DEMO0103", "name": "網路攻防實作", "code": "DEMO0103", "instructor": "教師C", "department": "資訊四乙", "credits": 3, "dayOfWeek": 2, "startPeriod": 3, "endPeriod": 4, "category": "核心選修", "description": "資訊安全實作與實驗" },
+        { "id": 104, "catalogCourseCode": "DEMO0104", "name": "軟體工程", "code": "DEMO0104", "instructor": "教師D", "department": "資訊四乙", "credits": 2, "dayOfWeek": 2, "startPeriod": 7, "endPeriod": 8, "category": "一般選修", "description": "團隊協作與軟體開發" },
+        { "id": 105, "catalogCourseCode": "DEMO0105", "name": "密碼學應用", "code": "DEMO0105", "instructor": "教師E", "department": "資訊四乙", "credits": 3, "dayOfWeek": 3, "startPeriod": 3, "endPeriod": 4, "category": "一般選修", "description": "進階資訊安全與密碼學實作" },
+        { "id": 106, "catalogCourseCode": "DEMO0106", "name": "人機互動", "code": "DEMO0106", "instructor": "教師F", "department": "資訊四乙", "credits": 3, "dayOfWeek": 3, "startPeriod": 7, "endPeriod": 8, "category": "一般選修", "description": "使用者研究與介面設計" },
+        { "id": 107, "catalogCourseCode": "DEMO0107", "name": "雲端系統", "code": "DEMO0107", "instructor": "教師G", "department": "資訊四乙", "credits": 3, "dayOfWeek": 4, "startPeriod": 3, "endPeriod": 4, "category": "一般選修", "description": "雲端部署與系統實作" },
+        { "id": 108, "catalogCourseCode": "DEMO0108", "name": "演算法設計", "code": "DEMO0108", "instructor": "教師H", "department": "資訊四乙", "credits": 2, "dayOfWeek": 4, "startPeriod": 7, "endPeriod": 8, "category": "核心選修", "description": "演算法分析與最佳化" },
+        { "id": 109, "catalogCourseCode": "DEMO0109", "name": "網路安全專題", "code": "DEMO0109", "instructor": "教師I", "department": "資訊四乙", "credits": 3, "dayOfWeek": 5, "startPeriod": 3, "endPeriod": 4, "category": "一般選修", "description": "資訊安全專題與深入應用" },
+        { "id": 110, "catalogCourseCode": "DEMO0110", "name": "程式語言", "code": "DEMO0110", "instructor": "教師J", "department": "資訊四乙", "credits": 3, "dayOfWeek": 5, "startPeriod": 7, "endPeriod": 8, "category": "一般選修", "description": "程式語言實作與編譯器" },
+        { "id": 111, "catalogCourseCode": "DEMO0111", "name": "資料科學", "code": "DEMO0111", "instructor": "教師K", "department": "資訊四乙", "credits": 3, "dayOfWeek": 6, "startPeriod": 3, "endPeriod": 4, "category": "核心選修", "description": "資料分析與機器學習" },
+        { "id": 112, "catalogCourseCode": "DEMO0112", "name": "專案管理", "code": "DEMO0112", "instructor": "教師L", "department": "資訊四乙", "credits": 2, "dayOfWeek": 6, "startPeriod": 7, "endPeriod": 8, "category": "一般選修", "description": "專案規劃與期末報告" }
+      ],
+      "reviews": [
+        { "id": 101, "courseId": 101, "sweetness": 2, "coolness": 2, "workload": 5, "overall": 2, "value": 2, "reviewCount": 5 },
+        { "id": 102, "courseId": 102, "sweetness": 5, "coolness": 5, "workload": 1, "overall": 5, "value": 5, "reviewCount": 5 },
+        { "id": 103, "courseId": 103, "sweetness": 2, "coolness": 2, "workload": 5, "overall": 2, "value": 2, "reviewCount": 5 },
+        { "id": 104, "courseId": 104, "sweetness": 5, "coolness": 5, "workload": 1, "overall": 5, "value": 5, "reviewCount": 5 },
+        { "id": 105, "courseId": 105, "sweetness": 2, "coolness": 2, "workload": 5, "overall": 2, "value": 2, "reviewCount": 5 },
+        { "id": 106, "courseId": 106, "sweetness": 5, "coolness": 5, "workload": 1, "overall": 5, "value": 5, "reviewCount": 5 },
+        { "id": 107, "courseId": 107, "sweetness": 2, "coolness": 2, "workload": 5, "overall": 2, "value": 2, "reviewCount": 5 },
+        { "id": 108, "courseId": 108, "sweetness": 5, "coolness": 5, "workload": 1, "overall": 5, "value": 5, "reviewCount": 5 },
+        { "id": 109, "courseId": 109, "sweetness": 2, "coolness": 2, "workload": 5, "overall": 2, "value": 2, "reviewCount": 5 },
+        { "id": 110, "courseId": 110, "sweetness": 5, "coolness": 5, "workload": 1, "overall": 5, "value": 5, "reviewCount": 5 },
+        { "id": 111, "courseId": 111, "sweetness": 2, "coolness": 2, "workload": 5, "overall": 2, "value": 2, "reviewCount": 5 },
+        { "id": 112, "courseId": 112, "sweetness": 5, "coolness": 5, "workload": 1, "overall": 5, "value": 5, "reviewCount": 5 }
+      ],
+      "baseConstraints": {
+        "department": "資訊工程學系",
+        "gradeLevel": 4,
+        "className": "資訊四乙",
+        "minCredits": 0,
+        "maxCredits": 12,
+        "preferCompact": true,
+        "preferChallengingCourses": true,
+        "interests": ["資訊安全"],
+        "seed": 3601,
+        "timeoutMs": 1000
+      },
+      "carrierFlag": "preferCompact",
+      "personas": [
+        { "id": "interest-history", "userId": 201, "signal": { "axis": "interest", "eventType": "course_viewed", "source": "system_recommendation", "feedbackReason": null } },
+        { "id": "easy-history", "userId": 202, "signal": { "axis": "easy", "eventType": "course_withdrawn", "source": "explicit_selection", "feedbackReason": "workload" } },
+        { "id": "cold-start", "userId": 203, "eventCount": 10, "signal": { "axis": "interest", "eventType": "course_viewed", "source": "system_recommendation", "feedbackReason": null } }
+      ]
+    }
+  ]
+}

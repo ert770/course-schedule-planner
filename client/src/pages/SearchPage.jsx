@@ -9,12 +9,14 @@ import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X } from 'lucide-react';
 import '../App.css'; // Reuse some layout styles
 import { formatCourseTime } from '../utils/courseTime';
+import { getUserIdentity } from '../utils/userIdentity';
 
 const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
 export default function SearchPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const userIdentity = getUserIdentity(user);
   const { theme, toggleTheme } = useTheme();
   const {
     schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed,
@@ -64,7 +66,7 @@ export default function SearchPage() {
     let cancelled = false;
 
     // 未登入時不退回 `default` 使用者。
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setSearchError('尚未登入，請重新登入後再操作。');
       setScopeLoading(false);
       return () => { cancelled = true; };
@@ -91,7 +93,7 @@ export default function SearchPage() {
       });
 
     return () => { cancelled = true; };
-  }, [user?.studentId]);
+  }, [userIdentity]);
 
   useEffect(() => {
     if (activeTab !== 'watchlist') return undefined;

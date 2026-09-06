@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
 import { graduationAPI } from '../services/api';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { getUserIdentity } from '../utils/userIdentity';
 import { X, Plus, Search, AlertTriangle, Lightbulb, Calendar, LayoutDashboard, Settings, Moon, Sun } from 'lucide-react';
 
 // `GET /api/graduation/:studentId` 的學分類別 key 對應中文標題。
@@ -20,6 +21,7 @@ const CREDIT_CATEGORY_LABELS = {
 export default function GraduationPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const userIdentity = getUserIdentity(user);
   const { theme, toggleTheme } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,7 +32,7 @@ export default function GraduationPage() {
   useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   const loadGraduationData = useCallback(async () => {
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setData(null);
       setLoading(false);
       return;
@@ -45,7 +47,7 @@ export default function GraduationPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.studentId]);
+  }, [userIdentity]);
 
   useEffect(() => {
     loadGraduationData();

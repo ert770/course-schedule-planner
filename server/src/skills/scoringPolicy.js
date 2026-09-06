@@ -6,14 +6,37 @@ export const PREFERENCE_SCALE = 240;
 const clamp = (value, min, max) => Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : 0;
 const list = value => !value ? [] : Array.isArray(value) ? value : [value];
 
+// roadmap #5B：難度**方向**。事件 schema 的 `feedbackReason` 只有 `workload`
+// （太重），沒有任何欄位能表達「太簡單、我要更難」——方向因此永遠不從行為
+// 推論，只能由使用者自己勾的兩個標籤決定（見 `data/preferenceTags.js`）。
+//
+// 兩個都勾是使用者自己的條件互相矛盾，這裡不猜哪一個才是真的：一律視為
+// 未表態並在 `generateSchedule()` 的 warnings 說出來。刻意不在儲存層做
+// 互斥（`preferenceTags.js` 沒有把兩個標籤設計成單選）——那會靜默丟掉
+// 使用者真的存過的標籤，是「偏好靜默消失」那一類 bug，比顯示一句警告更糟。
+//
+// **只有這一份實作**：`scheduler.js` 的 warnings 判定與這裡的 `resolveScoringPolicy()`
+// 都呼叫同一個函式，不是各自重寫一份「兩個都勾 = 0」的邏輯——那正是本專案自己反覆
+// 記取過的「兩條路徑看起來一樣，其中一條之後默默漏掉一個條件」那種 bug。
+export const EASY_DIRECTION = Object.freeze({
+  EASY: 'easy', CHALLENGE: 'challenge', NONE: 'none', CONTRADICTORY: 'contradictory',
+});
+
+export function resolveEasyDirection(constraints) {
+  const wantsEasy = Boolean(constraints.preferEasyCourses ?? constraints.preferEasy);
+  const wantsChallenge = Boolean(constraints.preferChallengingCourses);
+  if (wantsEasy && wantsChallenge) return { direction: 0, label: EASY_DIRECTION.CONTRADICTORY };
+  if (wantsEasy) return { direction: 1, label: EASY_DIRECTION.EASY };
+  if (wantsChallenge) return { direction: -1, label: EASY_DIRECTION.CHALLENGE };
+  return { direction: 0, label: EASY_DIRECTION.NONE };
+}
+
 export function resolveScoringPolicy(constraints = {}) {
-  const easy = Boolean(constraints.preferEasyCourses ?? constraints.preferEasy);
-  const challenge = Boolean(constraints.preferChallengingCourses);
   const directions = {
     interest: [...list(constraints.preferredKeywords), ...list(constraints.interests), constraints.preferredTrack]
       .filter(Boolean).length > 0 ? 1 : 0,
     compact: constraints.preferCompact ? 1 : 0,
-    easy: easy === challenge ? 0 : easy ? 1 : -1,
+    easy: resolveEasyDirection(constraints).direction,
   };
   const learned = constraints.learnedPreference;
   const weights = Object.fromEntries(PREFERENCE_AXES.map(axis => [axis,

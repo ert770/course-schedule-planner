@@ -3,6 +3,7 @@ import { clearCollection, getAll, insert } from '../db/database.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
 import { buildClearSessionCookie, buildSessionCookie } from '../services/sessionService.js';
+import { identityMatchesUser } from '../services/identityService.js';
 
 const router = Router();
 
@@ -37,9 +38,7 @@ router.post('/logout', (req, res) => {
 router.get('/me', requireIdentity, async (req, res) => {
   try {
     const users = await getAll('users');
-    const user = users.find(item => (
-      String(item.studentId) === String(req.identity.canonicalId)
-    ));
+    const user = users.find(item => identityMatchesUser(item, req.identity));
 
     if (!user) {
       return res.status(404).json({ error: '找不到使用者' });
@@ -56,9 +55,7 @@ router.post('/update-watchlist', requireIdentity, requireServiceConsent, async (
   try {
     const { watchlist } = req.body;
     const users = await getAll('users');
-    const userIndex = users.findIndex(item => (
-      String(item.studentId) === String(req.identity.canonicalId)
-    ));
+    const userIndex = users.findIndex(item => identityMatchesUser(item, req.identity));
 
     if (userIndex === -1) {
       return res.status(404).json({ error: '找不到使用者' });

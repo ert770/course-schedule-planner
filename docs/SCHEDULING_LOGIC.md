@@ -828,3 +828,16 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 - 通識基礎 16 學分的完整對照（目前只實作「不計畢業學分」的那 3 學分）。
 - 核心選修 12 學分的達成度追蹤（目前只做到分類與優先度，未累計缺口）。
 
+### 個人化量測：同一把尺的 baseline 與 A/B（Roadmap #36）
+
+離線實驗 `server/src/skills/personalizationExperiment.js` 固定 candidate set、term、seed、
+timeout 與 hard constraints，建立三個條件：B0 移除所有個人化輸入、B1 保留表單偏好但停用
+learned preference、P 使用正式學習管線產生的權重。三者都用 `personalizationMetrics.js` 以
+baseline 使用者的 `buildPreferenceProfile()` 與 `evaluatePreference()` 重新計算 utility，
+避免「生成時一把尺、驗收時另一把尺」。
+
+每個方案都經 `validateScheduleAgainstConstraints()`；任何偏好造成的課程集合或排序變化，
+都必須同時回報學分、上課天數、早課數、評價覆蓋率、Jaccard distance、Kendall tau 與安全結果。
+資料不足的 persona 不套用 learned weights，並且仍會產生可重現的 B1/P 對照；這是 cold-start
+邊界，不把缺資料包裝成個人化效果。
+

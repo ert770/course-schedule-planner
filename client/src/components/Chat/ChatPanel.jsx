@@ -2,12 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { Send } from 'lucide-react';
 import { chatAPI } from '../../services/api';
 import { useAuth } from '../../contexts/useAuth';
+import { getUserIdentity } from '../../utils/userIdentity';
 
 export default function ChatPanel({ onScheduleGenerated }) {
   // 聊天記憶與偏好更新都會寫進這位使用者，身分必須從 AuthContext 取得。
   // 先前這裡沒有帶 userId，後端以 `default` 假使用者接收，
   // 所有從 `/schedule` 發出的對話都寫到同一份共用資料上。
   const { user } = useAuth();
+  const userIdentity = getUserIdentity(user);
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -27,7 +29,7 @@ export default function ChatPanel({ onScheduleGenerated }) {
     const msg = input.trim();
     if (!msg || loading) return;
 
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: '尚未登入，無法使用課表助手。請重新登入後再試。',

@@ -71,9 +71,9 @@
 | 4 | 把評分方式結構化：新增課程欄位並從 reviews 聚合難度甜度 | ✅ 已完成（2026-08-17） | 無（DDL 欄位另列 D 類） |
 | 5A | 結構化評價分數接進 `scoreCourse`（母體共用） | ✅ 已完成（2026-08-17） | #4 |
 | 5B | per-user 加權方向（同一分數對不同使用者相反符號） | ✅ **已完成（2026-09-05）**——見下方 #5B 段落與[變更報告](./2026-09-05-roadmap-5b-per-user-preference-direction.md)。方向來自顯式的 `#涼課優先`／`#挑戰難課` 標籤（事件 schema 表達不出「太簡單」，方向不從行為推論，見 `docs/DECISIONS.md` ADR-022），強度由學到的權重加強；當時先接方案層，單一門課排序已由 #7 接續完成 | #5A、#29、#33、#2、#30（均已完成） |
-| 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⬜ **可開始（2026-09-04：#31 已完成）**——僅卡樣本量：真實互動事件目前 92 筆全來自 1 個帳號，協同過濾需要跨使用者矩陣 | #2、#29、#31（均已完成）；另需足夠互動樣本 |
+| 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⛔ **等待足夠真實互動樣本**——3 組 synthetic demo 訊號只能驗證資料流，不能替代跨使用者效果樣本 | #2、#29、#31（均已完成）；外部條件為足夠真實互動樣本 |
 | 7 | 以個人化權重向量取代 5 個固定 variant | ✅ **已完成（2026-09-05）**——連續帶號權重已接進單門課排序，動態有限策略取代固定 variant，曝光事件保存版本化 policy；見下方 #7 段落與[變更報告](./2026-09-05-roadmap-7-personalized-scoring.md) | #2、#5A、#30（均已完成） |
-| 8 | 先修關係與多學期路徑規劃 | ⬜ 多學期規劃未開始；歷史修課 MySQL 基礎已完成（2026-08-30） | #19、#21（已完成）；#20、#23（部分完成，剩餘皆卡外部資料）；**另需先修資料——`Courses.prerequisites` 目前 3,086/3,086 全為 NULL** |
+| 8 | 先修關係與多學期路徑規劃 | ⛔ **等待先修資料**——多學期規劃未開始，`Courses.prerequisites` 目前 3,086/3,086 全為 NULL | #19、#21（已完成）；#20、#23（部分完成）；外部條件為先修資料 |
 | 9 | 探索機制：小比例隨機與多樣性重排 | ⬜ 未開始（卡 #36） | #2、#21、#30（均已完成）；#36 |
 | 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 部分完成（2026-09-05 更新）——必修安全邊界、涼度來源與興趣接線已修；#7 已用動態策略取代固定 variant，且塌縮訊息不再把重複結果直接歸因於候選池不足。真實可分化空間仍受 #13C 未確認規則限制 | #4、#21、#22、#7（均已完成）；方案可分化空間另受 #13C（等校方規則）限制 |
 | 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ✅ 已完成 | 無 |
@@ -81,7 +81,7 @@
 | 13A | 資工系一般班級必修 scope | ✅ 已完成 | 無 |
 | 13B | B～F 類班級分類與 unknown eligibility | ✅ 已完成（2026-08-14） | #13A |
 | 13C | B～F 類的正式適用規則 | ⛔ 等待外部資料 | #13B；**另需系辦／校方正式規則** |
-| 13D | 學制、學程與特殊身分 | 🟡 工程可開始；正式驗收等待特殊身分資料。**`User_Profiles` 已有組員新增的 `program_type`／`enrolled_programs`／`college` 三欄（本專案尚未讀寫），欄位設計這一段不必從零開始** | #13B、#18（均已完成）；另需特殊身分資料與正式適用規則 |
+| 13D | 學制、學程與特殊身分 | ⛔ **等待特殊身分資料與正式適用規則**；`User_Profiles` 已有 `program_type`／`enrolled_programs`／`college` 欄位可供後續接線 | #13B、#18（均已完成）；外部條件為特殊身分資料與正式適用規則 |
 | 14 | 無時間課程永不衝堂，可被無限排入 | ✅ 已完成 | 無 |
 | 15 | 實習課程需與同名正課一併排入 | ✅ 已完成（2026-08-20） | #13A、#13B、#19、#20、#21 |
 | 16 | 多時段課程支援 | ✅ 已完成 | 無 |
@@ -100,42 +100,41 @@
 | 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ✅ **已完成（2026-09-04）**——見下方 #30 段落與[變更報告](./2026-09-04-roadmap-30-preference-learning-pipeline.md)。四條驗收標準全數達成；學習結果先由 #5B 接進方案比較，再由 #7 接進單門課排序 | #2、#5A、#29（均已完成） |
 | 31 | 建立冷啟動、偏好重設、時間衰減與資料不足策略 | ✅ **已完成（2026-09-04）**——見下方 #31 段落與[變更報告](./2026-09-04-roadmap-31-cold-start-reset-decay-and-source.md)。四條驗收標準全數達成；時間衰減在今天的真實資料上是數學上的 no-op（已明講）；#7 已讓 `appliedToScheduling` 涵蓋方案比較與單門課排序 | #18、#30（均已完成） |
-| 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | ⬜ 未開始（2026-09-05：#7、#31 均已完成；仍卡 #6、#36 與樣本量） | #6、#7、#31（後兩者已完成）、#36；另需足夠互動樣本 |
+| 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | ⛔ **等待 #6 的真實樣本與 #36 完成**；#7、#31 已完成，synthetic persona 不作跨使用者效果證據 | #6（等待真實樣本）、#7、#31、#36；外部條件為足夠互動樣本 |
 | 33 | 建立互動資料隱私、匿名化、consent 與保存規則 | ✅ 已完成（2026-08-22） | #18、#29（均已完成） |
 | 34 | 建立 Agent 自然語言需求理解 eval | 🟡 部分完成（2026-08-31）——**前置相依已全部完成，可繼續**。8 題中文 golden set 已進 `npm test` 每次執行；多輪修正、課名同名、越權要求與大規模標註資料集尚未涵蓋 | #24、#25（均已完成） |
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成——**前置相依已全部完成，可繼續**。Z1–Z7 已提供最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 | #15、#21、#22（均已完成） |
-| 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 **部分完成，可繼續（2026-09-05）**——#5B、#7、#30、#31 全部完成，前置相依已解除；仍需 baseline、量化指標、synthetic personas 與完整行為差異實驗 | #5B、#7、#30、#31（均已完成） |
+| 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 **部分完成（2026-09-06）**——已交付固定 candidate set 的 B0/B1/P runner、同一把 production preference ruler、五軸 sensitivity sweep、persona/cold-start 重播與全方案 safety guard；synthetic fixture 的效果仍不能宣稱是真實學生效果，且正向改善尚未在所有 persona／軸上成立 | #5B、#7、#30、#31（均已完成）；正式效果仍需真實去識別互動樣本 |
 | 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ **未開始，前置已全部完成（2026-08-31）**——#26 的 reason 物件正是「把每個句子對應回 Profile／DB／review／rule」所需要的結構，`dataSources` 與 `confidence` 可直接當比對基準 | #25、#26（均已完成） |
 | 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #36、#37；#27、#28 已完成，不再是阻塞） | #33、#27、#28（均已完成）；#34、#35（前置皆已解除）；#36、#37（仍有上游未完成） |
 | 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
+| 40 | 補齊個人化學習訊號缺口 | ⬜ 未開始——#36 已量出 compact 學不動、accept 不投票與 interest 弱訊號上限，尚未改動學習演算法 | #7、#29、#30、#31（均已完成）；需先定義新的可觀測訊號與隱私邊界 |
 
-## 現在可以動工的任務（2026-08-31 盤點）
+## 現在可以動工的任務（2026-09-06 盤點，依建議順序排列）
 
-`#25` 完成後重新核對整張表的相依欄，發現**有五項的前置相依其實早就全部完成，
-只是表格沒有跟著更新**。這一節是那次核對的結論，避免「以為還卡著」而擱置。
+`#5B`、`#7` 於 2026-09-05 完成後，`#30` 那條學習鏈（`#31`／`#5B`／`#7`）已全數完成，
+連帶解除了 `#36` 的全部前置相依。這一節重新核對整張表後，依「解除下游相依的程度」與
+「是否還有非工程外部阻塞」排序，只列真正可以現在動工的項目——純被外部資料或人的決定
+卡住的項目，見本節最後的「仍然卡住」清單，不列在這裡。
 
-| # | 任務 | 為什麼現在可以動 |
-| ---: | --- | --- |
-| ~~10~~ | ~~修復多方案塌縮~~ | **已於 2026-08-31 動工**，排序機制的根因已修（見下方 #10 段落）。原本記在這裡的「根因一：15 門必修有 11 對互相衝堂」經真實資料重測後**確認已過期**——那是 55 門假資料時代的現象 |
-| ~~26~~ | ~~evidence-based recommendation reason~~ | **已於 2026-08-31 完成**（見下方 #26 段落）。它解除了 #27 與 #37 的最後一個前置 |
-| 34 | Agent 需求理解 eval | #24、#25 均已完成。目前只有 8 題，缺多輪修正、課名同名、越權要求等類別 |
-| 35 | solver benchmark | #15、#21、#22 全部完成。Z1–Z7 是最小 golden cases，缺 runner 與量化報告 |
-| 28 | 統一登入使用者 context | #2 已在記錄互動事件，「互動事件不交叉」這條驗收**先前無事件可測**，現在可以測；只剩雙帳號實機驗收 |
-| ~~30~~ | ~~可重現的 per-user preference update pipeline~~ | **已於 2026-09-04 完成**（見下方 #30 段落）。它是 `#5B`／`#7`／`#31`／`#36`／`#9`／`#6`／`#32` 這條鏈唯一的閘門，解除後這些任務全部改列「可開始」，不再是「卡住」 |
-| ~~31~~ | ~~冷啟動、偏好重設、時間衰減與資料不足策略~~ | **已於 2026-09-04 完成**（見下方 #31 段落）。當時解除 `#36`／`#32` 的一項相依；其後 `#5B`、`#7` 也已完成 |
-| ~~5B~~ | ~~per-user 加權方向~~ | **已於 2026-09-05 完成**（見下方 #5B 段落）。它提供 #7 所需的帶號方向，#7 現亦已完成 |
-| ~~7~~ | ~~個人化連續權重與動態策略~~ | **已於 2026-09-05 完成**（見下方 #7 段落）。`#36` 的前置相依全數解除，可繼續建立完整 baseline 與量化 A/B；`#32` 不再卡 #7 |
+| 順位 | # | 任務 | 為什麼排在這裡 |
+| ---: | ---: | --- | --- |
+| 1 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 前置（#5B、#7、#30、#31）全數完成；離線 B0/B1/P 與五軸 runner 已可重播。仍需真實去識別互動樣本，才能把 synthetic 結果提升為效果證據；完成後能連帶打開 #9、#32、#38，最終 Gate 仍要求證明「個人化優於非個人化 baseline」 |
+| 2 | 37 | 建立 explanation faithfulness 與 hallucination tests | 前置（#25、#26）自 2026-08-31 起就已就緒，範圍獨立、不牽動其他任務。`#26` 的 reason 物件本身就是「把每個句子對應回 Profile／DB／review／rule」所需要的結構，`dataSources` 與 `confidence` 可直接當比對基準，動工阻力最小 |
+| 3 | 34 | 建立 Agent 自然語言需求理解 eval | 前置（#24、#25）已完成，8 題中文 golden set 已進 `npm test` 每次執行；缺多輪修正、課名同名、越權要求等類別與大規模標註資料集，屬於持續擴充型工作 |
+| 4 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 前置（#15、#21、#22）已完成，Z1–Z7 已有最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 |
+| 5 | 40 | 補齊個人化學習訊號缺口 | #36 已量出具體缺口，#7、#29、#30、#31 均已完成；可先定義新訊號與離線驗收，正式 rollout 仍需隱私邊界決策 |
+| 6 | 39 | 架設正式網站與 Production rollout | `#33`（隱私基礎）已完成，工程上可以開始；排最後是因為第一步是「選哪個部署平台」這個人的決定，不是可以立刻動手的程式工作 |
 
-另外 `#39`（正式網站）在工程上也可開始——`#33` 已完成，缺的是「選哪個平台」這個
-人的決定，不是程式相依。
+**仍然卡住的**，卡點只剩兩種：
 
-**仍然真的卡住的**，卡點只剩一種：
-
-- **卡外部資料**：`#13C`（系辦規則）、`#13D`（特殊身分資料）、`#23` 剩餘項（歷史科目表、
-  官方認列表、歷史學期課程資料）、`#8`（`Courses.prerequisites` 全為 NULL）。
-  這些不是排程問題，寫程式也解決不了。
-- `#30` 那條鏈中的 `#31`、`#5B`、`#7` 已完成；`#36` 的前置相依已全數解除，剩本身的
-  baseline 與實驗工作。`#32` 仍要等 `#6`、`#36` 與足夠跨使用者樣本；`#6` 自身只卡樣本量。
+- **卡外部資料，不是排程問題**：`#6`／`#32`（足夠真實互動樣本）、`#13C`（系辦正式適用規則）、
+  `#13D`（特殊身分資料與正式適用規則）、`#23` 剩餘項（歷史科目表、官方認列表、歷史學期課程資料）、
+  `#8`（`Courses.prerequisites` 目前 3,086/3,086 全為 NULL）。
+  寫程式解決不了，只能等資料到位。
+- **卡上面尚未完成的任務**：`#9`（探索機制，仍等 #36 的真實效果證據）、
+  `#32`（hybrid 比較，卡 #6、#36 與足夠跨使用者樣本）、`#38`（學生使用者測試，卡 #36、#37）。
+  這三項一旦 #36／#37 真正完成，會自動改列「可動工」，不需要再等其他外部條件。
 
 ## 任務相依的閱讀方式
 
@@ -143,48 +142,6 @@
 - 若相依欄包含「另需校方正式規則」或「另需足夠互動樣本」，代表即使程式任務已完成，外部資料條件不足時仍不可開始驗收。
 - #18～#38 均預設既有 MySQL 課程查詢、多時段解析及基本衝堂判斷仍維持通過；若基礎資料契約改動，必須先重跑相關 regression tests。
 - 相依完成不代表下游任務自動完成。每一項仍須通過該節所列的獨立驗收標準。
-
-## 建議執行 Gate
-
-| Gate | 目的 | 必須先完成 | 通過後才進入 |
-| --- | --- | --- | --- |
-| Gate 0 — 身分與資料真實性 | 確保學到的是正確學生、正確課程與正確學期 | #12、#13A、#13B、#18、#19、#20、#23 的適用部分（#13C、#13D 阻塞中，以 `unknown` 標記通過） | Agent、學習與 solver 開發 |
-| Gate 1 — 限制與可行性 | 統一定義硬限制、軟偏好、共修與無解原因 | #3、#15、#21、#22 | 多方案、解釋與 feasibility benchmark |
-| Gate 2 — Agent 需求理解 | 讓自然語言先變成可驗證需求，再允許工具執行 | #24、#25、#28（**三項均已完成，2026-09-03 起本 Gate 全數通過**） | Agent-level 自動排課與對話 eval |
-| Gate 3 — 偏好資料與學習 | 先合法、安全記錄互動，再更新個人權重 | #29、#33、#2、#30、#31、#7（**均已完成，2026-09-05 起本 Gate 全數通過**） | 協同過濾、探索與 hybrid 比較 |
-| Gate 4 — 推薦解釋與比較 | 讓每門課與每個方案都有可追溯理由 | #4、#5A、#10、#26、#27 | 教授展示與使用者研究 |
-| Gate 5 — 系統驗證 | 證明需求理解、可行性、個人化與解釋均有效 | #34～#38 | 宣稱完成 AI 個人化課程規劃 Agent |
-
-核心依賴主線如下；協同過濾與探索是有資料後的研究分支，不應阻塞先完成單一使用者的 content-based 個人化：
-
-```mermaid
-flowchart LR
-    A["#18 統一身分/Profile"] --> B["#19 穩定課程與歷史代碼"]
-    B --> C["#20 Active term / eligibility"]
-    C --> D["#21 Constraint schema / validator"]
-    D --> E["#22 Solver / repair"]
-    D --> F["#24 需求模型與澄清"]
-    F --> G["#25 Structured tools"]
-
-    A --> H["#29 Interaction schema"]
-    H --> I["#33 Privacy / consent"]
-    I --> J["#2 Interaction log"]
-    J --> K["#30 Preference update"]
-    K --> L["#31 Cold start / reset"]
-    K --> M["#7 個人化權重"]
-
-    E --> N["#26 Evidence-based reasons"]
-    N --> O["#27 多方案比較"]
-    G --> P["#34 Agent eval"]
-    E --> Q["#35 Feasibility benchmark"]
-    M --> R["#36 Personalization A/B"]
-    G --> S["#37 Explanation / hallucination tests"]
-    O --> T["#38 使用者測試"]
-    P --> T
-    Q --> T
-    R --> T
-    S --> T
-```
 
 ---
 
@@ -2281,9 +2238,10 @@ soft utility、runtime 與 timeout rate 的正式報告。
 
 ## #36 建立 personalization baseline 與 preference sensitivity A/B
 
-**狀態**：🟡 **部分完成，可繼續（2026-09-05）**——已有興趣偏好與 avoid-time 的最小
-敏感度 A/B；`#30`、`#31`、`#5B`、`#7` 均已完成，前置相依已解除。完整 baseline、量化
-指標、synthetic personas 與行為差異實驗仍是本任務未完成內容。
+**狀態**：🟡 **部分完成（2026-09-06）**——固定條件的 B0/B1/P baseline、五軸
+preference sensitivity runner、同一把 production preference ruler、persona/cold-start
+重播與全方案 safety guard 已交付。`#30`、`#31`、`#5B`、`#7` 均已完成，前置相依已解除；
+synthetic fixture 仍不能替代真實去識別互動樣本，且正向改善尚未在所有 persona／軸上成立。
 
 **相依**：#5B、#7、#30、#31（均已完成）
 
@@ -2317,13 +2275,47 @@ soft utility、runtime 與 timeout rate 的正式報告。
 - #1 已修掉方案排序的自相矛盾（原本比較器三層都與偏好無關），因此偏好確實會影響 `plans[0]` 的選擇。
 - `avoid_time` 修復時已做過一次實機 A/B 對照（有此設定的使用者第 1 節 0 門、無的 2 門），證明 node 層測試不足以取代瀏覽器驗收——這個方法論可直接沿用到本任務。
 
+**2026-09-06 新增：三組可重播 demo persona**
+
+- user 2／3／4 共匯入 168 筆 `User_Course_History`，歷史修課不再依賴已停用的
+  `User_Profiles.completed_courses`。
+- user 2／3 尚未配發帳密，以各自 numeric id 保持獨立 demo 身分；user 4（黃思瑋）
+  使用 `D1249196` 登入，其互動與 learned weights 已移到該 canonical studentId 衍生的
+  去識別 subject。
+- 三人的系所、班級、年級與學分設定相同；顯式偏好分別代表集中排課、挑戰／興趣、
+  涼課／報告三種方向。
+- 每人各有 50 筆固定 ID 的 synthetic learning signal，分別只投票給 compact、interest、
+  easy；三列 `Learned_Preference_Weights` 都達 `sufficient`，可重跑且不重複累積。
+- 這批資料提供 demo 與資料流驗證，不等於 non-personalized baseline 或效果證明；事件為
+  synthetic，也不能拿來宣稱協同過濾已有真實跨使用者樣本。
+- 瀏覽器 smoke A/B 已確認三組 profile 會呈現不同結果：集中／避早八 persona 為 2 門主推，
+  挑戰／興趣 persona 為 4 門 13 學分，涼課／報告 persona 為 4 門 13 學分且偏好符合度
+  72%；這只證明端到端資料流與顯示差異，不取代下列固定 candidate set 的量化 runner。
+
 **尚未完成**
 
 - **沒有 baseline**。無法回答「個人化方案比不使用個人資料好多少」，因為沒有定義 baseline solver 或 baseline 排序。
 - **沒有量化指標**，只有「`plans[0]` 是不是興趣方案」這種布林判斷。
-- **無法做「表單相同但行為不同」的 personas**——#29 已定義事件契約，但行為資料尚未記錄（#2），目前兩位表單填寫相同的學生仍會得到完全相同的課表，這正是本 roadmap 開頭的判定依據。
-- **A/B 條件無法固定**：沒有 active term（#20）、沒有 solver version 標記，因此無法保證差異不是來自資料或版本不同。
-- 實測顯示 5 個 variant 最後只得到 2 個不同方案（#10），在方案塌縮修好前，敏感度量測的解析度不足。
+- **尚未完成固定條件的 persona A/B runner**。資料與權重已具備，但仍須鎖住相同 candidate
+  set、hard constraints、active term 與 solver/scoring version，再產出 ranking change 等量化結果。
+- **尚未完成 non-personalized baseline 與完整量化指標**；目前不能只用三張不同課表宣稱個人化較好。
+
+**2026-09-06 runner 交付**
+
+- `server/src/skills/personalizationExperiment.js` 固定同一 candidate set、active term、seed、
+  timeout 與 hard constraints，輸出 B0（移除個人化）、B1（表單偏好）、P（正式 learned weights）。
+- `server/src/skills/personalizationMetrics.js` 重用 scheduler 的 `buildPreferenceProfile()`／
+  `evaluatePreference()`，量測 utility、review coverage、方案多樣性、課程集合 Jaccard、
+  Kendall tau、rank shifts、credits／used days／morning courses，並逐方案執行 validator。
+- `server/test/fixtures/personalizationCases.json` 提供 12 門固定課程、評價與三組 persona；
+  `personalizationBaseline.test.js` 覆蓋 PB0–PB11，`personalizationMetrics.test.js` 覆蓋量測純函式。
+- `npm run bench:personalization --prefix server` 可輸出 JSON，`-- --markdown` 可輸出報告表格；
+  runner 不連 MySQL，也不把量測專用 override 放進 production API。
+- 本輪量測中，B1 相對 B0 的 utility 在固定 fixture 上可重現（每個 persona 為 `+0.182`）；
+  easy-history 的 learned 權重讓方案數從 2 變 1，但同一把尺下 P 的主方案 utility 與 B1
+  相同。interest-history 也維持相同主方案，cold-start 則因資料不足不套用 learned weights。
+  五軸 sweep 的方向與變化量照實輸出，review-priority 主要反映 evidence coverage，不能解讀成
+  缺評價是一種偏好。
 
 ---
 
@@ -2415,6 +2407,32 @@ shared MySQL，尚無正式網站。缺的是「選哪個平台、哪個網域�
 - 未 consent／必要 consent／可選 consent 的 production A/B 與本機結果一致。
 - Migration 可重複 dry-run，部署失敗有可驗證的 rollback／restore 流程。
 - 監控、資料保存清理與告警已啟用，且不把個人資料寫入 log。
+
+---
+
+## #40 補齊個人化學習訊號缺口
+
+**狀態**：⬜ 未開始（2026-09-06 由 #36 量測結果立案）
+
+**相依**：#7、#29、#30、#31（均已完成）；另需先定義新的可觀測訊號與隱私邊界。
+
+### 問題與目的
+
+#36 的固定 persona 實驗確認目前資料管線有三個可觀測缺口：`recommendation_accepted` 在 #7
+後不再產生投票、compact 軸因顯式先驗飽和而學不到增量、interest 只能靠弱訊號產生有限
+boost。這些是學習訊號設計問題，不在 #36 量測任務中偷偷改演算法。
+
+### 實作範圍
+
+- 定義可合法觀測的接受／拒絕與偏好回饋訊號，補上事件 schema 與 privacy／consent 邊界。
+- 讓 compact 與 interest 的學習訊號可區分「沒有偏好」與「偏好未被滿足」。
+- 以離線 replay 與 #36 同一把尺驗證新訊號不反轉顯式方向，並維持 cold-start 與 decay 規則。
+
+### 驗收標準
+
+- 新事件能通過 #29 schema、隱私規則與 idempotency，且不把推測當成使用者意圖。
+- compact／interest 有可重現的 learned update；資料不足時仍 fail-open 回到顯式設定。
+- 既有 PB／PD safety cases 全數通過，並以真實去識別互動資料與 synthetic replay 分開報告。
 
 ---
 

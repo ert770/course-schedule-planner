@@ -412,6 +412,10 @@ store 的邏輯名稱。
 
 `users.json` **只負責登入身分與尚未遷移的 demo 資料**（`studentId`、`password`、`name`、
 `watchlist`、`skillTree`…），以及班別的後備儲存。它不再保存 `courseHistory`。
+尚未配發正式帳密的 demo persona（目前 user 2、3）以 `studentId: null`、`password: null`
+保存，不能從登入頁登入；身分層會退回各自的 numeric `id`，不得把多筆 null 轉成共用的
+字串 `"null"`。user 4（黃思瑋）已配發 demo 學號 `D1249196`、密碼 `000`，隱私
+subject 與互動資料因此以該 canonical studentId 衍生，不再使用 numeric `4`。
 
 歷史修課唯一來源為 MySQL `User_Course_History`。已修課號、已修學分、分類學分彙總
 一律由查出的 11 欄 `courseHistory` 物件呼叫 `server/src/data/courseHistory.js` 的
@@ -454,6 +458,26 @@ npm run migrate:course-history --prefix server -- --rollback --confirm-shared-my
 
 查詢成功但 0 筆是合法空歷史；查詢失敗則回 `503 COURSE_HISTORY_UNAVAILABLE`，不得假裝
 成空歷史繼續排課或計算畢業進度。
+
+### 三位 demo persona 的成績匯入（2026-09-06）
+
+`server/scripts/demoPersonasSeed.js` 將使用者提供的三份 Markdown 成績資料解析後寫入
+`User_Course_History`，來源標記為 `demo_markdown_20260906`。user 2／3／4 分別為
+55／55／58 筆，共 168 筆；完全相同的重複表格列只保留一次，沒有正式課號的
+「專題研究(二)」與「大學基礎英文」列不匯入。
+
+附件只有百分制成績，因此 `letterGrade` 為 null、`passed` 由數字成績是否達 60 分產生；
+`credits` 固定保存「實際修習學分」。章節或當期課程資料無法證明必選修／畢業分類時，
+使用 `未確認`／`unspecified`，不從課名猜測。附件的「計入畢業學分」若缺漏或與實修學分
+不同會在 dry-run 顯示 warning；現有 v1 schema 無法表達逐門部分認列，留待 #23 依正式規則
+擴充，不把 1 學分部分認列偷偷改寫成 2 學分已確認認列。
+
+此 seed 同時建立三組明確標記為 demo 的 consent、去識別化互動與推導權重。預設只盤點：
+
+```text
+npm run seed:demo-personas --prefix server
+npm run seed:demo-personas --prefix server -- --apply --confirm-shared-mysql
+```
 
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——

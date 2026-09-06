@@ -15,6 +15,7 @@ import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PlanComparison from '../components/Schedule/PlanComparison';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
+import { getUserIdentity } from '../utils/userIdentity';
 import { coursesAPI, profileAPI, scheduleAPI } from '../services/api';
 
 const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
@@ -22,6 +23,7 @@ const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再
 export default function SchedulePage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const userIdentity = getUserIdentity(user);
   const { theme, toggleTheme } = useTheme();
   const {
     schedule,
@@ -61,7 +63,7 @@ export default function SchedulePage() {
 
     // 未登入時不呼叫，也不退回 `default` 使用者——那會讀到共用假帳號的 scope，
     // 畫面看起來正常但資料是別人的。
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setNotice(makeNotice({ level: 'error', message: '尚未登入，請重新登入後再操作。' }));
       return () => { cancelled = true; };
     }
@@ -83,7 +85,7 @@ export default function SchedulePage() {
       });
 
     return () => { cancelled = true; };
-  }, [user?.studentId]);
+  }, [userIdentity]);
 
   const searchCourses = async () => {
     if (!courseSearchScope?.className) {
@@ -113,7 +115,7 @@ export default function SchedulePage() {
   };
 
   const generateSchedule = async () => {
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setNotice({ level: 'error', text: '尚未登入，無法產生個人化課表。' });
       return;
     }

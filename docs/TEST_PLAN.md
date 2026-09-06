@@ -858,3 +858,30 @@ CI=true npm test --prefix server
 4. 確認 `.env` 與 `node_modules/` 沒有被加入 Git。
 5. 若修改排課邏輯，至少執行排課測試案例 S1-S10；若修改的是
    `scheduler.js`／`scheduleValidator.js`／`constraintSchema.js`，一併執行 N1-N15 與 X1-X14。
+
+### 個人化 baseline 與 preference sensitivity A/B（Roadmap #36）
+
+這組驗收使用 `server/test/fixtures/personalizationCases.json` 的固定候選池，
+不連 MySQL、不寫入使用者資料：
+
+| 編號 | 檢查 | 預期結果 |
+| --- | --- | --- |
+| PB0 | 候選池寬度與方案數 | 同一 candidate set 至少能產生兩個可比較方案 |
+| PB1-PB2 | B0（去除個人化）、B1（表單偏好）、P（學習偏好） | seed、hard constraints、評價資料固定；只改變個人化輸入 |
+| PB3-PB4 | learned weights 與 cold start | 同事件重跑逐位元穩定；資料不足時 P 不套用學習權重 |
+| PB5 | 同一把評分尺 | 所有方案以 baseline profile 重算 utility，並檢查全方案安全 |
+| PB6-PB7 | 多 persona 對照 | 每個 persona 都保留 hard constraints，差異如實記錄 |
+| PB8-PB10 | 五條 preference sensitivity 軸 | 輸出 utility、課程集合 Jaccard、排序變化與評價覆蓋率 |
+| PB11 | compact sweep 與 `buildCounterfactuals()` | 同一載體與 production counterfactual 的主方案一致 |
+| PB12 | review-priority 與 cold-start 邊界 | review-priority 只改 evidence coverage；cold-start 的 P 與 B1 完全相同 |
+
+執行方式：
+
+```bash
+node --test server/test/personalizationMetrics.test.js server/test/personalizationBaseline.test.js
+npm run bench:personalization --prefix server
+npm run bench:personalization --prefix server -- --markdown
+```
+
+benchmark 是離線量測，不代表效果已在真實使用者上證明；結果中的方向與不變案例都必須照實回報。
+輸出也保留每個條件的 `categoryCoefficient`、`requestedVariants` 與 `distinctPlans`，先確認候選池與策略有可比較空間，再解讀偏好差異。

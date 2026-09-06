@@ -2,6 +2,11 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-06
+
+1. [Roadmap #36：personalization baseline 與 preference sensitivity A/B](./2026-09-06-roadmap-36-personalization-baseline-ab.md)
+2. [三組 demo persona 與歷史修課資料](./2026-09-06-demo-personas-and-course-history.md)
+
 ## 2026-09-05
 
 1. [Roadmap #5B：per-user 加權方向（同一評價分數對不同使用者相反符號）](./2026-09-05-roadmap-5b-per-user-preference-direction.md)
