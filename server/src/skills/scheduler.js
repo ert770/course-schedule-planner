@@ -2894,6 +2894,10 @@ export {
   // `requirementPreflight.test.js` 匯入這個函式比對兩者欄位是否一致，
   // 避免兩個澄清產生器日後各自漂移。
   buildClarification,
+  // roadmap #35：`scheduleValidator.js` 的每日上限複查要用同一套「多時段課程
+  // 算進它佔用的每一天」邏輯，不能自己重寫一份跟 `evaluateCoursePlacement()`
+  // 微妙不一致的版本。
+  getUsedDays,
 };
 
 export default { generateSchedule, checkConflict: timeConflict, validateSchedule };

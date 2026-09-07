@@ -103,30 +103,29 @@
 | 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | ⛔ **等待 #6 的真實樣本與 #36 完成**；#7、#31 已完成，synthetic persona 不作跨使用者效果證據 | #6（等待真實樣本）、#7、#31、#36；外部條件為足夠互動樣本 |
 | 33 | 建立互動資料隱私、匿名化、consent 與保存規則 | ✅ 已完成（2026-08-22） | #18、#29（均已完成） |
 | 34 | 建立 Agent 自然語言需求理解 eval | ✅ **已完成（2026-09-07）**——四條驗收標準全數達成。題庫 8→13 題單輪（加同名課、越權、無資料、學分矛盾、理解回講強度分流）＋2 題多輪；新增 `clarify`／`refuse`／`interpretation` 三種斷言與 tool schema hard guard；否定式斷言改成 N 次全過（修掉「重試三次過一次就算過」對「不該做什麼」的放水）；`npm run eval:golden-set` 產出含 pass@1／pass@3、model 與 prompt+tools hash 的回歸成績單。見下方 #34 段落與[變更報告](./2026-09-07-roadmap-34-agent-understanding-eval.md) | #24、#25（均已完成） |
-| 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成——**前置相依已全部完成，可繼續**。Z1–Z7 已提供最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 | #15、#21、#22（均已完成） |
+| 35 | 建立 feasibility、constraint violation 與 solver benchmark | ✅ **已完成（2026-09-07）**——四條驗收標準全數達成。跨科系／年級／班級題庫（7 case，涵蓋 feasible／infeasible／greedy-trap／timeout（有解／無解）／data-insufficient 五類）與 `bench:scheduler` 量化報告已交付；過程中發現並修好一個既有缺口：`DAILY_COURSE_CAP` 標 `enforced:true` 但從未被獨立 validator 檢查過。見下方 #35 段落與[變更報告](./2026-09-07-roadmap-35-scheduler-benchmark.md) | #15、#21、#22（均已完成） |
 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 **部分完成（2026-09-06）**——已交付固定 candidate set 的 B0/B1/P runner、同一把 production preference ruler、五軸 sensitivity sweep、persona/cold-start 重播與全方案 safety guard；synthetic fixture 的效果仍不能宣稱是真實學生效果，且正向改善尚未在所有 persona／軸上成立 | #5B、#7、#30、#31（均已完成）；正式效果仍需真實去識別互動樣本 |
 | 37 | 建立 explanation faithfulness 與 hallucination tests | ✅ 已完成（2026-09-06）——最終回答已接 evidence ledger、確定性 claim audit、單次受限修正與後端安全 fallback；固定語料 hallucination count 為 0，瀏覽器惡意 prompt 未輸出假事實或秘密值。見下方 #37 段落與[變更報告](./2026-09-06-roadmap-37-explanation-faithfulness.md)。**2026-09-07 Codex adversarial review 判定 needs-attention**：24 個既有測試都過，但直接對抗式重現找到三個實證缺口（同操作重試被誤判失敗、同名不同班次互相誤傷、不加引號可塞入捏造課程），已拆為 #41 修補，**三項全數完成（2026-09-07）** | #25、#26（均已完成） |
-| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #35、#36；#27、#28、#34、#37 已完成，不再是阻塞） | #33、#27、#28、#34、#37（均已完成）；#35、#36（仍未完成） |
+| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #36；#27、#28、#34、#35、#37 已完成，不再是阻塞） | #33、#27、#28、#34、#35、#37（均已完成）；#36（仍未完成） |
 | 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
 | 40 | 補齊個人化學習訊號缺口 | ⬜ 未開始——#36 已量出 compact 學不動、accept 不投票與 interest 弱訊號上限，尚未改動學習演算法 | #7、#29、#30、#31（均已完成）；需先定義新的可觀測訊號與隱私邊界 |
 | 41 | 修補 #37 回答忠實度閘門的三個實證缺口（Codex adversarial review） | ✅ **已完成（2026-09-07，兩段皆完成）**——第一段：tool retry terminal outcome，operationKey（工具＋參數雜湊）讓同一操作重試成功不再誤判失敗，不同操作的失敗也不會被另一個的成功蓋過（F16-F18）。第二段：課程指涉解析到 section 實體（同名不同班次逐 candidate 一致性，F19-F20）、捏造偵測改抽課名形狀片段（F21-F21b）、evidenceRole 讓被排除的課不能講成推薦（F23-F24b）；瀏覽器 A/B 對真實排課回合誘導捏造課程，audit 攔截並退回安全回答，畫面沒有出現任何捏造內容 | #37（已完成，發現缺口的對象） |
 
-## 現在可以動工的任務（2026-09-07 第二次盤點，依建議順序排列）
+## 現在可以動工的任務（2026-09-07 第三次盤點，依建議順序排列）
 
-`#34` 於 2026-09-07 完成（四條驗收標準全數達成），從這張清單移除。連帶影響：
-`#38`（學生使用者測試）的阻塞從「#34、#35、#36」縮到 **`#35`、`#36`** 兩項——
-這一列的相依欄已同步更新。`#41` 同日完成，但沒有任何任務把它列為相依，不改動
-排序。
+`#35` 於 2026-09-07 完成（四條驗收標準全數達成），從這張清單移除。連帶影響：
+`#38`（學生使用者測試）的阻塞從「#35、#36」縮到**只剩 `#36`**——這一列的相依欄
+已同步更新。`#35` 本身沒有任何下游任務把它列為相依（唯一連結它的是 `#38`，已
+更新），不影響其餘排序。
 
 以下依「解除下游相依的程度」與「是否還有非工程外部阻塞」排序，只列真正可以現在
 動工的項目——純被外部資料或人的決定卡住的項目，見本節最後的「仍然卡住」清單。
 
 | 順位 | # | 任務 | 為什麼排在這裡 |
 | ---: | ---: | --- | --- |
-| 1 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 前置（#5B、#7、#30、#31）全數完成；離線 B0/B1/P 與五軸 runner 已可重播。仍需真實去識別互動樣本，才能把 synthetic 結果提升為效果證據；完成後能連帶打開 #9、#32、#38，最終 Gate 仍要求證明「個人化優於非個人化 baseline」 |
-| 2 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 前置（#15、#21、#22）已完成，Z1–Z7 已有最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告。**與 #36 併為 #38 僅剩的兩個阻塞**，做完這兩項就能開始學生使用者測試 |
-| 3 | 40 | 補齊個人化學習訊號缺口 | #36 已量出具體缺口，#7、#29、#30、#31 均已完成；可先定義新訊號與離線驗收，正式 rollout 仍需隱私邊界決策 |
-| 4 | 39 | 架設正式網站與 Production rollout | `#33`（隱私基礎）已完成，工程上可以開始；排最後是因為第一步是「選哪個部署平台」這個人的決定，不是可以立刻動手的程式工作 |
+| 1 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 前置（#5B、#7、#30、#31）全數完成；離線 B0/B1/P 與五軸 runner 已可重播。仍需真實去識別互動樣本，才能把 synthetic 結果提升為效果證據；完成後能連帶打開 #9、#32、#38，且是 #38 現在唯一剩下的阻塞，最終 Gate 仍要求證明「個人化優於非個人化 baseline」 |
+| 2 | 40 | 補齊個人化學習訊號缺口 | #36 已量出具體缺口，#7、#29、#30、#31 均已完成；可先定義新訊號與離線驗收，正式 rollout 仍需隱私邊界決策 |
+| 3 | 39 | 架設正式網站與 Production rollout | `#33`（隱私基礎）已完成，工程上可以開始；排最後是因為第一步是「選哪個部署平台」這個人的決定，不是可以立刻動手的程式工作 |
 
 **仍然卡住的**，卡點只剩兩種：
 
@@ -136,8 +135,8 @@
   寫程式解決不了，只能等資料到位。
 - **卡上面尚未完成的任務**：`#9`（探索機制，仍等 #36 的真實效果證據）、
   `#32`（hybrid 比較，卡 #6、#36 與足夠跨使用者樣本）、`#38`（學生使用者測試，
-  阻塞已從三項縮到 `#35`、`#36` 兩項）。
-  `#34`／`#37`／`#41` 均已完成，不再是任何項目的阻塞；其餘項目要等各自列出的工程任務或外部資料完成。
+  現在只卡 `#36` 一項）。
+  `#34`／`#35`／`#37`／`#41` 均已完成，不再是任何項目的阻塞；其餘項目要等各自列出的工程任務或外部資料完成。
 
 ## 任務相依的閱讀方式
 
@@ -2210,8 +2209,7 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 
 ## #35 建立 feasibility、constraint violation 與 solver benchmark
 
-**狀態**：🟡 部分完成（2026-08-30 更新）——greedy 與 repair 的 golden fixtures 已建立；完整量化 benchmark、跨 scope 資料集與比較報告仍未完成。
-**2026-08-31 更新：#15、#21、#22 均已完成，前置相依已全部滿足，本任務可繼續**。
+**狀態**：✅ 已完成（2026-09-07）——四條驗收標準全數達成。見下方「2026-09-07 交付」
 
 **相依**：#15、#21、#22（均已完成）
 
@@ -2268,6 +2266,51 @@ Prompt 範例與少數人工對話不能證明 Agent 理解需求。需將自然
 Z1–Z7 固定最小 golden cases；因此「沒有 solver 比較對象」不再是缺口。#35 仍需擴充跨科系／年級／
 班級／學期／歷史狀態的資料集，建立 runner 並輸出 feasible-solution rate、hard violation count、
 soft utility、runtime 與 timeout rate 的正式報告。
+
+### 2026-09-07 交付
+
+見[變更報告](./2026-09-07-roadmap-35-scheduler-benchmark.md)。四條驗收標準逐條對照：
+
+1. **成功方案 hard violation count 為 0**——量測報告的 `hardViolationCases` 直接
+   量化這件事（只看 `feasible`／`greedy-trap` 類，理想上是空的）。**過程中發現並
+   修好一個既有缺口**：`DAILY_COURSE_CAP`（每日課程數上限）在
+   `constraintSchema.js` 標 `enforced: true`，但 `scheduleValidator.js` 從來沒有
+   對應檢查、也不在 `unchecked` 清單裡——一份違反每日上限的課表會被誤判為
+   `valid: true`。新增 `checkDailyCourseCap()`（重用 `scheduler.js` 的
+   `getUsedDays()`，不重寫一份日期分組邏輯），X17／X18 釘住修法本身，並用
+   手動組出的違規課表在修法前後各跑一次證明：修法前 `valid: true`（誤判）、
+   修法後 `valid: false`（正確攔下）。
+2. **Golden feasible cases 都能找到經 validator 通過的解**——`schedulerBenchmarkCases.json`
+   的 `feasible`／`cs-senior-retake-and-history` 兩個 feasible case 涵蓋明確指定
+   課程、正課/實習配對、無時間課程、週末課程、重補修（courseHistory 不及格必修
+   自動排入）與已修排除（courseHistory 已通過課程被排除，不能再選一次）。
+3. **Golden infeasible cases 回傳正確 conflict set，不把 timeout 當 infeasible**——
+   `ee-sophomore-required-conflict`（真無解，完整搜尋後回傳非空 `conflictSet`）
+   與兩個 `timeout` case（`cs-freshman-timeout-with-fallback` 有已驗證 fallback、
+   `math-junior-timeout-no-solution` 真的沒找到解）三者的 `solver.status` 分開
+   驗證，不混為一談。
+4. **Benchmark 可在固定環境重現並產出比較報告**——`npm run bench:scheduler`
+   寫入版控的 `server/test/reports/scheduler-benchmark-latest.json`，記錄
+   `sha256Hex({ constraints: CONSTRAINTS, solverDefaults })`（排課引擎的「行為
+   版本」）、題庫 hash、各類情境正確率、耗時分佈，下次可用 `git diff` 直接比較
+   退步。
+
+跨科系／年級／班級題庫（`server/test/fixtures/schedulerBenchmarkCases.json`，
+7 case）涵蓋資訊工程學系、電機工程學系、企業管理學系、應用數學系四個系所，
+規模從 1 門課（逼近 timeout 邊界情境）到 20 門課（接近真實選課規模）。量測邏輯
+（`server/src/skills/schedulerBenchmark.js`）與正確性斷言
+（`server/test/schedulerBenchmark.test.js`，SB 系列）共用同一份題庫；後者留在
+`npm test`（純本地運算，沒有 roadmap #34 那種 API 成本考量）。
+
+**規劃階段的實作陷阱（誠實記錄，供日後擴題參考）**：手寫題庫時三次踩到同一類
+問題——`course.department` 欄位實際語意是「這堂課屬於哪個班級」（例如
+`資訊三甲`），不是「開課系所全名」；用系所全名會讓 `resolveCourseEligibility()`
+判定成「非本系班級課程」，`eligibility` 全部落為 `unknown` 而被保守排除，
+做出一個看起來能跑、實際上大部分課程都被靜默排除的題庫。另外兩次是貪婪陷阱
+與逾時案例本身：多放幾門「逃生用」的替代課，會讓貪婪法或基準線直接繞過陷阱／
+逼近目標，測不到 repair／timeout-fallback 真正在驗證的東西——這兩類 case 都需要
+刻意收斂到「只有這條路能達標」的最小候選池，規模擴充指的是跨科系／年級的
+覆蓋面，不是每個 case 的候選池都要大。
 
 ---
 
@@ -2400,7 +2443,7 @@ LLM 能寫出流暢理由不代表理由正確。需要驗證每個課名、教�
 
 ## #38 進行學生使用者測試並整理量化結果
 
-**狀態**：⬜ 未開始（卡 #34、#35、#36；#27、#28、#37 已完成，不再是阻塞）
+**狀態**：⬜ 未開始（卡 #36；#27、#28、#34、#35、#37 已完成，不再是阻塞）
 
 **相依**：#33、#27、#28、#37（均已完成）；#34、#35、#36（仍未完成）
 

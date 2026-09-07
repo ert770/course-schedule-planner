@@ -1,0 +1,130 @@
+{
+  "generatedAt": "2026-09-07T10:44:14.030Z",
+  "fixture": "test\\fixtures\\schedulerBenchmarkCases.json",
+  "versions": {
+    "constraintsAndSolverDefaults": "c249dd9162a2171ef228223ff55e0a1f207b560ad33980f33dff3177c16c9772",
+    "fixture": "d95070124109c20b9c06fff615c100b4d79e92f9a523427264d07781be7fd784"
+  },
+  "totals": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "feasibleSolutionRate": 1,
+    "infeasibleCorrectRate": 1,
+    "timeoutRate": 0.2857142857142857,
+    "hardViolationCases": []
+  },
+  "runtime": {
+    "minMs": 0,
+    "maxMs": 1.0713000000000008,
+    "meanMs": 0.25314285714285695,
+    "p95Ms": 1.0713000000000008
+  },
+  "rows": [
+    {
+      "id": "cs-junior-realistic-load",
+      "category": "feasible",
+      "pass": true,
+      "note": null,
+      "solverStatus": "solved",
+      "hardViolationCount": 0,
+      "hardViolations": [],
+      "softUtility": null,
+      "runtimeMs": 0,
+      "nodesVisited": 0,
+      "repairAttempted": false,
+      "timedOut": false
+    },
+    {
+      "id": "ee-sophomore-required-conflict",
+      "category": "infeasible",
+      "pass": true,
+      "note": null,
+      "solverStatus": "infeasible",
+      "hardViolationCount": 1,
+      "hardViolations": [
+        "REQUIRED_COURSE_COVERAGE"
+      ],
+      "softUtility": null,
+      "runtimeMs": 1.0713000000000008,
+      "nodesVisited": 2,
+      "repairAttempted": true,
+      "timedOut": false
+    },
+    {
+      "id": "business-senior-greedy-trap",
+      "category": "greedy-trap",
+      "pass": true,
+      "note": null,
+      "solverStatus": "solved",
+      "hardViolationCount": 0,
+      "hardViolations": [],
+      "softUtility": null,
+      "runtimeMs": 0.39860000000000184,
+      "nodesVisited": 7,
+      "repairAttempted": true,
+      "timedOut": false,
+      "greedyTotalCredits": 3
+    },
+    {
+      "id": "cs-freshman-timeout-with-fallback",
+      "category": "timeout",
+      "pass": true,
+      "note": null,
+      "solverStatus": "timeout",
+      "hardViolationCount": 0,
+      "hardViolations": [],
+      "softUtility": null,
+      "runtimeMs": 0.0730000000000004,
+      "nodesVisited": 1,
+      "repairAttempted": true,
+      "timedOut": true
+    },
+    {
+      "id": "math-junior-timeout-no-solution",
+      "category": "timeout",
+      "pass": true,
+      "note": null,
+      "solverStatus": "timeout",
+      "hardViolationCount": 1,
+      "hardViolations": [
+        "REQUIRED_COURSE_COVERAGE"
+      ],
+      "softUtility": null,
+      "runtimeMs": 0.1325999999999965,
+      "nodesVisited": 2,
+      "repairAttempted": true,
+      "timedOut": true
+    },
+    {
+      "id": "transfer-student-data-insufficient",
+      "category": "data-insufficient",
+      "pass": true,
+      "note": null,
+      "solverStatus": "data-insufficient",
+      "hardViolationCount": 1,
+      "hardViolations": [
+        "REQUIRED_COURSE_COVERAGE"
+      ],
+      "softUtility": null,
+      "runtimeMs": 0.09649999999999892,
+      "nodesVisited": 2,
+      "repairAttempted": true,
+      "timedOut": false
+    },
+    {
+      "id": "cs-senior-retake-and-history",
+      "category": "feasible",
+      "pass": true,
+      "note": null,
+      "solverStatus": "solved",
+      "hardViolationCount": 0,
+      "hardViolations": [],
+      "softUtility": null,
+      "runtimeMs": 0,
+      "nodesVisited": 0,
+      "repairAttempted": false,
+      "timedOut": false
+    }
+  ]
+}

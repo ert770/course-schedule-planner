@@ -929,7 +929,61 @@ npm run eval:golden-set --prefix server -- --no-write  # 不寫檔
 3. 執行必要的 lint 或語法檢查。
 4. 確認 `.env` 與 `node_modules/` 沒有被加入 Git。
 5. 若修改排課邏輯，至少執行排課測試案例 S1-S10；若修改的是
-   `scheduler.js`／`scheduleValidator.js`／`constraintSchema.js`，一併執行 N1-N15 與 X1-X14。
+   `scheduler.js`／`scheduleValidator.js`／`constraintSchema.js`，一併執行 N1-N15 與 X1-X18。
+
+### Feasibility、constraint violation 與 solver benchmark（Roadmap #35）
+
+Z1-Z7（`server/test/scheduler.test.js`）用 2-3 門課的最小合成情境釘住每一種
+solver 行為（貪婪陷阱、真無解、逾時、資料不足），對「這個邏輯分支對不對」很
+有效，答不出「接近真實選課規模的候選池下，引擎多常真的找到解」。這組驗收是
+規模擴充，不是取代——用 `server/test/fixtures/schedulerBenchmarkCases.json`
+的跨科系／年級／班級題庫（十幾到二十幾門課的候選池），跑同一套五類判定邏輯。
+
+**修法本身**：`DAILY_COURSE_CAP`（每日課程數上限）在 `constraintSchema.js`
+標 `enforced: true`，但 `scheduleValidator.js` 原本沒有對應檢查、也不在
+`unchecked` 清單裡——一份違反每日上限的課表會被誤判為 `valid: true`。已新增
+`checkDailyCourseCap()`（重用 `scheduler.js` 的 `getUsedDays()`，與
+`evaluateCoursePlacement()` 同一套「多時段課程算進它佔用的每一天」邏輯），
+X17／X18 釘住這個修法。這是行為改變：任何呼叫 `validateScheduleAgainstConstraints()`
+的地方（`generateSchedule()` 自我檢查、`/validate` route）現在都會多抓到這一類
+違規，原本會被誤判合法的課表會被攔下來。
+
+`server/test/schedulerBenchmark.test.js`（SB 系列）跑題庫的五類正確性斷言，
+留在 `npm test`（純本地運算，不打模型、不連資料庫，沒有 roadmap #34 那種 API
+成本考量，跟其他排課測試一樣無條件執行）：
+
+| 情境類別 | 驗證內容 |
+| --- | --- |
+| `feasible` | `success === true` 且獨立 validator（`validateScheduleAgainstConstraints`）複驗零違規 |
+| `infeasible` | `success === false`、`solver.status === 'infeasible'`、`conflictSet` 非空 |
+| `greedy-trap` | 純 greedy 基準線確實較差，repair 後確實達標且零違規——兩者都驗證，只看其中一個會漏掉「repair 其實沒生效，只是這題本來就簡單」的偽陽性 |
+| `timeout`（有解／無解兩種子情況） | `solver.status === 'timeout'`，且依題庫標注區分是否有已驗證的 fallback 解——不把「還沒搜完」與「搜完了確定無解」混為一談 |
+| `data-insufficient` | `solver.status === 'data-insufficient'` |
+
+執行方式：
+
+```bash
+node --test server/test/scheduler.test.js server/test/schedulerBenchmark.test.js
+npm run bench:scheduler --prefix server
+npm run bench:scheduler --prefix server -- --markdown
+```
+
+`npm run bench:scheduler` 寫 `server/test/reports/scheduler-benchmark-latest.json`
+（進版控、只保留最新一份，比照 roadmap #34 的做法，用 `git diff` 看退步）。
+記錄欄位：
+
+| 欄位 | 為什麼是這個 |
+| --- | --- |
+| `versions.constraintsAndSolverDefaults` | `sha256Hex({ constraints: CONSTRAINTS, solverDefaults: {...} })`——排課引擎真正的「行為版本」是它遵守的限制規則與 solver 預設值，不是原始碼逐行 diff |
+| `versions.fixture` | 題庫 hash，沒有它分不清「引擎變壞」與「題目變難」 |
+| `totals.feasibleSolutionRate`／`infeasibleCorrectRate`／`timeoutRate` | 各類情境的正確率，跨執行可比較 |
+| `totals.hardViolationCases` | 只看 `feasible`／`greedy-trap` 類——這是驗收標準一「成功方案 hard violation count 為 0」真正在講的東西；`infeasible`／`data-insufficient` 類本來就會觸發違規，混進來只是雜訊 |
+| `runtime.p95Ms` | 耗時分佈，受執行機器影響，只能同一台機器跨執行比較 |
+
+**誠實記錄範圍**：題庫仍是手寫的合成資料，不是真實選課紀錄的抽樣，涵蓋的是
+「已知會出錯的組合」，不保證涵蓋所有真實情境的分佈；`softUtility`
+（`preferenceScore`）沒有客觀「多少算好」的標準，只能跨執行比較同一批 case
+的相對變化。
 
 ### 個人化 baseline 與 preference sensitivity A/B（Roadmap #36）
 

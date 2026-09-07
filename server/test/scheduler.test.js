@@ -1716,6 +1716,45 @@ describe('X1-X16 Roadmap #21（X15-X16 為 #24 的強度區分）：hard/soft co
     assert.ok(check.unchecked.includes('COREQUISITE'));
   });
 
+  // roadmap #35：`DAILY_COURSE_CAP` 在 constraintSchema.js 標 `enforced: true`，
+  // 但這裡原本完全沒有對應檢查，也不在 unchecked 清單裡——一份違反每日上限的
+  // 課表會被誤判為 valid: true。這條測試釘住修法本身。
+  test('X17 DAILY_COURSE_CAP：同一天超過每日上限會被攔下，且不落入 unchecked', () => {
+    const a = makeCourse(1, { dayOfWeek: 3, startPeriod: 1, endPeriod: 2 });
+    const b = makeCourse(2, { dayOfWeek: 3, startPeriod: 3, endPeriod: 4 });
+    const c = makeCourse(3, { dayOfWeek: 3, startPeriod: 5, endPeriod: 6 });
+
+    const overLimit = validateScheduleAgainstConstraints([a, b, c], { maxCoursesPerDay: 2 });
+    assert.equal(overLimit.valid, false);
+    assert.ok(overLimit.violations.some(v => v.constraintId === 'DAILY_COURSE_CAP'));
+    assert.ok(!overLimit.unchecked.includes('DAILY_COURSE_CAP'));
+
+    const withinLimit = validateScheduleAgainstConstraints([a, b, c], { maxCoursesPerDay: 3 });
+    assert.ok(!withinLimit.violations.some(v => v.constraintId === 'DAILY_COURSE_CAP'));
+
+    // 沒設 maxCoursesPerDay 時比照 buildPlan() 的 `?? Infinity` 語意，不檢查。
+    const noLimit = validateScheduleAgainstConstraints([a, b, c], {});
+    assert.ok(!noLimit.violations.some(v => v.constraintId === 'DAILY_COURSE_CAP'));
+  });
+
+  test('X18 DAILY_COURSE_CAP：多時段課程算進它佔用的每一天', () => {
+    const single = makeCourse(1, { dayOfWeek: 1, startPeriod: 1, endPeriod: 2 });
+    const spansTwoDays = makeMultiBlockCourse(2, [
+      { dayOfWeek: 1, startPeriod: 3, endPeriod: 4 },
+      { dayOfWeek: 2, startPeriod: 1, endPeriod: 2 },
+    ]);
+    const anotherOnDayTwo = makeCourse(3, { dayOfWeek: 2, startPeriod: 3, endPeriod: 4 });
+
+    // 星期一：single + spansTwoDays 的第一段 = 2 門；星期二：spansTwoDays 的
+    // 第二段 + anotherOnDayTwo = 2 門。上限設 1 時兩天都該被攔下。
+    const check = validateScheduleAgainstConstraints(
+      [single, spansTwoDays, anotherOnDayTwo],
+      { maxCoursesPerDay: 1 }
+    );
+    const dailyCapViolations = check.violations.filter(v => v.constraintId === 'DAILY_COURSE_CAP');
+    assert.equal(dailyCapViolations.length, 2);
+  });
+
   test('X9 舊版 validateSchedule() 回傳形狀維持不變（回歸釘住）', () => {
     const result = validateSchedule([makeCourse(1)]);
     assert.deepEqual(Object.keys(result).sort(), [
