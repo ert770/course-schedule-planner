@@ -33,6 +33,9 @@ import { ACTIVE_TERM } from '../data/activeTerm.js';
 import {
   getConfirmationChangeType, isRenderableTool, listConfirmationChangeTypes,
 } from './agentToolRegistry.js';
+import {
+  createEvidenceLedger, recordToolEvidence, enforceFaithfulReply,
+} from './explanationFaithfulness.js';
 
 let ai = null;
 
@@ -625,6 +628,9 @@ export async function handleChat(identity, message) {
   let responseData = null;
   let detectedIntent = 'general_chat';
   let finalReply = '';
+  // #37：只記錄本回合模型實際看過的 tool result。最後回答若引用不到這份帳本，
+  // 會先修正一次，再退回後端產生的保守回答。
+  const evidenceLedger = createEvidenceLedger();
 
   // 耗盡步數時，模型沿途寫出來的內容不該被丟掉換成罐頭訊息。
   let lastAssistantText = '';
@@ -678,7 +684,14 @@ export async function handleChat(identity, message) {
         // `summarizeScheduleForModel()`：完整結果有 800KB+，會撐爆 context），
         // 再包上統一信封（見 `buildToolResultEnvelope()`）。
         const modelResult = call.name === 'run_csp_scheduler' ? summarizeScheduleForModel(result) : result;
-        const outputStr = JSON.stringify(buildToolResultEnvelope(call.name, modelResult));
+        const toolEnvelope = buildToolResultEnvelope(call.name, modelResult);
+        recordToolEvidence(evidenceLedger, {
+          toolName: call.name,
+          callId: call.call_id,
+          result: modelResult,
+          dataSource: toolEnvelope.dataSource,
+        });
+        const outputStr = JSON.stringify(toolEnvelope);
         logger.info('工具執行完成', { label: 'ToolCall_Result', outputLength: outputStr.length });
 
         // 工具「被呼叫了」不等於「成功了」——驗證失敗時只是回一個 { error } 給模型，
@@ -700,6 +713,35 @@ export async function handleChat(identity, message) {
       finalReply = lastAssistantText
         || '任務過於複雜，已達最大思考步數。請嘗試簡化您的需求。';
     }
+
+    const faithful = await enforceFaithfulReply({
+      reply: finalReply,
+      ledger: evidenceLedger,
+      userMessage: message,
+      repair: async ({ reply, violations, ledger }) => {
+        const repairResponse = await client.responses.create({
+          model: getModel(),
+          instructions: [
+            '你是課程規劃回答的事實修正器。只能使用提供的證據帳本修正原回答。',
+            '不得新增帳本以外的課程、教師、學分、時間、評價、資格、畢業規則或操作結果。',
+            '沒有評價時明確說沒有評價；資格或認列不確定時明確保留；工具失敗不得說成功。',
+            '只輸出修正後要給使用者看的繁體中文，不要輸出分析、JSON 或證據帳本。',
+          ].join('\n'),
+          input: [{
+            role: 'user',
+            content: JSON.stringify({ originalReply: reply, violations, evidenceLedger: ledger }),
+          }],
+        });
+        return repairResponse.output_text || '';
+      },
+    });
+    if (!faithful.audit.passed || faithful.repaired || faithful.fallback) {
+      logger.warn(
+        `回答忠實度檢查：violations=${faithful.initialAudit.hallucinationCount}, repaired=${faithful.repaired}, fallback=${faithful.fallback}`,
+        { label: 'AgentFaithfulness' }
+      );
+    }
+    finalReply = faithful.reply;
 
     // 只有整次處理成功才原子保存 user/assistant 一對加密訊息。
     await saveChatExchange(identity, message, finalReply);

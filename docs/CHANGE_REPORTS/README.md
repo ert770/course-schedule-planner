@@ -4,8 +4,9 @@
 
 ## 2026-09-06
 
-1. [Roadmap #36：personalization baseline 與 preference sensitivity A/B](./2026-09-06-roadmap-36-personalization-baseline-ab.md)
-2. [三組 demo persona 與歷史修課資料](./2026-09-06-demo-personas-and-course-history.md)
+1. [Roadmap #37：explanation faithfulness 與 hallucination tests](./2026-09-06-roadmap-37-explanation-faithfulness.md)
+2. [Roadmap #36：personalization baseline 與 preference sensitivity A/B](./2026-09-06-roadmap-36-personalization-baseline-ab.md)
+3. [三組 demo persona 與歷史修課資料](./2026-09-06-demo-personas-and-course-history.md)
 
 ## 2026-09-05
 

@@ -493,6 +493,37 @@ Z5）——這兩者是「這門課一定要在課表裡」的硬性宣告，答
 模型回傳一則沒有 `function_call` 的訊息即為最終回答，內容就是要顯示給使用者的文字。
 不需要（也不應該）再包一層 `final_answer` 工具。
 
+## 最終回答的 evidence audit（Roadmap #37）
+
+沒有 `function_call` 只代表模型想結束本回合，不代表文字已經通過事實檢查。
+`agentService` 會把本回合每次工具呼叫的投影結果交給
+`explanationFaithfulness.js` 建立 evidence ledger，再於 `saveChatExchange()` 前驗證
+`finalReply`。因此不合格內容不會進入聊天歷史，也不會回到前端。
+
+ledger 只保存模型本回合已經看過的資料：工具名稱、call id、成功／失敗／等待確認狀態、
+solver 狀態，以及課程、評價與 `recommendationReason` 欄位。這避免 audit 事後查入模型
+從未看過的新資料，錯把模型的猜測判成有來源。
+
+目前的確定性檢查代號如下：
+
+| 代號 | 攔截內容 |
+| --- | --- |
+| `UNSUPPORTED_COURSE` | 回答新增工具結果不存在的引號課名 |
+| `COURSE_CREDITS_MISMATCH`／`COURSE_TEACHER_MISMATCH`／`COURSE_TIME_MISMATCH` | 課程基本事實不一致 |
+| `REVIEW_WITHOUT_EVIDENCE`／`PROXY_PRESENTED_AS_REVIEW` | 無評價仍下結論，或把 proxy 說成學生評價 |
+| `ELIGIBILITY_OVERCLAIM`／`GRADUATION_OVERCLAIM`／`GRADUATION_RULE_WITHOUT_EVIDENCE` | 資格與畢業認列過度肯定 |
+| `PREFERENCE_OVERCLAIM`／`RECOMMENDATION_REASON_REVERSED`／`MISSING_RECOMMENDATION_REASON` | 偏好或主要推薦原因與 reason object 不一致 |
+| `TOOL_FAILURE_PRESENTED_AS_SUCCESS`／`TOOL_FAILURE_NOT_DISCLOSED` | tool error、pending 或 solver 未完成卻宣稱成功，或完全隱藏未完成狀態 |
+| `MISSING_REVIEW_UNCERTAINTY` | 使用者問評價、資料為空，回答沒有明講不知道 |
+| `SENSITIVE_SYSTEM_DISCLOSURE` | 回答包含環境秘密或 API key 形式的值 |
+
+第一次驗證失敗時，另呼叫一次模型做受限修正，只提供原回答、違規清單與 ledger，且不提供
+任何工具。修正版會再經同一個 validator；仍失敗或修正呼叫本身失敗時，改由後端固定邏輯
+輸出安全回答。這條修正路徑不能更新 `intent`、`data`、profile 或 interaction event。
+
+前端信封仍是 `{ reply, intent, data }`，audit 結果只寫入不含使用者內容的伺服器紀錄；
+不把 ledger、原始 tool result、system prompt 或環境變數暴露給前端。
+
 ## 伺服器補進 prompt 的推薦上下文
 
 `saveChatExchange()` 只保存使用者訊息與最終文字回覆，**工具結果不會被保存**。

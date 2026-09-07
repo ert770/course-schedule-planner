@@ -105,8 +105,8 @@
 | 34 | 建立 Agent 自然語言需求理解 eval | 🟡 部分完成（2026-08-31）——**前置相依已全部完成，可繼續**。8 題中文 golden set 已進 `npm test` 每次執行；多輪修正、課名同名、越權要求與大規模標註資料集尚未涵蓋 | #24、#25（均已完成） |
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成——**前置相依已全部完成，可繼續**。Z1–Z7 已提供最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 | #15、#21、#22（均已完成） |
 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 **部分完成（2026-09-06）**——已交付固定 candidate set 的 B0/B1/P runner、同一把 production preference ruler、五軸 sensitivity sweep、persona/cold-start 重播與全方案 safety guard；synthetic fixture 的效果仍不能宣稱是真實學生效果，且正向改善尚未在所有 persona／軸上成立 | #5B、#7、#30、#31（均已完成）；正式效果仍需真實去識別互動樣本 |
-| 37 | 建立 explanation faithfulness 與 hallucination tests | ⬜ **未開始，前置已全部完成（2026-08-31）**——#26 的 reason 物件正是「把每個句子對應回 Profile／DB／review／rule」所需要的結構，`dataSources` 與 `confidence` 可直接當比對基準 | #25、#26（均已完成） |
-| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #36、#37；#27、#28 已完成，不再是阻塞） | #33、#27、#28（均已完成）；#34、#35（前置皆已解除）；#36、#37（仍有上游未完成） |
+| 37 | 建立 explanation faithfulness 與 hallucination tests | ✅ **已完成（2026-09-06）**——最終回答已接 evidence ledger、確定性 claim audit、單次受限修正與後端安全 fallback；固定語料 hallucination count 為 0，瀏覽器惡意 prompt 未輸出假事實或秘密值。見下方 #37 段落與[變更報告](./2026-09-06-roadmap-37-explanation-faithfulness.md) | #25、#26（均已完成） |
+| 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #34、#35、#36；#27、#28、#37 已完成，不再是阻塞） | #33、#27、#28、#37（均已完成）；#34、#35、#36（仍未完成） |
 | 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
 | 40 | 補齊個人化學習訊號缺口 | ⬜ 未開始——#36 已量出 compact 學不動、accept 不投票與 interest 弱訊號上限，尚未改動學習演算法 | #7、#29、#30、#31（均已完成）；需先定義新的可觀測訊號與隱私邊界 |
 
@@ -120,11 +120,10 @@
 | 順位 | # | 任務 | 為什麼排在這裡 |
 | ---: | ---: | --- | --- |
 | 1 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 前置（#5B、#7、#30、#31）全數完成；離線 B0/B1/P 與五軸 runner 已可重播。仍需真實去識別互動樣本，才能把 synthetic 結果提升為效果證據；完成後能連帶打開 #9、#32、#38，最終 Gate 仍要求證明「個人化優於非個人化 baseline」 |
-| 2 | 37 | 建立 explanation faithfulness 與 hallucination tests | 前置（#25、#26）自 2026-08-31 起就已就緒，範圍獨立、不牽動其他任務。`#26` 的 reason 物件本身就是「把每個句子對應回 Profile／DB／review／rule」所需要的結構，`dataSources` 與 `confidence` 可直接當比對基準，動工阻力最小 |
-| 3 | 34 | 建立 Agent 自然語言需求理解 eval | 前置（#24、#25）已完成，8 題中文 golden set 已進 `npm test` 每次執行；缺多輪修正、課名同名、越權要求等類別與大規模標註資料集，屬於持續擴充型工作 |
-| 4 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 前置（#15、#21、#22）已完成，Z1–Z7 已有最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 |
-| 5 | 40 | 補齊個人化學習訊號缺口 | #36 已量出具體缺口，#7、#29、#30、#31 均已完成；可先定義新訊號與離線驗收，正式 rollout 仍需隱私邊界決策 |
-| 6 | 39 | 架設正式網站與 Production rollout | `#33`（隱私基礎）已完成，工程上可以開始；排最後是因為第一步是「選哪個部署平台」這個人的決定，不是可以立刻動手的程式工作 |
+| 2 | 34 | 建立 Agent 自然語言需求理解 eval | 前置（#24、#25）已完成，8 題中文 golden set 已進 `npm test` 每次執行；缺多輪修正、課名同名、越權要求等類別與大規模標註資料集，屬於持續擴充型工作 |
+| 3 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 前置（#15、#21、#22）已完成，Z1–Z7 已有最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 |
+| 4 | 40 | 補齊個人化學習訊號缺口 | #36 已量出具體缺口，#7、#29、#30、#31 均已完成；可先定義新訊號與離線驗收，正式 rollout 仍需隱私邊界決策 |
+| 5 | 39 | 架設正式網站與 Production rollout | `#33`（隱私基礎）已完成，工程上可以開始；排最後是因為第一步是「選哪個部署平台」這個人的決定，不是可以立刻動手的程式工作 |
 
 **仍然卡住的**，卡點只剩兩種：
 
@@ -133,8 +132,8 @@
   `#8`（`Courses.prerequisites` 目前 3,086/3,086 全為 NULL）。
   寫程式解決不了，只能等資料到位。
 - **卡上面尚未完成的任務**：`#9`（探索機制，仍等 #36 的真實效果證據）、
-  `#32`（hybrid 比較，卡 #6、#36 與足夠跨使用者樣本）、`#38`（學生使用者測試，卡 #36、#37）。
-  這三項一旦 #36／#37 真正完成，會自動改列「可動工」，不需要再等其他外部條件。
+  `#32`（hybrid 比較，卡 #6、#36 與足夠跨使用者樣本）、`#38`（學生使用者測試，卡 #34、#35、#36）。
+  #37 已完成並解除對 #38 的阻塞；其餘項目要等各自列出的工程任務或外部資料完成。
 
 ## 任務相依的閱讀方式
 
@@ -2321,10 +2320,8 @@ synthetic fixture 仍不能替代真實去識別互動樣本，且正向改善�
 
 ## #37 建立 explanation faithfulness 與 hallucination tests
 
-**狀態**：⬜ **未開始，前置已全部完成（2026-08-31）**——#26 的 reason 物件正是
-「把每個句子對應回 Profile／DB／review／rule」需要的結構：`dataSources` 說明查過
-哪些來源、`confidence` 說明證據夠不夠、`matchedPreferences` 為空即代表沒有命中。
-這三者可直接當作忠實度比對的基準。
+**狀態**：✅ **已完成（2026-09-06）**——最終回答已在保存與回傳前對照本回合
+evidence ledger；違規回答只允許一次受限修正，仍不合格時改用後端安全回答。
 
 **相依**：#25、#26（均已完成）
 
@@ -2348,13 +2345,28 @@ LLM 能寫出流暢理由不代表理由正確。需要驗證每個課名、教�
 - Tool 失敗時不宣稱已完成排課或更新偏好。
 - 每個推薦理由都能定位到 evidence source，無來源句子被測試攔截。
 
+**2026-09-06 交付**
+
+- `explanationFaithfulness.js` 從模型實際看過的 tool result 建立 ledger，保存工具／solver
+  狀態、課程事實、評價證據與 `recommendationReason`，不在事後另查新資料替模型背書。
+- 最終回答會檢查未知課程、教師／學分／時間不一致、無評價或 proxy 冒充評價、資格與
+  畢業認列過度肯定、偏好／理由反向、工具失敗被隱藏及秘密字串；違規內容不會寫入聊天歷史。
+- 修正流程最多再呼叫模型一次且不提供工具；若修正版仍不合格或修正失敗，後端直接依 ledger
+  輸出課程事實、資料缺口與可確認的主要推薦原因。
+- 固定測試覆蓋 19 個情境（含 Markdown 表格事實核對），`prompt.test.js` 另固定 prompt 邊界；完整 `npm run verify`
+  與所有後端 JavaScript 語法檢查通過。
+- 瀏覽器 A/B 使用隔離的 `BROWSER01` fixture：正常排課回答直接通過，顯示 8 門、23 學分及
+  第一門課的可追溯理由；惡意要求假教師、9 學分、假評價與秘密值時，server audit 攔截 1 個
+  違規並修正，畫面沒有輸出指定假資料或秘密值。A/B 過程沒有新增 console 錯誤。
+- 詳細檔案與驗證紀錄見[變更報告](./2026-09-06-roadmap-37-explanation-faithfulness.md)。
+
 ---
 
 ## #38 進行學生使用者測試並整理量化結果
 
-**狀態**：⬜ 未開始（卡 #36、#37；#27、#28 已於 2026-09-03 完成，不再是阻塞）
+**狀態**：⬜ 未開始（卡 #34、#35、#36；#27、#28、#37 已完成，不再是阻塞）
 
-**相依**：#33、#27、#28（均已完成）；#34、#35（前置皆已解除，可繼續）；#36、#37（仍有上游未完成）
+**相依**：#33、#27、#28、#37（均已完成）；#34、#35、#36（仍未完成）
 
 **開始前必須具備**：Demo 身分與資料隔離、隱私 consent、穩定 UI、多方案解釋、Agent／solver／個人化／hallucination 自動 eval 均已通過；先完成研究問題、招募條件與問卷／訪談設計。
 

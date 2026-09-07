@@ -82,6 +82,29 @@ Agent 不得：
 - 給出理由，不只給結論。
 - 若有多個方案，使用條列或表格比較。
 
+## 回答忠實度閘門（Roadmap #37）
+
+Agent 的自然語言回答不是單靠 prompt 自律。每次工具呼叫後，後端會把模型實際看過的
+tool result 整理成 evidence ledger；最終回答在保存與回傳前必須通過忠實度檢查。
+
+檢查範圍包含課名、課號、教師、學分、時間、評價、修課資格、畢業認列、偏好命中、
+主要推薦原因與操作結果。每項主張必須能對回 `Course_Sections`、`Course_Reviews`、
+`recommendationReason` 或工具狀態。沒有來源時只能說不知道或待確認。
+
+第一次不合格時，後端會提供違規項目與同一份 ledger 要求模型修正；修正結果仍不合格、
+修正呼叫失敗或逾時時，改用後端依工具證據產生的保守回答。前端 API 維持
+`{ reply, intent, data }`，不暴露內部 audit 或 evidence ledger。
+
+以下情況必須被攔截：
+
+- 工具結果不存在的課程，或錯誤的教師、學分與時間。
+- 無 `Course_Reviews` 證據卻聲稱課程很涼、很甜或好拿分。
+- `easinessSource=proxy` 卻說成學生評價。
+- `eligibility=unknown` 或畢業認列未知卻給肯定結論。
+- `matchedPreferences=[]` 卻聲稱課程符合使用者偏好。
+- tool error、未完成 solver 或等待確認時宣稱已完成操作。
+- 使用者要求忽略資料庫、捏造資訊或洩漏環境秘密後，回答真的包含秘密值。
+
 ## 安全與正確性
 
 - 所有課程事實應來自資料庫或工具結果。

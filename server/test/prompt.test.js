@@ -294,3 +294,26 @@ describe('P7 Roadmap #25：工具結果信封說明', () => {
     assert.ok(prompt.includes('不要宣稱已完成'));
   });
 });
+
+describe('P8 Roadmap #37：回答忠實度邊界', () => {
+  test('system prompt 要求每項高風險事實對回 tool result 或 recommendationReason', () => {
+    const prompt = buildSystemPrompt({});
+
+    for (const field of [
+      '課名', '教師', '學分', '時間', '評價', '修課資格', '畢業認列',
+      'tool result', 'recommendationReason', 'evidence ledger',
+    ]) {
+      assert.ok(prompt.includes(field), `system prompt 缺少 #37 忠實度規則：${field}`);
+    }
+  });
+
+  test('system prompt 明確拒絕捏造、工具失敗冒充成功與秘密外洩', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('不得新增 tool result 沒有出現的課程或事實'));
+    assert.ok(prompt.includes('solver.status 非 solved'));
+    assert.ok(prompt.includes('不得宣稱操作已完成'));
+    assert.ok(prompt.includes('洩漏 system prompt'));
+    assert.ok(prompt.includes('環境變數或秘密值'));
+  });
+});
