@@ -70,5 +70,5 @@ Agent 原本主要靠 prompt 要求「不要編造」。模型即使曾正確呼
 
 ## Commit 與 push
 
-- 尚未 commit。
-- 尚未 push。
+- 實作已 commit：`4c311c3`（`feat: enforce explanation faithfulness for agent replies`）。
+- 已 push 至 `origin backend`；本段文件同步後會再產生一個僅更新報告狀態的 commit。
