@@ -25,18 +25,24 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
 
-import { buildSystemPrompt, getAgentTools } from '../src/services/promptService.js';
-import { checkExpectation, summarizeGoldenSet } from '../src/services/goldenSetAssertions.js';
+import { INTERPRETATION_TOPICS } from '../src/services/promptService.js';
+import { summarizeGoldenSet, validateGoldenSetFixture } from '../src/services/goldenSetAssertions.js';
+// 呼叫模型與串接多輪的邏輯抽在 runner，與離線 eval（`npm run eval:golden-set`）
+// 共用同一份——兩邊各寫一份 `askModel` 遲早會漂移。
+import { askModel, runCase, MAX_ATTEMPTS } from '../src/services/goldenSetRunner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, 'fixtures', 'agentGoldenSet.json'), 'utf8')
 );
 
-const MAX_ATTEMPTS = 3;
-const CALL_TIMEOUT_MS = 90_000;
 // 每題最差 3 次呼叫、題目並行，留足夠餘裕給最慢的那一題。
-const SUITE_TIMEOUT_MS = 5 * 60_000;
+//
+// **從 5 分鐘拉到 15 分鐘（roadmap #34）**：題目從 8 題擴到 12 題，且其中 4 題是
+// 否定式（一定會跑滿 3 次，不能第一次過就收工）。原本的 5 分鐘在最差情境下
+// （3 次重試 × 90 秒逾時 = 270 秒，再加重跑一致性那題）本來就已經不夠，只是
+// 平時單次 30-60 秒所以沒炸。
+const SUITE_TIMEOUT_MS = 15 * 60_000;
 
 // **本機一律執行；CI 一律不執行。** 這兩件事都是明確的決定，不是巧合。
 //
@@ -65,59 +71,8 @@ if (SKIP_REASON) {
   );
 }
 
-// 用一份「什麼都沒設定」的 profile，讓題目本身成為唯一的輸入來源。
-// 若用 demo 帳號的真實偏好，模型可能從 prompt 的偏好摘要抄答案，
-// 題目就測不到「它有沒有讀懂這句話」。
-const EMPTY_PREFS = {};
-
 let client;
 let results;
-
-async function askModel(utterance) {
-  const response = await client.responses.create({
-    model: process.env.OPENAI_MODEL || 'gpt-5.6-luna',
-    instructions: buildSystemPrompt(EMPTY_PREFS),
-    input: [{ role: 'user', content: utterance }],
-    tools: getAgentTools(),
-    tool_choice: 'auto',
-  }, { timeout: CALL_TIMEOUT_MS });
-
-  const call = (response.output || []).find(item => item.type === 'function_call');
-  if (!call) return null;
-
-  let args = {};
-  try {
-    args = JSON.parse(call.arguments || '{}');
-  } catch {
-    args = {};
-  }
-  return { name: call.name, args };
-}
-
-async function runCase(testCase) {
-  let lastFailures = ['模型沒有呼叫任何工具'];
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    let call = null;
-    try {
-      call = await askModel(testCase.utterance);
-    } catch (err) {
-      lastFailures = [`呼叫模型失敗：${err.message}`];
-      continue;
-    }
-
-    const { pass, failures } = checkExpectation(call, testCase.expect);
-    if (pass) return { utterance: testCase.utterance, pass: true, attempts: attempt, failures: [] };
-    lastFailures = failures;
-  }
-
-  return {
-    utterance: testCase.utterance,
-    pass: false,
-    attempts: MAX_ATTEMPTS,
-    failures: lastFailures,
-  };
-}
 
 describe('GS 自然語言 golden set（會實際呼叫模型）', {
   timeout: SUITE_TIMEOUT_MS,
@@ -133,7 +88,7 @@ describe('GS 自然語言 golden set（會實際呼叫模型）', {
     client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 });
 
     // 所有題目並行；總時間約等於最慢的一題。
-    results = await Promise.all(fixture.cases.map(runCase));
+    results = await Promise.all(fixture.cases.map(testCase => runCase(client, testCase)));
   });
 
   for (const [index, testCase] of fixture.cases.entries()) {
@@ -145,6 +100,13 @@ describe('GS 自然語言 golden set（會實際呼叫模型）', {
       );
     });
   }
+
+  // 題庫本身也要驗（roadmap #34）。斷言打錯字（`clarifiy`）會讓那題**永遠靜默
+  // 通過**——空的 expect 一定回傳 pass。與其相信大家不會打錯，不如讓它當場失敗。
+  test('題庫本身合法：斷言名稱與 interpretation 代號都認得', () => {
+    const problems = validateGoldenSetFixture(fixture.cases, Object.keys(INTERPRETATION_TOPICS));
+    assert.deepEqual(problems, [], `題庫有問題：\n  ${problems.join('\n  ')}`);
+  });
 
   // Roadmap #24 驗收標準四的前半句：「同一句需求重跑能得到相同結構化結果」。
   //
@@ -160,7 +122,17 @@ describe('GS 自然語言 golden set（會實際呼叫模型）', {
     // 兩者間搖擺是合理的，不是不穩定。同句重跑的一致性只對明確的需求成立，
     // 這是句子的性質，不是系統的缺陷。
     const utterance = '幫我排一份課表，我絕對不要早八。';
-    const runs = await Promise.all([1, 2, 3].map(() => askModel(utterance)));
+    const runs = await Promise.all([1, 2, 3].map(() => askModel(client, utterance)));
+
+    // **先確認三次都真的有呼叫工具**（roadmap #34 修掉的既有缺陷）。原本只比對
+    // 序列化結果是否相同，於是「三次都沒有呼叫任何工具」也會序列化成同一個值
+    // 而綠燈通過——這題是驗收標準四前半句的唯一證據，卻可以在系統完全壞掉時
+    // 宣稱一致。
+    const missing = runs.filter(run => !run.name).length;
+    assert.equal(
+      missing, 0,
+      `${missing}/3 次沒有呼叫任何工具，「結果一致」在這種情況下不構成證據。`
+    );
 
     const serialized = runs.map(call => JSON.stringify({
       tool: call?.name,
@@ -176,12 +148,15 @@ describe('GS 自然語言 golden set（會實際呼叫模型）', {
 
   test('整體通過率', () => {
     const summary = summarizeGoldenSet(results);
+    // pass@1 與 pass@3 都印：pass@3 幾乎永遠 100%（重試三次總有一次過），
+    // 真正會隨 prompt／模型變動的是 pass@1。只看 pass@3 等於看不到退步。
     console.log(
       `\n  golden set：${summary.passed}/${summary.total} 通過`
-      + `（${Math.round(summary.passRate * 100)}%）`
+      + `（pass@${MAX_ATTEMPTS} ${Math.round(summary.passRate * 100)}%、`
+      + `pass@1 ${Math.round(summary.firstTryPassRate * 100)}%）`
     );
     for (const item of summary.failures) {
-      console.log(`    ✗ ${item.utterance} → ${item.failures.join('；')}`);
+      console.log(`    ✗ ${item.id} → ${item.failures.join('；')}`);
     }
     assert.equal(summary.failed, 0, `${summary.failed} 題未通過`);
   });

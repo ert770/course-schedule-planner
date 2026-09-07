@@ -11,6 +11,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildSystemPrompt, getAgentTools } from '../src/services/promptService.js';
+import { collectSchemaKeywords, SUPPORTED_SCHEMA_KEYWORDS } from '../src/services/toolSchemaValidator.js';
 
 // 與 server/src/services/constraintService.js 接受的欄位保持一致。
 // 新增參數時必須同時更新 promptService 與這份清單，否則本測試會失敗。
@@ -315,5 +316,19 @@ describe('P8 Roadmap #37：回答忠實度邊界', () => {
     assert.ok(prompt.includes('不得宣稱操作已完成'));
     assert.ok(prompt.includes('洩漏 system prompt'));
     assert.ok(prompt.includes('環境變數或秘密值'));
+  });
+});
+
+describe('P9 Roadmap #34：tool schema 驗證器的 drift guard', () => {
+  test('getAgentTools() 用到的每個 schema 關鍵字，驗證器都支援', () => {
+    // 沒有這條，哪天有人在 schema 裡加了 `minimum` 之類，驗證器會**靜默忽略**
+    // 它——看起來一切正常，實際上那個約束從來沒被檢查過。讓測試先紅。
+    const used = [...collectSchemaKeywords(getAgentTools().map(tool => tool.parameters))];
+    const unsupported = used.filter(keyword => !SUPPORTED_SCHEMA_KEYWORDS.includes(keyword));
+    assert.deepEqual(
+      unsupported, [],
+      `schema 用到驗證器不支援的關鍵字：${unsupported.join('、')}。`
+        + '請在 toolSchemaValidator.js 補上處理，或確認忽略它是刻意的決定。'
+    );
   });
 });

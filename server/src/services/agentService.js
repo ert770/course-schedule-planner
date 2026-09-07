@@ -95,7 +95,12 @@ export function applyToolOutcome(envelope, toolName, result) {
 
 // 模型送來的參數字串不保證是合法 JSON。壞掉時回 null，讓呼叫端把錯誤當成
 // tool result 餵回去讓模型自己修，而不是讓整個請求爆掉。
-function parseToolArguments(raw) {
+//
+// export 是給 golden set eval 用的（roadmap #34）：eval 原本自己 `JSON.parse`
+// 再 `catch { args = {} }`，會把「模型吐出壞 JSON」靜默變成「呼叫了工具但沒帶
+// 參數」，失敗訊息因此指向錯的方向（說某個參數是 undefined，實際上是整包壞掉）。
+// 兩邊共用同一份，eval 看到的解析結果才跟生產一致。
+export function parseToolArguments(raw) {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);

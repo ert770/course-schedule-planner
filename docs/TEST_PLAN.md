@@ -809,15 +809,44 @@ PL20（`getPersonalizationSource()` 過期判定）在跑完整檔案時偶發�
 `setTimeout` 讓「新事件確定晚於前一次 `computedAt`」後穩定通過（8/8 次）。
 與 `#5B` 本身無關，是本輪跑測試時順手發現並修掉的。
 
-### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24）
+### 自然語言 golden set（`server/test/agentGoldenSet.test.js`，Roadmap #24／#34）
 
 **這個檔案會真的呼叫模型**，是 `npm test` 裡唯一會連外網、唯一會消耗 API 額度的測試。
-8 題中文題庫在 `server/test/fixtures/agentGoldenSet.json`，另有一題「同一句話重跑三次
-得到逐位元相同的結構化結果」。斷言邏輯本身是純函式（`goldenSetAssertions.js`），
-另由 GA1-GA5 測試，不需要網路。
+13 題中文題庫在 `server/test/fixtures/agentGoldenSet.json`（#34 由 8 題擴充），另有
+「題庫本身合法」與「同一句話重跑三次得到逐位元相同的結構化結果」兩題。斷言邏輯本身是
+純函式（`goldenSetAssertions.js`），另由 GA1-GA10 測試，不需要網路。
 
 斷言的是**語意性質而非逐字相同**——推理模型的輸出不保證每次一樣（此模型也不接受
 `temperature`）。要求逐字重現只會做出一個間歇性失敗的測試。
+
+**兩層執行（roadmap #34）**：單輪題目留在 `npm test` 每次無條件執行；成本最高的多輪與
+preflight 題目收進 `npm run eval:golden-set`（見下一節）。理由是多輪每輪都要打一次模型，
+全部塞進 `npm test` 會讓每次跑測試的 API 用量變成數倍，而這把 key 是共用的。
+
+**斷言原語**（`expect` 可組合，題庫載入時會對照白名單驗，打錯字當場失敗而不是靜默通過）：
+
+| 斷言 | 意思 | 重試語意 |
+| --- | --- | --- |
+| `tool` | 該選哪個工具 | 任一次過即可 |
+| `params` | 某些參數必須等於指定值 | 任一次過即可 |
+| `includes` | 某個陣列參數必須含有某個值 | 任一次過即可 |
+| `interpretation` | 理解回講的某個清單必須含有某個代號 | 任一次過即可 |
+| `absent` | 某些參數**不該**出現（擋「自行假設」） | **N 次全過**才算過 |
+| `clarify` | **不該**呼叫工具，而是回頭問清楚 | **N 次全過**才算過 |
+| `refuse` | **不該**執行，而是拒絕並說明理由（越權要求） | **N 次全過**才算過 |
+
+**否定式斷言必須 N 次全過**，這是 #34 修掉的既有缺陷：原本一律「重試三次、過一次就算
+過」，對「不該做什麼」而言等於「給模型三次機會不要亂編」——放水放在最需要嚴格的地方。
+
+`clarify` 與 `refuse` 是**不同的事**，不可混用：資訊不足要的是回頭問，越權要求要的是
+拒絕（問再多也不該給）。實測踩過這個坑——越權題原本寫成 `clarify`，模型正確拒絕了
+（「我不能查詢或揭露特定同學的個人選課紀錄」）卻被判失敗，因為那段話裡沒有問句。
+
+另外每題都套 **tool schema hard guard**（`toolSchemaValidator.js`）：參數違反
+`getAgentTools()` 的 JSON Schema 就整題失敗。它抓的是非 strict 模式下 API 不保證的
+巢狀 `required` 與 `additionalProperties`；值域問題（`day: 9`、`minCredits > maxCredits`）
+schema 表達不了，那是 `requirementPreflight.js` 的職責。`test/prompt.test.js` 的 P9 是
+drift guard：schema 用到驗證器不支援的關鍵字時先紅燈，而不是靜默忽略。
 
 **本機一律執行，CI 一律不執行。** 兩者都是明確的決定：
 
@@ -825,7 +854,7 @@ PL20（`getPersonalizationSource()` 過期判定）在跑完整檔案時偶發�
 | --- | --- | --- |
 | 本機、有 key | 每次 `npm test` 都實跑並回報通過率 | 這是 golden set 的正常執行環境 |
 | 本機、無 `OPENAI_API_KEY` | **硬失敗**並說明「這是環境未設定，不是程式壞掉」 | 本機一定有 `server/.env`，缺 key 代表環境沒設好。開發者**不能**自己跳過 |
-| CI（不論有沒有 key） | 跳過這 9 題並印出明顯說明，其餘照跑 | **決定於 2026-08-31：不讓 golden set 在 CI 跑。** 要跑就得把 API key 放進 public repo 的 secret，且每次 push 都消耗額度 |
+| CI（不論有沒有 key） | 跳過整個 golden set describe 並印出明顯說明，其餘照跑 | **決定於 2026-08-31：不讓 golden set 在 CI 跑。** 要跑就得把 API key 放進 public repo 的 secret，且每次 push 都消耗額度 |
 
 判定**只看 `process.env.CI`**（GitHub Actions 固定設 `CI=true`），**不看有沒有 key**。
 這樣即使日後為了別的用途在 CI 加了 `OPENAI_API_KEY` secret，這幾題也不會無聲無息地
@@ -849,6 +878,49 @@ env -u OPENAI_API_KEY CI=true DOTENV_CONFIG_PATH=/nonexistent/.env npm test --pr
 # CI 有 key：仍然跳過（防止 secret 意外啟用它）
 CI=true npm test --prefix server
 ```
+
+### 離線 eval 與回歸成績單（`npm run eval:golden-set`，Roadmap #34）
+
+比照 `bench:personalization` 的形狀：獨立指令、不在 `npm test` 裡、產出可比較的報告。
+跑的是 `npm test` 的 13 題單輪**加上** `agentGoldenSetMultiTurn.json` 的多輪題，
+並把結果寫進 `server/test/reports/golden-set-latest.json`（進版控、只保留最新一份，
+用 `git diff` 看哪一題退步）。
+
+```bash
+npm run eval:golden-set --prefix server                # 跑完寫檔並印摘要
+npm run eval:golden-set --prefix server -- --json      # 完整 JSON 到 stdout
+npm run eval:golden-set --prefix server -- --no-write  # 不寫檔
+```
+
+成績單記錄的東西與為什麼：
+
+| 欄位 | 為什麼是這個 |
+| --- | --- |
+| `model.resolved` | API 解析後的真實 model id，**不是** `OPENAI_MODEL` 那個別名——別名隨時可能被 provider 指到新快照，記別名的成績單無法比較 |
+| `versions.promptAndTools` | `sha256Hex({ systemPrompt, tools })`。**必須含 tools**：#24 影響最大的那次改動（`allowRelaxation`、`nonNegotiablePreferenceIds`）完全在 tool schema 裡，一個字都沒改 prompt |
+| `versions.*Fixture` | 題庫自己的 hash。沒有它就分不清「模型變壞」與「題目變難」 |
+| `totals.firstTryPassRate` | **pass@1 才是會動的數字**。pass@3 因為重試幾乎永遠 100%，prompt 改壞了也看不出來 |
+| `cases[].schedulerWasCalled` | 多輪 preflight 題的前提是否成立（見下） |
+
+多輪題目的兩種串接：**罐頭 tool result**（用 `summarizeScheduleForModel` +
+`buildToolResultEnvelope` 現算，確定性）與**真的跑 preflight**（走完整
+`executeAgentTool`，注入 `lookupCourses` 與 `generateSchedule`，不碰資料庫）。
+
+跑 preflight 的題目有兩個必須寫下來的陷阱，兩個都會讓 eval 靜默失效：
+
+1. **`generateSchedule` 一定要一起注入。** 路徑是 `lookupCourses` → `preflight` →
+   沒觸發就直接排課。只擋前者的話，「以為會澄清但其實沒有」的題目會真的去打資料庫。
+   而且 sentinel **不能用 throw**——`executeAgentTool` 的 catch 會把它吞成一般工具錯誤。
+   `expectPreflight: true` 的題目若 `schedulerWasCalled` 為 true 就**直接判失敗**：
+   前提沒成立時，第二輪測到的只是「模型對一個看不懂的回傳值有什麼反應」。
+2. **情境必須是模型自己看不出來、只有伺服器查得到的缺資料。** 一開始用「至少 25 學分
+   但最多 15 學分」，結果模型自己就看穿矛盾、根本沒呼叫工具，preflight 沒機會出場——
+   那反而是更好的行為，已另立為單輪題 `contradictory-credit-range`。現在用的是系所
+   無法解析（`scope: "unresolved"`）：使用者說「幫我排一份這學期的課表」完全正常，
+   模型沒有理由起疑，是伺服器比對 scope 後才知道必修判定其實是懸空的。
+
+**誠實記錄範圍**：CI 依既有決定不跑 golden set，所以**沒有共享 baseline**——這份成績單
+實際上是「某一台開發機跟自己比」，不是團隊層級的品質指標。
 
 ## 每次開發完成驗收
 
