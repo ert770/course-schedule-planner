@@ -2,6 +2,11 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-07
+
+1. [Roadmap #41（第二段）：課程指涉解析到 section 實體](./2026-09-07-roadmap-41-course-reference-resolution.md)
+2. [Roadmap #41（第一段）：tool retry 的 terminal 語意](./2026-09-07-roadmap-41-tool-retry-terminal-outcome.md)
+
 ## 2026-09-06
 
 1. [Roadmap #37：explanation faithfulness 與 hallucination tests](./2026-09-06-roadmap-37-explanation-faithfulness.md)

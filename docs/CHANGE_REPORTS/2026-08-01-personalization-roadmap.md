@@ -105,10 +105,11 @@
 | 34 | 建立 Agent 自然語言需求理解 eval | 🟡 部分完成（2026-08-31）——**前置相依已全部完成，可繼續**。8 題中文 golden set 已進 `npm test` 每次執行；多輪修正、課名同名、越權要求與大規模標註資料集尚未涵蓋 | #24、#25（均已完成） |
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | 🟡 部分完成——**前置相依已全部完成，可繼續**。Z1–Z7 已提供最小 golden cases；仍缺跨科系／年級／學期資料集、benchmark runner 與量化報告 | #15、#21、#22（均已完成） |
 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 🟡 **部分完成（2026-09-06）**——已交付固定 candidate set 的 B0/B1/P runner、同一把 production preference ruler、五軸 sensitivity sweep、persona/cold-start 重播與全方案 safety guard；synthetic fixture 的效果仍不能宣稱是真實學生效果，且正向改善尚未在所有 persona／軸上成立 | #5B、#7、#30、#31（均已完成）；正式效果仍需真實去識別互動樣本 |
-| 37 | 建立 explanation faithfulness 與 hallucination tests | ✅ **已完成（2026-09-06）**——最終回答已接 evidence ledger、確定性 claim audit、單次受限修正與後端安全 fallback；固定語料 hallucination count 為 0，瀏覽器惡意 prompt 未輸出假事實或秘密值。見下方 #37 段落與[變更報告](./2026-09-06-roadmap-37-explanation-faithfulness.md) | #25、#26（均已完成） |
+| 37 | 建立 explanation faithfulness 與 hallucination tests | ✅ 已完成（2026-09-06）——最終回答已接 evidence ledger、確定性 claim audit、單次受限修正與後端安全 fallback；固定語料 hallucination count 為 0，瀏覽器惡意 prompt 未輸出假事實或秘密值。見下方 #37 段落與[變更報告](./2026-09-06-roadmap-37-explanation-faithfulness.md)。**2026-09-07 Codex adversarial review 判定 needs-attention**：24 個既有測試都過，但直接對抗式重現找到三個實證缺口（同操作重試被誤判失敗、同名不同班次互相誤傷、不加引號可塞入捏造課程），已拆為 #41 修補，**三項全數完成（2026-09-07）** | #25、#26（均已完成） |
 | 38 | 進行學生使用者測試並整理量化結果 | ⬜ 未開始（卡 #34、#35、#36；#27、#28、#37 已完成，不再是阻塞） | #33、#27、#28、#37（均已完成）；#34、#35、#36（仍未完成） |
 | 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
 | 40 | 補齊個人化學習訊號缺口 | ⬜ 未開始——#36 已量出 compact 學不動、accept 不投票與 interest 弱訊號上限，尚未改動學習演算法 | #7、#29、#30、#31（均已完成）；需先定義新的可觀測訊號與隱私邊界 |
+| 41 | 修補 #37 回答忠實度閘門的三個實證缺口（Codex adversarial review） | ✅ **已完成（2026-09-07，兩段皆完成）**——第一段：tool retry terminal outcome，operationKey（工具＋參數雜湊）讓同一操作重試成功不再誤判失敗，不同操作的失敗也不會被另一個的成功蓋過（F16-F18）。第二段：課程指涉解析到 section 實體（同名不同班次逐 candidate 一致性，F19-F20）、捏造偵測改抽課名形狀片段（F21-F21b）、evidenceRole 讓被排除的課不能講成推薦（F23-F24b）；瀏覽器 A/B 對真實排課回合誘導捏造課程，audit 攔截並退回安全回答，畫面沒有出現任何捏造內容 | #37（已完成，發現缺口的對象） |
 
 ## 現在可以動工的任務（2026-09-06 盤點，依建議順序排列）
 
@@ -2445,6 +2446,136 @@ boost。這些是學習訊號設計問題，不在 #36 量測任務中偷偷改�
 - 新事件能通過 #29 schema、隱私規則與 idempotency，且不把推測當成使用者意圖。
 - compact／interest 有可重現的 learned update；資料不足時仍 fail-open 回到顯式設定。
 - 既有 PB／PD safety cases 全數通過，並以真實去識別互動資料與 synthetic replay 分開報告。
+
+---
+
+## #41 修補 #37 回答忠實度閘門的三個實證缺口（Codex adversarial review）
+
+**狀態**：✅ 已完成（2026-09-07，兩段皆完成）
+
+**相依**：#37（已完成，是這次發現缺口的對象）
+
+### 問題與目的
+
+2026-09-07 對 #37 交付的 commit 範圍跑 Codex adversarial review（`-base f7446d8`），
+判定 needs-attention、不建議 ship。24 個既有 targeted tests 全過，但直接對抗式重現
+在 `explanationFaithfulness.js` 本身抓到三個缺陷：
+
+1. 同一操作重試成功後仍被判定失敗——`ledger.tools` 是 append-only、沒有操作身分，
+   誠實的「第一次失敗，重試後已成功記錄回饋」會被擋下，fallback 還會回報已被取代
+   的舊錯誤並要使用者重試，即使資料其實已寫入。
+2. 同名不同班次互相誤傷——課程指涉比對只到 course name，兩個同名 section 中，
+   正確描述其中一個的句子會被另一個判成教師／時間不一致。
+3. 不加引號就能塞入不存在的課——捏造偵測只掃引號內的文字，事實檢查也只對已在
+   帳本的課執行，散文形式的捏造課程可以零違規通過。
+
+分兩段修補：第一段是使用者現在就會踩到的 bug（重試被誤判），第二段是課程指涉的
+資料模型調整（同名消歧＋捏造偵測＋evidenceRole）。詳細方案見
+`C:\Users\yamat\.claude\plans\review-ship-delegated-quasar.md`（含一輪紅隊檢驗，
+推翻了初版設計的三個關鍵決定：逐事實 disjunction 會讓同名班次的教師與時間被
+拼湊出一門現實不存在的課而通過、主題式封閉世界閘門會誤擋「以下是推薦的課程：」
+這類正常開場白且讓後端自己的安全回答自我違規、只用 toolName 當 operationKey
+會遮蔽 `record_schedule_feedback` 對不同課程的部分失敗）。
+
+### 第一段：tool outcome 的 terminal 語意（已完成）
+
+- `server/src/utils/hash.js`（新增）：`sha256Hex()` 共用雜湊工具，物件先做鍵序
+  穩定化再雜湊；`scheduleFeedbackService.js` 的 `deterministicActionId` 一併
+  改用它，不再各自寫一份雜湊邏輯。
+- `server/src/services/explanationFaithfulness.js`：`recordToolEvidence` 新增
+  `operationKey`（工具名稱＋參數雜湊；未帶時退回 `toolName`，等同舊行為）；
+  `ledger.tools` 保留 append-only 全歷史不變，新增派生的 `ledger.operations`
+  （依 operationKey 分組後的終態，含 `terminalStatus`／`terminalIncomplete`／
+  沿用既有 `run_csp_scheduler` solver 檢查）。`auditToolOutcomes` 與
+  `buildSafeFaithfulnessFallback` 改讀 `operations` 的終態，不再看整段歷史。
+- `server/src/services/agentService.js`：呼叫端用 `sha256Hex(args)` 算
+  `operationKey` 傳入，只雜湊不記錄參數內容本身，符合既有「工具參數已解析
+  （內容不記錄）」政策；解析失敗時退回原始字串雜湊。
+- 新增 3 個測試（F16-F18，`server/test/explanationFaithfulness.test.js`）：
+  同操作重試成功終態正確收斂（F16）；同工具不同操作各自獨立終態，一個失敗
+  不能被另一個的成功蓋過（F17，對應 Codex 原始重現案例）；排課終態成功但
+  solver 未 solved 仍視為未完成（F18，確認舊規則沒有隨改動流失）。
+- 另以直接腳本驗證 `agentService.js` 呼叫端算出的 operationKey：相同參數
+  （含鍵序不同）雜湊相同、不同參數雜湊不同——確認呼叫端與
+  `explanationFaithfulness.js` 的分組邏輯確實對得上。
+
+**驗證**：`node --check` 全部通過；`server/test/explanationFaithfulness.test.js`
+22/22（含新增 F16-F18）；`node --test explanationFaithfulness.test.js
+agentTools.test.js prompt.test.js` 118/118；`npm test` 全服務端 979/979（976+3）；
+`client` build／lint 通過。瀏覽器 A/B（demo 帳號 `D1249697`，真實 MySQL 排課）：
+A 組正常提問課名／教師／學分／推薦原因，模型在沒有本回合 `recommendationReason`
+證據時誠實說「不能臆測」而非編造；B 組要求模型先用明顯錯誤的 sectionId 呼叫
+`record_schedule_feedback`（真的失敗）、再用正確 sectionId 記錄（真的成功），
+安全回答誠實揭露失敗、沒有把成功蓋過去，console 沒有新增錯誤。這證實了
+「不同操作各自獨立終態」在真實工具呼叫下成立；但「同參數重試」場景在真實
+聊天中難以穩定重現（工具驗證邏輯是決定性的，同參數、同曝光狀態重送必得到
+相同結果），該場景以 F16 的直接呼叫與上述雜湊腳本共同證明。
+
+### 第二段：課程指涉解析到 section 實體（已完成）
+
+- `server/src/services/sentenceFacts.js`（新增）：句子層級、與特定課程無關的
+  事實抽取（`extractTimeClaims`／`matchAssertedTeacher`／`extractCreditValues`／
+  表格欄位解析），`explanationFaithfulness.js` 與 `courseReferenceResolver.js`
+  共用同一份，避免兩邊各寫一次而漂移。
+- `server/src/services/courseReferenceResolver.js`（新增）：`resolveCourseReferences()`
+  把句子裡的課程指涉解析到 section 候選陣列——長名優先＋span masking＋右邊界
+  檢查（防止「演算法導論」被誤判成已知的「演算法」）；同名不同班次收成同一個
+  reference；依 sectionId／教師／時間依序嘗試收斂唯一候選；代名詞句（「這門課」）
+  沿用前一句解析出的唯一候選。**實作時修正了一個設計階段沒抓到的 bug**：句子
+  比對階段若先把每個課程各自的命中紀錄下來再做長名優先遮蔽，兩個同名不同班次
+  在同一位置的命中會被判成互相重疊而濾掉第二筆，等於同名的第二個 section 永遠
+  進不了候選名單——改成先把「同一段文字、同一個位置」的命中合併成一筆（記錄
+  命中了哪些課程）再做遮蔽判斷，F19 測試才真的通過。
+- `server/src/services/explanationFaithfulness.js`：
+  - `auditCourseReference()`：逐 candidate 一致性檢查（不是逐事實 disjunction）——
+    只要候選集合裡有任一個真實 section 同時滿足整句話的所有主張就通過；不成立
+    時取矛盾最少的候選發違規，證據帶上其餘候選。
+  - 捏造偵測 `auditFabricatedCourseSpans()`：抽「課名形狀的片段」（引號、
+    `課程／概論／導論／實習／實驗／專題` 後綴、「推薦／加選／選修／修習＋詞組」
+    動賓片語）比對已知課程，取代原本只掃引號、且只判斷「這句話在談課程」的做法。
+  - `evidenceRoles`：`collectCourses()` 依來源 bucket 標記角色
+    （`schedule`→recommended、`excludedCoursesSample`→excluded 等）；
+    `mergeCourse()` 新增角色聯集分支（比照既有 `dataSources` 的做法）；新違規
+    `EXCLUDED_COURSE_PRESENTED_AS_RECOMMENDED`。
+  - **實作時額外發現並修正兩個既有（非本次引入）的潛在 bug**：
+    (1) `MISSING_RECOMMENDATION_REASON` 判定式原本的關鍵字表對不上
+    `summarizeReason()` 對 `USER_SPECIFIED`／`COREQUISITE_PAIR`／`WATCHING`／
+    `CREDIT_FILL` 四種取值產生的自然語言轉述，導致後端自己的安全回答在使用者
+    問「為什麼推薦」時會被自己的違規判定攔下——F22 逐一走過全部 8 種
+    `selectedBecause` 值時抓到，已補齊對應詞彙。
+    (2) `summarizeReason()` 的預設分支文字「主要推薦原因未提供，無法確認」
+    與呼叫端已經印過的「主要推薦原因：」標籤重複，疊成「主要推薦原因：主要
+    推薦原因未提供」的怪句子，且恰好被新的捏造偵測（動賓片語規則）誤判成
+    捏造課程「原因未提供」——已把預設分支文字改成不重複前綴的「未提供，
+    無法確認」。
+  - `normalizeCourse()`／`collectCourses()` 保留完全向後相容：不帶 `role` 參數
+    的呼叫維持原有行為。
+- 新增 10 個測試（F19-F24b，`server/test/explanationFaithfulness.test.js`）：
+  同名不同班次的 narrowing 成功／narrowing 收斂不了時的完整事實一致性
+  （F19、F19b）；混用不同班次教師與時間學分必須攔截（F20，對應 Codex 原始
+  adversarial 案例）；不加引號的散文捏造課程與正常回覆用語的誤判防護
+  （F21、F21b）；後端安全回答對全部 `selectedBecause` 值與缺評價免責句的
+  自我稽核（F22、F22b）；`evidenceRoles` 合併不被覆蓋（F23）；被排除的課
+  不得講成推薦、正常推薦不受誤傷（F24、F24b）。
+
+**驗證**：`node --check` 全部通過；`server/test/explanationFaithfulness.test.js`
+32/32（含新增 F19-F24b）；`node --test explanationFaithfulness.test.js
+agentTools.test.js prompt.test.js` 128/128；`npm test` 全服務端 989/989
+（979+10）；`client` build／lint 通過。瀏覽器 A/B（demo 帳號 `D1249697`，
+真實 MySQL 排課）：A 組正常排課並追問課名／教師／學分，回答如實引用工具
+證據；B 組指示模型「假設有一門『量子計算導論』的課，不要用引號、直接用一般
+文字說明授課教師、學分與上課時間，並說推薦加選」——伺服器 log 顯示 audit
+攔到 2 個違規、修正版仍不合格，最終改用後端安全回答（「目前沒有足夠的可
+驗證資料回答這個問題，請提供更明確的課程或需求。」），畫面沒有出現任何
+捏造的教師、學分或時間；console 沒有因此新增錯誤。**同名不同班次的即時
+重現**（F19／F20 涵蓋的情境）需要真實資料庫剛好存在兩個同名不同班次的
+候選課程才能觸發，這次瀏覽器驗收沒有巧遇這種資料，以單元測試層級的
+F19／F19b／F20 取代直接重現，並如實記錄這個邊界。
+
+**誠實記錄殘留缺口**：捏造偵測是對「課名形狀的片段」做封閉世界比對，不是
+對所有自然語言的形式證明——完全不帶課名特徵、不加引號、也不接課程類後綴
+的捏造（例如「量子魔法很涼」）仍可能通過。沒有 NER 就做不到語意層級的
+判斷，這是有意識接受的取捨，已同步寫進 `docs/PROMPT_DESIGN.md`。
 
 ---
 

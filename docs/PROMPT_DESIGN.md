@@ -504,18 +504,40 @@ ledger 只保存模型本回合已經看過的資料：工具名稱、call id、
 solver 狀態，以及課程、評價與 `recommendationReason` 欄位。這避免 audit 事後查入模型
 從未看過的新資料，錯把模型的猜測判成有來源。
 
+每次工具呼叫都留一筆歷史紀錄（`ledger.tools`，append-only），但 audit 只看依
+**operationKey**（工具名稱＋參數雜湊，見 roadmap #41）分組後的**終態**（`ledger.operations`）：
+同一個操作（同工具、同參數）重試後成功，就不再因為它中途失敗過而被要求揭露、也不會
+被判定「宣稱成功卻其實失敗」；但參數不同的兩次呼叫一律算成不同操作，各自的終態互不
+覆蓋——因此「對 A 課失敗、對 B 課成功」不會被合併成一筆終態成功而靜默丟掉 A 課的失敗。
+
+課程指涉解析到 **section 實體**，不是只到課名（roadmap #41 第二段，見
+`courseReferenceResolver.js`）：同名不同班次的課程收成同一個 reference（候選陣列），
+逐 candidate 檢查「有沒有任一個真實 section 同時滿足整句話的所有主張」——不是逐事實
+各自判斷是否成立，否則 A 班的教師配上 B 班的時間會各自合格，拼出一門現實不存在的班次
+還能通過。捏造偵測改抽「課名形狀的片段」（引號、`XX課程／概論／導論／實習／實驗／專題`
+後綴、「推薦／加選／選修／修習＋詞組」）比對已知課程，不是判斷「這句話在談課程」，
+避免連「以下是推薦的課程：」這種開場白都被誤擋。每個課程物件還帶著 `evidenceRoles`
+（依來源 bucket：`schedule`→recommended、`excludedCoursesSample`→excluded 等），
+被排課器排除或未排入的課不能被講成推薦。
+
 目前的確定性檢查代號如下：
 
 | 代號 | 攔截內容 |
 | --- | --- |
-| `UNSUPPORTED_COURSE` | 回答新增工具結果不存在的引號課名 |
-| `COURSE_CREDITS_MISMATCH`／`COURSE_TEACHER_MISMATCH`／`COURSE_TIME_MISMATCH` | 課程基本事實不一致 |
+| `UNSUPPORTED_COURSE` | 回答提到工具結果中不存在的課名形狀片段（不論加不加引號） |
+| `COURSE_CREDITS_MISMATCH`／`COURSE_TEACHER_MISMATCH`／`COURSE_TIME_MISMATCH` | 沒有任何一個候選 section 同時支持整句話的課程基本事實 |
 | `REVIEW_WITHOUT_EVIDENCE`／`PROXY_PRESENTED_AS_REVIEW` | 無評價仍下結論，或把 proxy 說成學生評價 |
 | `ELIGIBILITY_OVERCLAIM`／`GRADUATION_OVERCLAIM`／`GRADUATION_RULE_WITHOUT_EVIDENCE` | 資格與畢業認列過度肯定 |
 | `PREFERENCE_OVERCLAIM`／`RECOMMENDATION_REASON_REVERSED`／`MISSING_RECOMMENDATION_REASON` | 偏好或主要推薦原因與 reason object 不一致 |
-| `TOOL_FAILURE_PRESENTED_AS_SUCCESS`／`TOOL_FAILURE_NOT_DISCLOSED` | tool error、pending 或 solver 未完成卻宣稱成功，或完全隱藏未完成狀態 |
+| `EXCLUDED_COURSE_PRESENTED_AS_RECOMMENDED` | 推薦形狀的斷言指向的課，`evidenceRoles` 只有 excluded／unscheduled |
+| `TOOL_FAILURE_PRESENTED_AS_SUCCESS`／`TOOL_FAILURE_NOT_DISCLOSED` | 操作**終態**未成功（含 solver 未完成）卻宣稱成功，或完全隱藏未完成狀態——判定依 operation 終態，不受同操作中途失敗的舊紀錄影響 |
 | `MISSING_REVIEW_UNCERTAINTY` | 使用者問評價、資料為空，回答沒有明講不知道 |
 | `SENSITIVE_SYSTEM_DISCLOSURE` | 回答包含環境秘密或 API key 形式的值 |
+
+**誠實記錄範圍**：`UNSUPPORTED_COURSE` 是對「課名形狀的片段」做封閉世界比對，不是對
+所有自然語言做形式證明——完全不帶課名特徵、不加引號、也不接課程類後綴的捏造（例如
+「量子魔法很涼」）仍可能通過。沒有 NER 就做不到語意層級的判斷，這是有意識接受的殘留
+缺口，不能解讀為對捏造內容的完整防護。
 
 第一次驗證失敗時，另呼叫一次模型做受限修正，只提供原回答、違規清單與 ledger，且不提供
 任何工具。修正版會再經同一個 validator；仍失敗或修正呼叫本身失敗時，改由後端固定邏輯

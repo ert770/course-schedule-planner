@@ -36,6 +36,7 @@ import {
 import {
   createEvidenceLedger, recordToolEvidence, enforceFaithfulReply,
 } from './explanationFaithfulness.js';
+import { sha256Hex } from '../utils/hash.js';
 
 let ai = null;
 
@@ -685,11 +686,17 @@ export async function handleChat(identity, message) {
         // 再包上統一信封（見 `buildToolResultEnvelope()`）。
         const modelResult = call.name === 'run_csp_scheduler' ? summarizeScheduleForModel(result) : result;
         const toolEnvelope = buildToolResultEnvelope(call.name, modelResult);
+        // 同一工具、不同參數要算成不同操作——否則「對 A 課失敗、對 B 課成功」的
+        // record_schedule_feedback 會被合併成一筆終態成功，A 課的失敗被靜默吃掉。
+        // 只雜湊 args，不記錄內容本身，符合上面「工具參數已解析（內容不記錄）」的政策；
+        // 參數解析失敗時退回原始字串，讓不同的錯誤輸入仍分屬不同操作。
+        const operationKey = `${call.name}:${sha256Hex(args !== null ? args : (call.arguments ?? '')).slice(0, 16)}`;
         recordToolEvidence(evidenceLedger, {
           toolName: call.name,
           callId: call.call_id,
           result: modelResult,
           dataSource: toolEnvelope.dataSource,
+          operationKey,
         });
         const outputStr = JSON.stringify(toolEnvelope);
         logger.info('工具執行完成', { label: 'ToolCall_Result', outputLength: outputStr.length });
