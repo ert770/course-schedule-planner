@@ -11,6 +11,7 @@ import {
   PREFERENCE_LEARNING_MODEL_VERSION,
   REQUIRED_USABLE_EVENT_COUNT,
   SUFFICIENCY_STATUS,
+  AXIS_SIGNAL_STATUS,
   PREFERENCE_DECAY_HALF_LIFE_DAYS,
   STALE_TERM_DECAY_FACTOR,
   learnPreferenceWeights,
@@ -62,6 +63,54 @@ function acceptedEvent({ requestId, variantId, t }) {
     requestId,
     plan: { planId: `${requestId}:${variantId}`, variantId },
     timestamp: t,
+  };
+}
+
+// Roadmap #40：帶 `planPolicies` 的曝光，模擬 #7 混合權重的真實形狀——
+// `policies` 是 `[{ variantId, weights }]`，planId 依既有慣例衍生自 requestId。
+function policyExposedEvent({ requestId, policies, t }) {
+  const displayedPlanIds = policies.map(p => `${requestId}:${p.variantId}`);
+  return {
+    eventId: nextId('evt'),
+    eventType: 'recommendation_exposed',
+    requestId,
+    timestamp: t,
+    exposureContext: {
+      displayedPlanIds,
+      planPolicies: policies.map(p => ({
+        planId: `${requestId}:${p.variantId}`,
+        variantId: p.variantId,
+        weights: p.weights,
+      })),
+    },
+  };
+}
+
+function favoritedEvent({ code = 'IECS0001', t }) {
+  return {
+    eventId: nextId('evt'),
+    eventType: 'course_favorited',
+    timestamp: t,
+    course: { catalogCourseCode: code, sectionId: null },
+  };
+}
+
+function unfavoritedEvent({ code = 'IECS0001', t }) {
+  return {
+    eventId: nextId('evt'),
+    eventType: 'course_unfavorited',
+    timestamp: t,
+    course: { catalogCourseCode: code, sectionId: null },
+  };
+}
+
+function selectedEvent({ code = 'IECS0001', t, source = 'explicit_selection' }) {
+  return {
+    eventId: nextId('evt'),
+    eventType: 'course_selected',
+    timestamp: t,
+    source,
+    course: { catalogCourseCode: code, sectionId: null },
   };
 }
 
@@ -559,5 +608,173 @@ describe('PL24 computeLearnedBoosts（roadmap #5B）', () => {
   test('省略 explicitProfile 時視為三軸皆為 0', () => {
     const boosts = computeLearnedBoosts({ interest: 0.5, compact: 0, easy: 0 });
     assert.equal(boosts.interest, 0.5);
+  });
+});
+
+describe('PL28 recommendation_accepted 在 #7 混合權重下的對照歸因（roadmap #40）', () => {
+  test('持續接受被放大 compact 的方案，學到 compact 高於 interest', () => {
+    const explicitProfile = { interest: 0, compact: 0, easy: 0 };
+    const events = Array.from({ length: 50 }, (_, i) => {
+      const requestId = `req-${i}`;
+      const t = `2026-01-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`;
+      return [
+        policyExposedEvent({
+          requestId,
+          t,
+          policies: [
+            { variantId: 'personalized', weights: { interest: 1, compact: 1, easy: 0 } },
+            { variantId: 'personalized_compact', weights: { interest: 1, compact: 1.5, easy: 0 } },
+            { variantId: 'personalized_interest', weights: { interest: 1.5, compact: 1, easy: 0 } },
+            { variantId: 'personalized_credits', weights: { interest: 1, compact: 1, easy: 0 } },
+          ],
+        }),
+        acceptedEvent({ requestId, variantId: 'personalized_compact', t }),
+      ];
+    }).flat();
+
+    const result = learnPreferenceWeights(events, { explicitProfile });
+    assert.equal(result.sufficiency.status, SUFFICIENCY_STATUS.SUFFICIENT);
+    assert.ok(result.weights.compact > result.weights.interest,
+      'compact 被放大的方案持續勝出，應該學到 compact 高於 interest');
+    assert.ok(result.evidence.compact.every(e => e.ruleId === 'ACCEPT_VARIANT_CONTRAST'));
+  });
+
+  test('接受基準方案（沒有任何軸被放大）時，所有軸都是平手，不投票', () => {
+    const requestId = 'req-tie';
+    const events = [
+      policyExposedEvent({
+        requestId,
+        t: '2026-01-01T00:00:00.000Z',
+        policies: [
+          { variantId: 'personalized', weights: { interest: 0, compact: 1, easy: 0 } },
+          { variantId: 'personalized_credits', weights: { interest: 0, compact: 1, easy: 0 } },
+        ],
+      }),
+      acceptedEvent({ requestId, variantId: 'personalized', t: '2026-01-01T00:00:01.000Z' }),
+      ...paddingEvents(49, { axis: 'easy' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.compact.length, 0, '基準方案跟唯一的對照組平手，不該產生任何票');
+  });
+
+  test('打亂 planPolicies 陣列順序，對照歸因的結果不變（重播純度）', () => {
+    const requestId = 'req-shuffle';
+    const policies = [
+      { variantId: 'personalized', weights: { interest: 1, compact: 1, easy: 0 } },
+      { variantId: 'personalized_compact', weights: { interest: 1, compact: 1.5, easy: 0 } },
+      { variantId: 'personalized_credits', weights: { interest: 1, compact: 1, easy: 0 } },
+    ];
+    const events = [
+      policyExposedEvent({ requestId, t: '2026-01-01T00:00:00.000Z', policies }),
+      acceptedEvent({ requestId, variantId: 'personalized_compact', t: '2026-01-01T00:00:01.000Z' }),
+    ];
+    const shuffledEvents = [
+      policyExposedEvent({ requestId, t: '2026-01-01T00:00:00.000Z', policies: [...policies].reverse() }),
+      acceptedEvent({ requestId, variantId: 'personalized_compact', t: '2026-01-01T00:00:01.000Z' }),
+    ];
+    // 兩批事件各自有自己的 eventId（`nextId()` 遞增），只比對 evidence 的
+    // ruleId 與 occurredAt，不比對整個物件。
+    const forward = learnPreferenceWeights(events, { explicitProfile: {} });
+    const shuffled = learnPreferenceWeights(shuffledEvents, { explicitProfile: {} });
+    assert.deepEqual(
+      forward.evidence.compact.map(e => e.ruleId),
+      shuffled.evidence.compact.map(e => e.ruleId),
+    );
+    assert.equal(forward.evidence.interest.length, shuffled.evidence.interest.length);
+  });
+});
+
+describe('PL29 收藏／手動選課成為 interest 的強訊號（roadmap #40）', () => {
+  test('50 筆不同課程的收藏，interest 學到高權重且不受弱訊號 cap 限制', () => {
+    const events = Array.from({ length: 50 }, (_, i) => favoritedEvent({
+      code: `FAV${i}`, t: `2026-01-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`,
+    }));
+    const result = learnPreferenceWeights(events, { explicitProfile: { interest: 0 } });
+    assert.equal(result.sufficiency.status, SUFFICIENCY_STATUS.SUFFICIENT);
+    assert.ok(result.weights.interest > 0.5, '50 筆強訊號應該遠超過弱訊號 cap 能達到的權重');
+    assert.ok(result.evidence.interest.every(e => e.ruleId === 'FAVORITED_STRONG'));
+  });
+
+  test('收藏後又取消收藏，那次收藏不算數', () => {
+    const events = [
+      favoritedEvent({ t: '2026-01-01T00:00:00.000Z' }),
+      unfavoritedEvent({ t: '2026-01-01T00:00:01.000Z' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.interest.length, 0);
+  });
+
+  test('收藏後才退選，那次收藏不算數——跟「看了又退」同一條規則', () => {
+    // 退課原因故意選 'time'（對應 compact 軸）而不是 'content'——後者本身會對
+    // interest 產生 WITHDRAW_CONTENT 投票，混進這裡要驗證的「收藏被排除」訊號。
+    const events = [
+      favoritedEvent({ t: '2026-01-01T00:00:00.000Z' }),
+      withdrawnEvent({ reason: 'time', t: '2026-01-01T00:00:01.000Z' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.interest.length, 0);
+  });
+
+  test('必修或系統推薦來源的手動選課不算興趣表態', () => {
+    const events = [
+      selectedEvent({ t: '2026-01-01T00:00:00.000Z', source: 'required' }),
+      selectedEvent({ t: '2026-01-01T00:00:01.000Z', source: 'system_recommendation', code: 'IECS0002' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.interest.length, 0);
+  });
+
+  test('explicit_selection 來源的手動選課算強訊號，退選後不算', () => {
+    const kept = selectedEvent({ code: 'KEPT', t: '2026-01-01T00:00:00.000Z' });
+    const retracted = selectedEvent({ code: 'RETRACTED', t: '2026-01-01T00:01:00.000Z' });
+    const events = [
+      kept,
+      retracted,
+      // 'time'（對應 compact 軸）而不是 'content'，避免退課本身又對 interest
+      // 投一票，混進這裡要驗證的「手動選課被排除」訊號。
+      withdrawnEvent({ code: 'RETRACTED', reason: 'time', t: '2026-01-01T00:02:00.000Z' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.interest.length, 1);
+    assert.equal(result.evidence.interest[0].ruleId, 'SELECTED_EXPLICIT_STRONG');
+  });
+});
+
+describe('PL30 axisSignal：區分「沒有偏好」與「已頂到上限但有證據」（roadmap #40）', () => {
+  test('沒有任何事件時，三軸皆為 no-evidence', () => {
+    const result = learnPreferenceWeights([], { explicitProfile: {} });
+    assert.deepEqual(result.axisSignal, {
+      interest: AXIS_SIGNAL_STATUS.NO_EVIDENCE,
+      compact: AXIS_SIGNAL_STATUS.NO_EVIDENCE,
+      easy: AXIS_SIGNAL_STATUS.NO_EVIDENCE,
+    });
+  });
+
+  test('顯式基準為 0、有同軸證據時，學到 learned-increment', () => {
+    const events = Array.from({ length: 50 }, (_, i) => withdrawnEvent({
+      code: `T${i}`, reason: 'time', t: `2026-01-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`,
+    }));
+    const result = learnPreferenceWeights(events, { explicitProfile: { compact: 0 } });
+    assert.equal(result.axisSignal.compact, AXIS_SIGNAL_STATUS.LEARNED_INCREMENT);
+  });
+
+  test('顯式基準已頂到 1、仍有持續同軸證據時，回報 explicit-ceiling-with-evidence，不是 no-evidence', () => {
+    const events = Array.from({ length: 50 }, (_, i) => withdrawnEvent({
+      code: `T${i}`, reason: 'time', t: `2026-01-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`,
+    }));
+    const result = learnPreferenceWeights(events, { explicitProfile: { compact: 1 } });
+    assert.equal(result.weights.compact, 1, '既有規則：weight 頂到 1 不變');
+    assert.equal(result.axisSignal.compact, AXIS_SIGNAL_STATUS.EXPLICIT_CEILING_WITH_EVIDENCE,
+      '這裡才看得出「頂到上限」跟「沒有證據」的差別');
+  });
+
+  test('axisSignal 的計算不受整體 sufficient/insufficient 門檻影響', () => {
+    const events = Array.from({ length: 5 }, (_, i) => withdrawnEvent({
+      code: `T${i}`, reason: 'time', t: `2026-01-01T00:0${i}:00.000Z`,
+    }));
+    const result = learnPreferenceWeights(events, { explicitProfile: { compact: 0 } });
+    assert.equal(result.sufficiency.status, SUFFICIENCY_STATUS.INSUFFICIENT);
+    assert.equal(result.axisSignal.compact, AXIS_SIGNAL_STATUS.LEARNED_INCREMENT,
+      '即使整體 insufficient，個別軸只要有證據仍要如實回報，不是連帶回報 no-evidence');
   });
 });

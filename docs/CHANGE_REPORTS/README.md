@@ -4,10 +4,11 @@
 
 ## 2026-09-07
 
-1. [Roadmap #35：排課引擎 feasibility／constraint violation benchmark](./2026-09-07-roadmap-35-scheduler-benchmark.md)
-2. [Roadmap #34：Agent 自然語言需求理解 eval](./2026-09-07-roadmap-34-agent-understanding-eval.md)
-3. [Roadmap #41（第二段）：課程指涉解析到 section 實體](./2026-09-07-roadmap-41-course-reference-resolution.md)
-4. [Roadmap #41（第一段）：tool retry 的 terminal 語意](./2026-09-07-roadmap-41-tool-retry-terminal-outcome.md)
+1. [Roadmap #40：補齊個人化學習訊號缺口](./2026-09-07-roadmap-40-preference-signal-gaps.md)
+2. [Roadmap #35：排課引擎 feasibility／constraint violation benchmark](./2026-09-07-roadmap-35-scheduler-benchmark.md)
+3. [Roadmap #34：Agent 自然語言需求理解 eval](./2026-09-07-roadmap-34-agent-understanding-eval.md)
+4. [Roadmap #41（第二段）：課程指涉解析到 section 實體](./2026-09-07-roadmap-41-course-reference-resolution.md)
+5. [Roadmap #41（第一段）：tool retry 的 terminal 語意](./2026-09-07-roadmap-41-tool-retry-terminal-outcome.md)
 
 ## 2026-09-06
 

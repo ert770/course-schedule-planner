@@ -753,6 +753,15 @@ no-op，只由 PL11–PL17 的合成事件驗證過真正的衰減行為。瀏�
 `applied:false` 情境，並確認**這支只讀不重算**（與 `getPersonalizationSource()`
 的關鍵差異——排課是熱路徑，不能把一次讀取變成一次全量事件掃描加一次寫入）。
 
+`server/test/preferenceLearning.test.js` 的 PL28-30（Roadmap #40，補齊 `#36`
+量出的三個學習訊號缺口）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PL28 | `recommendation_accepted` 在 `#7` 混合權重下的對照歸因 | 持續接受被放大某一軸的方案，該軸學到高於其他軸；接受基準方案（所有軸平手）不投票；打亂 `planPolicies` 陣列順序結果不變（重播純度）；找不到被接受方案自己的權重資料時退回舊的 `VARIANT_AXIS` 表，行為不變 |
+| PL29 | 收藏／手動選課成為 interest 的強訊號 | `course_favorited` 與 `source: explicit_selection` 的 `course_selected` 記強訊號（不受弱訊號 cap 限制）；`source: required`／`system_recommendation` 的手動選課不投票；收藏後取消收藏、或收藏／手動選課後才退選，該筆表態都不算數 |
+| PL30 | `axisSignal` 診斷欄位 | 沒有事件時三軸皆 `no-evidence`；顯式基準為 0 且有證據時 `learned-increment`；顯式基準已頂到 1 仍有持續證據時 `explicit-ceiling-with-evidence`（不是 `no-evidence`）；計算不受整體 `sufficient`/`insufficient` 門檻影響 |
+
 `server/test/scheduleService.test.js`：`loadLearnedPreferenceSafely()` 的
 fail-open 行為（reject／同步拋出例外皆退回 `applied:false, reason:'unavailable'`），
 比照既有的 `loadCourseReviewsSafely()`。
@@ -783,7 +792,8 @@ fail-open 行為（reject／同步拋出例外皆退回 `applied:false, reason:'
 
 互動回放另由 `interactionEventSchema.test.js` 驗證 `planPolicies` 的版本、權重邊界、
 方案對應與舊事件缺欄位相容；`preferenceLearning.test.js` 驗證接受新版混合策略時不會
-從 `variantId` 捏造單一軸投票。`scheduleService.test.js` 確認曝光快照包含 policy。
+單憑 `variantId` 猜測單一軸投票，只在真的有其他方案的權重可以對照時才依實際權重
+差異歸因（`#40` 的 PL28，見上方）。`scheduleService.test.js` 確認曝光快照包含 policy。
 
 **CI 限制，與 `#30`／`#31` 同一個坑，不重蹈覆轍**：`getSchedulingPreferenceWeights()`
 未套用 `options.prefs` 時會呼叫 `getUserPreferences()` → MySQL；`POST

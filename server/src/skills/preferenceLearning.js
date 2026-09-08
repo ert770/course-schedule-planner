@@ -1,5 +1,6 @@
 import { shrinkEasiness, SHRINKAGE_PRIOR_WEIGHT } from './reviewStats.js';
 import { normalizeSemesterLabel } from '../data/activeTerm.js';
+import { INTERACTION_SOURCES } from '../data/interactionEventSchema.js';
 
 // Roadmap #30：把互動事件折成 per-user 偏好權重。
 // Roadmap #31：加上時間衰減與跨學期降權（見下方 `decayFactorFor()`）。
@@ -25,6 +26,28 @@ export const SUFFICIENCY_STATUS = Object.freeze({
   INSUFFICIENT: 'insufficient',
   NO_CONSENT: 'no-consent',
 });
+
+// Roadmap #40：診斷用欄位，回答「這一軸的證據長什麼樣子」，跟「今天夠不夠格
+// 套用學習值」（`sufficiency.status`）是兩個不同的問題。目前只在
+// `learnPreferenceWeights()` 的回傳值裡驗證得到，不寫進 `Learned_Preference_Weights`
+// 表、不影響 `scoringPolicy.js` 的排課排序——正式落地留給之後的隱私與產品決策。
+export const AXIS_SIGNAL_STATUS = Object.freeze({
+  // 這一軸完全沒有任何事件投票——沒有偏好，不是學不到。
+  NO_EVIDENCE: 'no-evidence',
+  // 行為證據真的把數值推高於顯式基準——`#31` 起「顯式基準是下限」的那種正常情況。
+  LEARNED_INCREMENT: 'learned-increment',
+  // 有行為證據，但顯式基準已經頂到這批證據能達到的上限（`foldAxis()` 的
+  // `Math.max(shrunk, prior)`）——「沒有偏好」與「偏好已經頂到上限、且持續被
+  // 證實」在 `weights` 這個最終數字上長得一模一樣，只有這裡看得出差別。
+  EXPLICIT_CEILING_WITH_EVIDENCE: 'explicit-ceiling-with-evidence',
+});
+
+function classifyAxisSignal({ prior, effectiveSampleSize, rawWeight }) {
+  if (effectiveSampleSize <= 0) return AXIS_SIGNAL_STATUS.NO_EVIDENCE;
+  return rawWeight > prior + 1e-9
+    ? AXIS_SIGNAL_STATUS.LEARNED_INCREMENT
+    : AXIS_SIGNAL_STATUS.EXPLICIT_CEILING_WITH_EVIDENCE;
+}
 
 // 資料量門檻。今天（2026-09-03）demo 帳號的真實資料只有個位數的強訊號、
 // 一個人、一段開發測試期間——那個量級拿去學就是把雜訊當成個人化。這個數字
@@ -101,26 +124,42 @@ function sortEvents(events) {
   });
 }
 
-// 「看了又退」判定：同一門課如果之後被退掉，那次瀏覽不算正向表態
-// ——退課本身已經由 `WITHDRAW_*` 記了負向意見，再把它前面的瀏覽算成正向就是
-// 自相矛盾。用「該課**任何一次**退課的時間晚於這次瀏覽」判定，不要求緊鄰。
-function findExcludedViewEventIds(sortedEvents) {
+// 「看了又退」判定，roadmap #40 起泛化成所有正向表態事件：同一門課如果之後被
+// 退掉，先前對它的正向表態（瀏覽、手動選課、收藏）都不算數——退課本身已經由
+// `WITHDRAW_*` 記了負向意見，再把它前面的正向表態算進去就是自相矛盾。收藏另外
+// 多一種撤銷路徑：取消收藏不代表討厭這門課（見 `collectVotes()` 的說明），但
+// 確實代表「收藏當時」的表態已經被使用者自己撤回，不該再算數。
+// 用「該課**任何一次**退課／取消收藏的時間晚於這次表態」判定，不要求緊鄰。
+function findExcludedPositiveEventIds(sortedEvents) {
   const withdrawTimesByCourse = new Map();
+  const unfavoriteTimesByCourse = new Map();
   for (const event of sortedEvents) {
-    if (event.eventType !== 'course_withdrawn') continue;
     const key = courseKey(event.course);
     if (!key) continue;
-    if (!withdrawTimesByCourse.has(key)) withdrawTimesByCourse.set(key, []);
-    withdrawTimesByCourse.get(key).push(event.timestamp);
+    if (event.eventType === 'course_withdrawn') {
+      if (!withdrawTimesByCourse.has(key)) withdrawTimesByCourse.set(key, []);
+      withdrawTimesByCourse.get(key).push(event.timestamp);
+    } else if (event.eventType === 'course_unfavorited') {
+      if (!unfavoriteTimesByCourse.has(key)) unfavoriteTimesByCourse.set(key, []);
+      unfavoriteTimesByCourse.get(key).push(event.timestamp);
+    }
   }
 
   const excluded = new Set();
   for (const event of sortedEvents) {
-    if (event.eventType !== 'course_viewed') continue;
+    const isPositiveEvent = event.eventType === 'course_viewed'
+      || event.eventType === 'course_selected'
+      || event.eventType === 'course_favorited';
+    if (!isPositiveEvent) continue;
     const key = courseKey(event.course);
     const withdrawTimes = key ? withdrawTimesByCourse.get(key) : null;
     if (withdrawTimes?.some(t => t > event.timestamp)) {
       excluded.add(event.eventId);
+      continue;
+    }
+    if (event.eventType === 'course_favorited') {
+      const unfavoriteTimes = key ? unfavoriteTimesByCourse.get(key) : null;
+      if (unfavoriteTimes?.some(t => t > event.timestamp)) excluded.add(event.eventId);
     }
   }
   return excluded;
@@ -177,8 +216,24 @@ function decayFactorFor(event, { now, activeTerm }) {
   return { factor: recency * termFactor, isStaleTerm: stale };
 }
 
+// Roadmap #40：`recommendation_accepted` 在 #7 混合權重下的對照歸因。每個
+// `personalized_${axis}` 方案只有那一軸相對其他所有方案被放大（見
+// `planStrategies.js` 的 `buildPlanStrategies()`），因此「這一軸的權重嚴格大於
+// 這次曝光裡其他每一個方案」是唯一可靠、不會平手誤判的判定方式——恰好也代表
+// 這個軸本來就不是 0（使用者已表態），跟 `scoringPolicy.js` 「boost 只能放大
+// 已表態方向」的原則自然一致，不需要另外檢查。
+function dominantAxes(acceptedPolicy, allPolicies) {
+  const others = allPolicies.filter(policy => policy.planId !== acceptedPolicy.planId);
+  if (others.length === 0) return [];
+  return PREFERENCE_AXES.filter(axis => {
+    const mine = Math.abs(Number(acceptedPolicy.weights?.[axis]) || 0);
+    if (mine === 0) return false;
+    return others.every(policy => mine > Math.abs(Number(policy.weights?.[axis]) || 0));
+  });
+}
+
 function collectVotes(sortedEvents, { now, activeTerm } = {}) {
-  const excludedViewEventIds = findExcludedViewEventIds(sortedEvents);
+  const excludedPositiveEventIds = findExcludedPositiveEventIds(sortedEvents);
   const exposureByRequestId = indexExposuresByRequestId(sortedEvents);
   const votesByAxis = { interest: [], compact: [], easy: [] };
   let staleTermEventCount = 0;
@@ -210,35 +265,87 @@ function collectVotes(sortedEvents, { now, activeTerm } = {}) {
 
     if (event.eventType === 'recommendation_accepted') {
       const exposure = exposureByRequestId.get(event.requestId);
-      // #7 的混合權重無法單憑「接受方案」判定是哪一軸造成的。舊事件維持原有
-      // 重播語意；新方案不得從 strategy ID 憑空製造單軸投票。
-      if (exposure?.exposureContext?.planPolicies?.length
-        || event.plan?.variantId?.startsWith('personalized')) continue;
-      const axis = VARIANT_AXIS[event.plan?.variantId];
-      if (!axis) continue;
       const displayedCount = exposure?.exposureContext?.displayedPlanIds?.length ?? 0;
       // 只有曝光時真的有兩個以上方案可選，接受其中一個才算「看過對照組之後的
       // 選擇」；只有一個方案時，接受它說明不了使用者比較過什麼。
-      if (displayedCount > 1) {
-        pushVote(axis, {
-          ruleId: 'ACCEPT_VARIANT',
-          eventId: event.eventId,
-          occurredAt: event.timestamp,
-          strength: 'strong',
-          baseWeight: STRONG_VOTE_WEIGHT,
-        }, event);
+      if (displayedCount <= 1) continue;
+
+      const policies = exposure?.exposureContext?.planPolicies ?? [];
+      const acceptedPolicy = policies.find(policy => policy.planId === event.plan?.planId);
+
+      if (acceptedPolicy) {
+        // Roadmap #40：真的有這個方案自己的權重可比對，用對照歸因取代舊的
+        // 靜態 variantId 表——見上面 `dominantAxes()` 的說明。
+        for (const axis of dominantAxes(acceptedPolicy, policies)) {
+          pushVote(axis, {
+            ruleId: 'ACCEPT_VARIANT_CONTRAST',
+            eventId: event.eventId,
+            occurredAt: event.timestamp,
+            strength: 'strong',
+            baseWeight: STRONG_VOTE_WEIGHT,
+          }, event);
+        }
+        continue;
       }
+
+      // 真正的舊資料才會落到這裡：`planPolicies` 完全沒有，或曝光紀錄裡就是
+      // 沒有被接受方案自己的權重（例如 #7 以前留下的事件）。現行排課引擎
+      // 產生的 `personalized*` 方案一定有對應 policy，`policies.length > 0`
+      // 在這裡出現代表資料本身有缺口，不是「新方案沒有 policy」，一律不猜。
+      if (policies.length > 0 || event.plan?.variantId?.startsWith('personalized')) continue;
+      const axis = VARIANT_AXIS[event.plan?.variantId];
+      if (!axis) continue;
+      pushVote(axis, {
+        ruleId: 'ACCEPT_VARIANT',
+        eventId: event.eventId,
+        occurredAt: event.timestamp,
+        strength: 'strong',
+        baseWeight: STRONG_VOTE_WEIGHT,
+      }, event);
       continue;
     }
 
     if (event.eventType === 'course_viewed') {
-      if (excludedViewEventIds.has(event.eventId)) continue;
+      if (excludedPositiveEventIds.has(event.eventId)) continue;
       pushVote('interest', {
         ruleId: 'VIEWED_WEAK',
         eventId: event.eventId,
         occurredAt: event.timestamp,
         strength: 'weak',
         baseWeight: WEAK_VOTE_WEIGHT,
+      }, event);
+      continue;
+    }
+
+    // Roadmap #40：收藏與手動選課都已經由 client 送到後端（`ScheduleContext.jsx`
+    // 的 `toggleWatchlist()`／`addCourse()`），只是先前沒有任何學習邏輯讀過
+    // 它們。兩者都是遠比「看了一眼」更明確的表態，列為強訊號，不受
+    // `WEAK_VOTE_AXIS_CAP` 限制。
+    if (event.eventType === 'course_favorited') {
+      // 收藏當下的表態，不看 `source`——不管這門課是不是系統推薦或必修，
+      // 「使用者主動點了收藏」這個動作本身就是興趣訊號。
+      if (excludedPositiveEventIds.has(event.eventId)) continue;
+      pushVote('interest', {
+        ruleId: 'FAVORITED_STRONG',
+        eventId: event.eventId,
+        occurredAt: event.timestamp,
+        strength: 'strong',
+        baseWeight: STRONG_VOTE_WEIGHT,
+      }, event);
+      continue;
+    }
+
+    if (event.eventType === 'course_selected') {
+      // 必修或系統已經推薦的課，被加進課表說明不了使用者在乎什麼——只有
+      // `explicit_selection`（使用者自己找、自己加）才是興趣表態。
+      if (event.source !== INTERACTION_SOURCES.EXPLICIT_SELECTION) continue;
+      if (excludedPositiveEventIds.has(event.eventId)) continue;
+      pushVote('interest', {
+        ruleId: 'SELECTED_EXPLICIT_STRONG',
+        eventId: event.eventId,
+        occurredAt: event.timestamp,
+        strength: 'strong',
+        baseWeight: STRONG_VOTE_WEIGHT,
       }, event);
     }
   }
@@ -305,7 +412,8 @@ function foldAxis(votes, explicitBaseline) {
  * @returns 見檔案頂部註解的回傳形狀；`weights` 在 `insufficient` 時等於
  *          （clamp 過的）`explicitProfile`，不是半調子的學習值。`decay`
  *          欄位記錄本次計算實際套用了什麼衰減參數，`appliedAt` 為 null
- *          代表這次呼叫沒有套用時間衰減。
+ *          代表這次呼叫沒有套用時間衰減。`axisSignal`（roadmap #40）逐軸回報
+ *          `AXIS_SIGNAL_STATUS` 之一，獨立於 `sufficiency` 整體門檻計算。
  */
 export function learnPreferenceWeights(events = [], options = {}) {
   const explicitProfile = options.explicitProfile ?? {};
@@ -318,6 +426,7 @@ export function learnPreferenceWeights(events = [], options = {}) {
   const rawWeights = {};
   const evidence = {};
   const effectiveSampleSize = {};
+  const axisSignal = {};
   let usableEventCount = 0;
   const missingAxes = [];
 
@@ -330,9 +439,17 @@ export function learnPreferenceWeights(events = [], options = {}) {
     if (votes.length === 0) missingAxes.push(axis);
 
     evidence[axis] = votes.map(({ ruleId, eventId, occurredAt, decay }) => ({ ruleId, eventId, occurredAt, decay }));
-    const folded = foldAxis(votes, explicitProfile[axis] ?? 0);
+    const prior = clamp01(explicitProfile[axis] ?? 0);
+    const folded = foldAxis(votes, prior);
     rawWeights[axis] = folded.weight;
     effectiveSampleSize[axis] = round3(folded.effectiveSampleSize);
+    // Roadmap #40：用衰減／收縮後但**未套用** `insufficient` 回退的原始學習值
+    // 分類——這裡要回答的是「這一軸的證據長什麼樣子」，跟「今天夠不夠格套用」
+    // (`sufficiency.status`) 是两個不同的問題，即使整體 insufficient，個別軸
+    // 只要有證據仍要如實回報。
+    axisSignal[axis] = classifyAxisSignal({
+      prior, effectiveSampleSize: folded.effectiveSampleSize, rawWeight: folded.weight,
+    });
   }
 
   const sufficient = usableEventCount >= REQUIRED_USABLE_EVENT_COUNT;
@@ -350,6 +467,9 @@ export function learnPreferenceWeights(events = [], options = {}) {
       missingAxes,
     },
     evidence,
+    // Roadmap #40：診斷欄位，不寫進 `Learned_Preference_Weights` 表、不影響
+    // `weights` 或排課排序，見檔案頂部 `AXIS_SIGNAL_STATUS` 的說明。
+    axisSignal,
     // Roadmap #31：這次計算實際用了什麼衰減參數，供偵錯與變更報告核對——
     // 不是使用者導向的欄位，`preferenceLearningService.js` 也不強制回傳它。
     decay: {
@@ -395,6 +515,7 @@ export default {
   PREFERENCE_LEARNING_MODEL_VERSION,
   PREFERENCE_AXES,
   SUFFICIENCY_STATUS,
+  AXIS_SIGNAL_STATUS,
   REQUIRED_USABLE_EVENT_COUNT,
   PREFERENCE_DECAY_HALF_LIFE_DAYS,
   STALE_TERM_DECAY_FACTOR,
