@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "Roadmap #34 的多輪題庫。這些題目**不在** `npm test` 裡跑，只由",
+    "`npm run eval:golden-set` 執行——多輪每輪都要打一次模型，成本是單輪題的數倍，",
+    "而這把 API key 是共用的。",
+    "",
+    "`utterance` 在 turns 裡是選填：沒有 utterance 的輪次代表「不是使用者又說了",
+    "什麼，而是工具結果餵回去之後模型接下來做什麼」。"
+  ],
+  "cases": [
+    {
+      "id": "multi-turn-refinement",
+      "why": "真實使用者是先講一半、看到結果再補一句。第二輪補的條件要被接住，而且不能把第一輪已經講過的東西弄丟——這是單輪題目完全測不到的形狀。",
+      "turns": [
+        {
+          "utterance": "幫我排一份不要早八的課表。",
+          "expect": {
+            "tool": "run_csp_scheduler",
+            "params": { "noMorningClasses": true }
+          }
+        },
+        {
+          "utterance": "等等，我禮拜一要打工，禮拜一整天都不要排課。",
+          "expect": {
+            "tool": "run_csp_scheduler",
+            "params": { "mondayFree": true, "noMorningClasses": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "preflight-clarify",
+      "why": "驗收標準二真正要的東西：伺服器的排課前檢查擋下來之後，模型是回頭問使用者，還是換個說法再排一次。前者是對的，後者會讓使用者拿到一份建立在矛盾條件上的課表。情境必須是「模型自己看不出來、只有伺服器查得到」的缺資料——系所無法解析正是如此：使用者說的話完全正常，模型沒有理由起疑，是伺服器比對 scope 後才知道必修判定其實是懸空的。（一開始用「至少 25 學分但最多 15 學分」，結果模型自己就看穿矛盾、根本沒呼叫工具，preflight 沒機會出場——那反而是更好的行為，已另立為單輪題 contradictory-credit-range。）",
+      "expectPreflight": true,
+      "scope": "unresolved",
+      "turns": [
+        {
+          "utterance": "幫我排一份這學期的課表。",
+          "expect": { "tool": "run_csp_scheduler" }
+        },
+        {
+          "expect": { "clarify": true }
+        }
+      ]
+    }
+  ]
+}

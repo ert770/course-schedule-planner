@@ -105,6 +105,62 @@ describe('Roadmap #29 InteractionEvent v1 schema', () => {
     assert.equal(event.versionSnapshot.recommendationReasonVersion, null);
   });
 
+  test('#7 曝光事件正規化並驗證版本化方案權重', () => {
+    const planId = 'plan-personalized';
+    const event = createInteractionEvent(IDENTITY, exposureInput({
+      plan: { planId, variantId: 'personalized' },
+      exposureContext: {
+        surface: 'dashboard',
+        trigger: 'initial_load',
+        candidateSet: [course(101)],
+        displayedSet: [course(101)],
+        displayedPlanIds: [planId],
+        planPolicies: [{
+          planId,
+          variantId: 'personalized',
+          version: 'personalized-scoring-v1',
+          weights: { interest: 1, compact: 0, easy: -1.4 },
+          categoryCoefficient: 0.35,
+          creditCoefficient: 1,
+          stopWhen: 'no-credit-progress',
+          source: {
+            learnedApplied: true,
+            reason: 'applied',
+            modelVersion: 'preference-learning-v2',
+          },
+        }],
+      },
+    }), {
+      randomUUID: () => EVENT_ID_1,
+      now: () => new Date('2026-08-21T01:02:03.000Z'),
+    });
+
+    assert.deepEqual(event.exposureContext.planPolicies[0].weights, {
+      interest: 1, compact: 0, easy: -1.4,
+    });
+    assert.equal(validateInteractionEvent(event).valid, true);
+
+    assert.throws(() => createInteractionEvent(IDENTITY, exposureInput({
+      exposureContext: {
+        surface: 'dashboard',
+        trigger: 'initial_load',
+        candidateSet: [course(101)],
+        displayedSet: [course(101)],
+        displayedPlanIds: [planId],
+        planPolicies: [{
+          planId,
+          variantId: 'personalized',
+          version: 'personalized-scoring-v1',
+          weights: { interest: -1, compact: 0, easy: 0 },
+          categoryCoefficient: 0.35,
+          creditCoefficient: 1,
+          stopWhen: 'no-credit-progress',
+          source: { learnedApplied: false, reason: 'absent', modelVersion: null },
+        }],
+      },
+    })), /planPolicies 含無效/u);
+  });
+
   test('I29-3 displayedSet 不是 candidateSet 子集時拒絕', () => {
     assert.throws(
       () => createInteractionEvent(IDENTITY, exposureInput({

@@ -179,6 +179,22 @@ export function checkPreflightContradictions({
     });
   }
 
+  // (13) roadmap #5B：難度方向自相矛盾。排課引擎本身會把這種情況視為
+  // 未表態並發出警告，不會排不出課表——但那是引擎默默中和衝突，這裡讓
+  // Agent 在排課前主動問，使用者體驗上更誠實。
+  // **這道防線只涵蓋 chat 路徑**：UI 勾選路徑（Setup／Dashboard）不經過
+  // preflight，靠的是 `scheduler.js` 的 `resolveEasyDirection()` 那道警告。
+  if (constraints.preferEasyCourses && constraints.preferChallengingCourses) {
+    questions.push({
+      id: 'confirm-difficulty-direction',
+      type: 'contradiction',
+      prompt: '你同時要求「涼課優先」與「挑戰難課」，這兩個方向相反，沒辦法同時成立。'
+        + '請確認這學期想要哪一個。',
+      courseIds: [],
+      constraintIds: ['PREFER_EASY_DIRECTION'],
+    });
+  }
+
   // (5) 指定必修彼此衝堂——使用者自己指名的兩門課本來就撞在一起。
   const mustTake = (constraints.mustTakeCourseIds ?? [])
     .map(id => [Number(id), courseById.get(Number(id))])

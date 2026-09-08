@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Download, Trash2 } from 'lucide-react';
+import { ShieldCheck, Download, Trash2, RotateCcw } from 'lucide-react';
 import { privacyAPI } from '../services/api';
 import { useAuth } from '../contexts/useAuth';
+import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 
 const SERVICE = 'service_processing';
 const PERSONALIZATION = 'personalization_learning';
@@ -15,10 +16,25 @@ export default function PrivacyPage() {
   const [choices, setChoices] = useState({ [SERVICE]: false, [PERSONALIZATION]: false, [RESEARCH]: false });
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  // roadmap #31：個人化現況——顯式／學習／資料不足／未同意。獨立於
+  // `privacyStatus`（那是 consent 本身），這裡是 consent 之上「系統實際算出
+  // 了什麼」。載入失敗時保持 null，`PreferenceSourceBadge` 對 null 就不渲染。
+  const [personalization, setPersonalization] = useState(null);
+  const [resetting, setResetting] = useState(false);
+
+  const loadPersonalization = () => {
+    privacyAPI.getPersonalization().then(setPersonalization).catch(() => setPersonalization(null));
+  };
 
   useEffect(() => {
     privacyAPI.getPolicy().then(setPolicy).catch(err => setMessage(err.message));
   }, []);
+
+  useEffect(() => {
+    // 同意牆還沒過（`requiresAction`）時這支會因為 consent 檢查回錯，不必先打。
+    if (privacyStatus?.requiresAction) return;
+    loadPersonalization();
+  }, [privacyStatus?.requiresAction]);
 
   useEffect(() => {
     if (!privacyStatus) return;
@@ -31,17 +47,44 @@ export default function PrivacyPage() {
   }, [privacyStatus]);
 
   const save = async () => {
+    // Roadmap #31：撤回「從互動持續改善個人化」是硬性暫停，後端會連同已學到
+    // 的權重與互動事件一起刪除（不是留著不用）——重新勾選後從零開始重新
+    // 累積。這是不可逆的，必須在送出前講清楚，不能等使用者事後才發現。
+    const wasGranted = privacyStatus?.consents?.[PERSONALIZATION]?.granted;
+    if (wasGranted && !choices[PERSONALIZATION]) {
+      const confirmed = window.confirm(
+        '取消「個人化學習」會刪除已學到的偏好權重與互動事件紀錄，且無法復原。重新勾選後會從零開始重新累積。確定？'
+      );
+      if (!confirmed) return;
+    }
+
     setSaving(true);
     setMessage('');
     try {
       await privacyAPI.updateConsents(choices);
       const status = await refreshPrivacy();
       setMessage('資料使用設定已儲存。');
+      loadPersonalization();
       if (status && !status.requiresAction) {
         setTimeout(() => navigate(isSetupDone() ? '/' : '/onboarding'), 350);
       }
     } catch (err) { setMessage(err.message); }
     finally { setSaving(false); }
+  };
+
+  const resetPersonalization = async () => {
+    const confirmed = window.confirm(
+      '這會刪除系統從你的行為學到的偏好權重，以及用來學習的互動事件紀錄，無法復原。'
+      + '你自己勾選的偏好標籤、避開時段與 Profile 不會被刪除。確定重設？'
+    );
+    if (!confirmed) return;
+    setResetting(true);
+    try {
+      const result = await privacyAPI.resetPersonalization();
+      setMessage(`已重設個人化：清除 ${result.learnedWeightsDeleted} 筆學習結果與 ${result.interactionEventsDeleted} 筆互動事件；顯式偏好仍保留。`);
+      loadPersonalization();
+    } catch (err) { setMessage(err.message); }
+    finally { setResetting(false); }
   };
 
   const download = async () => {
@@ -103,6 +146,21 @@ export default function PrivacyPage() {
             </label>
           );
         })}
+
+        {personalization && (
+          <div className="privacy-personalization">
+            <h3 className="privacy-personalization-title">目前的個人化來源</h3>
+            <PreferenceSourceBadge variant="detail" personalization={personalization} />
+            <button
+              className="privacy-reset"
+              id="privacy-reset-personalization"
+              disabled={resetting}
+              onClick={resetPersonalization}
+            >
+              <RotateCcw size={15} /> {resetting ? '重設中…' : '重設學到的偏好'}
+            </button>
+          </div>
+        )}
 
         <div className="privacy-facts">
           <p>Raw Chat：AES-256-GCM 加密，保存 {retention?.rawChatDays ?? 30} 天，只供對話連續性，不用於個人化學習或研究。</p>

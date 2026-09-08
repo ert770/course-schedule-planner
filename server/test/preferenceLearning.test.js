@@ -11,7 +11,11 @@ import {
   PREFERENCE_LEARNING_MODEL_VERSION,
   REQUIRED_USABLE_EVENT_COUNT,
   SUFFICIENCY_STATUS,
+  AXIS_SIGNAL_STATUS,
+  PREFERENCE_DECAY_HALF_LIFE_DAYS,
+  STALE_TERM_DECAY_FACTOR,
   learnPreferenceWeights,
+  computeLearnedBoosts,
 } from '../src/skills/preferenceLearning.js';
 
 let seq = 0;
@@ -20,13 +24,16 @@ function nextId(prefix) {
   return `${prefix}-${seq}`;
 }
 
-function withdrawnEvent({ code = 'IECS0001', reason, t }) {
+function withdrawnEvent({ code = 'IECS0001', reason, t, term }) {
   return {
     eventId: nextId('evt'),
     eventType: 'course_withdrawn',
     feedbackReason: reason,
     timestamp: t,
     course: { catalogCourseCode: code, sectionId: null },
+    // term 只在 #31 的衰減測試需要時提供；不給就是 undefined，
+    // decayFactorFor() 對缺 term 的事件一律不做學期降權。
+    ...(term ? { term } : {}),
   };
 }
 
@@ -59,6 +66,54 @@ function acceptedEvent({ requestId, variantId, t }) {
   };
 }
 
+// Roadmap #40：帶 `planPolicies` 的曝光，模擬 #7 混合權重的真實形狀——
+// `policies` 是 `[{ variantId, weights }]`，planId 依既有慣例衍生自 requestId。
+function policyExposedEvent({ requestId, policies, t }) {
+  const displayedPlanIds = policies.map(p => `${requestId}:${p.variantId}`);
+  return {
+    eventId: nextId('evt'),
+    eventType: 'recommendation_exposed',
+    requestId,
+    timestamp: t,
+    exposureContext: {
+      displayedPlanIds,
+      planPolicies: policies.map(p => ({
+        planId: `${requestId}:${p.variantId}`,
+        variantId: p.variantId,
+        weights: p.weights,
+      })),
+    },
+  };
+}
+
+function favoritedEvent({ code = 'IECS0001', t }) {
+  return {
+    eventId: nextId('evt'),
+    eventType: 'course_favorited',
+    timestamp: t,
+    course: { catalogCourseCode: code, sectionId: null },
+  };
+}
+
+function unfavoritedEvent({ code = 'IECS0001', t }) {
+  return {
+    eventId: nextId('evt'),
+    eventType: 'course_unfavorited',
+    timestamp: t,
+    course: { catalogCourseCode: code, sectionId: null },
+  };
+}
+
+function selectedEvent({ code = 'IECS0001', t, source = 'explicit_selection' }) {
+  return {
+    eventId: nextId('evt'),
+    eventType: 'course_selected',
+    timestamp: t,
+    source,
+    course: { catalogCourseCode: code, sectionId: null },
+  };
+}
+
 // 產生足夠份量的 padding，讓整體事件量跨過門檻，才能在「已套用」狀態下
 // 比較某一軸本身的行為——`REQUIRED_USABLE_EVENT_COUNT` 內部值不對外承諾，
 // 這裡直接用匯出的常數，門檻改了測試不必跟著猜。
@@ -71,7 +126,11 @@ function paddingEvents(count, { axis = 'compact', reasonMap = { compact: 'time',
 }
 
 describe('PL1 可重播', () => {
-  test('同一批事件跑兩次，結果逐位元相同', () => {
+  // Roadmap #31 之後，可重播的敘述變嚴格：同一批事件 ＋ 同一個 `now` ＋
+  // 同一個 `activeTerm` 才保證逐位元相同——時間衰減讓「同一批事件」單獨
+  // 不再足夠。三個測試分別釘住：不給 now/activeTerm 時（與 #30 相同）、
+  // 打亂輸入順序時、以及有給 now/activeTerm 時。
+  test('同一批事件跑兩次（不套用衰減），結果逐位元相同', () => {
     const events = [
       withdrawnEvent({ reason: 'time', t: '2026-01-01T00:00:00.000Z' }),
       viewedEvent({ code: 'IECS0002', t: '2026-01-01T00:01:00.000Z' }),
@@ -92,6 +151,21 @@ describe('PL1 可重播', () => {
     const forward = learnPreferenceWeights(events, { explicitProfile: {} });
     const shuffled = learnPreferenceWeights([...events].reverse(), { explicitProfile: {} });
     assert.deepEqual(forward, shuffled);
+  });
+
+  test('同一批事件 + 同一個 now + 同一個 activeTerm 跑兩次，結果逐位元相同', () => {
+    const events = [
+      withdrawnEvent({ reason: 'time', t: '2026-01-01T00:00:00.000Z' }),
+      ...paddingEvents(48, { axis: 'compact' }),
+    ];
+    const options = {
+      explicitProfile: { compact: 1 },
+      now: '2026-06-01T00:00:00.000Z',
+      activeTerm: { academicYear: 114, semester: 'second' },
+    };
+    const a = learnPreferenceWeights(events, options);
+    const b = learnPreferenceWeights(events, options);
+    assert.deepEqual(a, b);
   });
 });
 
@@ -132,6 +206,33 @@ describe('PL2 兩位互動不同的學生排名分化', () => {
     assert.equal(resultB.sufficiency.status, SUFFICIENCY_STATUS.SUFFICIENT);
     assert.ok(resultA.weights.compact > resultA.weights.easy);
     assert.ok(resultB.weights.easy > resultB.weights.compact);
+  });
+
+  test('#7 混合權重方案被接受時不猜成任何單一偏好軸', () => {
+    const requestId = 'req-personalized-1';
+    const displayedPlanIds = [
+      `${requestId}:personalized`, `${requestId}:personalized_interest`,
+    ];
+    const events = [
+      {
+        ...exposedEvent({
+          requestId, displayedPlanIds, t: '2026-01-01T00:00:00.000Z',
+        }),
+        exposureContext: {
+          displayedPlanIds,
+          planPolicies: [{
+            planId: `${requestId}:personalized`, version: 'personalized-scoring-v1',
+          }],
+        },
+      },
+      acceptedEvent({
+        requestId, variantId: 'personalized_interest', t: '2026-01-01T00:00:30.000Z',
+      }),
+    ];
+
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.sufficiency.usableEventCount, 0);
+    assert.deepEqual(result.weights, { interest: 0, compact: 0, easy: 0 });
   });
 });
 
@@ -324,5 +425,356 @@ describe('PL10 事件類型的邊界情況', () => {
     const result = learnPreferenceWeights(events, { explicitProfile: {} });
     assert.equal(result.evidence.interest.length + result.evidence.compact.length - 49, 0);
     assert.equal(result.evidence.easy.length, 0);
+  });
+});
+
+describe('PL11 半衰期時間衰減', () => {
+  test('恰好一個半衰期前的事件，effectiveSampleSize 的貢獻是新事件的一半', () => {
+    const now = '2026-07-01T00:00:00.000Z';
+    const halfLifeAgo = new Date(new Date(now).getTime() - PREFERENCE_DECAY_HALF_LIFE_DAYS * 86400000).toISOString();
+
+    const fresh = learnPreferenceWeights(
+      [withdrawnEvent({ reason: 'time', t: now }), ...paddingEvents(49, { axis: 'interest' })],
+      { explicitProfile: {}, now },
+    );
+    const halfLifeOld = learnPreferenceWeights(
+      [withdrawnEvent({ reason: 'time', t: halfLifeAgo }), ...paddingEvents(49, { axis: 'interest' })],
+      { explicitProfile: {}, now },
+    );
+
+    // 兩邊都只有這一筆事件貢獻 compact 軸，其餘 49 筆 padding 在 interest 軸。
+    assert.equal(fresh.decay.effectiveSampleSize.compact, 1);
+    assert.equal(halfLifeOld.decay.effectiveSampleSize.compact, 0.5);
+  });
+});
+
+describe('PL12 跨學期降權', () => {
+  test('舊學期事件的權重低於同一事件在當前學期時；省略 activeTerm 時兩者相同', () => {
+    const now = '2026-07-01T00:00:00.000Z';
+    const activeTerm = { academicYear: 114, semester: 'second' };
+    const staleTerm = { academicYear: 113, semester: 'first' };
+
+    const currentTermEvents = [
+      withdrawnEvent({ reason: 'time', t: now, term: activeTerm }),
+      ...paddingEvents(49, { axis: 'interest' }),
+    ];
+    const staleTermEvents = [
+      withdrawnEvent({ reason: 'time', t: now, term: staleTerm }),
+      ...paddingEvents(49, { axis: 'interest' }),
+    ];
+
+    const withActiveTerm = learnPreferenceWeights(currentTermEvents, { explicitProfile: {}, now, activeTerm });
+    const withStaleTerm = learnPreferenceWeights(staleTermEvents, { explicitProfile: {}, now, activeTerm });
+    assert.ok(withStaleTerm.weights.compact < withActiveTerm.weights.compact);
+    assert.equal(withStaleTerm.decay.staleTermEventCount, 1);
+    assert.equal(withActiveTerm.decay.staleTermEventCount, 0);
+
+    // 省略 activeTerm：兩邊都不做學期降權，結果應該相同。
+    const noActiveTermA = learnPreferenceWeights(currentTermEvents, { explicitProfile: {}, now });
+    const noActiveTermB = learnPreferenceWeights(staleTermEvents, { explicitProfile: {}, now });
+    assert.equal(noActiveTermA.weights.compact, noActiveTermB.weights.compact);
+  });
+});
+
+describe('PL13 衰減不影響 usableEventCount', () => {
+  test('同一批事件在相差一年的兩個 now 下，usableEventCount 完全相同', () => {
+    const events = [withdrawnEvent({ reason: 'time', t: '2026-01-01T00:00:00.000Z' }), ...paddingEvents(30, { axis: 'compact' })];
+    const early = learnPreferenceWeights(events, { explicitProfile: {}, now: '2026-02-01T00:00:00.000Z' });
+    const late = learnPreferenceWeights(events, { explicitProfile: {}, now: '2027-02-01T00:00:00.000Z' });
+    assert.equal(early.sufficiency.usableEventCount, late.sufficiency.usableEventCount);
+    assert.equal(early.sufficiency.usableEventCount, 31);
+  });
+});
+
+describe('PL14 衰減後仍是強訊號', () => {
+  test('衰減到 0.3 的強訊號不得被歸進弱訊號 cap', () => {
+    // 3 個半衰期後，衰減係數 = 0.5^3 = 0.125，遠低於 STRONG_VOTE_WEIGHT，
+    // 但這仍然是一筆強訊號（退課），不該被 foldAxis 誤判成弱訊號掃進 cap。
+    const now = '2026-01-01T00:00:00.000Z';
+    const threeHalfLivesAgo = new Date(
+      new Date(now).getTime() - 3 * PREFERENCE_DECAY_HALF_LIFE_DAYS * 86400000,
+    ).toISOString();
+
+    const decayedStrongOnly = learnPreferenceWeights(
+      [withdrawnEvent({ reason: 'time', t: threeHalfLivesAgo }), ...paddingEvents(49, { axis: 'interest' })],
+      { explicitProfile: {}, now },
+    );
+    // 若被誤判為弱訊號，effectiveSampleSize 會被 cap 在 1（WEAK_VOTE_AXIS_CAP）；
+    // 這裡衰減係數 0.125 遠小於 cap，唯一能證明「沒被 cap 邏輯攔截」的方式是
+    // 確認它就是原始衰減值，而不是被硬性夾住的上限值。
+    assert.equal(decayedStrongOnly.decay.effectiveSampleSize.compact, Math.round(0.125 * 1000) / 1000);
+  });
+});
+
+describe('PL15 弱訊號 cap 在衰減之後才套用', () => {
+  test('7 筆全新瀏覽（原始總和剛過 cap）飽和在 cap；同樣 7 筆衰減 0.5 後嚴格小於 cap', () => {
+    // 7 * WEAK_VOTE_WEIGHT(0.15) = 1.05，剛好超過 cap = 1，全新時會被 cap 夾住。
+    // 衰減 0.5 之後總和只剩 0.525，還沒到 cap，此時 cap 應該不介入。
+    const now = '2026-01-01T00:00:00.000Z';
+    const halfLifeAgo = new Date(new Date(now).getTime() - PREFERENCE_DECAY_HALF_LIFE_DAYS * 86400000).toISOString();
+
+    const sevenViews = (t) => Array.from({ length: 7 }, (_, i) => viewedEvent({ code: `V${i}`, t }));
+
+    const fresh = learnPreferenceWeights(
+      [...sevenViews(now), ...paddingEvents(50, { axis: 'compact' })],
+      { explicitProfile: {}, now },
+    );
+    const decayed = learnPreferenceWeights(
+      [...sevenViews(halfLifeAgo), ...paddingEvents(50, { axis: 'compact' })],
+      { explicitProfile: {}, now },
+    );
+
+    assert.equal(fresh.decay.effectiveSampleSize.interest, 1); // 1.05 被 cap 夾在 1
+    assert.equal(decayed.decay.effectiveSampleSize.interest, 0.525); // 1.05 * 0.5，未達 cap
+    assert.ok(decayed.decay.effectiveSampleSize.interest < 1, '衰減後應嚴格小於 cap');
+  });
+});
+
+describe('PL16 時鐘純度', () => {
+  test('省略 now 時 decay.appliedAt 為 null，且結果與「now 設為事件當下」相同', () => {
+    const t = '2026-03-01T00:00:00.000Z';
+    const events = [withdrawnEvent({ reason: 'time', t }), ...paddingEvents(49, { axis: 'interest' })];
+
+    const noNow = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(noNow.decay.appliedAt, null);
+
+    const sameInstant = learnPreferenceWeights(events, { explicitProfile: {}, now: t });
+    assert.equal(noNow.weights.compact, sameInstant.weights.compact);
+  });
+
+  test('未來時間戳不得讓衰減係數大於 1（放大權重）', () => {
+    const now = '2026-01-01T00:00:00.000Z';
+    const future = '2026-06-01T00:00:00.000Z'; // 晚於 now
+    const withFutureTimestamp = learnPreferenceWeights(
+      [withdrawnEvent({ reason: 'time', t: future }), ...paddingEvents(49, { axis: 'interest' })],
+      { explicitProfile: {}, now },
+    );
+    // 未來時間戳被夾住在 ageDays=0，等同衰減係數 1——不應超過「當下事件」的份量。
+    assert.equal(withFutureTimestamp.decay.effectiveSampleSize.compact, 1);
+  });
+});
+
+describe('PL17 單調性：多一筆同軸弱訊號權重不得下降', () => {
+  test('1 筆強訊號 + 1 筆未飽和弱訊號 的權重 >= 只有 1 筆強訊號', () => {
+    const strongOnly = learnPreferenceWeights(
+      [withdrawnEvent({ code: 'S1', reason: 'content', t: '2026-01-01T00:00:00.000Z' })],
+      { explicitProfile: {} },
+    );
+    const strongPlusOneWeak = learnPreferenceWeights(
+      [
+        withdrawnEvent({ code: 'S1', reason: 'content', t: '2026-01-01T00:00:00.000Z' }),
+        viewedEvent({ code: 'V1', t: '2026-01-01T00:00:01.000Z' }),
+      ],
+      { explicitProfile: {} },
+    );
+    assert.ok(
+      strongPlusOneWeak.weights.interest >= strongOnly.weights.interest,
+      `多一筆支持性弱訊號不該讓權重下降：${strongPlusOneWeak.weights.interest} < ${strongOnly.weights.interest}`,
+    );
+  });
+});
+
+describe('PL24 computeLearnedBoosts（roadmap #5B）', () => {
+  test('boost 是學到的值超出顯式基準的部分', () => {
+    const boosts = computeLearnedBoosts(
+      { interest: 0.6, compact: 1, easy: 0.3 },
+      { interest: 0.2, compact: 0, easy: 0 },
+    );
+    assert.deepEqual(boosts, { interest: 0.4, compact: 1, easy: 0.3 });
+  });
+
+  test('顯式先驗已飽和（prior=1）時 boost 為 0——這是不回歸的關鍵案例', () => {
+    // foldAxis() 的下限保證學到的值在 prior=1 時恆等於 1；若直接拿學到的
+    // 原值當強度，所有勾了集中排課的使用者會在沒有任何新證據下被加重權重。
+    const boosts = computeLearnedBoosts(
+      { interest: 0, compact: 1, easy: 0 },
+      { interest: 0, compact: 1, easy: 0 },
+    );
+    assert.equal(boosts.compact, 0);
+  });
+
+  test('boost 恆被夾在 [0,1]，不會因為浮點誤差變成負數', () => {
+    const boosts = computeLearnedBoosts(
+      { interest: 0.9999, compact: 0, easy: 0 },
+      { interest: 1, compact: 0, easy: 0 },
+    );
+    assert.ok(boosts.interest >= 0);
+  });
+
+  test('weights 為 null 時整個回傳 null，不是全 0 物件', () => {
+    assert.equal(computeLearnedBoosts(null, { interest: 0, compact: 0, easy: 0 }), null);
+  });
+
+  test('省略 explicitProfile 時視為三軸皆為 0', () => {
+    const boosts = computeLearnedBoosts({ interest: 0.5, compact: 0, easy: 0 });
+    assert.equal(boosts.interest, 0.5);
+  });
+});
+
+describe('PL28 recommendation_accepted 在 #7 混合權重下的對照歸因（roadmap #40）', () => {
+  test('持續接受被放大 compact 的方案，學到 compact 高於 interest', () => {
+    const explicitProfile = { interest: 0, compact: 0, easy: 0 };
+    const events = Array.from({ length: 50 }, (_, i) => {
+      const requestId = `req-${i}`;
+      const t = `2026-01-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`;
+      return [
+        policyExposedEvent({
+          requestId,
+          t,
+          policies: [
+            { variantId: 'personalized', weights: { interest: 1, compact: 1, easy: 0 } },
+            { variantId: 'personalized_compact', weights: { interest: 1, compact: 1.5, easy: 0 } },
+            { variantId: 'personalized_interest', weights: { interest: 1.5, compact: 1, easy: 0 } },
+            { variantId: 'personalized_credits', weights: { interest: 1, compact: 1, easy: 0 } },
+          ],
+        }),
+        acceptedEvent({ requestId, variantId: 'personalized_compact', t }),
+      ];
+    }).flat();
+
+    const result = learnPreferenceWeights(events, { explicitProfile });
+    assert.equal(result.sufficiency.status, SUFFICIENCY_STATUS.SUFFICIENT);
+    assert.ok(result.weights.compact > result.weights.interest,
+      'compact 被放大的方案持續勝出，應該學到 compact 高於 interest');
+    assert.ok(result.evidence.compact.every(e => e.ruleId === 'ACCEPT_VARIANT_CONTRAST'));
+  });
+
+  test('接受基準方案（沒有任何軸被放大）時，所有軸都是平手，不投票', () => {
+    const requestId = 'req-tie';
+    const events = [
+      policyExposedEvent({
+        requestId,
+        t: '2026-01-01T00:00:00.000Z',
+        policies: [
+          { variantId: 'personalized', weights: { interest: 0, compact: 1, easy: 0 } },
+          { variantId: 'personalized_credits', weights: { interest: 0, compact: 1, easy: 0 } },
+        ],
+      }),
+      acceptedEvent({ requestId, variantId: 'personalized', t: '2026-01-01T00:00:01.000Z' }),
+      ...paddingEvents(49, { axis: 'easy' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.compact.length, 0, '基準方案跟唯一的對照組平手，不該產生任何票');
+  });
+
+  test('打亂 planPolicies 陣列順序，對照歸因的結果不變（重播純度）', () => {
+    const requestId = 'req-shuffle';
+    const policies = [
+      { variantId: 'personalized', weights: { interest: 1, compact: 1, easy: 0 } },
+      { variantId: 'personalized_compact', weights: { interest: 1, compact: 1.5, easy: 0 } },
+      { variantId: 'personalized_credits', weights: { interest: 1, compact: 1, easy: 0 } },
+    ];
+    const events = [
+      policyExposedEvent({ requestId, t: '2026-01-01T00:00:00.000Z', policies }),
+      acceptedEvent({ requestId, variantId: 'personalized_compact', t: '2026-01-01T00:00:01.000Z' }),
+    ];
+    const shuffledEvents = [
+      policyExposedEvent({ requestId, t: '2026-01-01T00:00:00.000Z', policies: [...policies].reverse() }),
+      acceptedEvent({ requestId, variantId: 'personalized_compact', t: '2026-01-01T00:00:01.000Z' }),
+    ];
+    // 兩批事件各自有自己的 eventId（`nextId()` 遞增），只比對 evidence 的
+    // ruleId 與 occurredAt，不比對整個物件。
+    const forward = learnPreferenceWeights(events, { explicitProfile: {} });
+    const shuffled = learnPreferenceWeights(shuffledEvents, { explicitProfile: {} });
+    assert.deepEqual(
+      forward.evidence.compact.map(e => e.ruleId),
+      shuffled.evidence.compact.map(e => e.ruleId),
+    );
+    assert.equal(forward.evidence.interest.length, shuffled.evidence.interest.length);
+  });
+});
+
+describe('PL29 收藏／手動選課成為 interest 的強訊號（roadmap #40）', () => {
+  test('50 筆不同課程的收藏，interest 學到高權重且不受弱訊號 cap 限制', () => {
+    const events = Array.from({ length: 50 }, (_, i) => favoritedEvent({
+      code: `FAV${i}`, t: `2026-01-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`,
+    }));
+    const result = learnPreferenceWeights(events, { explicitProfile: { interest: 0 } });
+    assert.equal(result.sufficiency.status, SUFFICIENCY_STATUS.SUFFICIENT);
+    assert.ok(result.weights.interest > 0.5, '50 筆強訊號應該遠超過弱訊號 cap 能達到的權重');
+    assert.ok(result.evidence.interest.every(e => e.ruleId === 'FAVORITED_STRONG'));
+  });
+
+  test('收藏後又取消收藏，那次收藏不算數', () => {
+    const events = [
+      favoritedEvent({ t: '2026-01-01T00:00:00.000Z' }),
+      unfavoritedEvent({ t: '2026-01-01T00:00:01.000Z' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.interest.length, 0);
+  });
+
+  test('收藏後才退選，那次收藏不算數——跟「看了又退」同一條規則', () => {
+    // 退課原因故意選 'time'（對應 compact 軸）而不是 'content'——後者本身會對
+    // interest 產生 WITHDRAW_CONTENT 投票，混進這裡要驗證的「收藏被排除」訊號。
+    const events = [
+      favoritedEvent({ t: '2026-01-01T00:00:00.000Z' }),
+      withdrawnEvent({ reason: 'time', t: '2026-01-01T00:00:01.000Z' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.interest.length, 0);
+  });
+
+  test('必修或系統推薦來源的手動選課不算興趣表態', () => {
+    const events = [
+      selectedEvent({ t: '2026-01-01T00:00:00.000Z', source: 'required' }),
+      selectedEvent({ t: '2026-01-01T00:00:01.000Z', source: 'system_recommendation', code: 'IECS0002' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.interest.length, 0);
+  });
+
+  test('explicit_selection 來源的手動選課算強訊號，退選後不算', () => {
+    const kept = selectedEvent({ code: 'KEPT', t: '2026-01-01T00:00:00.000Z' });
+    const retracted = selectedEvent({ code: 'RETRACTED', t: '2026-01-01T00:01:00.000Z' });
+    const events = [
+      kept,
+      retracted,
+      // 'time'（對應 compact 軸）而不是 'content'，避免退課本身又對 interest
+      // 投一票，混進這裡要驗證的「手動選課被排除」訊號。
+      withdrawnEvent({ code: 'RETRACTED', reason: 'time', t: '2026-01-01T00:02:00.000Z' }),
+    ];
+    const result = learnPreferenceWeights(events, { explicitProfile: {} });
+    assert.equal(result.evidence.interest.length, 1);
+    assert.equal(result.evidence.interest[0].ruleId, 'SELECTED_EXPLICIT_STRONG');
+  });
+});
+
+describe('PL30 axisSignal：區分「沒有偏好」與「已頂到上限但有證據」（roadmap #40）', () => {
+  test('沒有任何事件時，三軸皆為 no-evidence', () => {
+    const result = learnPreferenceWeights([], { explicitProfile: {} });
+    assert.deepEqual(result.axisSignal, {
+      interest: AXIS_SIGNAL_STATUS.NO_EVIDENCE,
+      compact: AXIS_SIGNAL_STATUS.NO_EVIDENCE,
+      easy: AXIS_SIGNAL_STATUS.NO_EVIDENCE,
+    });
+  });
+
+  test('顯式基準為 0、有同軸證據時，學到 learned-increment', () => {
+    const events = Array.from({ length: 50 }, (_, i) => withdrawnEvent({
+      code: `T${i}`, reason: 'time', t: `2026-01-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`,
+    }));
+    const result = learnPreferenceWeights(events, { explicitProfile: { compact: 0 } });
+    assert.equal(result.axisSignal.compact, AXIS_SIGNAL_STATUS.LEARNED_INCREMENT);
+  });
+
+  test('顯式基準已頂到 1、仍有持續同軸證據時，回報 explicit-ceiling-with-evidence，不是 no-evidence', () => {
+    const events = Array.from({ length: 50 }, (_, i) => withdrawnEvent({
+      code: `T${i}`, reason: 'time', t: `2026-01-01T00:${String(i % 60).padStart(2, '0')}:00.000Z`,
+    }));
+    const result = learnPreferenceWeights(events, { explicitProfile: { compact: 1 } });
+    assert.equal(result.weights.compact, 1, '既有規則：weight 頂到 1 不變');
+    assert.equal(result.axisSignal.compact, AXIS_SIGNAL_STATUS.EXPLICIT_CEILING_WITH_EVIDENCE,
+      '這裡才看得出「頂到上限」跟「沒有證據」的差別');
+  });
+
+  test('axisSignal 的計算不受整體 sufficient/insufficient 門檻影響', () => {
+    const events = Array.from({ length: 5 }, (_, i) => withdrawnEvent({
+      code: `T${i}`, reason: 'time', t: `2026-01-01T00:0${i}:00.000Z`,
+    }));
+    const result = learnPreferenceWeights(events, { explicitProfile: { compact: 0 } });
+    assert.equal(result.sufficiency.status, SUFFICIENCY_STATUS.INSUFFICIENT);
+    assert.equal(result.axisSignal.compact, AXIS_SIGNAL_STATUS.LEARNED_INCREMENT,
+      '即使整體 insufficient，個別軸只要有證據仍要如實回報，不是連帶回報 no-evidence');
   });
 });

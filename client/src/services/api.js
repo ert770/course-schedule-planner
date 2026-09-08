@@ -73,6 +73,13 @@ export const privacyAPI = {
     method: 'DELETE',
     body: JSON.stringify(payload),
   }),
+  // roadmap #31：個人化現況（顯式／學習／資料不足／未同意）。
+  // 這支 GET 在結果過期時會順手重算並寫回一列——它是快取填充，不是新的
+  // 寫入語意，但呼叫端不該假設這是一支保證唯讀的 GET。
+  getPersonalization: () => request('/privacy/personalization'),
+  // roadmap #31：只清學習結果與其輸入的互動事件，顯式 Profile（偏好標籤、
+  // 避開時段、學分上限）不受影響。
+  resetPersonalization: () => request('/privacy/personalization', { method: 'DELETE' }),
 };
 
 // Interaction log API（roadmap #2）。

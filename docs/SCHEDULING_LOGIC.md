@@ -342,17 +342,21 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 6. 依照偏好產生多個課表方案。
 7. 回傳課表、學分、衝堂資訊、推薦理由與備選課程。
 
-### 方案分化：每個 variant 一張權重表（Roadmap #10）
+### 方案分化：個人化權重與有限替代策略（Roadmap #7）
 
-五個 variant **不是**「共用一組基礎分，各自再加一點小分」——那樣會塌縮。
-量測過的失衡：類別項每差一級 120 分，而 variant 專屬項只有 25～40 分
-（`max_credits` 的 2→3 學分只差 25），主題訊號被類別分完全蓋過，五個方案排出
-同一份課表，去重後只剩 1 份。
+排課器先由顯式偏好與可用的學習結果建立一份版本化 `generationPolicy`，再用同一份
+權重決定單門課排序與方案比較。正式軸為 `interest`／`compact`／`easy`；未表態的軸為
+0，已表態軸的絕對值落在 `[1,2]`，其中學到的 boost 只能加強顯式方向，不能自行新增
+方向或推翻方向。`easy < 0` 代表挑戰難課。
 
-現在 `scheduler.js` 的 `VARIANT_WEIGHTS` 給每個 variant 一組係數
-（`category`／`credits`／`easy`／`interest`／`compact`）。`required_first` 全部維持
-1／0，行為與改動前逐項相同，是其餘 variant 的對照組；其餘 variant 降低類別係數、
-拉高自己的主題係數，讓主題真的能重排選修。
+系統不再固定產生五種預設取向。每次先建立「個人化綜合方案」，再只針對使用者已表達的
+軸建立加重 1.5 倍的比較方案，最後加入一個提高學分係數的方案；總數上限仍為 5。沒有
+偏好時只嘗試綜合與較多學分兩種策略，不把「涼課」或其他未表態取向塞給使用者。
+
+`scoringPolicy.js` 負責權重範圍、特徵正規化與各軸分數；`planStrategies.js` 只建立有限且
+可重現的搜尋策略；`scheduler.js` 套用策略。方案 ID 是生成策略的識別值，不能當成使用者
+接受某一偏好軸的證據。每個方案都保存實際 `generationPolicy`，每門經排序加入的課也在
+`recommendationReason.scoringPolicy` 保存同一快照。
 
 **必修的絕對優先不受權重表影響。** 「必修先排」是規則不是偏好，因此本人必修改由
 固定加分（`REQUIRED_COURSE_BONUS`）取得絕對優先，權重表只負責排序**選修**。
@@ -509,6 +513,45 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 也不得讓方案層 `preferenceBreakdown.easy` 冒出數字——那兩者只認真實評價
 （見上一段）。`server/test/scheduler.test.js` 的 P10-5 釘住這條界線。
 
+## Per-user 加權方向（Roadmap #5B）
+
+**問題**：`preferenceProfile` 三軸原本恆為 0 或 1，同一個涼度分數對每個使用者
+的意義都一樣——系統學到了行為權重（`#30`），但沒有任何東西把它接進排課決策。
+驗收標準要求「同一評價分數對不同使用者要有相反符號」，而事件 schema 的退課
+原因只有 `workload`（太重），沒有任何欄位能表達「太簡單、我要更難」，方向因此
+**只能宣告，不能從行為推論**。
+
+**方向：顯式，兩個互斥標籤**。`#涼課優先`（`preferEasyCourses`）／
+`#挑戰難課`（`preferChallengingCourses`，`server/src/data/preferenceTags.js`）。
+`scheduler.js` 的 `resolveEasyDirection(constraints)` 換算成 `+1`／`-1`／`0`；
+兩個都勾時視為 `0`（未表態）並在 `warnings` 說明矛盾，不猜測使用者真正的意思。
+
+**強度：學到的權重，但只能加強、不能推翻**。`axisWeight(方向, boost) =
+方向 × (1 + boost)`，因此權重的絕對值恆在 `[1, 2]`、符號恆等於顯式方向。
+`boost` 由 `preferenceLearning.js` 的 `computeLearnedBoosts(storedWeights,
+explicitProfile)` 算出，是「學到的值**超出**顯式基準的部分」，恆 `>= 0`——
+不是學到的原值。這個減法是必要的：`foldAxis()`（`#30`）把輸出下限釘在顯式
+先驗，對已經勾了集中排課的使用者 `compact` 的學到值恆為 `1`，若直接拿原值
+當強度，這類使用者會在功能上線當天無證據地被加重權重。
+
+**`evaluatePreference()` 的正規化**：分母改用 `Σ|weight|`，負權重把軸值翻面
+（`orientAxisValue(value, weight) = weight >= 0 ? value : 1 - value`）。
+`score` 因此仍落在 `[0,1]`，`comparePlans()`、`PREFERENCE_SCORE_EPSILON`
+與「偏好符合度 N%」都不必改；權重全為正時算術與改動前逐位元相同。
+`preferenceBreakdown` 本身**維持方向無關**（永遠是涼度測量值，不是偏好值）
+——翻它會讓同一份課表在兩個人眼中顯示不同的「涼度」，把偏好偽裝成事實。
+
+**Roadmap #7 已把相同方向接進單門課排序。** `computeScoreComponents()`／
+`scoreCourse()` 與方案層 `evaluatePreference()` 現在共用同一份原始使用者權重；替代
+策略可以加重一個軸來產生比較方案，但不能拿加重後的權重替自己評高分。挑戰難課的
+負權重因此會直接讓較低涼度的課在選課時加分，而不只是在既有方案中改選主推項。
+
+**在今天的真實資料上是可驗證但不可見的功能**：demo 帳號的學到權重三軸皆為
+`0.000`、`sufficiency` 為 `insufficient`（31/50），`getSchedulingPreferenceWeights()`
+因此回傳 `applied:false`，`boost` 恆為 `0`——`preferenceProfile.easy` 只由顯式
+方向決定，課表與 `#5B` 之前完全相同。驗收標準本身（相反符號讓主推方案互換）
+已用合成資料在 `server/test/scheduler.test.js` 的 PD1 驗證過。
+
 ## 內容偏好評分與訊號可靠度警告
 
 Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／重視平時成績／實作評量／
@@ -572,7 +615,9 @@ Constraint Schema（Roadmap #21）」一節。
 軟性偏好可用於排序不同課表方案，不會排除課程：
 
 - 集中排課（`preferCompact`）。
-- 涼課／高分優先（`preferEasyCourses`，見「涼度評分與評價覆蓋率」）。
+- 涼課／高分優先（`preferEasyCourses`）或挑戰難課（`preferChallengingCourses`，
+  Roadmap #5B）——兩者方向相反，同時為 `true` 時排課引擎視為未表態並在
+  `warnings` 說明矛盾。見「涼度評分與評價覆蓋率」與下方「Per-user 加權方向」。
 - 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`）。
 - 8 個內容偏好——免期中考（`noMidterm`）、免分組報告（`noGroupReport`）、討論課
   （`discussion`）、重視平時成績（`weightDaily`）、實作評量（`practicalExam`）、
@@ -709,20 +754,21 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 
 ## 多方案課表
 
-`generateSchedule()` 一次產生 5 個 variant 的方案（見「方案分化：每個 variant 一張權重表
-（Roadmap #10）」）：必修與重補修優先、集中排課、涼課與高分優先、興趣與路徑優先、
-學分最大化，另有第 6 個非常態成員——`#22` bounded backtracking 失敗時才插入的
-`限制修復方案`。每個方案帶：
+`generateSchedule()` 依當次個人化權重產生最多 5 個策略方案（見「方案分化：個人化權重
+與有限替代策略（Roadmap #7）」）：個人化綜合方案、已啟用偏好軸的加重方案，以及較多
+學分方案。`#22` bounded backtracking 失敗時可插入非常態的 `限制修復方案`。每個方案帶：
 
 - 課程清單（`schedule`／`unscheduledCourses`／`watchedCourses`）。
 - 總學分（`totalCredits`／`graduationCredits`／`nonGraduationCredits`）。
 - 每門課的推薦理由（`recommendationReason`，見上方「推薦理由（Roadmap #26）」）。
+- 生成時實際使用的版本化權重（`generationPolicy`）與停止條件（`stopWhen`）。
 - 被排除課程與原因（`excludedCourses`）。
 - 比較用指標（`planMetrics`，見「方案比較與 counterfactual（Roadmap #27）」）。
 
-去重後方案數常常少於 5——`uniquePlans()` 判斷「相同」的標準是**課程 id 集合**，不是排序；
-少於 5 時 `planDiversity` 結構化記錄哪些取向被合併、可競爭課程池多大，`describePlanCollapse()`
-從同一份結構產生給使用者看的中文句子。
+去重後方案數可能少於實際嘗試的策略數——`uniquePlans()` 判斷「相同」的標準是**課程 id
+集合**，不是排序；`planDiversity` 結構化記錄哪些策略被合併、可競爭課程池多大與
+`reason: same-course-combination`。重複結果只證明這次調整取捨仍得到相同組合，不能單憑
+這點判定候選池不足；`describePlanCollapse()` 從同一份結構產生使用者可讀的說明。
 
 ### 方案比較與 counterfactual（Roadmap #27）
 
@@ -771,13 +817,27 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 - 涼課評分改用結構化評價（`Course_Reviews`），取代課程描述關鍵字（見「涼度評分與評價覆蓋率」）。
 - 8 個內容偏好改為軟性加分並附訊號可靠度警告，取代硬性排除（roadmap #3，見「內容偏好評分與訊號可靠度警告」）。
 - roadmap #21 的正式 `hard`／`soft` constraint schema（`weight`／`relaxable`／`source`／`confidence` 欄位）、與方案產生器分離的獨立 validator、opt-in 放寬階梯、結構化 conflict set，見「Hard/Soft Constraint Schema（Roadmap #21）」。
+- 評價分數的 per-user 加權方向：`preferenceProfile` 三軸帶號，同一涼度分數對挑戰難課的使用者與涼課優先的使用者給相反符合度（見「Per-user 加權方向（Roadmap #5B）」）。
+- Roadmap #7 的版本化個人化 scorer：連續權重已接進單門課排序，並以動態、有限的比較策略取代固定五個 variant。
 
 仍需補強：
 
 - 數位課程畢業門檻。
-- 評價分數的 per-user 個人化加權（同一難度數值對不同使用者相反符號）；目前是母體共用的涼度，屬 roadmap #5B。
 - `has_midterm`／`has_group_project`／`grading_scheme`／`language` 課程欄位仍不存在；8 個內容偏好因此仍以描述關鍵字軟性計分（見「內容偏好評分與訊號可靠度警告」），欄位化需要對共用 MySQL 做 `ALTER TABLE`，屬需與組員協調的 D 類 rollout，不在 roadmap #3 範圍內。
 - roadmap #21 的先修／共修（prerequisite/co-requisite）強制執行：schema 已定義這個層級（`enforced:false`），但完全沒有資料來源可查（無先修表），validator 誠實回報 `unchecked`，不強制執行；資料模型屬 roadmap #8，尚未開始。
 - 通識基礎 16 學分的完整對照（目前只實作「不計畢業學分」的那 3 學分）。
 - 核心選修 12 學分的達成度追蹤（目前只做到分類與優先度，未累計缺口）。
+
+### 個人化量測：同一把尺的 baseline 與 A/B（Roadmap #36）
+
+離線實驗 `server/src/skills/personalizationExperiment.js` 固定 candidate set、term、seed、
+timeout 與 hard constraints，建立三個條件：B0 移除所有個人化輸入、B1 保留表單偏好但停用
+learned preference、P 使用正式學習管線產生的權重。三者都用 `personalizationMetrics.js` 以
+baseline 使用者的 `buildPreferenceProfile()` 與 `evaluatePreference()` 重新計算 utility，
+避免「生成時一把尺、驗收時另一把尺」。
+
+每個方案都經 `validateScheduleAgainstConstraints()`；任何偏好造成的課程集合或排序變化，
+都必須同時回報學分、上課天數、早課數、評價覆蓋率、Jaccard distance、Kendall tau 與安全結果。
+資料不足的 persona 不套用 learned weights，並且仍會產生可重現的 B1/P 對照；這是 cold-start
+邊界，不把缺資料包裝成個人化效果。
 

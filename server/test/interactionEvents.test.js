@@ -157,7 +157,7 @@ describe('#2 consent boundary', () => {
     const serialized = JSON.stringify(stored);
     assert.equal(serialized.includes(demo.studentId), false);
     assert.equal(serialized.includes(deriveSubjectId(identityA.canonicalId)), false);
-    assert.equal(stored[0].versionSnapshot.modelVersion, 'scheduler-greedy-v1');
+    assert.equal(stored[0].versionSnapshot.modelVersion, 'personalized-scoring-v1');
     assert.equal(stored[0].versionSnapshot.recommendationReasonVersion, null);
   });
 

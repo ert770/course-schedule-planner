@@ -33,6 +33,10 @@ import { ACTIVE_TERM } from '../data/activeTerm.js';
 import {
   getConfirmationChangeType, isRenderableTool, listConfirmationChangeTypes,
 } from './agentToolRegistry.js';
+import {
+  createEvidenceLedger, recordToolEvidence, enforceFaithfulReply,
+} from './explanationFaithfulness.js';
+import { sha256Hex } from '../utils/hash.js';
 
 let ai = null;
 
@@ -91,7 +95,12 @@ export function applyToolOutcome(envelope, toolName, result) {
 
 // 模型送來的參數字串不保證是合法 JSON。壞掉時回 null，讓呼叫端把錯誤當成
 // tool result 餵回去讓模型自己修，而不是讓整個請求爆掉。
-function parseToolArguments(raw) {
+//
+// export 是給 golden set eval 用的（roadmap #34）：eval 原本自己 `JSON.parse`
+// 再 `catch { args = {} }`，會把「模型吐出壞 JSON」靜默變成「呼叫了工具但沒帶
+// 參數」，失敗訊息因此指向錯的方向（說某個參數是 undefined，實際上是整包壞掉）。
+// 兩邊共用同一份，eval 看到的解析結果才跟生產一致。
+export function parseToolArguments(raw) {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
@@ -625,6 +634,9 @@ export async function handleChat(identity, message) {
   let responseData = null;
   let detectedIntent = 'general_chat';
   let finalReply = '';
+  // #37：只記錄本回合模型實際看過的 tool result。最後回答若引用不到這份帳本，
+  // 會先修正一次，再退回後端產生的保守回答。
+  const evidenceLedger = createEvidenceLedger();
 
   // 耗盡步數時，模型沿途寫出來的內容不該被丟掉換成罐頭訊息。
   let lastAssistantText = '';
@@ -678,7 +690,20 @@ export async function handleChat(identity, message) {
         // `summarizeScheduleForModel()`：完整結果有 800KB+，會撐爆 context），
         // 再包上統一信封（見 `buildToolResultEnvelope()`）。
         const modelResult = call.name === 'run_csp_scheduler' ? summarizeScheduleForModel(result) : result;
-        const outputStr = JSON.stringify(buildToolResultEnvelope(call.name, modelResult));
+        const toolEnvelope = buildToolResultEnvelope(call.name, modelResult);
+        // 同一工具、不同參數要算成不同操作——否則「對 A 課失敗、對 B 課成功」的
+        // record_schedule_feedback 會被合併成一筆終態成功，A 課的失敗被靜默吃掉。
+        // 只雜湊 args，不記錄內容本身，符合上面「工具參數已解析（內容不記錄）」的政策；
+        // 參數解析失敗時退回原始字串，讓不同的錯誤輸入仍分屬不同操作。
+        const operationKey = `${call.name}:${sha256Hex(args !== null ? args : (call.arguments ?? '')).slice(0, 16)}`;
+        recordToolEvidence(evidenceLedger, {
+          toolName: call.name,
+          callId: call.call_id,
+          result: modelResult,
+          dataSource: toolEnvelope.dataSource,
+          operationKey,
+        });
+        const outputStr = JSON.stringify(toolEnvelope);
         logger.info('工具執行完成', { label: 'ToolCall_Result', outputLength: outputStr.length });
 
         // 工具「被呼叫了」不等於「成功了」——驗證失敗時只是回一個 { error } 給模型，
@@ -700,6 +725,35 @@ export async function handleChat(identity, message) {
       finalReply = lastAssistantText
         || '任務過於複雜，已達最大思考步數。請嘗試簡化您的需求。';
     }
+
+    const faithful = await enforceFaithfulReply({
+      reply: finalReply,
+      ledger: evidenceLedger,
+      userMessage: message,
+      repair: async ({ reply, violations, ledger }) => {
+        const repairResponse = await client.responses.create({
+          model: getModel(),
+          instructions: [
+            '你是課程規劃回答的事實修正器。只能使用提供的證據帳本修正原回答。',
+            '不得新增帳本以外的課程、教師、學分、時間、評價、資格、畢業規則或操作結果。',
+            '沒有評價時明確說沒有評價；資格或認列不確定時明確保留；工具失敗不得說成功。',
+            '只輸出修正後要給使用者看的繁體中文，不要輸出分析、JSON 或證據帳本。',
+          ].join('\n'),
+          input: [{
+            role: 'user',
+            content: JSON.stringify({ originalReply: reply, violations, evidenceLedger: ledger }),
+          }],
+        });
+        return repairResponse.output_text || '';
+      },
+    });
+    if (!faithful.audit.passed || faithful.repaired || faithful.fallback) {
+      logger.warn(
+        `回答忠實度檢查：violations=${faithful.initialAudit.hallucinationCount}, repaired=${faithful.repaired}, fallback=${faithful.fallback}`,
+        { label: 'AgentFaithfulness' }
+      );
+    }
+    finalReply = faithful.reply;
 
     // 只有整次處理成功才原子保存 user/assistant 一對加密訊息。
     await saveChatExchange(identity, message, finalReply);

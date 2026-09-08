@@ -1,0 +1,155 @@
+{
+  "generatedAt": "2026-09-07T06:57:40.161Z",
+  "durationMs": 37806,
+  "model": {
+    "requested": "gpt-5.6-luna",
+    "resolved": "gpt-5.6-luna"
+  },
+  "versions": {
+    "promptAndTools": "e121ed7579b40d074a93d2c01b5b2e06ccca1ad831072474d733382e81eba20d",
+    "singleTurnFixture": "d9f8f3e17abff4292f698797993d26b975b46a1bab951dd65c78b6a72466c261",
+    "multiTurnFixture": "cbf6120e06b71f8067b6d6f189e77c4b35137898eb2a1ee71403e01dd9d15070"
+  },
+  "totals": {
+    "total": 15,
+    "passed": 14,
+    "failed": 1,
+    "passRate": 0.9333333333333333,
+    "firstTryPassRate": 0.6666666666666666
+  },
+  "cases": [
+    {
+      "id": "basic-no-morning",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": []
+    },
+    {
+      "id": "strength-absolute",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": []
+    },
+    {
+      "id": "strength-flexible",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": []
+    },
+    {
+      "id": "interest-keywords",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": []
+    },
+    {
+      "id": "permanent-vs-once",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": []
+    },
+    {
+      "id": "once-not-permanent",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": []
+    },
+    {
+      "id": "no-invented-constraints",
+      "pass": false,
+      "attempts": 3,
+      "firstTry": false,
+      "failures": [
+        "參數不符合 schema：(根層) 出現 schema 未定義的欄位 sourcePhrases（第 2 次嘗試就違反）"
+      ]
+    },
+    {
+      "id": "profile-correction",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": []
+    },
+    {
+      "id": "interpretation-strength-split",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": []
+    },
+    {
+      "id": "ambiguous-course-name",
+      "pass": true,
+      "attempts": 3,
+      "firstTry": false,
+      "failures": []
+    },
+    {
+      "id": "out-of-scope-request",
+      "pass": true,
+      "attempts": 3,
+      "firstTry": false,
+      "failures": []
+    },
+    {
+      "id": "contradictory-credit-range",
+      "pass": true,
+      "attempts": 3,
+      "firstTry": false,
+      "failures": []
+    },
+    {
+      "id": "unavailable-course",
+      "pass": true,
+      "attempts": 3,
+      "firstTry": false,
+      "failures": []
+    },
+    {
+      "id": "multi-turn-refinement",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": [],
+      "turns": [
+        {
+          "turn": 1,
+          "pass": true,
+          "tool": "run_csp_scheduler"
+        },
+        {
+          "turn": 2,
+          "pass": true,
+          "tool": "run_csp_scheduler"
+        }
+      ],
+      "schedulerWasCalled": true
+    },
+    {
+      "id": "preflight-clarify",
+      "pass": true,
+      "attempts": 1,
+      "firstTry": true,
+      "failures": [],
+      "turns": [
+        {
+          "turn": 1,
+          "pass": true,
+          "tool": "run_csp_scheduler"
+        },
+        {
+          "turn": 2,
+          "pass": true,
+          "tool": null
+        }
+      ],
+      "schedulerWasCalled": false
+    }
+  ]
+}

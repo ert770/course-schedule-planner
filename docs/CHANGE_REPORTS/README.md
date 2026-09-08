@@ -2,9 +2,32 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-08
+
+1. [Roadmap #36（二輪）：修正 preference sensitivity sweep 的量測方法](./2026-09-08-roadmap-36-sensitivity-sweep-fix.md)
+
+## 2026-09-07
+
+1. [Roadmap #40：補齊個人化學習訊號缺口](./2026-09-07-roadmap-40-preference-signal-gaps.md)
+2. [Roadmap #35：排課引擎 feasibility／constraint violation benchmark](./2026-09-07-roadmap-35-scheduler-benchmark.md)
+3. [Roadmap #34：Agent 自然語言需求理解 eval](./2026-09-07-roadmap-34-agent-understanding-eval.md)
+4. [Roadmap #41（第二段）：課程指涉解析到 section 實體](./2026-09-07-roadmap-41-course-reference-resolution.md)
+5. [Roadmap #41（第一段）：tool retry 的 terminal 語意](./2026-09-07-roadmap-41-tool-retry-terminal-outcome.md)
+
+## 2026-09-06
+
+1. [Roadmap #37：explanation faithfulness 與 hallucination tests](./2026-09-06-roadmap-37-explanation-faithfulness.md)
+2. [Roadmap #36：personalization baseline 與 preference sensitivity A/B](./2026-09-06-roadmap-36-personalization-baseline-ab.md)
+3. [三組 demo persona 與歷史修課資料](./2026-09-06-demo-personas-and-course-history.md)
+
+## 2026-09-05
+
+1. [Roadmap #5B：per-user 加權方向（同一評價分數對不同使用者相反符號）](./2026-09-05-roadmap-5b-per-user-preference-direction.md)
+
 ## 2026-09-04
 
-1. [Roadmap #30：可重現的 per-user preference update pipeline](./2026-09-04-roadmap-30-preference-learning-pipeline.md)
+1. [Roadmap #31：冷啟動、偏好重設、時間衰減與資料不足策略](./2026-09-04-roadmap-31-cold-start-reset-decay-and-source.md)
+2. [Roadmap #30：可重現的 per-user preference update pipeline](./2026-09-04-roadmap-30-preference-learning-pipeline.md)
 
 ## 2026-09-03
 

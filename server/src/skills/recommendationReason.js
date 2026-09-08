@@ -11,7 +11,7 @@
 
 // 理由結構的版本。改變欄位語意時要升版，讓 `#2` 的互動事件可以回溯
 // 「這筆曝光當時的理由是用哪一版算的」。格式比照 `PRIVACY_POLICY_VERSION`。
-export const RECOMMENDATION_REASON_VERSION = '2026-08-31.v1';
+export const RECOMMENDATION_REASON_VERSION = '2026-09-05.v2';
 
 // 主要原因代號。用代號而非自由文字，理由與 `#24` 的理解回講相同：
 // 輸出空間小才穩定、才測得住，中文由呈現層決定。
@@ -108,6 +108,7 @@ export function buildRecommendationReason({
   course,
   placementReason = null,
   scoreComponents = null,
+  scoringPolicy = null,
   contentHits = [],
   interestHits = [],
   alternatives = null,
@@ -125,6 +126,7 @@ export function buildRecommendationReason({
     // 原本那句人寫的理由保留，不刪——既有呼叫端與測試都還在讀 `course.reason`。
     placementReason,
     // 分數怎麼來的。只列非 0 的元件，避免一堆 0 稀釋掉真正起作用的項目。
+    scoringPolicy,
     scoreBreakdown: scoreComponents
       ? Object.entries(scoreComponents)
         .filter(([, value]) => value !== 0)

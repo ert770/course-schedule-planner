@@ -14,6 +14,10 @@
     "migrate:course-history": "node scripts/courseHistoryMigration.js",
     "migrate:admission-year": "node scripts/admissionYearMigration.js",
     "migrate:learned-weights": "node scripts/learnedWeightsMigration.js",
+    "seed:demo-personas": "node scripts/demoPersonasSeed.js",
+    "bench:personalization": "node scripts/personalizationBenchmark.js",
+    "bench:scheduler": "node scripts/schedulerBenchmarkReport.js",
+    "eval:golden-set": "node scripts/agentGoldenSetReport.js",
     "configure:privacy": "node scripts/configurePrivacyEnvironment.js",
     "cleanup:privacy": "node scripts/privacyCleanup.js",
     "cleanup:legacy-chat": "node scripts/legacyChatCleanup.js"

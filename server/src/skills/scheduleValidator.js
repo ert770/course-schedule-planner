@@ -21,6 +21,7 @@ import {
   collectExplicitCourseIds,
   DEFAULT_MAX_CREDITS,
   OVERLOAD_MAX_CREDITS,
+  getUsedDays,
 } from './scheduler.js';
 import { getPassedCourseCodes } from '../data/courseHistory.js';
 import { CONSTRAINTS } from '../data/constraintSchema.js';
@@ -149,6 +150,40 @@ function checkCourseMetadata(schedule, constraints) {
   return violations;
 }
 
+const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
+
+// roadmap #35 補上的缺口：`DAILY_COURSE_CAP` 在 `constraintSchema.js` 標
+// `enforced: true`，但這裡原本完全沒有對應檢查、也不在下面的 `unchecked`
+// 清單裡——一份違反每日上限的課表會被誤判為 `valid: true`。日期分組邏輯
+// 重用 `getUsedDays()`（`scheduler.js` 的 `evaluateCoursePlacement()` 已經
+// 在用同一套：多時段課程要算進它佔用的每一天），不在這裡另外實作一份。
+//
+// 沒有設 `maxCoursesPerDay` 時比照 `buildPlan()` 的 `?? Infinity` 語意，不檢查。
+function checkDailyCourseCap(schedule, constraints) {
+  const maxCoursesPerDay = constraints.maxCoursesPerDay ?? Infinity;
+  if (!Number.isFinite(maxCoursesPerDay)) return [];
+
+  const countsByDay = new Map();
+  for (const course of schedule) {
+    for (const day of getUsedDays(course)) {
+      countsByDay.set(day, (countsByDay.get(day) ?? 0) + 1);
+    }
+  }
+
+  const violations = [];
+  for (const [day, count] of countsByDay) {
+    if (count <= maxCoursesPerDay) continue;
+    const coursesOnDay = schedule.filter(course => getUsedDays(course).has(day));
+    const dayLabel = WEEKDAY_LABELS[day - 1] ?? day;
+    violations.push(buildViolation(
+      'DAILY_COURSE_CAP',
+      coursesOnDay.map(courseRef),
+      `星期${dayLabel}排入 ${count} 門課，超過每日上限 ${maxCoursesPerDay} 門`
+    ));
+  }
+  return violations;
+}
+
 // 4 個時段類硬性限制，重用 `hardConstraintReason()`。
 //
 // **必修豁免只在課程物件本身已標記 `formallyRequired: true` 時才生效**——
@@ -243,11 +278,13 @@ function checkCorequisitePairs(schedule) {
   return { violations, checked: true };
 }
 
-// 與方案產生器分離的最終課表 validator（roadmap #21）。
+// 與方案產生器分離的最終課表 validator（roadmap #21，roadmap #35 補上
+// `checkDailyCourseCap`）。
 //
-// checks 2（學分上限）、4（時段類硬性限制）、5（必修涵蓋率）需要 `constraints`
-// 才有意義；checks 1（衝堂／重複班次）與 3（資格／學期／系外選修／已修過的
-// metadata 複查）只讀課程物件本身，即使 `constraints` 為 `{}` 也能運作。
+// checks 2（學分上限）、4（每日上限）、5（時段類硬性限制）、6（必修涵蓋率）
+// 需要 `constraints` 才有意義；checks 1（衝堂／重複班次）與 3（資格／學期／
+// 系外選修／已修過的 metadata 複查）只讀課程物件本身，即使 `constraints`
+// 為 `{}` 也能運作。
 export function validateScheduleAgainstConstraints(schedule = [], constraints = {}) {
   const { violations: coverageViolations, checked: coverageChecked } = checkRequiredCoverage(
     schedule, constraints
@@ -260,6 +297,7 @@ export function validateScheduleAgainstConstraints(schedule = [], constraints = 
     ...checkTimeConflictsAndDuplicates(schedule),
     ...checkCourseMetadata(schedule, constraints),
     ...checkCreditCeiling(schedule, constraints),
+    ...checkDailyCourseCap(schedule, constraints),
     ...checkTimePreferences(schedule, constraints),
     ...corequisiteViolations,
     ...coverageViolations,

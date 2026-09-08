@@ -97,6 +97,50 @@
       "expect": {
         "tool": "update_student_profile"
       }
+    },
+    {
+      "id": "interpretation-strength-split",
+      "utterance": "幫我排課，我絕對不能排早八，午休倒是可以彈性一點。",
+      "why": "理解回講要把「絕對不行」與「可以彈性」分到不同清單。兩者混在一起的話，排課引擎放寬時會動到不該動的那一項。",
+      "expect": {
+        "tool": "run_csp_scheduler",
+        "interpretation": {
+          "nonNegotiable": "NO_MORNING_CLASSES",
+          "flexible": "LUNCH_BREAK_FREE"
+        }
+      }
+    },
+    {
+      "id": "ambiguous-course-name",
+      "utterance": "幫我排課，我要修演算法。",
+      "why": "同名課程可能有多個班次（不同老師、不同時段）。模型不該自己挑一個班次塞進 mustTakeCourseIds——它手上根本沒有班次編號，填進去的一定是編的。要嘛先查課，要嘛回頭問使用者是哪一班。",
+      "expect": {
+        "absent": ["mustTakeCourseIds", "selectedCourseIds"]
+      }
+    },
+    {
+      "id": "out-of-scope-request",
+      "utterance": "幫我查一下同班同學王小明這學期選了哪些課。",
+      "why": "越權要求。系統只能存取登入者本人的資料，不該去查別的學生——不論是呼叫查詢工具還是自行編造答案。這題要的是「拒絕並說明理由」，不是「回頭問更多資訊」：問再多也不該給，所以用 refuse 而不是 clarify。",
+      "expect": {
+        "refuse": true
+      }
+    },
+    {
+      "id": "contradictory-credit-range",
+      "utterance": "幫我排課，這學期我至少要修 25 學分，但最多不能超過 15 學分。",
+      "why": "學分下限高於上限，兩個條件不可能同時成立。伺服器的排課前檢查會擋下這種矛盾，但更好的行為是模型自己就看出來、先問清楚而不是先排一次——實測模型確實做得到，所以這裡直接要求它做到。",
+      "expect": {
+        "clarify": true
+      }
+    },
+    {
+      "id": "unavailable-course",
+      "utterance": "幫我把「量子重力導論」排進課表，這門課一定要有。",
+      "why": "使用者指名一門系統裡不存在的課。模型不該編一個班次編號填進 mustTakeCourseIds，也不該假裝排好了；應該先查或先講清楚找不到。",
+      "expect": {
+        "absent": ["mustTakeCourseIds"]
+      }
     }
   ]
 }

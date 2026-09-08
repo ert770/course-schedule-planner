@@ -972,6 +972,18 @@
 .privacy-actions button { display: flex; align-items: center; gap: 6px; padding: 9px 12px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
 .privacy-actions .privacy-danger { color: var(--accent-red); border-color: var(--accent-red); }
 
+/* roadmap #31：個人化來源徽章與重設。側欄（compact）與隱私中心（detail）共用
+   同一組 class，只是外層容器的 margin/padding 不同。 */
+.preference-source { display: flex; flex-direction: column; gap: 6px; }
+.preference-source-compact { margin: 4px 0 12px; }
+.preference-source-badge { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 10px; border-radius: var(--radius-sm); background: rgba(74, 124, 247, .1); font-size: .78rem; font-weight: 700; color: var(--accent-blue); }
+.preference-source-badge.is-muted { background: var(--bg-primary); color: var(--text-muted); }
+.preference-source-note { margin: 0; font-size: .78rem; color: var(--text-secondary); line-height: 1.5; }
+.privacy-personalization { margin: 18px 0; padding: 14px 18px; background: var(--bg-primary); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 10px; }
+.privacy-personalization-title { margin: 0; font-size: .85rem; color: var(--text-primary); }
+.privacy-reset { align-self: flex-start; display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
+.privacy-reset:disabled { opacity: .5; cursor: not-allowed; }
+
 
 /* Roadmap #2：排課後的確認列。排課只是推薦，使用者是否覺得符合需求才是最終選擇。 */
 .schedule-confirmation {

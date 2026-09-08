@@ -97,6 +97,13 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // 由 `scheduleService.js` 從 `getAll('reviews')` 取得後放進 `context`。
     courseReviews: context.courseReviews ?? [],
 
+    // roadmap #5B：學到的偏好權重直通，**不做 request／偏好合併**——與
+    // courseReviews／courseHistory 完全同理：沒有呼叫端會在 request 送它，
+    // 寫成雙來源合併只會讓 Agent 有機會塞一份造假的個人化權重進來。
+    // 由 `scheduleService.js` 呼叫 `getSchedulingPreferenceWeights()` 取得後
+    // 放進 `context`；`null` 代表沒有可用的學習結果，排課退回顯式 0/1 行為。
+    learnedPreference: context.learnedPreference ?? null,
+
     selectedCourseIds: pickRequestList(input.selectedCourseIds),
     watchingCourseIds: pickRequestList(input.watchingCourseIds),
     // 使用者在課程瀏覽器手動勾選的課（`POST /api/schedule/generate` 的 `courseIds`）。
@@ -109,6 +116,14 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     preferEasyCourses: pickFlag(
       input.preferEasyCourses ?? input.preferEasy,
       prefs.preferEasyCourses ?? prefs.preferEasy
+    ),
+    // roadmap #5B：難度**方向**的另一半，與 `preferEasyCourses` 同層級的顯式旗標。
+    // 兩者同時為 true 是使用者自己的條件互相矛盾，由 `scheduler.js` 的
+    // `resolveEasyDirection()` 統一視為未表態並發出警告——這裡不做取捨，
+    // 因為合併層無從判斷哪一個才是使用者真正的意思。
+    preferChallengingCourses: pickFlag(
+      input.preferChallengingCourses,
+      prefs.preferChallengingCourses
     ),
     preferredTrack: input.preferredTrack || prefs.preferredTrack || null,
     preferredKeywords: pickList(input.preferredKeywords, prefs.preferredKeywords),

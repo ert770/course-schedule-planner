@@ -361,9 +361,12 @@ function buildUserIdIndex() {
   const toStudentId = new Map();
 
   for (const user of readCollection('users')) {
-    if (user.studentId === undefined || user.id === undefined) continue;
-    toNumeric.set(String(user.studentId), String(user.id));
-    toStudentId.set(String(user.id), String(user.studentId));
+    const studentId = user.studentId === null || user.studentId === undefined
+      ? ''
+      : String(user.studentId).trim();
+    if (!studentId || user.id === undefined) continue;
+    toNumeric.set(studentId, String(user.id));
+    toStudentId.set(String(user.id), studentId);
   }
 
   return { toNumeric, toStudentId };
@@ -565,7 +568,9 @@ function readClassNameOverrides() {
     const className = normalizeClassName(user.className);
     if (!className) continue;
 
-    if (user.studentId !== undefined) index.set(String(user.studentId), className);
+    if (user.studentId !== null && user.studentId !== undefined && String(user.studentId).trim()) {
+      index.set(String(user.studentId).trim(), className);
+    }
     if (user.id !== undefined) index.set(String(user.id), className);
   }
 

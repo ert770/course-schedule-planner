@@ -14,13 +14,13 @@
 //   因此這裡改成對照**曝光事件**：`recommendation_exposed` 記錄了這個 subject、
 //   這個 requestId、主推方案的 planId，以及畫面上真正顯示過的課程清單。
 //   使用者只可能接受自己看過的方案、只可能退掉自己看過的課。
-import crypto from 'node:crypto';
 import {
   INTERACTION_EVENT_TYPES,
   INTERACTION_FEEDBACK_REASONS,
   INTERACTION_SOURCES,
 } from '../data/interactionEventSchema.js';
 import { findExposure, recordInteractionEvents } from './interactionEventService.js';
+import { sha256Hex } from '../utils/hash.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const FEEDBACK_REASONS = new Set(Object.values(INTERACTION_FEEDBACK_REASONS));
@@ -29,7 +29,7 @@ const FEEDBACK_REASONS = new Set(Object.values(INTERACTION_FEEDBACK_REASONS));
 // `(requestId, planId)` 決定而不是每次隨機——重送同一個回答會撞到同一個
 // idempotency key，被判為 duplicate 而不是新的一次接受。
 function deterministicActionId(seed) {
-  const hex = crypto.createHash('sha256').update(`schedule-feedback:${seed}`).digest('hex');
+  const hex = sha256Hex(`schedule-feedback:${seed}`);
   return [
     hex.slice(0, 8),
     hex.slice(8, 12),

@@ -54,8 +54,8 @@ export const DEFAULT_TIME_PREFERENCE_PRIORITY = [
 //   的課程時這項檢查無條件跳過，與 `allowRelaxation` 無關、永遠生效。目前
 //   僅 3 個時段類舒適偏好為 true；`BLOCKED_PERIODS`（代表真實的外部不可用
 //   時段，例如工作）明確為 false——必修課也不豁免。
-// - weight：對可放寬條目而言是階梯的預設退回排序；對軟性條目而言是既有評分
-//   常數的字面鏡射（僅供文件說明，`scoreCourse()` 不會動態讀這張表）。
+// - weight：對可放寬條目而言是階梯的預設退回排序；對軟性內容條目而言是
+//   scorer 實際讀取的加減分係數（#7）。
 // - source：CONSTRAINT_SOURCE 其中一個值。
 // - confidence：**不是**「這個限制多嚴格」（那是 relaxable），而是「系統對
 //   這項判定的偵測結果有多確定」。結構性事實（衝堂、學分加總、資格查詢等）
@@ -231,10 +231,10 @@ export const CONSTRAINTS = Object.freeze({
     confidence: 1,
     enforced: true,
   },
-  // 8 個內容偏好（roadmap #3）。數值鏡射既有的 CONTENT_PREFERENCE_SCORE（40），
-  // 純供文件說明——`scoreCourse()` 內建算式維持逐位元組不變，不會動態讀這張表。
+  // 8 個內容偏好（roadmap #3/#7）：weight 是實際評分的唯一係數來源。
   CONTENT_PREFERENCE_NO_MIDTERM: {
     id: 'CONTENT_PREFERENCE_NO_MIDTERM',
+    flag: 'noMidterm',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,
@@ -245,6 +245,7 @@ export const CONSTRAINTS = Object.freeze({
   },
   CONTENT_PREFERENCE_NO_GROUP_REPORT: {
     id: 'CONTENT_PREFERENCE_NO_GROUP_REPORT',
+    flag: 'noGroupReport',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,
@@ -255,6 +256,7 @@ export const CONSTRAINTS = Object.freeze({
   },
   CONTENT_PREFERENCE_DISCUSSION: {
     id: 'CONTENT_PREFERENCE_DISCUSSION',
+    flag: 'discussion',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,
@@ -265,6 +267,7 @@ export const CONSTRAINTS = Object.freeze({
   },
   CONTENT_PREFERENCE_WEIGHT_DAILY: {
     id: 'CONTENT_PREFERENCE_WEIGHT_DAILY',
+    flag: 'weightDaily',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,
@@ -275,6 +278,7 @@ export const CONSTRAINTS = Object.freeze({
   },
   CONTENT_PREFERENCE_PRACTICAL_EXAM: {
     id: 'CONTENT_PREFERENCE_PRACTICAL_EXAM',
+    flag: 'practicalExam',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,
@@ -285,6 +289,7 @@ export const CONSTRAINTS = Object.freeze({
   },
   CONTENT_PREFERENCE_FINAL_REPORT: {
     id: 'CONTENT_PREFERENCE_FINAL_REPORT',
+    flag: 'finalReport',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,
@@ -295,6 +300,7 @@ export const CONSTRAINTS = Object.freeze({
   },
   CONTENT_PREFERENCE_ENGLISH_TAUGHT: {
     id: 'CONTENT_PREFERENCE_ENGLISH_TAUGHT',
+    flag: 'englishTaught',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,
@@ -305,6 +311,7 @@ export const CONSTRAINTS = Object.freeze({
   },
   CONTENT_PREFERENCE_LEARN_MORE: {
     id: 'CONTENT_PREFERENCE_LEARN_MORE',
+    flag: 'learnMore',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,

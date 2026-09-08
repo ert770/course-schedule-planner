@@ -36,14 +36,28 @@ function sameId(left, right) {
   return String(left) === String(right);
 }
 
+function normalizedStudentId(value) {
+  if (value === null || value === undefined) return null;
+  return String(value).trim() || null;
+}
+
 export function isNumericId(value) {
   return /^\d+$/.test(String(value ?? '').trim());
+}
+
+export function identityMatchesUser(user, identity) {
+  if (!user || !identity?.found) return false;
+  const studentId = normalizedStudentId(user.studentId);
+  if (studentId !== null && sameId(studentId, identity.canonicalId)) return true;
+  return user.id !== undefined
+    && identity.numericId !== null
+    && sameId(user.id, identity.numericId);
 }
 
 // 純函式：給定 users 集合與任一種 ID，解析出 canonical identity。
 // 與 I/O 分離才測得到。
 export function resolveIdentityFrom(users = [], rawId) {
-  const key = String(rawId ?? '').trim();
+  const key = normalizedStudentId(rawId) ?? '';
 
   if (!key) {
     return { found: false, reason: 'missing' };
@@ -54,13 +68,19 @@ export function resolveIdentityFrom(users = [], rawId) {
     return { found: false, reason: 'default-user-not-allowed' };
   }
 
-  const user = users.find(item => sameId(item.studentId, key) || sameId(item.id, key));
+  const user = users.find(item => {
+    const studentId = normalizedStudentId(item.studentId);
+    return (studentId !== null && sameId(studentId, key)) || sameId(item.id, key);
+  });
   if (!user) {
     return { found: false, reason: 'unknown-user' };
   }
 
   const hasNumericId = user.id !== undefined && isNumericId(user.id);
-  const studentId = user.studentId !== undefined ? String(user.studentId) : null;
+  // Demo persona 允許先沒有正式學號。`String(null)` 會變成字面上的 "null"，
+  // 多個尚未配發學號的使用者就會共用同一個 canonical ID 與 subject_id。
+  // null、undefined 與空白都代表「沒有學號」，此時退回 numeric id。
+  const studentId = normalizedStudentId(user.studentId);
 
   return {
     found: true,
@@ -93,6 +113,7 @@ export function identityErrorResponse(identity) {
 
 export default {
   isNumericId,
+  identityMatchesUser,
   resolveIdentityFrom,
   resolveIdentity,
   identityErrorResponse,

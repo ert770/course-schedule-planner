@@ -157,9 +157,14 @@ describe('R4 「沒有競爭者」與「還沒算」必須分得出來', () => {
 
 describe('R5 分數組成與命中偏好', () => {
   test('R5 只列非 0 的分數元件，避免一堆 0 稀釋真正起作用的項目', () => {
+    const scoringPolicy = {
+      version: 'personalized-scoring-v1',
+      weights: { interest: 1, compact: 0, easy: -1.4 },
+    };
     const reason = buildRecommendationReason({
       course: course(),
       scoreComponents: { base: 1000, category: -240, easy: 0, interest: 0 },
+      scoringPolicy,
     });
 
     assert.deepEqual(
@@ -167,6 +172,7 @@ describe('R5 分數組成與命中偏好', () => {
       [{ component: 'base', value: 1000 }, { component: 'category', value: -240 }]
     );
     assert.equal(reason.scoreTotal, 760, 'scoreTotal 要含被過濾掉的 0，總分才正確');
+    assert.deepEqual(reason.scoringPolicy, scoringPolicy, '理由必須保存實際排序使用的權重版本');
   });
 
   test('R5 內容偏好與興趣命中都會列出來源類型', () => {

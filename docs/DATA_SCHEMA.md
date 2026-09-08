@@ -51,6 +51,9 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
   由 `npm run cleanup:privacy` 一併清理。
 - `exposure_json` 存 `surface`／`trigger`／ordered `candidateSet`／`displayedSet`。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
+- **Roadmap #31**：`academic_year`／`semester` 從這輪起不再只是來源標記，也是
+  `preferenceLearning.js` 時間衰減的**實質輸入**——`learnPreferenceWeights()` 用它們
+  判定一筆事件是否屬於舊學期並降權（見下方 `Learned_Preference_Weights` 的說明）。
 
 ### `Learned_Preference_Weights`（Roadmap #30）
 
@@ -65,20 +68,77 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
   互動事件本身，這裡的權重永遠可以從那裡重新推導——保留多版本歷史只會製造
   第二個要保持同步的真相來源。
 - `interest_weight`／`compact_weight`／`easy_weight`：`DECIMAL(4,3)`，範圍
-  `[0, 1]`，對應 `scheduler.js` 的 `preferenceProfile` 三軸。**這輪尚未接進
-  排課**（`buildPreferenceProfile()` 不讀這張表）——`sufficiency_status` 為
-  `insufficient` 時，這三個值等於使用者當時的顯式設定，不是半調子的學習值。
+  `[0, 1]`，是**無號的學習強度**，不是排課要用的最終權重——`sufficiency_status`
+  為 `insufficient` 時，這三個值等於使用者當時的顯式設定，不是半調子的學習值。
+  **Roadmap #5B 起，`scheduler.js` 會讀取它們**（經
+  `getSchedulingPreferenceWeights()` 與 `computeLearnedBoosts()` 換算成「超出
+  顯式基準的部分」），但只用在方案層的 `evaluatePreference()`；方向仍然由
+  `User_Profiles.preference_tags` 的 `#涼課優先`／`#挑戰難課` 決定，這三個欄位
+  本身**不儲存也不需要儲存方向**（見下方 Roadmap #5B 更新）。
 - `sufficiency_status`：`sufficient`／`insufficient`／不落地（未同意時整批不寫，
   與 `Interaction_Events` 同一個 consent-first 原則）。`usable_event_count`／
   `required_event_count` 讓「還差多少」可以直接查表回答，不必重新跑一次推導。
 - `evidence_json`：`{ interest: [...], compact: [...], easy: [...] }`，每筆
-  `{ ruleId, eventId, occurredAt }`——每個非零權重都指得回是哪些事件、依哪條
-  規則算出來的（見 `server/src/skills/preferenceLearning.js`）。
+  `{ ruleId, eventId, occurredAt, decay }`——每個非零權重都指得回是哪些事件、
+  依哪條規則、以多少衰減係數算出來的（見 `server/src/skills/preferenceLearning.js`）。
 - `expires_at` 沿用 `PRIVACY_RETENTION.interactionEventDays`（180 天）的語意，
   由 `npm run cleanup:privacy` 與 `Interaction_Events`、Raw Chat 一起清理。
 - 刪除／匯出路徑已接上 `#33`：`DELETE /api/privacy/data` 會一併刪這張表，
   `GET /api/privacy/export` 的 `data.learnedPreferenceWeights` 會帶出目前存的
   那一列（從未算過則為 `null`，如實回報，不是空物件）。
+
+**Roadmap #31 更新**：
+
+- `model_version` 從這輪起是 `preference-learning-v2`（`#30` 留下的舊列是
+  `v1`）——`foldAxis()` 的折疊公式改寫、加上時間衰減，語意已經不同，
+  舊版本號的列在下一次讀取時會被視為過期並自動重算，**不需要 backfill 腳本**。
+- `preferenceLearningService.js` 新增 `resetPersonalization()`：清空這張表的
+  對應列**與** `Interaction_Events` 裡這個 subject 的全部事件，`User_Profiles`
+  完全不受影響。連事件一起刪是刻意的——權重是事件的純推導，只刪推導出的
+  那一列，下一次讀取（見下方過期判定）會用一模一樣的事件重新算出一模一樣的
+  值，一個會自己復原的「重設」不成立。接進 `DELETE /api/privacy/personalization`
+  與 `PUT /api/privacy/consents`（`personalization_learning` 從 true 改 false
+  時自動觸發，等同硬性暫停）。
+- 新增 `getPersonalizationSource()`：**已存 + 精確過期判定**，不是每次讀取都
+  重算。已存列滿足以下任一條件就視為過期並在讀取時重算並覆寫：從沒算過、
+  `model_version` 不是現行版本、有比 `computed_at` 新的事件、或 `computed_at`
+  超過一天沒更新（純時間衰減即使沒有新事件也會讓結果隨時間改變，一天遠低於
+  120 天半衰期，成本可忽略）。回傳 `source: no-consent|insufficient|explicit|learned`
+  與 `appliedToScheduling`（見下一點）。
+- **本輪不需要新的 migration。** 三個理由：(1) 學期戳記本來就在
+  `Interaction_Events.academic_year`／`semester`，不需另外加欄位；(2) 衰減
+  metadata（半衰期、有效樣本數等）只在讀取時計算，不持久化，唯一持久化的
+  形狀變化是 `evidence_json` 多了 `decay` 欄位，那是 `JSON` 欄位可以直接容納；
+  (3) 不需要「暫停」欄位，因為暫停就是 `Privacy_Consents` 裡的
+  `personalization_learning` 那一列——它本來就有完整歷史與稽核，不需要另建
+  狀態機。
+- **`appliedToScheduling` 從 Roadmap #5B（2026-09-05）起恆為 `true`**：
+  Roadmap #7 起，`scheduler.js` 的方案比較與單一門課排序都讀取這組權重。
+  排課輸出與曝光事件會保存 `personalized-scoring-v1` policy 快照，以便回放。
+- **時間衰減在今天的真實資料上是數學上的 no-op**：實測全部 92 筆互動事件
+  都在 4 天內、全部標記 114 學年下學期（即當前學期），衰減係數 > 0.977、
+  學期係數恆為 1，權重到小數第三位完全不變。半衰期與跨學期降權的邏輯已用
+  合成事件驗證過（見 `server/test/preferenceLearning.test.js` 的 PL11–PL17），
+  只是還沒有真實資料能顯出差異。
+
+**Roadmap #5B 更新**：
+
+- **方向來自 `User_Profiles.preference_tags`，不是這張表。** 新增兩個互斥標籤
+  `#涼課優先`（`preferEasyCourses`，`#5A` 起就被排課引擎讀取但先前無 UI／儲存
+  路徑可設定）與 `#挑戰難課`（`preferChallengingCourses`，全新）——見
+  `server/src/data/preferenceTags.js`。事件 schema 的退課原因只有 `workload`
+  （太重），沒有任何欄位能表達「太簡單、我要更難」，方向因此**只能宣告，
+  不能從行為推論**。
+- **`easy_weight` 只提供強度，不提供方向。** 排課端用
+  `computeLearnedBoosts(storedWeights, explicitProfile)`
+  （`server/src/skills/preferenceLearning.js`）換算成「學到的值超出顯式基準的
+  部分」，恆 `>= 0`；`scheduler.js` 的 `axisWeight(方向, boost)` 再乘上顯式方向
+  的正負號。**不能直接拿 `easy_weight` 原值當強度**——`foldAxis()`
+  （`#30`）把輸出下限釘在顯式先驗，對已經勾了集中排課的使用者
+  `compact_weight` 恆為 `1`，若排課端誤用原值會讓這類使用者在功能上線當天
+  無證據地被加重權重。
+- 本輪同樣**不需要 migration**：`easy_weight` 欄位的型別與範圍都沒變，
+  它一直都是 `[0,1]` 的無號值，只是消費端（`scheduler.js`）多讀了它一次。
 
 ### `Courses`
 
@@ -352,6 +412,10 @@ store 的邏輯名稱。
 
 `users.json` **只負責登入身分與尚未遷移的 demo 資料**（`studentId`、`password`、`name`、
 `watchlist`、`skillTree`…），以及班別的後備儲存。它不再保存 `courseHistory`。
+尚未配發正式帳密的 demo persona（目前 user 2、3）以 `studentId: null`、`password: null`
+保存，不能從登入頁登入；身分層會退回各自的 numeric `id`，不得把多筆 null 轉成共用的
+字串 `"null"`。user 4（黃思瑋）已配發 demo 學號 `D1249196`、密碼 `000`，隱私
+subject 與互動資料因此以該 canonical studentId 衍生，不再使用 numeric `4`。
 
 歷史修課唯一來源為 MySQL `User_Course_History`。已修課號、已修學分、分類學分彙總
 一律由查出的 11 欄 `courseHistory` 物件呼叫 `server/src/data/courseHistory.js` 的
@@ -394,6 +458,26 @@ npm run migrate:course-history --prefix server -- --rollback --confirm-shared-my
 
 查詢成功但 0 筆是合法空歷史；查詢失敗則回 `503 COURSE_HISTORY_UNAVAILABLE`，不得假裝
 成空歷史繼續排課或計算畢業進度。
+
+### 三位 demo persona 的成績匯入（2026-09-06）
+
+`server/scripts/demoPersonasSeed.js` 將使用者提供的三份 Markdown 成績資料解析後寫入
+`User_Course_History`，來源標記為 `demo_markdown_20260906`。user 2／3／4 分別為
+55／55／58 筆，共 168 筆；完全相同的重複表格列只保留一次，沒有正式課號的
+「專題研究(二)」與「大學基礎英文」列不匯入。
+
+附件只有百分制成績，因此 `letterGrade` 為 null、`passed` 由數字成績是否達 60 分產生；
+`credits` 固定保存「實際修習學分」。章節或當期課程資料無法證明必選修／畢業分類時，
+使用 `未確認`／`unspecified`，不從課名猜測。附件的「計入畢業學分」若缺漏或與實修學分
+不同會在 dry-run 顯示 warning；現有 v1 schema 無法表達逐門部分認列，留待 #23 依正式規則
+擴充，不把 1 學分部分認列偷偷改寫成 2 學分已確認認列。
+
+此 seed 同時建立三組明確標記為 demo 的 consent、去識別化互動與推導權重。預設只盤點：
+
+```text
+npm run seed:demo-personas --prefix server
+npm run seed:demo-personas --prefix server -- --apply --confirm-shared-mysql
+```
 
 **不得**在此存放 `department` 與 `grade`。這兩個欄位的真相來源是
 `user_preferences`／`User_Profiles.grade_level`；同一份資料存兩處只會各自漂移——
@@ -553,7 +637,7 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
   "idempotencyKey": "sha256:<64 lowercase hex>",
   "course": null,
   "term": { "academicYear": 114, "semester": "second" },
-  "plan": { "planId": "plan-a", "variantId": "required_first" },
+  "plan": { "planId": "plan-a", "variantId": "personalized" },
   "position": { "planRank": 1, "courseRank": null },
   "exposureContext": {
     "surface": "dashboard",
@@ -565,12 +649,28 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
     "displayedSet": [
       { "catalogCourseCode": "IECS3002", "sectionId": 101 }
     ],
-    "displayedPlanIds": ["plan-a", "plan-b"]
+    "displayedPlanIds": ["plan-a", "plan-b"],
+    "planPolicies": [
+      {
+        "planId": "plan-a",
+        "variantId": "personalized",
+        "version": "personalized-scoring-v1",
+        "weights": { "interest": 1, "compact": 0, "easy": -1.4 },
+        "categoryCoefficient": 0.35,
+        "creditCoefficient": 1,
+        "stopWhen": "no-credit-progress",
+        "source": {
+          "learnedApplied": true,
+          "reason": "applied",
+          "modelVersion": "preference-learning-v2"
+        }
+      }
+    ]
   },
   "versionSnapshot": {
     "profileSchemaVersion": 1,
-    "modelVersion": "scheduler-greedy-v1",
-    "recommendationReasonVersion": null
+    "modelVersion": "personalized-scoring-v1",
+    "recommendationReasonVersion": "2026-09-05.v2"
   },
   "source": "system_recommendation",
   "feedbackReason": null
@@ -591,12 +691,16 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `idempotencyKey` | `sha256:<hex>` | 由 request/action/event/plan/course subject 決定，不含 `eventId`／`timestamp` |
 | `course` | object \| null | `catalogCourseCode` 是穩定課號，`sectionId` 是實際班次；非單課事件可為 null |
 | `term` | object | `academicYear` + 正規化後的 `semester: first \| second` |
-| `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `required_first` 等產生策略 |
+| `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `personalized`／`personalized_easy` 等當次產生策略；方案不是固定五種 |
 | `position` | object | `planRank`／`courseRank` 一律從 1 起算；不適用者為 null |
-| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單；`displayedPlanIds`（Roadmap #27）另列這次曝光顯示過的每一個方案 `planId`——見下方 `recommendation_accepted` 的說明 |
-| `versionSnapshot` | object | 當時的 Profile schema、模型與推薦理由版本；#26 尚未完成時理由版本必須為 null |
+| `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單；`displayedPlanIds` 列出所有顯示方案；`planPolicies`（Roadmap #7）逐一保存方案使用的 `variantId`、policy 版本、三軸權重、類別／學分係數、停止條件與學習來源，供後續回放與來源驗證 |
+| `versionSnapshot` | object | 當時的 Profile schema、排課模型與推薦理由版本 |
 | `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
+
+`planPolicies` 是既有 JSON envelope 的附加欄位，因此事件 `schemaVersion` 維持 1，MySQL
+也不需要 migration。歷史曝光缺少此欄位時正規化為空陣列，仍可重播；新曝光必須讓每個
+policy 的 `planId` 對得上 `displayedPlanIds`，接受方案時也會核對 `variantId`。
 
 ### Event types
 

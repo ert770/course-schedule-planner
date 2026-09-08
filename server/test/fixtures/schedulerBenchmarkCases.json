@@ -1,0 +1,667 @@
+{
+  "_comment": [
+    "Roadmap #35 的排課引擎 benchmark 題庫。",
+    "Z1-Z7（server/test/scheduler.test.js）用 2-3 門課的最小合成情境釘住每一種",
+    "solver 行為，這份題庫的目的不同：接近真實選課規模（十幾到二十幾門課的",
+    "候選池）、橫跨不同科系／年級／班級，驗證的是「這個規模下引擎多常真的找到",
+    "解」，不是取代 Z1-Z7。",
+    "",
+    "每個 case 的 expectedCategory 五選一：feasible／infeasible／greedy-trap／",
+    "timeout／data-insufficient，由 schedulerBenchmark.js 依類別分別判定 pass。",
+    "courseHistory 欄位形狀對照 server/src/data/courseHistory.js 的",
+    "COURSE_HISTORY_REQUIRED_FIELDS。corequisite（正課/實習）配對由",
+    "catalogCourseCode 的 P 後綴慣例自動觸發，不需要手動標記。"
+  ],
+  "cases": [
+    {
+      "id": "cs-junior-realistic-load",
+      "scope": {
+        "department": "資訊工程學系",
+        "grade": 3,
+        "className": "資訊三甲"
+      },
+      "expectedCategory": "feasible",
+      "why": "接近真實規模的候選池（20 門課，橫跨週一到週六），涵蓋明確指定課程、正課/實習配對、無時間課程、週末課程——確認這些情境同時出現時排課引擎仍能找到零違規的解。",
+      "constraints": {
+        "minCredits": 15,
+        "maxCredits": 25,
+        "maxCoursesPerDay": 4,
+        "mustTakeCourseIds": [
+          3001
+        ]
+      },
+      "runtimeOptions": {
+        "seed": 1
+      },
+      "candidateCourses": [
+        {
+          "id": 3001,
+          "name": "資料結構",
+          "catalogCourseCode": "IECS3001",
+          "code": "IECS3001",
+          "instructor": "王小明",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 3002,
+          "name": "演算法",
+          "catalogCourseCode": "IECS3002",
+          "code": "IECS3002",
+          "instructor": "李大華",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 2,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 3003,
+          "name": "作業系統",
+          "catalogCourseCode": "IECS3003",
+          "code": "IECS3003",
+          "instructor": "陳美玲",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 3,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 3004,
+          "name": "資料庫系統",
+          "catalogCourseCode": "IECS3004",
+          "code": "IECS3004",
+          "instructor": "張志明",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 4,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "核心選修"
+        },
+        {
+          "id": 3005,
+          "name": "嵌入式系統",
+          "catalogCourseCode": "IECS3005",
+          "code": "IECS3005",
+          "instructor": "林建宏",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 5,
+          "startPeriod": 1,
+          "endPeriod": 2,
+          "category": "核心選修"
+        },
+        {
+          "id": 3006,
+          "name": "嵌入式系統實習",
+          "catalogCourseCode": "IECS3005P",
+          "code": "IECS3005P",
+          "instructor": "林建宏",
+          "department": "資訊三甲",
+          "credits": 1,
+          "dayOfWeek": 5,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "核心選修"
+        },
+        {
+          "id": 3007,
+          "name": "計算機網路",
+          "catalogCourseCode": "IECS3007",
+          "code": "IECS3007",
+          "instructor": "黃淑芬",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 6,
+          "endPeriod": 7,
+          "category": "一般選修"
+        },
+        {
+          "id": 3008,
+          "name": "軟體工程",
+          "catalogCourseCode": "IECS3008",
+          "code": "IECS3008",
+          "instructor": "吳俊傑",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 2,
+          "startPeriod": 6,
+          "endPeriod": 7,
+          "category": "一般選修"
+        },
+        {
+          "id": 3009,
+          "name": "人工智慧概論",
+          "catalogCourseCode": "IECS3009",
+          "code": "IECS3009",
+          "instructor": "蔡宗翰",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 3,
+          "startPeriod": 6,
+          "endPeriod": 7,
+          "category": "一般選修"
+        },
+        {
+          "id": 3010,
+          "name": "資訊安全概論",
+          "catalogCourseCode": "IECS3010",
+          "code": "IECS3010",
+          "instructor": "周兆龍",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 4,
+          "startPeriod": 6,
+          "endPeriod": 7,
+          "category": "一般選修"
+        },
+        {
+          "id": 3011,
+          "name": "數位邏輯設計",
+          "catalogCourseCode": "IECS3011",
+          "code": "IECS3011",
+          "instructor": "邱明賢",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 5,
+          "startPeriod": 6,
+          "endPeriod": 7,
+          "category": "一般選修"
+        },
+        {
+          "id": 3012,
+          "name": "服務學習",
+          "catalogCourseCode": "GEN1012",
+          "code": "GEN1012",
+          "instructor": "校牧室",
+          "department": "資訊三甲",
+          "credits": 0,
+          "dayOfWeek": null,
+          "startPeriod": null,
+          "endPeriod": null,
+          "category": "通識"
+        },
+        {
+          "id": 3013,
+          "name": "體育",
+          "catalogCourseCode": "PE1013",
+          "code": "PE1013",
+          "instructor": "體育室",
+          "department": "資訊三甲",
+          "credits": 0,
+          "dayOfWeek": 1,
+          "startPeriod": 1,
+          "endPeriod": 1,
+          "category": "通識"
+        },
+        {
+          "id": 3014,
+          "name": "創新創業實務",
+          "catalogCourseCode": "GEN3014",
+          "code": "GEN3014",
+          "instructor": "創能學院",
+          "department": "資訊三甲",
+          "credits": 2,
+          "dayOfWeek": 6,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "通識"
+        },
+        {
+          "id": 3015,
+          "name": "程式語言",
+          "catalogCourseCode": "IECS3015",
+          "code": "IECS3015",
+          "instructor": "吳育倫",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 9,
+          "endPeriod": 10,
+          "category": "一般選修"
+        },
+        {
+          "id": 3016,
+          "name": "電腦視覺",
+          "catalogCourseCode": "IECS3016",
+          "code": "IECS3016",
+          "instructor": "蔡明翰",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 2,
+          "startPeriod": 9,
+          "endPeriod": 10,
+          "category": "一般選修"
+        },
+        {
+          "id": 3017,
+          "name": "行動應用程式開發",
+          "catalogCourseCode": "IECS3017",
+          "code": "IECS3017",
+          "instructor": "陳錫民",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 3,
+          "startPeriod": 9,
+          "endPeriod": 10,
+          "category": "一般選修"
+        },
+        {
+          "id": 3018,
+          "name": "雲端運算",
+          "catalogCourseCode": "IECS3018",
+          "code": "IECS3018",
+          "instructor": "薛念林",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 4,
+          "startPeriod": 9,
+          "endPeriod": 10,
+          "category": "一般選修"
+        },
+        {
+          "id": 3019,
+          "name": "自然語言處理",
+          "catalogCourseCode": "IECS3019",
+          "code": "IECS3019",
+          "instructor": "郭士煒",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 6,
+          "startPeriod": 6,
+          "endPeriod": 7,
+          "category": "一般選修"
+        },
+        {
+          "id": 3020,
+          "name": "資訊倫理",
+          "catalogCourseCode": "GEN3020",
+          "code": "GEN3020",
+          "instructor": "共同教育中心",
+          "department": "資訊三甲",
+          "credits": 2,
+          "dayOfWeek": 6,
+          "startPeriod": 9,
+          "endPeriod": 10,
+          "category": "通識"
+        }
+      ]
+    },
+    {
+      "id": "ee-sophomore-required-conflict",
+      "scope": {
+        "department": "電機工程學系",
+        "grade": 2,
+        "className": "電機二甲"
+      },
+      "expectedCategory": "infeasible",
+      "why": "兩門系必修剛好落在同一時段，使用者又都指名必修——這是真正無解，不是候選池不夠大；驗證引擎會完整搜尋後誠實回報 infeasible，而不是勉強塞出一份違規課表。",
+      "constraints": {
+        "minCredits": 6,
+        "maxCredits": 20,
+        "mustTakeCourseIds": [
+          4001,
+          4002
+        ]
+      },
+      "runtimeOptions": {
+        "seed": 2
+      },
+      "candidateCourses": [
+        {
+          "id": 4001,
+          "name": "電路學",
+          "catalogCourseCode": "MCEE2001",
+          "code": "MCEE2001",
+          "instructor": "林教授",
+          "department": "電機二甲",
+          "credits": 3,
+          "dayOfWeek": 2,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 4002,
+          "name": "電子學",
+          "catalogCourseCode": "MCEE2002",
+          "code": "MCEE2002",
+          "instructor": "張教授",
+          "department": "電機二甲",
+          "credits": 3,
+          "dayOfWeek": 2,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 4003,
+          "name": "工程數學",
+          "catalogCourseCode": "MCEE2003",
+          "code": "MCEE2003",
+          "instructor": "陳教授",
+          "department": "電機二甲",
+          "credits": 3,
+          "dayOfWeek": 3,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 4004,
+          "name": "數位邏輯",
+          "catalogCourseCode": "MCEE2004",
+          "code": "MCEE2004",
+          "instructor": "黃教授",
+          "department": "電機二甲",
+          "credits": 3,
+          "dayOfWeek": 4,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "一般選修"
+        }
+      ]
+    },
+    {
+      "id": "business-senior-greedy-trap",
+      "scope": {
+        "department": "企業管理學系",
+        "grade": 4,
+        "className": "企管四甲"
+      },
+      "expectedCategory": "greedy-trap",
+      "why": "貪婪演算法優先排入單一高分課，卡住原本能湊出更高學分的兩門組合——同一種陷阱換成企管系的課名，確認 repair 不是只在 Z1 那個最小合成案例下才有效。候選池刻意只有這三門課：多放幾門不衝堂的替代課會讓貪婪法繞過陷阱直接達標，那就測不到 repair 真正在做的事。",
+      "constraints": {
+        "minCredits": 6,
+        "maxCredits": 6,
+        "maxCoursesPerDay": 4
+      },
+      "runtimeOptions": {
+        "seed": 3
+      },
+      "candidateCourses": [
+        {
+          "id": 5001,
+          "name": "企業策略管理",
+          "catalogCourseCode": "BA4001",
+          "code": "BA4001",
+          "instructor": "林主任",
+          "department": "企管四甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 1,
+          "endPeriod": 4,
+          "category": "核心選修"
+        },
+        {
+          "id": 5002,
+          "name": "行銷管理",
+          "catalogCourseCode": "BA4002",
+          "code": "BA4002",
+          "instructor": "王教授",
+          "department": "企管四甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 1,
+          "endPeriod": 2,
+          "category": "一般選修"
+        },
+        {
+          "id": 5003,
+          "name": "財務管理",
+          "catalogCourseCode": "BA4003",
+          "code": "BA4003",
+          "instructor": "李教授",
+          "department": "企管四甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "一般選修"
+        }
+      ]
+    },
+    {
+      "id": "cs-freshman-timeout-with-fallback",
+      "scope": {
+        "department": "資訊工程學系",
+        "grade": 1,
+        "className": "資訊一甲"
+      },
+      "expectedCategory": "timeout",
+      "expectSuccess": true,
+      "why": "跟下一個 case（math-junior-timeout-no-solution）對照：這裡貪婪基準線已經是合法解，只是學分不到目標，因此觸發 repair；候選池只有這一門課，repair 不可能找到更好的解，maxNodes:1 讓它連『確認找不到』都來不及做完就被打斷。驗證 timeout 時會誠實沿用已驗證的貪婪結果當 fallback，不會冒充『找到更好的解』，也不會把『逾時』誤判成『真的無解』——兩者的 solver.status 不該混為一談。候選池刻意只有一門課：多放幾門課會讓貪婪法自己就湊到學分目標，repair 根本不會被觸發（`shouldAttemptRepair()` 只在 baseline 學分不足或驗證失敗時才啟動）。",
+      "constraints": {
+        "minCredits": 6,
+        "maxCredits": 9
+      },
+      "runtimeOptions": {
+        "maxNodes": 1,
+        "seed": 4
+      },
+      "candidateCourses": [
+        {
+          "id": 6001,
+          "name": "程式設計導論",
+          "catalogCourseCode": "IECS1001",
+          "code": "IECS1001",
+          "instructor": "資工系",
+          "department": "資訊一甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        }
+      ]
+    },
+    {
+      "id": "math-junior-timeout-no-solution",
+      "scope": {
+        "department": "應用數學系",
+        "grade": 3,
+        "className": "應數三甲"
+      },
+      "expectedCategory": "timeout",
+      "expectSuccess": false,
+      "why": "與上一個 timeout case 對照：這裡真的無解（兩門必排課衝堂），但節點上限逼近到搜尋還沒跑完就被打斷——驗證引擎不會把「還沒搜完」誤報成跟 ee-sophomore-required-conflict 那種「搜完了確定無解」同一種狀態，兩者的 solver.status 不該混為一談。",
+      "constraints": {
+        "minCredits": 6,
+        "maxCredits": 6,
+        "mustTakeCourseIds": [
+          7001,
+          7002
+        ]
+      },
+      "runtimeOptions": {
+        "maxNodes": 2,
+        "seed": 5
+      },
+      "candidateCourses": [
+        {
+          "id": 7001,
+          "name": "高等微積分",
+          "catalogCourseCode": "MATH3001",
+          "code": "MATH3001",
+          "instructor": "數學系",
+          "department": "應數三甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 7002,
+          "name": "線性代數",
+          "catalogCourseCode": "MATH3002",
+          "code": "MATH3002",
+          "instructor": "數學系",
+          "department": "應數三甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        }
+      ]
+    },
+    {
+      "id": "transfer-student-data-insufficient",
+      "scope": {
+        "department": "資訊工程學系",
+        "grade": 3,
+        "className": "資訊三甲"
+      },
+      "expectedCategory": "data-insufficient",
+      "why": "轉學生系統只給了一份不完整的候選池，卻要求指名一門候選池裡根本查不到的課（9999）——驗證引擎能區分「資料不足」與「衝堂造成的真無解」，不誤報成 infeasible。系所年級班別本身是正常、可解析的，資料不足單純來自候選池缺課，不是身分不明。",
+      "constraints": {
+        "minCredits": 3,
+        "maxCredits": 20,
+        "mustTakeCourseIds": [
+          8001,
+          9999
+        ]
+      },
+      "runtimeOptions": {
+        "seed": 6
+      },
+      "candidateCourses": [
+        {
+          "id": 8001,
+          "name": "資料結構",
+          "catalogCourseCode": "IECS3001",
+          "code": "IECS3001",
+          "instructor": "王小明",
+          "department": "資訊三甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        }
+      ]
+    },
+    {
+      "id": "cs-senior-retake-and-history",
+      "scope": {
+        "department": "資訊工程學系",
+        "grade": 4,
+        "className": "資訊四甲"
+      },
+      "expectedCategory": "feasible",
+      "why": "涵蓋重補修與已修過濾：courseHistory 裡有一門必修不及格（該自動排進重補修）與一門已通過的課（該被排除，不能再選一次）；候選池裡剛好都放了這兩門課的班次，驗證兩條規則同時生效時仍能找到合法解。",
+      "constraints": {
+        "minCredits": 9,
+        "maxCredits": 20,
+        "courseHistory": [
+          {
+            "academicYear": 112,
+            "semester": 1,
+            "courseCode": "IECS3002",
+            "courseName": "演算法",
+            "score": 45,
+            "letterGrade": "F",
+            "credits": 3,
+            "passed": false,
+            "requirementType": "必修",
+            "generalEducationCategory": null,
+            "graduationCategory": "required"
+          },
+          {
+            "academicYear": 112,
+            "semester": 1,
+            "courseCode": "IECS3001",
+            "courseName": "資料結構",
+            "score": 88,
+            "letterGrade": "A",
+            "credits": 3,
+            "passed": true,
+            "requirementType": "必修",
+            "generalEducationCategory": null,
+            "graduationCategory": "required"
+          }
+        ]
+      },
+      "runtimeOptions": {
+        "seed": 7
+      },
+      "candidateCourses": [
+        {
+          "id": 9001,
+          "name": "資料結構",
+          "catalogCourseCode": "IECS3001",
+          "code": "IECS3001",
+          "instructor": "王小明",
+          "department": "資訊四甲",
+          "credits": 3,
+          "dayOfWeek": 1,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 9002,
+          "name": "演算法",
+          "catalogCourseCode": "IECS3002",
+          "code": "IECS3002",
+          "instructor": "李大華",
+          "department": "資訊四甲",
+          "credits": 3,
+          "dayOfWeek": 2,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 9003,
+          "name": "畢業專題(一)",
+          "catalogCourseCode": "IECS4003",
+          "code": "IECS4003",
+          "instructor": "指導教授",
+          "department": "資訊四甲",
+          "credits": 2,
+          "dayOfWeek": 6,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "必修"
+        },
+        {
+          "id": 9004,
+          "name": "無線網路",
+          "catalogCourseCode": "IECS4004",
+          "code": "IECS4004",
+          "instructor": "周兆龍",
+          "department": "資訊四甲",
+          "credits": 3,
+          "dayOfWeek": 3,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "一般選修"
+        },
+        {
+          "id": 9005,
+          "name": "深度學習",
+          "catalogCourseCode": "IECS4005",
+          "code": "IECS4005",
+          "instructor": "蔡宗翰",
+          "department": "資訊四甲",
+          "credits": 3,
+          "dayOfWeek": 4,
+          "startPeriod": 3,
+          "endPeriod": 4,
+          "category": "一般選修"
+        }
+      ]
+    }
+  ]
+}

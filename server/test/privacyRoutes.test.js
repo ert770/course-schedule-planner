@@ -3,8 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { app } from '../src/app.js';
 import { resetPrivacyMemoryStoreForTests } from '../src/services/privacyService.js';
+import {
+  recordInteractionEvents, getInteractionEventsForExport, resetInteractionEventStoreForTests,
+} from '../src/services/interactionEventService.js';
+import {
+  getStoredLearnedWeights, recomputeLearnedWeights, resetLearnedWeightsStoreForTests,
+} from '../src/services/preferenceLearningService.js';
 import { closePool } from '../src/db/mysql.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,3 +87,100 @@ test('#33 personal route is blocked before current service consent and allowed a
 // `preferenceLearningService.test.js` 的 PL7 用完全不連 MySQL 的方式驗證同一件
 // 事（consent 閘門、寫入、讀回、刪除），`routes/privacy.js` 這裡的 export 欄位
 // 只是把 `getStoredLearnedWeights()` 的結果接上去，屬於一行接線，不再另外測。
+//
+// 同樣的限制套用在 roadmap #31 新增的 `GET /api/privacy/personalization`：
+// 已同意時它會呼叫 `getUserPreferences()` → `getUserCourseHistory()` → MySQL，
+// CI 沒有 DB secret（見 `.github/workflows/ci.yml`）。它的來源分類邏輯已經在
+// `preferenceLearningService.test.js` 的 PL19–PL21 用 `options.prefs` 注入、
+// 完全不連 MySQL 的方式驗證過；這裡只測不會碰到 `getUserPreferences()` 的
+// `DELETE /personalization` 與 `PUT /consents` 撤回鉤子。
+
+function identity() {
+  return { canonicalId: demo.studentId };
+}
+
+test('#31 PL22 DELETE /api/privacy/personalization 清空學到的權重與互動事件，不動 Profile', async () => {
+  resetInteractionEventStoreForTests();
+  resetLearnedWeightsStoreForTests();
+
+  // 前一個測試（#33）把 personalization_learning 設回 false，這裡要先重新
+  // 同意，`recordInteractionEvents()`／`recomputeLearnedWeights()` 才不會被
+  // consent 閘門擋在 no-consent。
+  const grant = await fetch(`${baseUrl}/privacy/consents`, {
+    method: 'PUT', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ consents: {
+      service_processing: true, personalization_learning: true, aggregate_research: false,
+    } }),
+  });
+  assert.equal(grant.status, 200);
+
+  // 先用直接呼叫 service 的方式造出資料，避開 `GET /api/profile` 這類
+  // 會碰 MySQL 的路徑——`options.prefs` 注入與 `preferenceLearningService.test.js`
+  // 的 PL7／PL18 同一個模式。
+  await recordInteractionEvents(identity(), [{
+    eventType: 'course_withdrawn',
+    requestId: randomUUID(),
+    actionId: randomUUID(),
+    course: { catalogCourseCode: 'PL22-RESET', sectionId: 9001 },
+    term: { academicYear: 114, semester: 'second' },
+    source: 'explicit_selection',
+    feedbackReason: 'time',
+    versionSnapshot: { recommendationReasonVersion: null },
+  }]);
+  await recomputeLearnedWeights(identity(), { prefs: {} });
+  assert.ok(await getStoredLearnedWeights(identity()), '前置：重算後應該有已存的權重列');
+  assert.ok((await getInteractionEventsForExport(identity())).length > 0, '前置：應該有互動事件');
+
+  const response = await fetch(`${baseUrl}/privacy/personalization`, {
+    method: 'DELETE', headers: { Cookie: cookie },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.equal(body.profilePreserved, true);
+  assert.ok(body.learnedWeightsDeleted >= 1);
+  assert.ok(body.interactionEventsDeleted >= 1);
+
+  assert.equal(await getStoredLearnedWeights(identity()), null, '重設後不應該還讀得到權重');
+  assert.deepEqual(await getInteractionEventsForExport(identity()), [], '重設後不應該還讀得到事件');
+});
+
+test('#31 PL23 撤回 personalization_learning 同意會連同已學到的權重與互動事件一起刪除', async () => {
+  resetInteractionEventStoreForTests();
+  resetLearnedWeightsStoreForTests();
+
+  const grant = await fetch(`${baseUrl}/privacy/consents`, {
+    method: 'PUT', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ consents: {
+      service_processing: true, personalization_learning: true, aggregate_research: false,
+    } }),
+  });
+  assert.equal(grant.status, 200);
+  assert.equal((await grant.json()).consents.personalization_learning.granted, true);
+
+  await recordInteractionEvents(identity(), [{
+    eventType: 'course_withdrawn',
+    requestId: randomUUID(),
+    actionId: randomUUID(),
+    course: { catalogCourseCode: 'PL23-REVOKE', sectionId: 9002 },
+    term: { academicYear: 114, semester: 'second' },
+    source: 'explicit_selection',
+    feedbackReason: 'workload',
+    versionSnapshot: { recommendationReasonVersion: null },
+  }]);
+  await recomputeLearnedWeights(identity(), { prefs: {} });
+  assert.ok(await getStoredLearnedWeights(identity()), '前置：撤回之前應該先有已存的權重列');
+  assert.ok((await getInteractionEventsForExport(identity())).length > 0, '前置：撤回之前應該先有互動事件');
+
+  const revoke = await fetch(`${baseUrl}/privacy/consents`, {
+    method: 'PUT', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ consents: {
+      service_processing: true, personalization_learning: false, aggregate_research: false,
+    } }),
+  });
+  assert.equal(revoke.status, 200);
+  assert.equal((await revoke.json()).consents.personalization_learning.granted, false);
+
+  assert.equal(await getStoredLearnedWeights(identity()), null, '撤回同意後不應該還讀得到權重');
+  assert.deepEqual(await getInteractionEventsForExport(identity()), [], '撤回同意後不應該還讀得到事件');
+});

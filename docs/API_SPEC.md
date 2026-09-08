@@ -66,6 +66,11 @@ canonical ID 或 pseudonymous subject ID。
 
 必要用途必須為 true 才能開始服務；三個值會以同一時間點原子寫入。
 
+**Roadmap #31**：`personalization_learning` 從 `true` 改為 `false`（撤回）時，
+本次請求會**連同已學到的權重與作為其輸入的互動事件一起刪除**（等同呼叫下方的
+`DELETE /api/privacy/personalization`）——撤回同意不只是停止未來蒐集，已持有的
+學習成果也一併清除。重新勾選後個人化從零開始重新累積，不會沿用被刪除前的資料。
+
 ### `GET /api/privacy/export`
 
 以 attachment JSON 串流登入者的可攜 Profile、已存課表、同意決定與**自己的互動事件**
@@ -93,6 +98,59 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
 仍會通過；若不先撤回，一個已通過檢查、正在執行中的 `POST /api/interactions` 可以在刪除
 完成之後才落地，讓這支 API 回報成功卻仍留下個人資料。互動事件的寫入會在同一個交易裡以
 `SELECT ... FOR UPDATE` 檢查撤回狀態，已撤回的 subject 一律回 `rejected`。
+
+### `GET /api/privacy/personalization`（Roadmap #31）
+
+目前個人化用的是顯式設定、學到的權重、還是資料不足／未同意。只需要 `requireIdentity`，
+**不需要任何 consent**——沒同意的人正是要看到 `no-consent` 這個狀態。
+
+```json
+{
+  "source": "insufficient",
+  "appliedToScheduling": true,
+  "explicitProfileEmpty": false,
+  "weights": { "interest": 0, "compact": 1, "easy": 0 },
+  "explicitProfile": { "interest": 0, "compact": 1, "easy": 0 },
+  "sufficiency": {
+    "status": "insufficient",
+    "usableEventCount": 31,
+    "requiredEventCount": 50,
+    "missingAxes": ["easy"]
+  },
+  "modelVersion": "preference-learning-v2",
+  "computedAt": "2026-09-04T02:38:14.334Z"
+}
+```
+
+`source` 為 `no-consent` / `insufficient` / `explicit` / `learned` 四選一；`insufficient`
+時 `weights` 等於 `explicitProfile` 原樣。`appliedToScheduling`（Roadmap #5B 起恆為
+`true`）表示可用的學習結果已進入排課決策；Roadmap #7 起，同一組帶號連續權重同時用於
+單一門課排序與方案比較。學到的 boost 只加強已由顯式設定決定的方向。
+
+⚠️ **這支 GET 有寫入副作用**：已存結果過期時（版本不符、有新事件、或超過一天沒更新）
+會順手重算並覆寫 `Learned_Preference_Weights` 的那一列——冪等的快取填充，不是新的寫入
+語意，但呼叫端不該假設它保證唯讀。已同意時內部會呼叫 `getUserPreferences()`（連
+`User_Course_History` 的 MySQL 讀取），CI 因此無法端到端測試這支路由（見
+`docs/TEST_PLAN.md` 的 PL 段落）。
+
+### `DELETE /api/privacy/personalization`（Roadmap #31）
+
+只清除學到的權重與作為其輸入的互動事件，**不影響顯式 Profile**（偏好標籤、避開時段、
+學分上限）。與 `DELETE /api/privacy/data`（整個帳號）不同量級，不需要確認詞，但前端
+一律用 `window.confirm` 講清楚會刪除什麼再送出。
+
+```json
+{
+  "success": true,
+  "learnedWeightsDeleted": 1,
+  "interactionEventsDeleted": 92,
+  "profilePreserved": true
+}
+```
+
+連互動事件一起刪是刻意的：權重是事件的純推導，只刪推導出的那一列，下一次讀取
+（上面 GET 的過期重算）就會用一模一樣的事件重新算出一模一樣的值——一個會自己
+復原的「重設」比沒有這個功能更糟。
 
 ## Health
 
@@ -347,6 +405,7 @@ Request:
     "interests": [],
     "preferredTrack": null,
     "preferEasyCourses": false,
+    "preferChallengingCourses": false,
     "noMidterm": false,
     "noGroupReport": false,
     "discussion": false,
@@ -414,7 +473,11 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 語意），非本學期候選一律直接過濾，不出現在搜尋結果中——見 `docs/SCHEDULING_LOGIC.md`
 「Active Term」一節。
 
-`preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供任何一項時，主推方案改以總學分決定。
+`preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses`、
+`preferChallengingCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供
+任何一項時，主推方案改以總學分決定。**`preferEasyCourses` 與 `preferChallengingCourses`
+方向相反，不得同時為 `true`**——兩者同時設定時（Roadmap #5B）排課引擎會把難度偏好視為
+未表態並在 `warnings` 說明，不會猜測使用者真正的意思。
 
 `noMidterm`／`noGroupReport`／`discussion`／`weightDaily`／`practicalExam`／`finalReport`／
 `englishTaught`／`learnMore` 這 8 個「內容偏好」（Roadmap #3）**同樣是軟性偏好，不會排除課程**：
@@ -511,7 +574,15 @@ Response:
   "watchedCourses": [],
   "unscheduledCourses": [],
   "watchOnly": false,
-  "preferenceProfile": { "interest": 1, "compact": 0, "easy": 0 },
+  "preferenceProfile": { "interest": 1, "compact": 0, "easy": -1.4 },
+  "preferenceProfileSource": {
+    "learnedApplied": true,
+    "reason": "applied",
+    "modelVersion": "preference-learning-v2",
+    "computedAt": "2026-09-04T02:38:14.334Z",
+    "boosts": { "interest": 0, "compact": 0, "easy": 0.4 },
+    "easyDirection": "challenge"
+  },
   "hasExpressedPreference": true,
   "reviewDataLoaded": true,
   "draftSchedule": [],
@@ -541,6 +612,15 @@ Response:
   }
 }
 ```
+
+`preferenceProfile`（Roadmap #5B 起為**帶號連續值**）：三軸權重的絕對值決定該軸在
+單門課排序及偏好符合度加權平均裡佔多少，**符號**決定涼度分數對這個人是加分還是扣分
+——`easy` 為負代表使用者勾了 `#挑戰難課`，此時涼度分數越低（課越硬）符合度越高。
+未表態的軸恆為 `0`；同時勾選 `#涼課優先` 與 `#挑戰難課` 時 `easy` 也會被歸零並在
+`warnings` 說明矛盾。`preferenceProfileSource` 是附加的可觀察欄位，讓呼叫端不必解讀
+`preferenceProfile` 的數值就能直接知道學到的權重是否套用：`reason` 為
+`applied`／`absent`／`no-consent`／`insufficient`／`stale-model-version`／`unavailable`
+之一，只有 `applied` 時 `boosts`／`modelVersion`／`computedAt` 才非 `null`。
 
 `reviewDataLoaded`（Roadmap #4）表示這次排課是否取得了任何 `Course_Reviews` 資料。為 `false`
 代表接線異常（呼叫端沒帶 `courseReviews` 或資料庫回空），不是「沒有評價可用所以正常忽略」——
@@ -593,9 +673,10 @@ metadata」兩節。
 
 | 欄位 | 說明 |
 | --- | --- |
-| `reasonVersion` | 理由結構的版本（目前 `2026-08-31.v1`）。同一個值會寫進 `Interaction_Events.recommendation_reason_version`，讓曝光事件能回溯「當時是用哪一版理由算的」 |
+| `reasonVersion` | 理由結構的版本（目前 `2026-09-05.v2`）。同一個值會寫進 `Interaction_Events.recommendation_reason_version`，讓曝光事件能回溯「當時是用哪一版理由算的」 |
 | `selectedBecause` | 主要原因代號：`REQUIRED_COURSE`／`RETAKE_REQUIRED`／`USER_SPECIFIED`／`COREQUISITE_PAIR`／`PREFERENCE_MATCH`／`CREDIT_FILL`／`WATCHING`。用代號不用自由文字，中文由呈現層決定 |
-| `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。元件名稱與 `VARIANT_WEIGHTS` 的鍵一致（`base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest`） |
+| `scoringPolicy` | 這個排序決策使用的版本化權重快照；必修預置、關注等不經一般 scorer 的放置路徑為 `null` |
+| `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。元件為 `base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest` |
 | `scoreTotal` | 這門課在勝出方案裡的總分。**含**被 `scoreBreakdown` 過濾掉的 0 值元件 |
 | `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣關鍵字）。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
 | `requiredRules` | 必修／分類的判定依據：`formallyRequired`、`category`、`sourceCategory`、`classificationSource`、`track`、`countsTowardGraduation`、`nonGraduationCategory` |
@@ -625,13 +706,31 @@ metadata」兩節。
 
 ```json
 {
+  "variantId": "personalized_easy",
+  "generationPolicy": {
+    "version": "personalized-scoring-v1",
+    "weights": { "interest": 1, "compact": 0, "easy": -2.1 },
+    "categoryCoefficient": 0.35,
+    "creditCoefficient": 1,
+    "source": {
+      "learnedApplied": true,
+      "reason": "applied",
+      "modelVersion": "preference-learning-v2"
+    }
+  },
+  "stopWhen": "no-credit-progress",
   "preferenceScore": 0.214,
   "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0.68 },
   "reviewCoverage": { "rated": 5, "total": 8, "ratio": 0.625 }
 }
 ```
 
-`plans` 依 `success` → 是否達最低學分 → `preferenceScore` → `totalCredits` 排序，`plans[0]` 即為主推方案，其內容會複製到頂層 `schedule`。
+`generationPolicy` 是實際產生該方案的評分規則。系統先建立個人化綜合方案，再只為使用者
+已表態的軸建立加重比較方案，最後建立較多學分方案，總數上限為 5；因此方案不是固定五種，
+呼叫端不得從 `variantId` 猜測使用者偏好。`stopWhen` 為 `no-credit-progress` 或
+`candidate-exhausted`。`plans` 依 `success` → 是否達最低學分 → `preferenceScore` →
+`totalCredits` 排序，`preferenceScore` 一律用原始使用者權重計算，不讓加重策略替自己評分；
+`plans[0]` 即主推方案，其內容會複製到頂層 `schedule`。
 
 `preferenceBreakdown.easy`（Roadmap #4）改為由已排入且**有評價**課程的 `adjustedEasiness` 平均而得，
 不再是課程描述關鍵字命中率。**可能為 `null`**——代表這個方案排入的課全部沒有評價，無法評分，
@@ -681,18 +780,21 @@ metadata」兩節。
 
 ```json
 {
-  "requestedVariants": 5,
+  "requestedVariants": 4,
   "distinctPlans": 2,
+  "reason": "same-course-combination",
   "collapsed": [
-    { "variantId": "compact", "title": "集中排課" },
-    { "variantId": "interest", "title": "興趣與路徑優先" },
-    { "variantId": "max_credits", "title": "學分最大化" }
+    { "variantId": "personalized_compact", "title": "更集中排課" },
+    { "variantId": "personalized_credits", "title": "較多學分方案" }
   ],
   "competablePoolSize": 16
 }
 ```
 
-失敗回應（`success:false`）也會帶這個欄位；`collapsed` 沒有塌縮時為空陣列，不是 `null`。
+`requestedVariants` 是這次實際嘗試的策略數，不保證為 5。`reason` 在課程集合重複時為
+`same-course-combination`，沒有塌縮時為 `null`；重複只能證明策略得到相同組合，不能單憑
+這個欄位推論候選池不足。失敗回應（`success:false`）也會帶這個欄位；`collapsed` 沒有
+塌縮時為空陣列，不是 `null`。
 
 ### `POST /api/schedule/counterfactual`（Roadmap #27）
 

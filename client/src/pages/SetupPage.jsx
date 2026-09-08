@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/useAuth';
 import { coursesAPI, profileAPI } from '../services/api';
 import { Sparkles, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import AvoidTimePicker from '../components/Setup/AvoidTimePicker';
+import { getUserIdentity } from '../utils/userIdentity';
 
 // 標籤清單改由 `GET /api/profile/preference-tags` 提供，不再在前端寫死。
 //
@@ -15,6 +16,7 @@ import AvoidTimePicker from '../components/Setup/AvoidTimePicker';
 export default function SetupPage() {
   const navigate = useNavigate();
   const { user, markSetupDone, logout } = useAuth();
+  const userIdentity = getUserIdentity(user);
   
   // Basic info
   //
@@ -61,7 +63,7 @@ export default function SetupPage() {
     let cancelled = false;
 
     // 未登入時不退回 `default` 使用者，沿用初始值。
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setProfileLoaded(true);
       return () => { cancelled = true; };
     }
@@ -90,7 +92,7 @@ export default function SetupPage() {
       });
 
     return () => { cancelled = true; };
-  }, [user?.studentId]);
+  }, [userIdentity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +123,7 @@ export default function SetupPage() {
 
   const handleSubmit = async () => {
     // 偏好會寫進這位使用者的 profile，沒有身分就不能存。
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       alert('尚未登入，無法儲存個人偏好設定。請重新登入後再試。');
       return;
     }

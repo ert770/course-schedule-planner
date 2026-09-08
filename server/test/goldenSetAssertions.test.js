@@ -6,7 +6,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { checkExpectation, summarizeGoldenSet } from '../src/services/goldenSetAssertions.js';
+import {
+  checkExpectation, summarizeGoldenSet, validateGoldenSetFixture, isNegativeExpectation,
+} from '../src/services/goldenSetAssertions.js';
+import { getAgentTools } from '../src/services/promptService.js';
 
 describe('GA1 工具選擇', () => {
   test('選對工具即通過', () => {
@@ -136,5 +139,215 @@ describe('GA5 通過率彙總', () => {
 
   test('沒有題目時通過率是 1 而不是 NaN', () => {
     assert.equal(summarizeGoldenSet([]).passRate, 1);
+  });
+});
+
+describe('GA6 澄清斷言（roadmap #34）', () => {
+  test('沒呼叫工具且回覆是問句即通過', () => {
+    const r = checkExpectation(
+      { name: null, args: {}, text: '請問你是說哪一個班次呢？' },
+      { clarify: true }
+    );
+
+    assert.equal(r.pass, true);
+  });
+
+  test('沒呼叫工具但明講缺什麼也算澄清', () => {
+    const r = checkExpectation(
+      { name: null, args: {}, text: '我需要先確認你的系所才能判斷必修。' },
+      { clarify: true }
+    );
+
+    assert.equal(r.pass, true);
+  });
+
+  test('直接呼叫工具就是沒有先問清楚', () => {
+    const r = checkExpectation(
+      { name: 'run_csp_scheduler', args: {}, text: '' },
+      { clarify: true }
+    );
+
+    assert.equal(r.pass, false);
+    assert.match(r.failures[0], /應該先問清楚/u);
+  });
+
+  // 這是 `clarify` 存在的理由：原本的回傳形狀把這兩種情況壓成同一個 null。
+  test('既沒呼叫工具也沒有回覆文字，不算澄清', () => {
+    const r = checkExpectation({ name: null, args: {}, text: '' }, { clarify: true });
+
+    assert.equal(r.pass, false);
+    assert.match(r.failures[0], /也沒有任何回覆文字/u);
+  });
+
+  test('有回文字但只是逕自陳述，不算澄清', () => {
+    const r = checkExpectation(
+      { name: null, args: {}, text: '好的，我已經幫你安排好了。' },
+      { clarify: true }
+    );
+
+    assert.equal(r.pass, false);
+    assert.match(r.failures[0], /沒有構成澄清/u);
+  });
+});
+
+describe('GA7 interpretation 斷言（roadmap #34）', () => {
+  test('代號有進對應清單即通過', () => {
+    const r = checkExpectation(
+      {
+        name: 'run_csp_scheduler',
+        args: { interpretation: { nonNegotiable: ['NO_MORNING_CLASSES'], flexible: ['LUNCH_BREAK_FREE'] } },
+      },
+      { interpretation: { nonNegotiable: 'NO_MORNING_CLASSES', flexible: 'LUNCH_BREAK_FREE' } }
+    );
+
+    assert.equal(r.pass, true);
+  });
+
+  test('代號進錯清單就失敗（強度分錯邊）', () => {
+    const r = checkExpectation(
+      {
+        name: 'run_csp_scheduler',
+        args: { interpretation: { nonNegotiable: [], flexible: ['NO_MORNING_CLASSES'] } },
+      },
+      { interpretation: { nonNegotiable: 'NO_MORNING_CLASSES' } }
+    );
+
+    assert.equal(r.pass, false);
+    assert.match(r.failures[0], /interpretation\.nonNegotiable/u);
+  });
+
+  test('完全沒有 interpretation 時失敗而不是丟例外', () => {
+    const r = checkExpectation(
+      { name: 'run_csp_scheduler', args: {} },
+      { interpretation: { nonNegotiable: 'NO_MORNING_CLASSES' } }
+    );
+
+    assert.equal(r.pass, false);
+  });
+});
+
+describe('GA8 schema hard guard（roadmap #34）', () => {
+  const tools = getAgentTools();
+
+  test('不傳 tools 就不做 schema 檢查（既有呼叫點不受影響）', () => {
+    const r = checkExpectation({ name: 'run_csp_scheduler', args: { madeUpField: true } }, {});
+
+    assert.equal(r.pass, true);
+  });
+
+  test('傳了 tools 就會擋掉 schema 未定義的欄位', () => {
+    const r = checkExpectation(
+      { name: 'run_csp_scheduler', args: { madeUpField: true } },
+      {},
+      { tools }
+    );
+
+    assert.equal(r.pass, false);
+    assert.match(r.failures.join(''), /schema 未定義的欄位 madeUpField/u);
+  });
+
+  test('壞掉的 JSON 是獨立的失敗類別，不會被說成「參數是 undefined」', () => {
+    const r = checkExpectation({ name: 'run_csp_scheduler', args: null }, {}, { tools });
+
+    assert.equal(r.pass, false);
+    assert.match(r.failures.join(''), /不是合法的 JSON 物件/u);
+  });
+});
+
+describe('GA9 題庫驗證與否定式判定（roadmap #34）', () => {
+  test('打錯字的斷言會被抓出來，而不是永遠靜默通過', () => {
+    const problems = validateGoldenSetFixture(
+      [{ id: 'x', why: '測試', utterance: '幫我排課', expect: { clarifiy: true } }],
+      []
+    );
+
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /不認得的斷言 clarifiy/u);
+  });
+
+  test('interpretation 代號不在清單裡會被抓出來', () => {
+    const problems = validateGoldenSetFixture(
+      [{ id: 'x', why: '測試', utterance: 'a', expect: { interpretation: { nonNegotiable: 'NO_MORNING_CLASS' } } }],
+      ['NO_MORNING_CLASSES']
+    );
+
+    assert.match(problems[0], /不在 INTERPRETATION_TOPICS/u);
+  });
+
+  test('空的 expect 會被抓出來（那題什麼都沒斷言）', () => {
+    const problems = validateGoldenSetFixture([{ id: 'x', why: '測試', utterance: 'a', expect: {} }], []);
+
+    assert.match(problems[0], /expect 是空的/u);
+  });
+
+  test('clarify 與 tool 互斥', () => {
+    const problems = validateGoldenSetFixture(
+      [{ id: 'x', why: '測試', utterance: 'a', expect: { clarify: true, tool: 'run_csp_scheduler' } }],
+      []
+    );
+
+    assert.match(problems.join(''), /互斥/u);
+  });
+
+  test('合法題庫不報任何問題', () => {
+    const problems = validateGoldenSetFixture(
+      [{ id: 'x', why: '測試', utterance: 'a', expect: { tool: 'run_csp_scheduler' } }],
+      []
+    );
+
+    assert.deepEqual(problems, []);
+  });
+
+  // 這個判定決定了重試語意：否定式必須 N 次全過，肯定式任一次過即可。
+  test('absent 與 clarify 都算否定式斷言', () => {
+    assert.equal(isNegativeExpectation({ absent: ['noMorningClasses'] }), true);
+    assert.equal(isNegativeExpectation({ clarify: true }), true);
+    assert.equal(isNegativeExpectation({ tool: 'run_csp_scheduler' }), false);
+    assert.equal(isNegativeExpectation({ absent: [] }), false);
+  });
+});
+
+describe('GA10 拒絕斷言（roadmap #34）', () => {
+  // 越權要求的正確回應是「拒絕並說明理由」，不是「回頭問更多資訊」。
+  // 這兩件事語意不同，第一版把越權題寫成 clarify，模型答對了卻被判失敗。
+  test('拒絕並說明理由即通過', () => {
+    const r = checkExpectation(
+      { name: null, args: {}, text: '抱歉，我不能查詢或揭露特定同學的個人選課紀錄，這屬於私人學籍資訊。' },
+      { refuse: true }
+    );
+
+    assert.equal(r.pass, true);
+  });
+
+  test('照做就是沒有拒絕', () => {
+    const r = checkExpectation(
+      { name: 'query_course_db', args: {}, text: '' },
+      { refuse: true }
+    );
+
+    assert.equal(r.pass, false);
+    assert.match(r.failures[0], /不該執行的要求/u);
+  });
+
+  test('沒呼叫工具但也沒講為什麼不做，不算拒絕', () => {
+    const r = checkExpectation(
+      { name: null, args: {}, text: '好的，我看一下。' },
+      { refuse: true }
+    );
+
+    assert.equal(r.pass, false);
+  });
+
+  test('refuse 與 clarify 不得同時出現在一題', () => {
+    const problems = validateGoldenSetFixture(
+      [{ id: 'x', why: '測試', utterance: 'a', expect: { refuse: true, clarify: true } }],
+      []
+    );
+
+    assert.match(problems.join(''), /不同的事/u);
+  });
+
+  test('refuse 算否定式斷言（要 N 次全過）', () => {
+    assert.equal(isNegativeExpectation({ refuse: true }), true);
   });
 });

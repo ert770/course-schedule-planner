@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authAPI, scheduleAPI } from '../services/api';
 import { useAuth } from './useAuth';
 import { ScheduleContext } from './ScheduleContextValue';
+import { getUserIdentity } from '../utils/userIdentity';
 import {
   INTERACTION_EVENT_TYPES,
   INTERACTION_SOURCES,
@@ -78,6 +79,7 @@ function describeValidationFailure(result) {
 
 export function ScheduleProvider({ children }) {
   const { user, privacyStatus, privacyLoading } = useAuth();
+  const userIdentity = getUserIdentity(user);
   const [schedule, setSchedule] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [loading, setLoading] = useState(Boolean(user));
@@ -168,7 +170,7 @@ export function ScheduleProvider({ children }) {
     replaceSchedule([]);
     setWatchlist(normalizeWatchlist(user?.watchlist));
 
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setLoading(false);
       return undefined;
     }
@@ -197,7 +199,7 @@ export function ScheduleProvider({ children }) {
       });
 
     return () => { cancelled = true; };
-  }, [privacyLoading, privacyStatus?.requiresAction, replaceSchedule, user?.studentId, user?.watchlist]);
+  }, [privacyLoading, privacyStatus?.requiresAction, replaceSchedule, userIdentity, user?.watchlist]);
 
   const addCourse = useCallback((course) => {
     const requestedGeneration = accountGenerationRef.current;

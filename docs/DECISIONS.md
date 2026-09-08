@@ -880,3 +880,92 @@ Consequences:
   until re-granted. This is the designed behaviour (TEST_PLAN IL-15).
 - No service code changed: the version-comparison machinery from ADR-017 was
   built for exactly this case.
+
+## ADR-022: Difficulty Direction Is Declared, Never Inferred
+
+Date: 2026-09-05
+
+Context:
+
+Roadmap #5B requires that "the same easiness score produce opposite signs for
+different users." The obvious approach — learn the direction from behaviour,
+the same way `#30` learned the *magnitude* of each preference axis — turns out
+to be impossible with the data this system can legally collect.
+`INTERACTION_FEEDBACK_REASONS` (the enum backing `course_withdrawn.feedbackReason`,
+fixed by `#29`'s event schema) is `time | content | instructor | workload |
+full | eligibility | other`. `workload` can only ever mean "too heavy, give me
+something easier" — there is no reason code, and no combination of existing
+event types, that can express "too easy, I want something harder." A learned
+sign would therefore have to be invented, not observed.
+
+Decision:
+
+The sign of the `easy` preference axis comes **only** from an explicit user
+setting — two new mutually-exclusive tags, `#涼課優先` (existing
+`preferEasyCourses`, which had been read by the scheduler since `#5A` but had
+no UI or storage path to set it) and `#挑戰難課` (new `preferChallengingCourses`).
+The magnitude — how strongly to weight that declared direction — is the only
+part `#30`'s learned weights are allowed to influence, via
+`computeLearnedBoosts()`: the amount by which the learned value exceeds the
+user's explicit prior, always `>= 0`. `axisWeight(direction, boost) = direction
+× (1 + boost)`, so the weight's absolute value is always in `[1, 2]` and its
+sign always equals the declared direction — behaviour can reinforce a stated
+preference, never invent or reverse one.
+
+Consequences:
+
+- The acceptance criterion is genuinely testable today (same easiness score,
+  opposite ranking for a `preferEasyCourses` vs `preferChallengingCourses`
+  user — `scheduler.test.js` PD1), without pretending the direction was
+  learned from behaviour it cannot express.
+- If both tags are set, the scheduler treats the axis as unexpressed (weight
+  `0`) and surfaces a warning rather than guessing which one the user meant.
+- Should `#29`'s event schema ever grow a genuine "too easy" signal, the
+  direction could migrate from declared to learned without changing the
+  weight math (`resolveEasyDirection()` is the only place that would change).
+  Until then, the honest state is that direction is opt-in, not observed.
+
+## ADR-023: Baseline Measurement Reuses the Production Preference Ruler
+
+Date: 2026-09-06
+
+Context:
+
+Roadmap #36 needs to compare no-personalization, form-only, and learned-personalization
+conditions. Recomputing a second score inside the benchmark would make a ranking change
+look meaningful even when production would not make that choice.
+
+Decision:
+
+`personalizationMetrics.js` calls the scheduler's exported `buildPreferenceProfile()` and
+`evaluatePreference()` for every measured plan. The benchmark is measurement-only: it does
+not add a scoring override to an API request or alter production plan generation.
+
+Consequences:
+
+- Utility deltas are comparable across B0, B1, P and sensitivity sweeps.
+- A result can be unchanged or negative and still be reported; the benchmark does not force
+  a positive effect.
+- Any future scoring formula change must update the scheduler and the metric tests together.
+
+## ADR-024: Review Priority Is a Data-Availability Axis
+
+Date: 2026-09-06
+
+Context:
+
+Review evidence affects the easy/challenging feature, but an empty review set is not a user
+preference. Treating it as an off preference would conflate missing data with a deliberate
+choice.
+
+Decision:
+
+The review-priority sensitivity sweep keeps the same course pool and toggles only
+`courseReviews`. It reports review coverage separately from preference utility and never
+claims that missing reviews represent a negative preference.
+
+Consequences:
+
+- PB11 can verify data availability without changing candidate eligibility.
+- A future review source can be compared by evidence coverage before interpreting ranking
+  changes as personalization.

@@ -14,7 +14,9 @@ import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PlanComparison from '../components/Schedule/PlanComparison';
+import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
+import { getUserIdentity } from '../utils/userIdentity';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles } from 'lucide-react';
 
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
@@ -26,6 +28,7 @@ import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const userIdentity = getUserIdentity(user);
   const { theme, toggleTheme } = useTheme();
   const {
     schedule,
@@ -113,7 +116,7 @@ export default function DashboardPage() {
       };
 
       // 排課讀的是這位學生的偏好與修課歷史，未登入就不該產生課表。
-      if (!user?.studentId) {
+      if (userIdentity === null) {
         setScheduleNotice(makeNotice({
           level: 'error',
           message: '尚未登入，無法產生個人化課表。請重新登入後再試。',
@@ -159,18 +162,18 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [buildRecommendation, logScheduleRegenerated, replaceSchedule, user?.studentId]);
+  }, [buildRecommendation, logScheduleRegenerated, replaceSchedule, userIdentity]);
 
   useEffect(() => {
-    if (scheduleLoading || !user?.studentId) return;
+    if (scheduleLoading || userIdentity === null) return;
     if (schedule.length > 0) {
-      initialGenerationUserRef.current = user.studentId;
+      initialGenerationUserRef.current = userIdentity;
       return;
     }
-    if (initialGenerationUserRef.current === user.studentId) return;
-    initialGenerationUserRef.current = user.studentId;
+    if (initialGenerationUserRef.current === userIdentity) return;
+    initialGenerationUserRef.current = userIdentity;
     generateInitialSchedule();
-  }, [generateInitialSchedule, schedule.length, scheduleLoading, user?.studentId]);
+  }, [generateInitialSchedule, schedule.length, scheduleLoading, userIdentity]);
 
   // 標籤目錄不隨使用者變動，載入一次即可。
   useEffect(() => {
@@ -188,7 +191,7 @@ export default function DashboardPage() {
   // 目前勾選的偏好來自 profile，與 Setup 頁同一份資料。
   useEffect(() => {
     let cancelled = false;
-    if (!user?.studentId) return undefined;
+    if (userIdentity === null) return undefined;
 
     profileAPI.get()
       .then(profile => {
@@ -201,7 +204,7 @@ export default function DashboardPage() {
       });
 
     return () => { cancelled = true; };
-  }, [user?.studentId]);
+  }, [userIdentity]);
 
   // 勾選立即寫回 MySQL，但**不重新排課**——重排由「套用偏好排課」觸發，
   // 否則連勾幾個偏好就會連跑幾次排課。
@@ -213,7 +216,7 @@ export default function DashboardPage() {
     if (next.has(tag)) next.delete(tag);
     else next.add(tag);
 
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setPrefsError('尚未登入，無法儲存偏好設定。');
       return;
     }
@@ -240,7 +243,7 @@ export default function DashboardPage() {
     if (!msg || chatLoading) return;
 
     // 聊天記憶與偏好更新都寫進這位使用者，不得退回 `default`。
-    if (!user?.studentId) {
+    if (userIdentity === null) {
       setChatHistory(prev => [...prev, {
         role: 'bot',
         text: '尚未登入，無法使用課表助手。請重新登入後再試。',
@@ -367,6 +370,10 @@ export default function DashboardPage() {
         <aside className="left-sidebar">
           <div className="sidebar-section">
             <h3 className="sidebar-section-title">我的排課偏好</h3>
+            {/* roadmap #31：目前這份課表的個人化來源——顯式、學習到但尚未套用、
+                還是資料不足。自己抓資料（不傳 personalization prop），跟隱私中心
+                各自獨立載入，不必把 PrivacyPage 的 state 提到這裡共用。 */}
+            <PreferenceSourceBadge variant="compact" />
             {prefsError && (
               <div className="error-text" role="alert" id="prefs-error">{prefsError}</div>
             )}

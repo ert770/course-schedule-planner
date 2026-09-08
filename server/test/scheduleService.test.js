@@ -12,7 +12,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadCourseReviewsSafely, buildNoCandidatesResult, buildExposureDraft } from '../src/services/scheduleService.js';
+import {
+  loadCourseReviewsSafely, loadLearnedPreferenceSafely, buildNoCandidatesResult, buildExposureDraft,
+} from '../src/services/scheduleService.js';
 
 describe('loadCourseReviewsSafely：評價查詢失敗不得讓排課請求整體失敗', () => {
   test('loader 成功時回傳其解析結果', async () => {
@@ -36,6 +38,34 @@ describe('loadCourseReviewsSafely：評價查詢失敗不得讓排課請求整�
     });
 
     assert.deepEqual(result, []);
+  });
+});
+
+// roadmap #5B：學到的偏好權重跟評價資料同一個原則——它是加分項，讀取失敗
+// 不得讓排課請求整體失敗，退回今天的顯式 0/1 行為即可。
+describe('loadLearnedPreferenceSafely：學習權重讀取失敗不得讓排課請求整體失敗', () => {
+  const ABSENT = {
+    applied: false, reason: 'unavailable', boosts: null, modelVersion: null, computedAt: null, sufficiency: null,
+  };
+
+  test('loader 成功時回傳其解析結果', async () => {
+    const applied = { applied: true, reason: 'applied', boosts: { interest: 0, compact: 0, easy: 0.5 } };
+    const result = await loadLearnedPreferenceSafely(async () => applied);
+    assert.equal(result, applied);
+  });
+
+  test('loader reject 時回傳 applied:false/unavailable，不向外拋出例外', async () => {
+    const result = await loadLearnedPreferenceSafely(async () => {
+      throw new Error('DB timeout');
+    });
+    assert.deepEqual(result, ABSENT);
+  });
+
+  test('loader 同步拋出例外時同樣回傳 applied:false/unavailable', async () => {
+    const result = await loadLearnedPreferenceSafely(() => {
+      throw new Error('subject id derivation failed');
+    });
+    assert.deepEqual(result, ABSENT);
   });
 });
 
@@ -76,6 +106,13 @@ describe('buildExposureDraft：roadmap #27 之後 displayedSet／displayedPlanId
   const courseA = { id: 1, catalogCourseCode: 'IECS3002', sectionId: 1 };
   const courseB = { id: 2, catalogCourseCode: 'IECS3059', sectionId: 2 };
   const courseC = { id: 3, catalogCourseCode: 'IECS3099', sectionId: 3 };
+  const policy = {
+    version: 'personalized-scoring-v1',
+    weights: { interest: 1, compact: 0, easy: -1.4 },
+    categoryCoefficient: 0.35,
+    creditCoefficient: 1,
+    source: { learnedApplied: true, reason: 'applied', modelVersion: 'preference-learning-v2' },
+  };
 
   function makeResult() {
     return {
@@ -84,9 +121,15 @@ describe('buildExposureDraft：roadmap #27 之後 displayedSet／displayedPlanId
       // 真實流程裡 `variantId` 由 `annotateScheduleIdentifiers()` 在
       // `buildExposureDraft()` 執行前就已經設好（`= plan.id`），這裡照樣附上。
       plans: [
-        { id: 'required_first', variantId: 'required_first', planId: 'req-1:required_first', schedule: [courseA] },
-        { id: 'easy_score', variantId: 'easy_score', planId: 'req-1:easy_score', schedule: [courseB] },
-        { id: 'interest', variantId: 'interest', planId: 'req-1:interest', schedule: [courseC] },
+        { id: 'personalized', variantId: 'personalized', planId: 'req-1:personalized',
+          schedule: [courseA], generationPolicy: policy, stopWhen: 'no-credit-progress' },
+        { id: 'personalized_interest', variantId: 'personalized_interest',
+          planId: 'req-1:personalized_interest', schedule: [courseB],
+          generationPolicy: { ...policy, weights: { ...policy.weights, interest: 1.5 } },
+          stopWhen: 'no-credit-progress' },
+        { id: 'personalized_credits', variantId: 'personalized_credits',
+          planId: 'req-1:personalized_credits', schedule: [courseC],
+          generationPolicy: { ...policy, creditCoefficient: 3 }, stopWhen: 'candidate-exhausted' },
       ],
     };
   }
@@ -100,13 +143,26 @@ describe('buildExposureDraft：roadmap #27 之後 displayedSet／displayedPlanId
   test('displayedPlanIds 列出這次曝光顯示過的每一個 planId', () => {
     const draft = buildExposureDraft(makeResult(), 'req-1', { surface: 'dashboard', trigger: 'initial_load' });
     assert.deepEqual(draft.exposureContext.displayedPlanIds, [
-      'req-1:required_first', 'req-1:easy_score', 'req-1:interest',
+      'req-1:personalized', 'req-1:personalized_interest', 'req-1:personalized_credits',
     ]);
+  });
+
+  test('#7 曝光事件保存每個方案的權重、版本、來源與停止條件', () => {
+    const draft = buildExposureDraft(makeResult(), 'req-1', {
+      surface: 'dashboard', trigger: 'initial_load',
+    });
+
+    assert.equal(draft.exposureContext.planPolicies.length, 3);
+    assert.deepEqual(draft.exposureContext.planPolicies[0], {
+      planId: 'req-1:personalized', variantId: 'personalized',
+      ...policy, stopWhen: 'no-credit-progress',
+    });
+    assert.equal(draft.exposureContext.planPolicies[2].creditCoefficient, 3);
   });
 
   test('plan／position 仍指向主推方案（plans[0]），不因為改記全部方案而跟著變', () => {
     const draft = buildExposureDraft(makeResult(), 'req-1', { surface: 'dashboard', trigger: 'initial_load' });
-    assert.deepEqual(draft.plan, { planId: 'req-1:required_first', variantId: 'required_first' });
+    assert.deepEqual(draft.plan, { planId: 'req-1:personalized', variantId: 'personalized' });
     assert.equal(draft.position.planRank, 1);
   });
 

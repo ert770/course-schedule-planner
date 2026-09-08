@@ -75,3 +75,50 @@ export function makeToughReview(courseId, overrides = {}) {
     courseId, sweetness: 1, coolness: 1, workload: 5, overall: 1, reviewCount: 5, ...overrides,
   });
 }
+
+// Interaction fixtures shared by preference-learning and offline A/B tests.
+export function makeViewedEvent(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    eventType: 'course_viewed',
+    userId: 'demo-user',
+    course: { catalogCourseCode: 'DEMO-1', sectionId: 1 },
+    source: 'system_recommendation',
+    ...overrides,
+  };
+}
+
+export function makeWithdrawnEvent(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    eventType: 'course_withdrawn',
+    userId: 'demo-user',
+    course: { catalogCourseCode: 'DEMO-1', sectionId: 1 },
+    source: 'explicit_selection',
+    feedbackReason: 'workload',
+    ...overrides,
+  };
+}
+
+export function makeWidePoolWithReviews(startId = 300) {
+  const courses = [];
+  let id = startId;
+  for (let day = 1; day <= 5; day += 1) {
+    for (const startPeriod of [3, 7]) {
+      id += 1;
+      courses.push(makeCourse(id, {
+        dayOfWeek: day,
+        startPeriod,
+        endPeriod: startPeriod + 1,
+        category: id % 3 === 0 ? '核心選修' : '一般選修',
+        credits: id % 4 === 0 ? 2 : 3,
+      }));
+    }
+  }
+  return {
+    courses,
+    reviews: courses.map(course => (course.id % 2 === 0
+      ? makeEasyReview(course.id)
+      : makeToughReview(course.id))),
+  };
+}

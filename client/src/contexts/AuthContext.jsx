@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { AuthContext } from './AuthContextValue';
 import { authAPI, privacyAPI } from '../services/api';
+import { getUserIdentity } from '../utils/userIdentity';
 
 const userKey = (studentId, suffix) => `fcu:${studentId}:${suffix}`;
 const canBypassSetupForE2E = (user) => Boolean(
   import.meta.env.DEV
   && import.meta.env.VITE_E2E_BYPASS_SETUP === 'true'
-  && user?.studentId?.startsWith('BROWSER')
+  && String(getUserIdentity(user) ?? '').startsWith('BROWSER')
 );
 
 export function AuthProvider({ children }) {
@@ -85,9 +86,10 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     authAPI.logout().catch(() => {});
-    if (user?.studentId) {
-      localStorage.removeItem(userKey(user.studentId, 'onboarded'));
-      localStorage.removeItem(userKey(user.studentId, 'setupDone'));
+    const identity = getUserIdentity(user);
+    if (identity !== null) {
+      localStorage.removeItem(userKey(identity, 'onboarded'));
+      localStorage.removeItem(userKey(identity, 'setupDone'));
     }
     setUser(null);
     setPrivacyStatus(null);
@@ -95,19 +97,23 @@ export function AuthProvider({ children }) {
   };
 
   const markOnboarded = () => {
-    if (user?.studentId) localStorage.setItem(userKey(user.studentId, 'onboarded'), 'true');
+    const identity = getUserIdentity(user);
+    if (identity !== null) localStorage.setItem(userKey(identity, 'onboarded'), 'true');
   };
 
   const markSetupDone = () => {
-    if (user?.studentId) localStorage.setItem(userKey(user.studentId, 'setupDone'), 'true');
+    const identity = getUserIdentity(user);
+    if (identity !== null) localStorage.setItem(userKey(identity, 'setupDone'), 'true');
   };
 
-  const isOnboarded = () => Boolean(
-    user?.studentId && localStorage.getItem(userKey(user.studentId, 'onboarded')) === 'true'
-  );
+  const isOnboarded = () => {
+    const identity = getUserIdentity(user);
+    return identity !== null && localStorage.getItem(userKey(identity, 'onboarded')) === 'true';
+  };
   const isSetupDone = () => Boolean(
     canBypassSetupForE2E(user)
-    || (user?.studentId && localStorage.getItem(userKey(user.studentId, 'setupDone')) === 'true')
+    || (getUserIdentity(user) !== null
+      && localStorage.getItem(userKey(getUserIdentity(user), 'setupDone')) === 'true')
   );
 
   return (

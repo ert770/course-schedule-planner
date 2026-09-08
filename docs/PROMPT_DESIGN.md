@@ -93,7 +93,7 @@ System prompt 必須讓 Agent：
 | 課程指定 | `mustTakeCourseIds` |
 | 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
 | 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
-| 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
+| 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferChallengingCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
 | 畢業門檻 | `digitalCreditsNeeded` |
 
 ### 修課歷史不屬於工具參數
@@ -120,6 +120,18 @@ Profile 的 `courseHistory`，依最新一次修習結果自動推導，避免�
 `buildScheduleConstraints()` 的 `context` 參數注入，兩條路徑（REST 與 Chat）共用同一份資料，
 Agent 完全不需要、也不能夠自己提供評價分數。
 
+### 學到的偏好權重不屬於工具參數（Roadmap #5B）
+
+`learnedPreference` 不得出現在 `run_csp_scheduler` 的參數中，理由與
+`courseHistory`／`courseReviews` 相同：模型無法可靠得知系統從使用者行為學到了
+什麼，讓模型自行提供只會誘導編造一份假的學習結果。
+
+`scheduleService.js` 透過 `loadLearnedPreferenceSafely()` 呼叫
+`getSchedulingPreferenceWeights()` 取得後，經 `buildScheduleConstraints()` 的
+`context` 參數注入——與 `courseReviews` 同一扇門，Agent 完全不需要、也不能夠
+自己提供。**方向（涼課或挑戰難課）永遠由使用者顯式勾選的參數決定，學到的
+只是強度**：見上方「個人化偏好的必要性」與 `docs/DECISIONS.md` ADR-022。
+
 ### 學分上下限與超修
 
 未指定 `minCredits` / `maxCredits` 時，排課引擎依校規給預設值：上限 **25**、下限 **12**（`gradeLevel` 為 4 時下限 **9**）。
@@ -130,11 +142,23 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 
 ### 個人化偏好的必要性
 
-`preferredKeywords`、`interests`、`preferCompact`、`preferEasyCourses` 決定多方案中主推哪一個。
+`preferredKeywords`、`interests`、`preferCompact`、`preferEasyCourses`、
+`preferChallengingCourses` 同時影響單門課挑選與多方案主推排序。
 
-使用者表達興趣、想集中排課或想修涼課時，Agent **必須**把對應參數帶進 `run_csp_scheduler`。未帶入時系統只能改以總學分挑選方案，推薦會失去個人化，且回應的 `hasExpressedPreference` 會是 `false`。
+使用者表達興趣、想集中排課或想修涼課／挑戰難課時，Agent **必須**把對應參數帶進
+`run_csp_scheduler`。未帶入時系統只產生不假設偏好方向的綜合與較多學分策略，推薦會失去
+個人化，且回應的 `hasExpressedPreference` 會是 `false`。
 
-排課結果的每個方案含 `preferenceScore`（0~1 的偏好符合度），Agent 應用它向使用者說明為何主推該方案。
+`preferEasyCourses` 與 `preferChallengingCourses` 方向相反，**不得同時帶入 `true`**。
+使用者若話裡同時提到兩者（例如「我想要涼一點但也想挑戰自己」），Agent 應先向使用者
+確認實際想要哪一個方向，不得自行猜測或兩個都帶——排課引擎會把矛盾視為未表態並發出
+警告，但那是最後一道防線，不是 Agent 可以依賴的擋修機制。
+
+排課結果的每個方案含 `generationPolicy` 與 `preferenceScore`（0~1 的偏好符合度）。
+Roadmap #7 起方案不是固定五種；Agent 應依 policy、課程差異及比較指標說明取捨，不得從
+`variantId` 猜使用者的偏好。替代策略可能加重一個軸，但 `preferenceScore` 一律用原始
+使用者權重公平比較。`preferenceProfile` 三軸可能帶負號（`easy` 為負代表使用者要挑戰
+難課），符合度的計算會翻轉該軸；Agent 不需自行重算，直接使用 0~1 的結果即可。
 
 ### 評價證據的使用限制
 
@@ -469,6 +493,59 @@ Z5）——這兩者是「這門課一定要在課表裡」的硬性宣告，答
 模型回傳一則沒有 `function_call` 的訊息即為最終回答，內容就是要顯示給使用者的文字。
 不需要（也不應該）再包一層 `final_answer` 工具。
 
+## 最終回答的 evidence audit（Roadmap #37）
+
+沒有 `function_call` 只代表模型想結束本回合，不代表文字已經通過事實檢查。
+`agentService` 會把本回合每次工具呼叫的投影結果交給
+`explanationFaithfulness.js` 建立 evidence ledger，再於 `saveChatExchange()` 前驗證
+`finalReply`。因此不合格內容不會進入聊天歷史，也不會回到前端。
+
+ledger 只保存模型本回合已經看過的資料：工具名稱、call id、成功／失敗／等待確認狀態、
+solver 狀態，以及課程、評價與 `recommendationReason` 欄位。這避免 audit 事後查入模型
+從未看過的新資料，錯把模型的猜測判成有來源。
+
+每次工具呼叫都留一筆歷史紀錄（`ledger.tools`，append-only），但 audit 只看依
+**operationKey**（工具名稱＋參數雜湊，見 roadmap #41）分組後的**終態**（`ledger.operations`）：
+同一個操作（同工具、同參數）重試後成功，就不再因為它中途失敗過而被要求揭露、也不會
+被判定「宣稱成功卻其實失敗」；但參數不同的兩次呼叫一律算成不同操作，各自的終態互不
+覆蓋——因此「對 A 課失敗、對 B 課成功」不會被合併成一筆終態成功而靜默丟掉 A 課的失敗。
+
+課程指涉解析到 **section 實體**，不是只到課名（roadmap #41 第二段，見
+`courseReferenceResolver.js`）：同名不同班次的課程收成同一個 reference（候選陣列），
+逐 candidate 檢查「有沒有任一個真實 section 同時滿足整句話的所有主張」——不是逐事實
+各自判斷是否成立，否則 A 班的教師配上 B 班的時間會各自合格，拼出一門現實不存在的班次
+還能通過。捏造偵測改抽「課名形狀的片段」（引號、`XX課程／概論／導論／實習／實驗／專題`
+後綴、「推薦／加選／選修／修習＋詞組」）比對已知課程，不是判斷「這句話在談課程」，
+避免連「以下是推薦的課程：」這種開場白都被誤擋。每個課程物件還帶著 `evidenceRoles`
+（依來源 bucket：`schedule`→recommended、`excludedCoursesSample`→excluded 等），
+被排課器排除或未排入的課不能被講成推薦。
+
+目前的確定性檢查代號如下：
+
+| 代號 | 攔截內容 |
+| --- | --- |
+| `UNSUPPORTED_COURSE` | 回答提到工具結果中不存在的課名形狀片段（不論加不加引號） |
+| `COURSE_CREDITS_MISMATCH`／`COURSE_TEACHER_MISMATCH`／`COURSE_TIME_MISMATCH` | 沒有任何一個候選 section 同時支持整句話的課程基本事實 |
+| `REVIEW_WITHOUT_EVIDENCE`／`PROXY_PRESENTED_AS_REVIEW` | 無評價仍下結論，或把 proxy 說成學生評價 |
+| `ELIGIBILITY_OVERCLAIM`／`GRADUATION_OVERCLAIM`／`GRADUATION_RULE_WITHOUT_EVIDENCE` | 資格與畢業認列過度肯定 |
+| `PREFERENCE_OVERCLAIM`／`RECOMMENDATION_REASON_REVERSED`／`MISSING_RECOMMENDATION_REASON` | 偏好或主要推薦原因與 reason object 不一致 |
+| `EXCLUDED_COURSE_PRESENTED_AS_RECOMMENDED` | 推薦形狀的斷言指向的課，`evidenceRoles` 只有 excluded／unscheduled |
+| `TOOL_FAILURE_PRESENTED_AS_SUCCESS`／`TOOL_FAILURE_NOT_DISCLOSED` | 操作**終態**未成功（含 solver 未完成）卻宣稱成功，或完全隱藏未完成狀態——判定依 operation 終態，不受同操作中途失敗的舊紀錄影響 |
+| `MISSING_REVIEW_UNCERTAINTY` | 使用者問評價、資料為空，回答沒有明講不知道 |
+| `SENSITIVE_SYSTEM_DISCLOSURE` | 回答包含環境秘密或 API key 形式的值 |
+
+**誠實記錄範圍**：`UNSUPPORTED_COURSE` 是對「課名形狀的片段」做封閉世界比對，不是對
+所有自然語言做形式證明——完全不帶課名特徵、不加引號、也不接課程類後綴的捏造（例如
+「量子魔法很涼」）仍可能通過。沒有 NER 就做不到語意層級的判斷，這是有意識接受的殘留
+缺口，不能解讀為對捏造內容的完整防護。
+
+第一次驗證失敗時，另呼叫一次模型做受限修正，只提供原回答、違規清單與 ledger，且不提供
+任何工具。修正版會再經同一個 validator；仍失敗或修正呼叫本身失敗時，改由後端固定邏輯
+輸出安全回答。這條修正路徑不能更新 `intent`、`data`、profile 或 interaction event。
+
+前端信封仍是 `{ reply, intent, data }`，audit 結果只寫入不含使用者內容的伺服器紀錄；
+不把 ledger、原始 tool result、system prompt 或環境變數暴露給前端。
+
 ## 伺服器補進 prompt 的推薦上下文
 
 `saveChatExchange()` 只保存使用者訊息與最終文字回覆，**工具結果不會被保存**。
@@ -481,7 +558,7 @@ Z5）——這兩者是「這門課一定要在課表裡」的硬性宣告，答
 ```text
 最近一次推薦（使用者目前看到的那一份課表）：
 - requestId：<uuid>
-- planId：<uuid>:interest
+- planId：<uuid>:personalized
 - 這份課表包含的課，record_schedule_feedback 的 sectionId 只能從這裡挑：
   - sectionId 1303：資訊安全管理
   …
