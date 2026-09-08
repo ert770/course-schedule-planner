@@ -51,4 +51,9 @@ morning courses 與 safety 結果。另提供 interest、compact、easy、avoid-
 
 ## Commit 與 push
 
-未 commit，未 push。
+已 commit（`9f35707`）並推送。
+
+> 2026-09-08 訂正：這行原本寫「未 commit，未 push」，但 `git log` 核對後確認
+> 這份檔案實際上已經在 `9f35707` commit 並推送過——是報告寫完後沒有回頭訂正的
+> 疏漏，於 [2026-09-08 的 #36 二輪修法](./2026-09-08-roadmap-36-sensitivity-sweep-fix.md)
+> 一併修正。

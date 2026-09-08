@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-08
+
+1. [Roadmap #36（二輪）：修正 preference sensitivity sweep 的量測方法](./2026-09-08-roadmap-36-sensitivity-sweep-fix.md)
+
 ## 2026-09-07
 
 1. [Roadmap #40：補齊個人化學習訊號缺口](./2026-09-07-roadmap-40-preference-signal-gaps.md)

@@ -96,7 +96,28 @@ test('PB8-PB10 preference sensitivity sweeps are fixed-pool and measurable', () 
     assert.equal(sweep.on.allPlansSafe, true);
     assert.ok(sweep.off.planDiversity.competablePoolSize >= 10);
     assert.ok(Number.isFinite(sweep.comparison.utilityDelta));
+    // Roadmap #36：「有算出一個數字」不等於「方向符合預期」——這正是
+    // compact／avoid-time 兩軸的回歸沒被這則測試擋下的原因，補上真正的方向檢查。
+    assert.equal(sweep.directionCheck.pass, true, `${axis.id} 軸方向檢查應該通過`);
   }
+});
+
+test('PB13 avoid-time sweep actually excludes a real morning course', () => {
+  // Roadmap #36：候選池裡若沒有任何一門課排在早八，開關 noMorningClasses 兩邊
+  // 排出來的課表會完全一樣，`morningCoursesDelta` 恆為 0——這則測試釘住「早八課
+  // 真的被排除」這個具體、可驗證的因果宣稱，不只是看聚合分數。
+  const sweep = runAxisSweep(widePool, 'avoid-time');
+  assert.ok(sweep.off.morningCourses >= 1, 'off（不開此偏好）應該排進至少一門早八課');
+  assert.equal(sweep.on.morningCourses, 0, 'on（開啟不排早八）不應該有任何早八課');
+  assert.ok(sweep.comparison.morningCoursesDelta < 0);
+});
+
+test('PB14 compact sweep improves its own preference component, not just the aggregate', () => {
+  // Roadmap #36：確認這次修法是讓 compact 自己的分量與整體方向一起對，不是靠其他
+  // 分量的變化剛好蓋過去而碰巧通過整體門檻。
+  const sweep = runAxisSweep(widePool, 'compact');
+  assert.ok(sweep.comparison.preferenceBreakdownDelta.compact > 0);
+  assert.equal(sweep.directionCheck.pass, true);
 });
 
 test('PB11 compact sweep agrees with buildCounterfactuals on the same carrier', () => {

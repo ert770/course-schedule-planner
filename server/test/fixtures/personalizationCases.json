@@ -17,7 +17,7 @@
         { "id": 109, "catalogCourseCode": "DEMO0109", "name": "網路安全專題", "code": "DEMO0109", "instructor": "教師I", "department": "資訊四乙", "credits": 3, "dayOfWeek": 5, "startPeriod": 3, "endPeriod": 4, "category": "一般選修", "description": "資訊安全專題與深入應用" },
         { "id": 110, "catalogCourseCode": "DEMO0110", "name": "程式語言", "code": "DEMO0110", "instructor": "教師J", "department": "資訊四乙", "credits": 3, "dayOfWeek": 5, "startPeriod": 7, "endPeriod": 8, "category": "一般選修", "description": "程式語言實作與編譯器" },
         { "id": 111, "catalogCourseCode": "DEMO0111", "name": "資料科學", "code": "DEMO0111", "instructor": "教師K", "department": "資訊四乙", "credits": 3, "dayOfWeek": 6, "startPeriod": 3, "endPeriod": 4, "category": "核心選修", "description": "資料分析與機器學習" },
-        { "id": 112, "catalogCourseCode": "DEMO0112", "name": "專案管理", "code": "DEMO0112", "instructor": "教師L", "department": "資訊四乙", "credits": 2, "dayOfWeek": 6, "startPeriod": 7, "endPeriod": 8, "category": "一般選修", "description": "專案規劃與期末報告" }
+        { "id": 112, "catalogCourseCode": "DEMO0112", "name": "專案管理", "code": "DEMO0112", "instructor": "教師L", "department": "資訊四乙", "credits": 2, "dayOfWeek": 6, "startPeriod": 1, "endPeriod": 2, "category": "一般選修", "description": "專案規劃與期末報告" }
       ],
       "reviews": [
         { "id": 101, "courseId": 101, "sweetness": 2, "coolness": 2, "workload": 5, "overall": 2, "value": 2, "reviewCount": 5 },

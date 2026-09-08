@@ -146,7 +146,11 @@ const AXIS_DEFINITIONS = Object.freeze([
   { id: 'interest', on: { interests: ['資訊安全'] }, expectation: 'positive' },
   { id: 'compact', on: { preferCompact: true }, expectation: 'positive' },
   { id: 'easy', on: { preferEasyCourses: true }, expectation: 'positive' },
-  { id: 'avoid-time', on: { noMorningClasses: true }, expectation: 'negative' },
+  // Roadmap #36：`noMorningClasses` 是硬性排除規則，不是 `evaluatePreference()`
+  // 打分公式的一個分量（`interest`／`compact`／`easy` 才是）——用 `utilityDelta`
+  // 判定這一軸有沒有效果，量到的從來不是這個功能真正該回答的問題。改用
+  // `compareRuns()` 已經算好的 `morningCoursesDelta`（見下方 `runAxisSweep()`）。
+  { id: 'avoid-time', on: { noMorningClasses: true }, expectation: 'negative', metric: 'morningCoursesDelta' },
   { id: 'review-priority', on: { _reviews: 'on' }, expectation: 'positive' },
 ]);
 
@@ -184,8 +188,16 @@ export function buildAxisConditions(caseDefinition, axisId) {
 }
 
 export function runAxisSweep(caseDefinition, axisId) {
+  const axis = AXIS_DEFINITIONS.find(item => item.id === axisId);
+  if (!axis) throw new Error(`未知 preference sensitivity 軸：${axisId}`);
   const { off, on, expectation } = buildAxisConditions(caseDefinition, axisId);
-  const evaluationConstraints = withFixtureData(caseDefinition, caseDefinition.baseConstraints ?? {});
+  // Roadmap #36 修法：評分尺不能沿用「每一軸都拉到最強」的 `baseConstraints`——
+  // 它替 `compact` 軸準備的代打 carrier（`preferChallengingCourses`，見
+  // `buildAxisConditions()`）跟 `easy` 軸本身要測的方向剛好相反，等於用一把想要
+  // 「難」的尺去評「這樣排是不是更符合想要『簡單』的人」，測出來的方向保證不可靠。
+  // 改用這一軸自己的 `on` 條件當尺——off／on 仍然共用同一把固定尺（比較才有意義），
+  // 但至少不會跟被測的軸方向互相矛盾。
+  const evaluationConstraints = on;
   const summarize = (label, constraints) => summarizeRun(
     generateSchedule(caseDefinition.candidateCourses, constraints, {
       seed: caseDefinition.baseConstraints?.seed,
@@ -201,7 +213,10 @@ export function runAxisSweep(caseDefinition, axisId) {
     off: offSummary,
     on: onSummary,
     comparison,
-    directionCheck: checkDirection({ direction: expectation, min: 0 }, comparison),
+    directionCheck: checkDirection(
+      { direction: expectation, min: 0, metric: axis.metric ?? 'utilityDelta' },
+      comparison,
+    ),
   };
 }
 

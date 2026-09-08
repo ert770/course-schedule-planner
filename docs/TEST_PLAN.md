@@ -1007,9 +1007,19 @@ npm run bench:scheduler --prefix server -- --markdown
 | PB3-PB4 | learned weights 與 cold start | 同事件重跑逐位元穩定；資料不足時 P 不套用學習權重 |
 | PB5 | 同一把評分尺 | 所有方案以 baseline profile 重算 utility，並檢查全方案安全 |
 | PB6-PB7 | 多 persona 對照 | 每個 persona 都保留 hard constraints，差異如實記錄 |
-| PB8-PB10 | 五條 preference sensitivity 軸 | 輸出 utility、課程集合 Jaccard、排序變化與評價覆蓋率 |
+| PB8-PB10 | 五條 preference sensitivity 軸 | 輸出 utility、課程集合 Jaccard、排序變化與評價覆蓋率，且每一軸的 `directionCheck.pass` 皆為 `true`（roadmap #36 二輪：「有算出數字」不等於「方向正確」，光是 `Number.isFinite` 曾讓 compact／avoid-time 兩軸的方向錯誤沒被擋下） |
 | PB11 | compact sweep 與 `buildCounterfactuals()` | 同一載體與 production counterfactual 的主方案一致 |
 | PB12 | review-priority 與 cold-start 邊界 | review-priority 只改 evidence coverage；cold-start 的 P 與 B1 完全相同 |
+| PB13 | avoid-time 軸真的排除早八課 | `off.morningCourses ≥ 1`、`on.morningCourses = 0`；判定用 `morningCoursesDelta`，不是 `utilityDelta`——`noMorningClasses` 是硬性排除規則，不是打分公式的分量，用 utility 判斷這一軸量到的從來不是它真正的效果 |
+| PB14 | compact 軸自己的分量也對 | `preferenceBreakdownDelta.compact > 0` 且整體方向通過——避免修法只是靠其他分量的變化剛好蓋過去而碰巧過關 |
+
+**roadmap #36 二輪（評分尺自相矛盾）**：`runAxisSweep()` 原本用
+`caseDefinition.baseConstraints`（題庫裡「每一軸都設到最強」的固定設定，含
+`preferChallengingCourses: true`）當 off／on 共用的評分尺——這跟 `easy` 軸要測的
+`preferEasyCourses` 方向相反，`compact` 軸的代打 carrier 又把同一個矛盾方向注入
+一次，導致 `compact` 軸曾經測出 `utilityDelta = -0.098666`（方向錯誤，`compact`
+自己的分量其實是 `+0.5`，但被 `interest` 分量 `-0.55` 拖累）。改用這一軸自己的
+`on` 條件當評分尺——off／on 仍共用同一把固定尺，但不再跟被測方向互相矛盾。
 
 執行方式：
 
