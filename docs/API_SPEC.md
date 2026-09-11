@@ -216,7 +216,9 @@ Request:
 Query params:
 
 - `department`（必填；完整系所名稱，例如 `資訊工程學系`）
-- `grade`（必填；由使用者完整班級解析出的年級，例如 `3`）
+- `gradeLevel`（必填；1～4 為大一至大四，5 為碩士／博士／研究所）
+- `classYear`（由 `courseSearchScope` 提供；碩一／碩二等班級年次）
+- `degree`（由 `courseSearchScope` 提供；班級學制）
 - `className`（必填；由完整班級解析出的班別尾碼，例如 `甲`）
 - `keyword`
 - `category`（選填：`必修`、`核心選修`、`一般選修`、`通識`、`系外選修`）
@@ -227,7 +229,7 @@ Query params:
 - `period`
 - `language`
 
-`department`、`grade`、`className` 必須使用 `GET /api/profile` 回傳的
+`department`、`gradeLevel`、`className` 必須使用 `GET /api/profile` 回傳的
 `courseSearchScope`，前端不得自行拆解完整班級名稱。API 不接受 `class` alias。
 缺少任一班級範圍欄位時不會退回廣泛搜尋，而是回傳 `400`：
 
@@ -241,7 +243,7 @@ Query params:
 例如完整班級 `資訊三甲` 會產生：
 
 ```text
-GET /api/courses?department=資訊工程學系&grade=3&className=甲
+GET /api/courses?department=資訊工程學系&gradeLevel=3&classYear=3&degree=bachelor&className=甲
 ```
 
 後端會先以學生 scope 解析每門課的分類，再套用 category 與其他搜尋條件。未指定
@@ -259,12 +261,14 @@ Response:
 {
   "scope": {
     "department": "資訊工程學系",
-    "grade": 3,
+    "gradeLevel": 3,
+    "classYear": 3,
+    "degree": "bachelor",
     "className": "甲"
   },
   "appliedFilters": {
     "department": "資訊工程學系",
-    "grade": 3,
+    "gradeLevel": 3,
     "className": "甲",
     "category": "核心選修"
   },
@@ -279,6 +283,8 @@ Response:
       "instructor": "王小明",
       "department": "資工系",
       "credits": 3,
+      "gradeLevel": 3,
+      "prerequisites": null,
       "dayOfWeek": 1,
       "startPeriod": 2,
       "endPeriod": 4,
@@ -316,6 +322,8 @@ Response:
 | `eligibilitySource`（Roadmap #20） | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`，供追查來源用，不是給人看的文字 |
 | `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學年學期，以及是否為系統目前的 active term |
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明，可直接呈現給使用者 |
+| `gradeLevel` | `Courses.target_grade` 的 API 名稱；0＝全年級、1～4＝大一至大四、5＝研究所 |
+| `prerequisites` | 先修資料；`null` 代表資料尚未提供，不代表沒有先修 |
 
 **Active term（Roadmap #20）**：所有課程搜尋、排課與 Agent 查詢只回傳
 `server/src/data/activeTerm.js` 定義的 `ACTIVE_TERM`（預設 114 學年下學期）內的
@@ -355,7 +363,8 @@ Query:
 | 參數 | 必填 | 說明 |
 | --- | --- | --- |
 | `department` | 是 | 系所全名，例如 `資訊工程學系`。缺少時回 `400` |
-| `grade` | 否 | 年級 1~4。省略時回傳該系所有年級的學士班班別 |
+| `gradeLevel` | 否 | 1～4 回傳對應學士班；5 回傳研究所班別 |
+| `programType` | 否 | `master` 或 `doctoral`，用於 gradeLevel=5 時收斂班別 |
 
 Response:
 
@@ -400,6 +409,7 @@ Request:
     "noMorningClasses": false,
     "noEveningClasses": false,
     "mustTakeCourseIds": [7],
+    "avoidInstructors": ["王小明"],
     "preferCompact": false,
     "preferredKeywords": ["網路", "資安"],
     "interests": [],
@@ -440,6 +450,13 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 `searchCoursesForSchedule()`。
 
 `courseIds`、`selectedCourseIds`、`watchingCourseIds` 與 `mustTakeCourseIds` 使用 section id。
+
+`avoidInstructors` 是教師完整姓名陣列。比對時只去除前後空白並忽略英文大小寫，
+不做模糊搜尋，也不自行拆分或猜測姓名。命中的一般候選課會以
+`constraintId: "AVOID_INSTRUCTOR"` 排除；`watchingCourseIds` 的關注課不套用此限制。
+正式必修若只有該教師班次，與早八／午休／晚課舒適偏好相同，採必修優先並在
+`warnings` 與 `recommendationReason.constraintTradeoffs` 揭露；使用者手動指定的
+`mustTakeCourseIds` 不屬於正式必修豁免。
 
 `completedCourseIds` 已於 2026-08-13 移除——已修排除改用穩定的 `courseHistory`
 課號比對（`skills/scheduler.js` 呼叫 `data/courseHistory.js` 的
@@ -488,11 +505,11 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 
 `allowRelaxation`／`timePreferencePriority`（Roadmap #21）：opt-in 放寬階梯的開關與順序，
 預設 `allowRelaxation:false`（沒有任何現行呼叫端會設定，行為與改動前完全相同）。啟用後，
-若方案的選修側因 `noMorningClasses`／`lunchBreakFree`／`noEveningClasses` 排掉太多候選、
+若方案的選修側因 `noMorningClasses`／`lunchBreakFree`／`avoidInstructors`／`noEveningClasses` 排掉太多候選、
 導致湊不到學分下限，會依 `timePreferencePriority`（constraintId 陣列，例如
-`["LUNCH_BREAK_FREE", "NO_MORNING_CLASSES", "NO_EVENING_CLASSES"]`；未提供時採用系統預設
+`["LUNCH_BREAK_FREE", "AVOID_INSTRUCTOR", "NO_MORNING_CLASSES", "NO_EVENING_CLASSES"]`；未提供時採用系統預設
 順序）逐一放寬並重試，成功時回應會附上 `relaxedConstraints` 並在 `warnings` 揭露。這個機制
-**獨立於**正式必修對這 3 項的無條件豁免——後者永遠生效，不需要這個旗標。`blockedPeriods`
+**獨立於**正式必修對這 4 項舒適偏好的無條件豁免——後者永遠生效，不需要這個旗標。`blockedPeriods`
 永遠不會被這個機制放寬。詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema
 （Roadmap #21）」。
 
@@ -545,7 +562,7 @@ Roadmap #22 的 bounded backtracking repair 會在主推 greedy baseline 未通�
 
 request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
 
-- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`avoidInstructors`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
 - **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 MySQL `User_Course_History` 載入的 `prefs.courseHistory`。查詢成功但 0 筆是合法空歷史；查詢失敗時 Profile、Schedule、Chat 與 Graduation 回 `503 COURSE_HISTORY_UNAVAILABLE`，不得以空陣列繼續。REST 與 AI Agent 都不能提交或覆蓋歷史修課。
 - **`courseReviews`**（Roadmap #4）：與 `courseHistory` 同理，**純伺服器端注入、不接受 request 覆蓋**。`scheduleService.js` 從 `getAll('reviews')` 取得 `Course_Reviews` 全表後放進 `context`，request body 與 AI Agent 的 tool 參數都不含這個欄位——沒有任何管道能讓客戶端塞入捏造的評價分數。
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。

@@ -10,6 +10,7 @@ import { logger } from '../utils/logger.js';
 import { createTtlCache } from '../utils/ttlCache.js';
 import { validateCourseHistoryEntry } from '../data/courseHistory.js';
 import { normalizeAdmissionYear } from '../data/graduationRuleVersions.js';
+import { normalizeCourseGradeLevel } from '../data/courseGradeLevel.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -225,6 +226,11 @@ function mapCourseRow(row) {
     description: row.rag_context || '',
     syllabus: row.rag_context || '',
     catalogCourseCode: row.subid3,
+    // Courses.target_grade 的唯一 API 名稱。0＝無年級限制，1～4＝大一至大四，
+    // 5＝碩士／博士／研究所；不要再衍生 targetGrade 或 course.grade 別名。
+    gradeLevel: normalizeCourseGradeLevel(row.target_grade),
+    // NULL 代表校方尚未提供先修資料，不等於「確認沒有先修」。
+    prerequisites: parseJson(row.prerequisites, null),
     year: normalizeNumber(row.year),
     semester: row.semester,
     timeStr: row.time_str,
@@ -690,9 +696,12 @@ function mapUserProfileRow(row) {
     preferredCategories: tags,
     preferenceTags: tags,
     selectedTags: tags,
-    mustTakeCourses: [],
-    avoidInstructors: [],
-    preferencesJson: {},
+    avoidInstructors: parseJson(row.avoid_instructors, []),
+    preferencesJson: parseJson(row.preferences_json, { schemaVersion: 1, values: {} }),
+    programType: row.program_type ?? null,
+    enrolledPrograms: parseJson(row.enrolled_programs, []),
+    college: row.college ?? null,
+    mustTakeCourses: parseJson(row.must_take_courses, []),
     storedSchemaVersion: normalizeNumber(row.profile_schema_version, 0),
 
     // 偏好旗標**由標籤推導**，且只展開為 true 的項目。
@@ -715,6 +724,8 @@ async function getMysqlCourses() {
       c.\`type\`,
       c.\`dept\`,
       c.\`subid3\`,
+      c.\`target_grade\`,
+      c.\`prerequisites\`,
       cs.\`teacher\`,
       cs.\`room\`,
       cs.\`time_str\`,
@@ -788,6 +799,12 @@ async function getMysqlUserPreferences() {
     'preference_tags',
     'avoid_time',
     'max_credits',
+    'program_type',
+    'enrolled_programs',
+    'college',
+    'must_take_courses',
+    'avoid_instructors',
+    'preferences_json',
   ];
   if (await hasUserProfileClassNameColumn()) {
     columns.push('class_name');
@@ -867,6 +884,26 @@ async function updateMysqlUserPreference(canonicalId, item) {
   if (item.targetCreditsMax !== undefined || item.maxCredits !== undefined) {
     updates.push('`max_credits` = ?');
     params.push(item.targetCreditsMax ?? item.maxCredits);
+  }
+  const jsonColumns = [
+    ['enrolledPrograms', 'enrolled_programs'],
+    ['mustTakeCourses', 'must_take_courses'],
+    ['avoidInstructors', 'avoid_instructors'],
+    ['preferencesJson', 'preferences_json'],
+  ];
+  for (const [property, column] of jsonColumns) {
+    if (item[property] !== undefined) {
+      updates.push(`\`${column}\` = ?`);
+      params.push(JSON.stringify(item[property]));
+    }
+  }
+  if (item.programType !== undefined) {
+    updates.push('\`program_type\` = ?');
+    params.push(String(item.programType ?? '').trim() || null);
+  }
+  if (item.college !== undefined) {
+    updates.push('\`college\` = ?');
+    params.push(String(item.college ?? '').trim() || null);
   }
   // 班別。欄位一旦由組員新增就自動改走 SQL，不需要再改程式。
   if (item.className !== undefined && await hasUserProfileClassNameColumn()) {

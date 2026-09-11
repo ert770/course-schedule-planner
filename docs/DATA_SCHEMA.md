@@ -294,8 +294,45 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 組員新增欄位後重啟後端即自動生效，不需改程式。
 
 `User_Profiles` 另有組員新增的 `program_type`、`enrolled_programs`、`college` 三個欄位，
-**本專案目前完全沒有讀寫**。它們是 roadmap #13D（學制、學程與特殊身分）的材料，
-在 #13D 開始前不要當成不存在而重複新增。
+已映射為 `profile.programType`、`profile.enrolledPrograms`、`profile.college` 並可由 Profile API
+讀寫。這只是資料接線；因正式適用規則尚未取得，系統不會據此推定 B～F 類修課資格。
+
+### Migration 007：已存課表與 Profile 擴充欄位（已套用）
+
+2026-09-11 已實查 shared MySQL，`Saved_Schedules` 與下列欄位均已存在；本次未執行 DDL。
+Migration 指令仍保留供新環境部署與 rollback 使用：
+
+```text
+npm run migrate:saved-schedules --prefix server
+npm run migrate:saved-schedules --prefix server -- --apply --confirm-shared-mysql
+npm run migrate:saved-schedules --prefix server -- --apply --rollback --confirm-shared-mysql
+```
+
+Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
+`User_Profiles.user_id`，並新增下列 Profile 欄位：
+
+| Column | Type | 設計狀態 |
+| --- | --- | --- |
+| `must_take_courses` | JSON NULL | `profile.mustTakeCourses`；Profile API 已接讀寫 |
+| `avoid_instructors` | JSON NULL | `profile.avoidInstructors`；持久化並接入排課限制 |
+| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }` |
+| `password_hash` | varchar(255) NULL | 刻意不搬 `users.json.password` 明碼；雜湊方案另案處理 |
+| `watchlist` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
+| `skill_tree` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
+| `overall_score` | smallint unsigned NULL | 只建 schema；JSON 資料尚未遷移 |
+| `overall_score_max` | smallint unsigned NULL | 只建 schema；JSON 資料尚未遷移 |
+
+`Saved_Schedules` 欄位為 `schedule_id`、`user_id`、`name`、`schedule_json`、
+`total_credits`、`created_at`。設定 DB 連線時 runtime 直接讀寫此表，`schedule_json`
+使用 `{ schemaVersion, term, courses }`；`total_credits` 由後端依 courses 重算，不信任前端總數。
+未設定 DB 的測試環境才保留 JSON fallback。
+
+### `Courses.target_grade` 與 `Courses.prerequisites`
+
+`target_grade` 在 API 唯一映射為 `course.gradeLevel`：0＝全年級可修、1～4＝大一至大四、
+5＝碩士／博士／研究所。課程查詢與 scheduler 皆使用同一欄位，年級不符時排除。
+`prerequisites` 映射為 `course.prerequisites`；2026-09-11 實查 3,086/3,086 皆為 NULL，
+因此 NULL 必須顯示為「尚未取得官方先修資料」，不得解讀成沒有先修。
 
 ### `admission_year` 與版本化畢業規則（roadmap #23）
 
@@ -588,8 +625,8 @@ npm run seed:demo-personas --prefix server -- --apply --confirm-shared-mysql
 `server/src/data/constraintSchema.js` 匯出的 `CONSTRAINTS`——排課引擎每個限制類型
 （硬性與軟性都算）的正式登記表，供 `server/src/skills/scheduleValidator.js`（獨立
 validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。**純資料表，不是
-新的排除／評分邏輯**——`hardConstraintReason()`／`scoreCourse()` 目前的機制完全不變，
-這裡只是把「目前的行為分類」寫成可查詢的資料。以固定 id 為 key，例如
+新的排除／評分邏輯**；實際執行仍由 `hardConstraintReason()`／`scoreCourse()` 負責，
+登記表把「目前的行為分類」寫成可查詢的資料。以固定 id 為 key，例如
 `NO_MORNING_CLASSES`、`BLOCKED_PERIODS`、`ELIGIBILITY_UNKNOWN`。每筆欄位：
 
 | 欄位 | 型別 | 意義 |
@@ -602,7 +639,7 @@ validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。
 | `source` | string | `CONSTRAINT_SOURCE` 其中一個固定代號，這項限制的真實性來源 |
 | `confidence` | number \| null | 系統對這項判定的偵測結果有多確定（不是「多嚴格」），結構性事實一律 `1`，只有 8 個內容偏好為 `null` |
 | `overridableBy` | string（可選） | 使用者可用哪種方式繞過這項排除（目前只有 `CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION`） |
-| `flag` | string（可選） | 對應到 `constraints` 上單一布林旗標的名稱，只有 3 個時段類舒適偏好有此欄位 |
+| `flag` | string（可選） | 對應到 `constraints` 上的旗標／清單名稱；3 個時段類舒適偏好是布林，`AVOID_INSTRUCTOR` 對應教師姓名清單 |
 | `label` | string（可選） | 中文顯示標籤，供揭露警告與放寬訊息使用 |
 | `enforced` | boolean | validator 是否真的檢查得到；`false` 只有先修／共修（`PREREQUISITE`／`COREQUISITE`），因為完全沒有資料來源 |
 
@@ -611,7 +648,7 @@ validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。
 層級**的登記表，跟逐課程的 `eligibilitySource` 是不同軸，刻意不合併。
 
 `DEFAULT_TIME_PREFERENCE_PRIORITY` 為放寬階梯在使用者未指定 `constraints.timePreferencePriority`
-時的預設順序（`['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES']`）。
+時的預設順序（`['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'AVOID_INSTRUCTOR', 'NO_EVENING_CLASSES']`）。
 
 詳見 `docs/SCHEDULING_LOGIC.md` 的「Hard/Soft Constraint Schema（Roadmap #21）」。
 

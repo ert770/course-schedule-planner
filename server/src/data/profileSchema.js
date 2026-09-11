@@ -10,13 +10,30 @@ function toFiniteNumber(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function normalizeStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(item => String(item ?? '').trim()).filter(Boolean))];
+}
+
+function normalizePreferencesJson(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { schemaVersion: 1, values: {} };
+  }
+  return {
+    schemaVersion: Number.isInteger(Number(value.schemaVersion)) ? Number(value.schemaVersion) : 1,
+    values: value.values && typeof value.values === 'object' && !Array.isArray(value.values)
+      ? value.values
+      : {},
+  };
+}
+
 export function normalizeProfile(profile = {}) {
   const tags = extractTags(profile) ?? [];
   const normalized = {
     ...profile,
     schemaVersion: PROFILE_SCHEMA_VERSION,
     department: profile.department == null ? null : normalizeDepartment(profile.department),
-    gradeLevel: toFiniteNumber(profile.gradeLevel ?? profile.grade, null),
+    gradeLevel: toFiniteNumber(profile.gradeLevel, null),
     className: String(profile.className ?? '').trim() || null,
     // 入學年度（民國學年度）。決定套用哪一版畢業規則（Roadmap #23）。
     // 未提供時為 null＝未知，**不從 gradeLevel 推導**：推導值與使用者填的值
@@ -29,10 +46,16 @@ export function normalizeProfile(profile = {}) {
     selectedTags: tags,
     preferredCategories: tags,
     courseHistory: Array.isArray(profile.courseHistory) ? profile.courseHistory : [],
+    // #13D 目前只接資料，不替尚未取得的正式適用規則下結論。
+    programType: String(profile.programType ?? '').trim() || null,
+    enrolledPrograms: normalizeStringList(profile.enrolledPrograms),
+    college: String(profile.college ?? '').trim() || null,
+    mustTakeCourses: Array.isArray(profile.mustTakeCourses) ? profile.mustTakeCourses : [],
+    avoidInstructors: normalizeStringList(profile.avoidInstructors),
+    preferencesJson: normalizePreferencesJson(profile.preferencesJson),
     ...tagsToFlags(tags),
   };
 
-  delete normalized.grade;
   delete normalized.avoidTime;
   return normalized;
 }
@@ -58,6 +81,18 @@ export function validateProfile(profile) {
   }
   if (!Array.isArray(profile.courseHistory)) errors.push('courseHistory 必須是陣列');
   if (!Array.isArray(profile.blockedPeriods)) errors.push('blockedPeriods 必須是陣列');
+  if (profile.programType !== null && typeof profile.programType !== 'string') {
+    errors.push('programType 必須是字串或 null');
+  }
+  if (profile.college !== null && typeof profile.college !== 'string') {
+    errors.push('college 必須是字串或 null');
+  }
+  if (!Array.isArray(profile.enrolledPrograms)) errors.push('enrolledPrograms 必須是陣列');
+  if (!Array.isArray(profile.mustTakeCourses)) errors.push('mustTakeCourses 必須是陣列');
+  if (!Array.isArray(profile.avoidInstructors)) errors.push('avoidInstructors 必須是陣列');
+  if (!profile.preferencesJson || typeof profile.preferencesJson !== 'object' || Array.isArray(profile.preferencesJson)) {
+    errors.push('preferencesJson 必須是物件');
+  }
   return { valid: errors.length === 0, errors };
 }
 

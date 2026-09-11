@@ -33,6 +33,7 @@ import {
   EASY_SCORE_MAX,
 } from './courseReviewStats.js';
 import { CONSTRAINTS, DEFAULT_TIME_PREFERENCE_PRIORITY } from '../data/constraintSchema.js';
+import { courseGradeLevelLabel, isCourseGradeEligible } from '../data/courseGradeLevel.js';
 import { validateScheduleAgainstConstraints } from './scheduleValidator.js';
 import {
   buildRecommendationReason, buildAlternatives, COMPETITION_STATUS,
@@ -258,10 +259,22 @@ const HARD_REASON_TO_CONSTRAINT_ID = {
   '不符合不上晚課限制': 'NO_EVENING_CLASSES',
   '位於封鎖時段': 'BLOCKED_PERIODS',
   '不符合午休保留偏好': 'LUNCH_BREAK_FREE',
+  '不符合避開教師限制': 'AVOID_INSTRUCTOR',
 };
 
 function constraintIdForHardReason(reason) {
   return HARD_REASON_TO_CONSTRAINT_ID[reason] ?? null;
+}
+
+function normalizedInstructorName(value) {
+  return String(value ?? '').trim().toLocaleLowerCase('zh-TW');
+}
+
+function isAvoidedInstructor(course, constraints) {
+  const instructor = normalizedInstructorName(course.instructor ?? course.teacher);
+  if (!instructor) return false;
+  return toArray(constraints.avoidInstructors)
+    .some(value => normalizedInstructorName(value) === instructor);
 }
 
 // roadmap #21：`options.skipTimePreferences` 讓呼叫端（`addCourseToPlan()`）
@@ -281,6 +294,13 @@ function hardConstraintReason(course, constraints, options = {}) {
   // 只涵蓋內容偏好關鍵字判定，不含這 4 項）。
   const blocks = getTimeBlocks(course);
   const skipTimePreferences = options.skipTimePreferences === true;
+
+  // 真實 Course_Sections.teacher 目前 1,248 個相異值都只有單一教師，沒有
+  // 逗號、頓號、斜線等多人分隔格式，因此採去除前後空白後的完整名稱比對。
+  // 與三個時段舒適偏好相同，正式必修可豁免；關注課已在函式開頭整條略過。
+  if (!skipTimePreferences && isAvoidedInstructor(course, constraints)) {
+    return '不符合避開教師限制';
+  }
 
   if (!skipTimePreferences
     && constraints.noMorningClasses && blocks.some(block => block.startPeriod <= 1)) {
@@ -310,7 +330,7 @@ function hardConstraintReason(course, constraints, options = {}) {
   return null;
 }
 
-// 課程違反了哪些「時段類舒適偏好」（不含 blockedPeriods——那是絕對限制，
+// 課程違反了哪些「可豁免舒適偏好」（不含 blockedPeriods——那是絕對限制，
 // 不受必修豁免規則影響）。只用來組出必修豁免發生時的揭露警告文字，刻意與
 // `hardConstraintReason()` 的排除判斷分開：一個回答「該不該擋」，一個回答
 // 「擋的話警告要講什麼」，避免兩件事混在同一個函式裡。
@@ -334,18 +354,34 @@ function isEveningBlock(block) {
   return block.startPeriod >= EVENING_FIRST_PERIOD;
 }
 
-function getViolatedTimePreferences(course, constraints) {
+function getViolatedRequiredCoursePreferences(course, constraints) {
   const blocks = getTimeBlocks(course);
   const violated = [];
 
   if (constraints.noMorningClasses && blocks.some(isMorningBlock)) {
-    violated.push(CONSTRAINTS.NO_MORNING_CLASSES.label);
+    violated.push({
+      constraintId: 'NO_MORNING_CLASSES',
+      label: CONSTRAINTS.NO_MORNING_CLASSES.label,
+    });
   }
   if (constraints.lunchBreakFree && blocks.some(isLunchBlock)) {
-    violated.push(CONSTRAINTS.LUNCH_BREAK_FREE.label);
+    violated.push({
+      constraintId: 'LUNCH_BREAK_FREE',
+      label: CONSTRAINTS.LUNCH_BREAK_FREE.label,
+    });
   }
   if (constraints.noEveningClasses && blocks.some(isEveningBlock)) {
-    violated.push(CONSTRAINTS.NO_EVENING_CLASSES.label);
+    violated.push({
+      constraintId: 'NO_EVENING_CLASSES',
+      label: CONSTRAINTS.NO_EVENING_CLASSES.label,
+    });
+  }
+
+  if (isAvoidedInstructor(course, constraints)) {
+    violated.push({
+      constraintId: 'AVOID_INSTRUCTOR',
+      label: CONSTRAINTS.AVOID_INSTRUCTOR.label,
+    });
   }
 
   return violated;
@@ -804,7 +840,8 @@ function evaluateCoursePlacement(plan, course, constraints, options = {}) {
   }
 
   // roadmap #21：正式必修（`isRequiredForStudent()===true`，見 buildPlan()
-  // 的 currentRequiredCourses 排入迴圈）無條件豁免 3 個時段類舒適偏好。
+  // 的 currentRequiredCourses 排入迴圈）無條件豁免 3 個時段舒適偏好與
+  // 避開指定教師偏好。
   // `options.formallyRequired` 與 `options.required` 是兩個獨立欄位——
   // 後者仍然只綁定 `requiredIds`（使用者手動指定的必排課）與 plan.failures
   // 回報，語意完全不變，因此 mustTakeCourseIds 類的課（例如 S10）不受影響。
@@ -820,8 +857,8 @@ function evaluateCoursePlacement(plan, course, constraints, options = {}) {
 
   // 豁免只在課程真的被排入時才揭露——若稍後因衝堂或學分上限等其他原因
   // 排不進去，揭露豁免反而誤導使用者以為問題出在時段偏好。
-  const violatedTimePreferences = skipTimePreferences
-    ? getViolatedTimePreferences(course, constraints)
+  const violatedPreferences = skipTimePreferences
+    ? getViolatedRequiredCoursePreferences(course, constraints)
     : [];
 
   const conflict = conflictsWithSchedule(course, plan.schedule);
@@ -844,7 +881,7 @@ function evaluateCoursePlacement(plan, course, constraints, options = {}) {
     }
   }
 
-  return { allowed: true, courseKey, skipTimePreferences, violatedTimePreferences };
+  return { allowed: true, courseKey, skipTimePreferences, violatedPreferences };
 }
 
 function addCourseToPlan(plan, course, constraints, reason, options = {}) {
@@ -869,8 +906,8 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
 
   plan.placedCourseKeys.set(decision.courseKey, course);
 
-  if (decision.violatedTimePreferences.length > 0) {
-    for (const label of decision.violatedTimePreferences) {
+  if (decision.violatedPreferences.length > 0) {
+    for (const { label } of decision.violatedPreferences) {
       plan.warnings.push(
         `必修課「${course.name}」不符合「${label}」偏好，但必修優先，已排入課表。`
       );
@@ -889,8 +926,8 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
     // roadmap #26：證據導向的推薦理由。`reason` 那個字串保留不動——既有呼叫端
     // 與測試都還在讀它；這裡是它的結構化版本，不是取代。
     //
-    // 掛在這裡是因為**放置當下才知道的事實**都在這個函式裡：時段偏好豁免
-    // （`decision.violatedTimePreferences`）、是否使用者指名（`options.required`）、
+    // 掛在這裡是因為**放置當下才知道的事實**都在這個函式裡：舒適偏好豁免
+    // （`decision.violatedPreferences`）、是否使用者指名（`options.required`）、
     // 是否本人必修（`decision.skipTimePreferences`）。搬到外面組裝就得把這些
     // 再傳一次，等於製造第二個真相來源。
     recommendationReason: buildRecommendationReason({
@@ -901,10 +938,13 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
       contentHits: collectContentPreferenceHits(course, constraints),
       interestHits: collectInterestHits(course, constraints),
       alternatives: options.alternatives ?? null,
-      // 必修無條件豁免時段偏好是**付出的代價**，不是附帶說明：
-      // 使用者設了不排早八卻拿到早八的課，要看得到原因。
-      tradeoffs: decision.violatedTimePreferences.map(label => ({
-        type: 'time-preference-exempted',
+      // 必修無條件豁免舒適偏好是**付出的代價**，不是附帶說明：
+      // 使用者設了不排早八或避開教師卻拿到該課，要看得到原因。既有三個
+      // 時段偏好的 type 保持不變，新增教師偏好使用獨立代號。
+      tradeoffs: decision.violatedPreferences.map(({ constraintId, label }) => ({
+        type: constraintId === 'AVOID_INSTRUCTOR'
+          ? 'instructor-preference-exempted'
+          : 'time-preference-exempted',
         label,
         because: 'REQUIRED_COURSE_PRIORITY',
       })),
@@ -1103,7 +1143,7 @@ function addScopeWarnings(plan, otherRequired, scope) {
   } else if (scope.gradeOverriddenByClass) {
     // 年級以班別為準，但兩份資料不一致本身就是要修的問題，必須講出來。
     plan.warnings.push(
-      `班別「${scope.className}」為 ${scope.grade} 年級，與個人資料的 `
+      `班別「${scope.className}」為 ${scope.gradeLevel} 年級，與個人資料的 `
       + `${scope.profileGrade} 年級不一致；已依班別判定。請確認個人資料的年級是否需要更新。`
     );
   } else if (!scope.classSuffix) {
@@ -1116,7 +1156,7 @@ function addScopeWarnings(plan, otherRequired, scope) {
   if (otherRequired.length > 0) {
     const scopeLabel = scope.classSuffix
       ? `依 ${scope.className} 判定`
-      : `依 ${scope.department} ${scope.grade} 年級判定`;
+      : `依 ${scope.department} ${scope.gradeLevel} 年級判定`;
     plan.warnings.push(
       `已排除 ${otherRequired.length} 門其他系所、學制、年級或班別的必修課（${scopeLabel}）。`
     );
@@ -1160,6 +1200,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   const unknownEligibilityExplicit = [];
   const offTermNames = new Set();
   const offTermExplicit = [];
+  const gradeMismatchNames = new Set();
   let outsideExclusionCount = 0;
   // 有評價卻因資格待確認（#13C）而被排除的課程要單獨統計。使用者看到
   // 「涼課方案沒有通識」時，必須分得出來是「沒抓到評價」還是「抓到了但規則擋住」。
@@ -1195,6 +1236,16 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     annotateCorequisite(course, allCandidateCodes);
     if (deriveBaseCourseCode(course.catalogCourseCode) && course.corequisiteRole === null) {
       orphanedInternshipNames.add(`${course.name}（${course.catalogCourseCode}）`);
+    }
+
+    if (isCourseGradeEligible(course, scope.gradeLevel) === false) {
+      gradeMismatchNames.add(`${course.name}（${courseGradeLevelLabel(course.gradeLevel)}）`);
+      exclusions.push({
+        course,
+        reason: `課程限 ${courseGradeLevelLabel(course.gradeLevel)}，不符合學生年級`,
+        constraintId: 'COURSE_GRADE_MISMATCH',
+      });
+      continue;
     }
 
     // Roadmap #20：term 是比 eligibility 更外層的閘門——這門課這學期根本沒開，
@@ -1276,6 +1327,13 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     warnings.push(
       `已排除 ${outsideExclusionCount} 門不符合系外選修認列條件的課程`
       + '（進修部、與本系課程重複、大一概論性課程）。'
+    );
+  }
+
+  if (gradeMismatchNames.size > 0) {
+    warnings.push(
+      `已依開課年級排除 ${gradeMismatchNames.size} 門課程`
+      + `（${summarizeNames([...gradeMismatchNames])}）；標示「全年級可修」的課程不受此限制。`
     );
   }
 
@@ -2406,7 +2464,10 @@ function tryRelaxationLadder(prepared, constraints, variant) {
     if (!def || !def.relaxable || !def.flag) continue;
     if (nonNegotiable.has(constraintId)) continue;
 
-    relaxedFlags = { ...relaxedFlags, [def.flag]: false };
+    // 既有時段偏好是布林；avoidInstructors 是清單。放寬時必須保留型別，
+    // 否則下游的 pickList / schema 契約會收到 false。
+    const relaxedValue = Array.isArray(relaxedFlags[def.flag]) ? [] : false;
+    relaxedFlags = { ...relaxedFlags, [def.flag]: relaxedValue };
     relaxedConstraints.push({
       constraintId,
       reason: `已放寬「${def.label}」限制以產生可行課表`,

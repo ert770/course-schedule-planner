@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
@@ -104,9 +104,10 @@ export const coursesAPI = {
   getDetail: (id) => request(`/courses/${id}`),
   getDepartments: () => request('/courses/departments'),
   // 某系所某年級實際存在的班別（例如 資訊三甲）。必修不得換班，需指定班別。
-  getClasses: (department, grade) => {
+  getClasses: (department, gradeLevel, programType) => {
     const params = new URLSearchParams({ department });
-    if (grade) params.append('grade', grade);
+    if (gradeLevel) params.append('gradeLevel', gradeLevel);
+    if (programType) params.append('programType', programType);
     return request(`/courses/classes?${params}`);
   },
   getInstructors: () => request('/courses/instructors'),

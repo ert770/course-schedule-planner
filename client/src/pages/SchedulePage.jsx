@@ -343,7 +343,7 @@ export default function SchedulePage() {
                 <input
                   className="input-field"
                   value={courseSearchScope
-                    ? `${courseSearchScope.department}／大${courseSearchScope.grade}／${courseSearchScope.className}班`
+                    ? `${courseSearchScope.department}／${courseSearchScope.gradeLevel === 5 ? '研究所' : `大${courseSearchScope.gradeLevel}`}／${courseSearchScope.className}班`
                     : ''}
                   readOnly
                   disabled

@@ -555,6 +555,97 @@ describe('S7-S10 硬性限制', () => {
   });
 });
 
+describe('AI1-AI6 avoidInstructors 教師排除', () => {
+  test('AI1 指定避開教師後排除該教師課程，並回報正確 constraintId', () => {
+    const avoided = makeCourse(1, { instructor: '王小明' });
+    const allowed = makeCourse(2, { instructor: '李小華', dayOfWeek: 2 });
+
+    const result = generateSchedule([avoided, allowed], {
+      avoidInstructors: [' 王小明 '],
+      minCredits: 0,
+    });
+
+    assert.ok(!result.schedule.some(course => course.id === 1));
+    assert.ok(result.schedule.some(course => course.id === 2));
+    assert.ok(result.excludedCourses.some(item => (
+      item.course.id === 1 && item.constraintId === 'AVOID_INSTRUCTOR'
+    )));
+  });
+
+  test('AI2 正式必修豁免教師偏好，排入並揭露必修優先', () => {
+    const required = makeCourse(1, { category: '必修', instructor: '王小明' });
+
+    const result = generateSchedule([required], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      avoidInstructors: ['王小明'],
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.some(course => course.id === 1));
+    assert.ok(result.warnings.some(warning => (
+      warning.includes('必修優先') && warning.includes('避開指定教師')
+    )));
+    assert.ok(result.schedule[0].recommendationReason.constraintTradeoffs.some(tradeoff => (
+      tradeoff.type === 'instructor-preference-exempted'
+    )));
+  });
+
+  test('AI3 關注課程不套用教師排除，仍留在 watchedCourses', () => {
+    const watched = makeCourse(1, { instructor: '王小明' });
+    const result = generateSchedule([watched], {
+      avoidInstructors: ['王小明'],
+      watchingCourseIds: [1],
+      minCredits: 0,
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.watchedCourses.length, 1);
+    assert.equal(result.excludedCourses.length, 0);
+  });
+
+  test('AI4 獨立 validator 與排課器回報相同的 AVOID_INSTRUCTOR', () => {
+    const course = makeCourse(1, { instructor: '王小明' });
+    const check = validateScheduleAgainstConstraints([course], {
+      avoidInstructors: ['王小明'],
+    });
+
+    assert.equal(check.valid, false);
+    assert.ok(check.violations.some(v => v.constraintId === 'AVOID_INSTRUCTOR'));
+    assert.ok(!check.violations.some(v => v.constraintId === 'BLOCKED_PERIODS'));
+  });
+
+  test('AI5 constraintService 合併 request 與已儲存教師清單', () => {
+    assert.deepEqual(
+      buildScheduleConstraints({}, { avoidInstructors: ['王小明'] }).avoidInstructors,
+      ['王小明']
+    );
+    assert.deepEqual(
+      buildScheduleConstraints({ avoidInstructors: ['李小華'] }, { avoidInstructors: ['王小明'] })
+        .avoidInstructors,
+      ['李小華']
+    );
+  });
+
+  test('AI6 allowRelaxation 會以空清單放寬教師限制並保留陣列型別', () => {
+    const course = makeCourse(1, { instructor: '王小明' });
+    const result = generateSchedule([course], {
+      avoidInstructors: ['王小明'],
+      minCredits: 0,
+      allowRelaxation: true,
+      timePreferencePriority: ['AVOID_INSTRUCTOR'],
+    });
+
+    assert.equal(result.success, true);
+    assert.ok(result.schedule.some(item => item.id === 1));
+    assert.deepEqual(result.relaxedConstraints.map(item => item.constraintId), [
+      'AVOID_INSTRUCTOR',
+    ]);
+  });
+});
+
 describe('S13-S14 偏好符合度決定主推方案', () => {
   // 讓選修填充階段有足夠空間，否則必修就會塞滿學分上限，看不出策略差異。
   function makeCandidates() {

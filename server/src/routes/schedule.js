@@ -67,8 +67,8 @@ router.post('/validate', (req, res) => {
 
 router.post('/save', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
-    const { userId, name = '我的課表', schedule, totalCredits } = req.body;
-    const saved = await saveSchedule(req.identity.canonicalId, name, schedule, totalCredits);
+    const { name = '我的課表', schedule } = req.body;
+    const saved = await saveSchedule(req.identity, name, schedule);
     res.json({ success: true, schedule: saved });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -77,7 +77,7 @@ router.post('/save', requireIdentity, requireServiceConsent, async (req, res) =>
 
 router.get('/saved', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
-    const schedules = await getSavedSchedules(req.identity.canonicalId);
+    const schedules = await getSavedSchedules(req.identity);
     res.json({ schedules });
   } catch (err) {
     res.status(500).json({ error: err.message });

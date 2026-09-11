@@ -1,4 +1,5 @@
 import { formatCourseTime } from '../../utils/courseTime';
+import { formatCourseGradeLevel } from '../../utils/courseGradeLevel';
 
 export default function CourseCard({ course, onSelect, selected }) {
   const categoryBadge = {
@@ -29,6 +30,7 @@ export default function CourseCard({ course, onSelect, selected }) {
       <div className="course-card-meta">
         <span className="course-card-meta-item">👤 {course.instructor}</span>
         <span className="course-card-meta-item">📚 {course.credits} 學分</span>
+        <span className="course-card-meta-item">🎓 {formatCourseGradeLevel(course.gradeLevel)}</span>
         {course.category === '通識' && (
           <span className="course-card-meta-item">
             🧭 {course.generalEducationDomain || '不分領域'}

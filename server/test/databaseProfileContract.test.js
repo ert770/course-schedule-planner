@@ -37,3 +37,12 @@ describe('A1/A5 profile 衍生欄位與 completed_courses 停止讀寫', () => {
     }
   });
 });
+
+describe('B12 課程年級與先修欄位契約', () => {
+  test('SQL 讀取 target_grade/prerequisites，API 只輸出 gradeLevel', () => {
+    assert.match(databaseSource, /c\.\\`target_grade\\`/u);
+    assert.match(databaseSource, /c\.\\`prerequisites\\`/u);
+    assert.match(databaseSource, /gradeLevel:\s*normalizeCourseGradeLevel\(row\.target_grade\)/u);
+    assert.doesNotMatch(databaseSource, /targetGrade\s*:/u);
+  });
+});
