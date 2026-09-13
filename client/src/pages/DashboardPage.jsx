@@ -10,7 +10,6 @@ import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import { formatCourseTime } from '../utils/courseTime';
 import { X, Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, AlertTriangle, TreePine } from 'lucide-react';
 
 const MAX_EXCLUDED_SHOWN = 5;
@@ -37,7 +36,7 @@ function buildScheduleNotice(data) {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const { toggleTheme } = useTheme();
   const {
     schedule,
     watchlist,

@@ -12,13 +12,14 @@ const REASONS = [
 ];
 
 export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
-  // 使用陣列來儲存多個選中的原因
   const [selectedReasons, setSelectedReasons] = useState([]);
+  const [prevCourseId, setPrevCourseId] = useState(null);
 
-  // 當開啟新視窗（傳入新的 course）時，清空上一次的選項
-  useEffect(() => {
+  // 替換 useEffect：當傳入的課程改變時，直接重置選項 (符合嚴格 Lint 規範)
+  if (course && course.id !== prevCourseId) {
     setSelectedReasons([]);
-  }, [course]);
+    setPrevCourseId(course.id);
+  }
 
   if (!course) return null;
 
