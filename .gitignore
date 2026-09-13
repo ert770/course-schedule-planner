@@ -16,6 +16,13 @@ build/
 .next/
 out/
 
+# 文件產生過程的工作目錄，不是交付物。
+# `tmp/` 放 PDF 產生腳本與逐頁渲染檢查用的 PNG（驗收中間產物）；
+# `output/` 放產生器的輸出。要保留給人看的 PDF 請放進 `docs/`，
+# 那裡才是交付物的位置（例如 `docs/欄位盤點與待修正清單.pdf`）。
+tmp/
+output/
+
 # OS files
 .DS_Store
 Thumbs.db
