@@ -237,6 +237,9 @@ export default function SchedulePage() {
 
             {showUserMenu && (
               <div className="user-dropdown-menu">
+                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 個人資料設定
+                </button>
                 <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
                   <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
                 </button>

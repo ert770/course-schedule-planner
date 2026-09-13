@@ -189,6 +189,11 @@ Response:
 }
 ```
 
+`user.name`（若有）來自 `User_Profiles.name`，不是 `users.json`——2026-09-10 起
+`users.json.name` 已刪除，`/login` 與 `/me` 都在回傳前呼叫 Profile 讀取路徑補上顯示名稱；
+查無 Profile 列、或該列的 `displayName` 只是排課引擎內部用的合成佔位字串（`User ${user_id}`）
+時，回應不含 `name` 欄位。
+
 ### `GET /api/auth/me`
 
 從 session 回傳目前登入的 local demo user profile（不含密碼），不接受 query student ID。
@@ -441,6 +446,12 @@ Request:
 （Roadmap #2），**不參與候選池或排課邏輯**。省略或值不在列舉清單中時，伺服器單純
 不記錄這次曝光，不會因此讓排課失敗，也不會用猜的值頂替。Chat 路徑（`run_csp_scheduler`）
 固定由伺服器帶入 `surface:"chat"`／`trigger:"chat_tool"`，不接受模型指定。
+
+**`minCredits` 未提供時的預設值依年級而定**（`resolveMinCredits()`，
+`server/src/data/creditPolicy.js`）：四年級以上為 9，其餘為 12——2026-09-10 前這裡
+不論年級一律寫死 12，四年級的下限從未在真實請求中生效過，屬於已修復的 bug。
+年級來自 `constraints.gradeLevel` 或已存 profile 的 `gradeLevel`；兩者皆缺時視為非四年級，
+套用 12。
 
 `department`、`gradeLevel`、`className` 決定必修範圍。`className` 為班別——
 系上不接受必修換班，未提供時必修只收斂到系所與年級，並在 `warnings` 提醒。

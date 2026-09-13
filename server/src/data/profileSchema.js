@@ -33,7 +33,12 @@ export function normalizeProfile(profile = {}) {
     ...profile,
     schemaVersion: PROFILE_SCHEMA_VERSION,
     department: profile.department == null ? null : normalizeDepartment(profile.department),
-    gradeLevel: toFiniteNumber(profile.gradeLevel, null),
+    // `?? profile.grade` 是 v0 相容別名，與下方 `maxCredits`、`avoidTime` 同一套。
+    // 2026-09-11 的課程年級改名曾把這一組（連同下方的 `delete normalized.grade`）
+    // 一起掃掉，導致 `migrateProfileV0ToV1()` 對舊 profile 產出 gradeLevel=null。
+    // 課程年級用的 `grade` 是「班級年次」（見 `skills/courseScope.js`），與 profile
+    // 的年級是不同概念，不會在這裡互撞——三組別名要留就一起留、要退役就一起退役。
+    gradeLevel: toFiniteNumber(profile.gradeLevel ?? profile.grade, null),
     className: String(profile.className ?? '').trim() || null,
     // 入學年度（民國學年度）。決定套用哪一版畢業規則（Roadmap #23）。
     // 未提供時為 null＝未知，**不從 gradeLevel 推導**：推導值與使用者填的值
@@ -56,6 +61,7 @@ export function normalizeProfile(profile = {}) {
     ...tagsToFlags(tags),
   };
 
+  delete normalized.grade;
   delete normalized.avoidTime;
   return normalized;
 }

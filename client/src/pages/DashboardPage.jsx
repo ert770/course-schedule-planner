@@ -110,9 +110,11 @@ export default function DashboardPage() {
       // 偏好的真相來源是 `User_Profiles`，後端排課時自己會讀。前端只送
       // 「這次操作才成立」的條件。
       const constraints = {
-        // 校規：每學期上限 25、下限 12（見 docs/COURSE_SELECTION_RULES.md）
+        // 校規上限 25（見 docs/COURSE_SELECTION_RULES.md）。
+        // **不送 minCredits**：下限依年級而定（四年級 9、其餘 12），
+        // 寫死在這裡會蓋掉後端從 Profile 算出來的正確值
+        // （2026-09-10 修正的 bug：四年級下限從未生效過就是這樣造成的）。
         maxCredits: 25,
-        minCredits: 12,
       };
 
       // 排課讀的是這位學生的偏好與修課歷史，未登入就不該產生課表。
@@ -347,6 +349,9 @@ export default function DashboardPage() {
             
             {showUserMenu && (
               <div className="user-dropdown-menu">
+                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 個人資料設定
+                </button>
                 <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
                   <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
                 </button>
@@ -493,9 +498,10 @@ export default function DashboardPage() {
               onSelectPlan={handleSelectPlan}
             />
 
+            {/* constraints 不送 minCredits：交給後端依年級判斷（2026-09-10 修正）。 */}
             <PlanComparison
               plans={plans}
-              constraints={{ maxCredits: 25, minCredits: 12 }}
+              constraints={{ maxCredits: 25 }}
               surface="dashboard"
             />
           </div>

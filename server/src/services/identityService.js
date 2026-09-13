@@ -90,8 +90,14 @@ export function resolveIdentityFrom(users = [], rawId) {
     studentId,
     // `User_Profiles.user_id`。只有 MySQL 邊界會用到，其餘程式一律用 canonicalId。
     numericId: hasNumericId ? String(user.id) : null,
-    displayName: user.name ?? null,
-    className: user.className ?? null,
+    // 顯示名稱跟班別同一個理由不放在這裡：`displayName` 唯一來源是
+    // `User_Profiles.name`（見 `db/database.js` 的 `mapUserProfileRow()`），
+    // 要拿名字得走 Profile 讀取路徑。這裡曾經多回傳一份 `users.json.name`，
+    // 但 `users.json.name` 已於 2026-09-10 刪除（欄位改接 `User_Profiles.name`），
+    // 繼續留著只會回傳 undefined，不如直接不放，避免有人以為這裡還是來源。
+    // `memoryService.js` 的 `emptyProfile()` 因此也不再依賴這個欄位，
+    // 完全沒有 Profile 列時一律用 `'使用者'` 這個通用預設。
+    //
     // 沒有 numeric id 代表寫不進 User_Profiles，呼叫端需要知道。
     canWriteMysqlProfile: hasNumericId,
   };

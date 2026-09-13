@@ -222,15 +222,28 @@ alias。一門課可能由不同老師開在不同班次，學生只能選一個
 | `section_id` | int | `course.id`, `course.sectionId` |
 | `course_id` | varchar(45) | join `Courses.course_id` |
 | `teacher` | varchar(45) | `course.instructor`, `course.teacher` |
-| `room` | varchar(45) | `course.location`, `course.room` |
+| `room` | varchar(45) | `course.location`（`room`／`syllabus` 別名已於 2026-09-10 移除，全專案 grep 確認零消費者） |
 | `time_str` | text | `course.timeStr`、`course.timeBlocks`，以及 `dayOfWeek` / `startPeriod` / `endPeriod` |
 | `time_bitmask` | varchar(64) | `course.timeBitmask`，僅在 `time_str` 無法解析時作為後備 |
 | `year` | int | `course.year` |
 | `semester` | varchar(45) | `course.semester` |
 | `current_amount` | int | `course.currentAmount` |
-| `rag_context` | text | `course.description`, `course.syllabus` |
+| `limit_amount` | smallint unsigned NULL | `course.capacity`；2026-09-10 前恆為 `null`（欄位不存在），組員新增後接上讀取，全庫目前仍 100% NULL（資料尚未登錄，非「確認額滿」） |
+| `rag_context` | text | `course.description` |
 | `rag_tag` | json | `course.ragTag` |
 | `selection_code` | varchar(4) | `course.selectionCode` |
+| `has_midterm` | tinyint NULL | `course.hasMidterm`；三態布林，`null`＝尚未登錄，不得當 `false` |
+| `has_final` | tinyint NULL | `course.hasFinalExam`；三態布林 |
+| `has_teamwork` | tinyint NULL | `course.hasTeamwork`；三態布林 |
+| `has_presentation` | tinyint NULL | `course.hasPresentation`；三態布林 |
+| `is_english_taught` | tinyint NULL | `course.isEnglishTaught`；三態布林 |
+| `assessment_summary` | json NULL | `course.assessmentSummary`；格式未知，原樣帶出不強加結構 |
+
+`has_midterm`／`has_final`／`has_teamwork`／`has_presentation`／`is_english_taught`／
+`assessment_summary`／`limit_amount` 是組員 2026-09-10 新增到共用 MySQL 的欄位，
+本專案接上讀取路徑但**未執行 DDL**。全庫目前 100% NULL；`CONTENT_PREFERENCE_RULES`
+的 `noMidterm`／`noGroupReport`／`englishTaught` 已改為優先信任這些欄位、缺席時才退回
+關鍵字比對（見 `docs/SCHEDULING_LOGIC.md`），資料補齊後自動生效，不需要再改程式。
 
 ### `Course_Reviews`
 
@@ -262,10 +275,9 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 `docs/SCHEDULING_LOGIC.md` 的「涼度評分與評價覆蓋率」與 `server/src/skills/courseReviewStats.js`。
 
 **`Reviews_tags` 不得用來推導課程屬性欄位**：這是 Dcard 式的自由標籤，314 個相異值、長尾雜訊
-（例如「教室很熱」「追星必備」「不用每次都出現」），不是結構化的課程性質。`has_midterm`、
-`has_group_project` 等欄位不存在於現行 schema，也**不能**從 `Reviews_tags` 猜測填入——曾經考慮
-過這個做法，因標籤雜訊過高而否決。這些欄位若要補齊，需要對共用 MySQL 做 `ALTER TABLE`，屬於
-與 #18 `student_id` migration 同性質、需與組員協調的 D 類 rollout。
+（例如「教室很熱」「追星必備」「不用每次都出現」），不是結構化的課程性質。`has_midterm`
+等 7 個評量特徵欄位已於 2026-09-10 由組員新增到 `Course_Sections`（見上方欄位表），
+不必再從 `Reviews_tags` 猜測填入——曾經考慮過這個做法，因標籤雜訊過高而否決。
 
 ### `User_Profiles`
 
@@ -275,18 +287,20 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `student_id` | varchar(32), UNIQUE | `profile.userId`、`profile.studentId`；canonical ID（migration 目標欄位） |
 | `department` | varchar(45) | `profile.department`（見下方說明） |
 | `grade_level` | int | `profile.gradeLevel` |
-| `class_name` | varchar(45) | `profile.className`（migration 目標欄位） |
-| `profile_schema_version` | int | `profile.schemaVersion`；目前版本 `1`（migration 目標欄位） |
+| `name` | varchar(50) | `profile.displayName`；2026-09-10 接上，取代原本 `users.json.name`（已刪除，見下方） |
+| `class_name` | varchar(45) | `profile.className`；**已完成**（見下方「`className`（班別）」，不再有 `users.json` 後備） |
+| `profile_schema_version` | int | `profile.schemaVersion`；目前版本 `1`（migration 目標欄位，DDL 未套用） |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
 | `completed_courses` | json | **已停用**。本專案不再讀寫；歷史修課唯一來源為 `User_Course_History` |
 | `max_credits` | int | `profile.targetCreditsMax` |
+| `min_credits` / `target_credits_min` / `target_credits_max` | tinyint unsigned NULL | **零消費者**（2026-09-10 grep 確認）。三欄疑似複製自已放棄的舊 SQLite 設計（`server/src/db/schema.sql`），預設值 15／22 與現行校規常數 12／25 不一致。`profile.targetCreditsMin` 實際上不讀這些欄位，由 `resolveMinCredits(grade_level)`（`server/src/data/creditPolicy.js`）當場算出：四年級以上為 9、其餘為 12 |
 | `admission_year` | smallint unsigned NULL | `profile.admissionYear`；入學學年度（民國），決定套用哪一版畢業規則（roadmap #23）。`NULL` 代表未知，此時 `resolveGraduationRule()` 退回最新版本並標示 `appliedFallbackVersion`。Migration 為 `005_admission-year`，執行方式見下方 |
 
 `student_id` 與 `profile_schema_version` 的 DDL 與安全 migration 已備妥，
 但 shared MySQL 尚未套用；必須先取得組員協調確認。程式會偵測欄位是否存在，
 因此 rollout 前可讀既有 v0 row，rollout 後改以 `student_id` 查詢。
-`class_name` 與 `admission_year` 已存在於 shared MySQL。
+`class_name`、`name` 與 `admission_year` 已存在於 shared MySQL。
 
 **選用欄位的偵測方式**：`database.js` 對 `class_name`、`profile_schema_version`、
 `student_id`、`admission_year` 各有一支 `has...Column()`，用 `SHOW COLUMNS` 查一次並快取，
@@ -389,45 +403,23 @@ migration 先檢查欄位，全部存在時不重複新增；偵測到部分套�
 資工系不接受必修換班，必修範圍必須收斂到班別（`資訊三甲`／`資訊三乙`…），
 見 `docs/COURSE_SELECTION_RULES.md` 第八節。
 
-**目標欄位**：
-
-```sql
-ALTER TABLE `User_Profiles` ADD COLUMN `class_name` varchar(45) NULL;
-```
-
-本專案不會在未協調時直接執行這道 DDL——該表與組員共用。程式已具備此欄位的完整讀寫：
+**已完成**（2026-09-10）：`User_Profiles.class_name` 是唯一儲存體，`users.json.className`
+後備已刪除。該表與組員共用，本專案不自行 `ALTER TABLE`；欄位是否存在仍由
+`hasUserProfileClassNameColumn()` 動態偵測（`SHOW COLUMNS`，結果快取於行程內，
+新增欄位後需重啟後端才會生效），但已確認存在於 shared MySQL。
 
 | 路徑 | 位置 |
 | --- | --- |
-| 欄位偵測 | `database.js` 的 `hasUserProfileClassNameColumn()`（`SHOW COLUMNS`，結果快取） |
+| 欄位偵測 | `database.js` 的 `hasUserProfileClassNameColumn()` |
 | 讀取 | `getMysqlUserPreferences()` 依偵測結果決定是否 SELECT `class_name`；`mapUserProfileRow()` 映射成 `profile.className` |
 | 寫入 | `updateMysqlUserPreference()` 依偵測結果決定是否 UPDATE `class_name` |
-| 位置決策 | `pickClassNameTarget()`（純函式，有測試） |
-
-**欄位一新增就自動改走 SQL，不需要再改任何程式**；偵測結果快取於行程內，
-新增欄位後需重啟後端才會生效（`npm run dev:server` 使用 `node --watch`）。
 
 `class_name` 不會被無條件寫進 SQL：欄位不存在時把它加進 `SELECT` 會讓整個查詢失敗，
-等於所有 profile 一起壞掉。
-
-#### 欄位到位前的後備順序
-
-讀取優先度與寫入目標一致：
-
-| 順位 | 位置 | 適用 |
-| ---: | --- | --- |
-| 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
-| 2 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
-
-`users.json` 的對照方式：`studentId`（demo 登入用，例如 `D1249697`）與 `id`
-（對應 `User_Profiles.user_id`）都建索引，兩者都能對到同一筆 profile。
-
-**兩者都沒有時班別無處可存。** `pickClassNameTarget()` 回傳 `null`，
-`upsertByField()` 據此拋錯。這是刻意的：先前的第 3 順位是
-`user_preferences.json`，該檔已於 2026-08-11 刪除（同一份 profile 存兩處必然漂移）。
-寧可讓寫入失敗，也不能像最早那個 bug 一樣「儲存成功」地把班別丟掉——
-`updateMysqlUserPreference()` 沒有欄位可寫卻仍回傳成功的 profile，
-下一次排課就無聲地退回系所 + 年級。
+等於所有 profile 一起壞掉。刪除 `users.json.className` 前已逐一核對兩邊既有資料值
+完全一致（4 筆 demo 帳號），並 grep 全專案確認零消費者後才移除；`pickClassNameTarget()`
+與其測試已隨後備一併刪除。班別現在無處可存時（欄位不存在）維持 `null`，
+`upsertByField()` 據此拋錯——寧可讓寫入失敗，也不能「儲存成功」地把班別丟掉，
+讓下一次排課無聲地退回系所 + 年級。
 
 ## Local JSON Collections
 
@@ -447,8 +439,11 @@ store 的邏輯名稱。
 
 ### `users.json` 的職責
 
-`users.json` **只負責登入身分與尚未遷移的 demo 資料**（`studentId`、`password`、`name`、
-`watchlist`、`skillTree`…），以及班別的後備儲存。它不再保存 `courseHistory`。
+`users.json` **只負責登入身分與尚未遷移的 demo 資料**：`id`、`studentId`、`password`
+與 5 個尚未遷移的活躍欄位（`watchlist`、`skillTree`、`overallScore`、`overallScoreMax`；
+密碼獨立列出因為 known-limitation #1 尚未解決）。`className` 與 `name` 已於 2026-09-09／
+2026-09-10 移除，兩者唯一來源都是 `User_Profiles`，不再有 `users.json` 後備。
+它也不再保存 `courseHistory`。
 尚未配發正式帳密的 demo persona（目前 user 2、3）以 `studentId: null`、`password: null`
 保存，不能從登入頁登入；身分層會退回各自的 numeric `id`，不得把多筆 null 轉成共用的
 字串 `"null"`。user 4（黃思瑋）已配發 demo 學號 `D1249196`、密碼 `000`，隱私

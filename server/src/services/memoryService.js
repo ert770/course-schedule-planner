@@ -3,6 +3,7 @@ import {
 } from '../db/database.js';
 import { normalizeProfile } from '../data/profileSchema.js';
 import { isMysqlConfigured, queryRows } from '../db/mysql.js';
+import { DEFAULT_MIN_CREDITS } from '../data/creditPolicy.js';
 
 // 沒有 profile 時的骨架。
 //
@@ -17,9 +18,14 @@ function emptyProfile(identity) {
   return {
     userId: String(identity.canonicalId),
     studentId: identity.studentId ?? null,
-    displayName: identity.displayName || '使用者',
+    // 完全沒有 Profile 列，`User_Profiles.name` 無從查起，用通用預設。
+    // `identity` 不再帶 displayName（2026-09-10 隨 users.json.name 一併移除，
+    // 見 `identityService.js` 的說明），這裡不假裝還有別的來源可以退回。
+    displayName: '使用者',
     courseHistory: [],
-    targetCreditsMin: 12,
+    // 完全沒有 profile 列時連年級都不知道，無法判斷是否適用四年級下限 9，
+    // 因此仍用未知年級的安全預設（見 `data/creditPolicy.js`）。
+    targetCreditsMin: DEFAULT_MIN_CREDITS,
     targetCreditsMax: 25,
     blockedPeriods: [],
     preferredCategories: [],
@@ -53,7 +59,8 @@ async function readCourseHistory(identity) {
 // | 偏好標籤與其推導出的旗標 | `User_Profiles.preference_tags` | 有對應欄位；標籤是儲存格式 |
 // | `blockedPeriods`（第 1～14 節） | `User_Profiles.avoid_time` | 有對應欄位 |
 // | `targetCreditsMax` | `User_Profiles.max_credits` | 有對應欄位 |
-// | `studentId`、`name`、`className` | `users.json` | `User_Profiles` 沒有這些欄位 |
+// | `className` | `User_Profiles.class_name` | 有對應欄位（2026-09-09 起，原 `users.json` 後備已刪除） |
+// | `studentId`、`name` | `users.json` | `User_Profiles` 雖有 `name` 欄位，但目前未被任何寫入路徑使用 |
 // | `courseHistory` | `User_Course_History` | 11 欄完整歷史修課契約；只從 MySQL 讀取 |
 //
 // **修課歷史只有 `courseHistory` 一個代表。** `completedCourseCodes`、

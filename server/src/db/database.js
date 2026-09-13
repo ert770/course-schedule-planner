@@ -10,6 +10,7 @@ import { logger } from '../utils/logger.js';
 import { createTtlCache } from '../utils/ttlCache.js';
 import { validateCourseHistoryEntry } from '../data/courseHistory.js';
 import { normalizeAdmissionYear } from '../data/graduationRuleVersions.js';
+import { resolveMinCredits } from '../data/creditPolicy.js';
 import { normalizeCourseGradeLevel } from '../data/courseGradeLevel.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -199,6 +200,27 @@ function parseSectionTime(row) {
   };
 }
 
+// tinyint 0/1/NULL → false/true/null。**NULL 保留成 null，不當成 false**——
+// 這 7 個欄位（2026-09-10 由組員新增到共用 MySQL）目前全庫 3,560 筆皆為
+// NULL，代表「還沒有這筆資料」，不是「已確認沒有」。當成 false 會讓
+// `noMidterm`（免期中考）這類 avoid 型偏好誤判成「這門課沒有期中考」，
+// 靜默排除一大堆其實只是還沒登錄資料的課程。
+function normalizeTriBoolean(value) {
+  if (value === null || value === undefined) return null;
+  return Boolean(Number(value));
+}
+
+// `normalizeNumber(null, fallback)` 會回傳 0，不是 fallback——`Number(null)`
+// 是 `0`，`Number.isFinite(0)` 為真，fallback 分支永遠不會被選到。這個落差
+// 一直都在（`admissionYear` 那行也吃這個問題，只是入學年度沒人會真的是 0
+// 所以還沒炸出來），這裡容量上限若沿用同一個函式，全庫會從「未知」
+// 變成看起來「額滿是 0」，比沒有這個欄位更誤導。
+function normalizeNullableNumber(value) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function mapCourseRow(row) {
   const time = parseSectionTime(row);
   const credits = normalizeNumber(row.credits, 0);
@@ -209,6 +231,9 @@ function mapCourseRow(row) {
     courseId: row.course_id,
     code: row.course_id,
     name: row.name,
+    // `instructor` 是主要名稱；`teacher` 別名保留——
+    // AI Agent 的忠實度稽核層（explanationFaithfulness.js、
+    // courseReferenceResolver.js）直接讀這個名字，不要合併。
     instructor: row.teacher,
     teacher: row.teacher,
     department: row.dept,
@@ -217,14 +242,17 @@ function mapCourseRow(row) {
     timeBlocks: time.timeBlocks || [],
     startPeriod: time.startPeriod,
     endPeriod: time.endPeriod,
+    // `location` 是唯一真正被讀取的名字；`room`／`syllabus` 別名經全專案
+    // grep 確認零消費者（2026-09-10），已移除，不需要組員配合就能刪。
     location: row.room,
-    room: row.room,
-    capacity: null,
+    // 容量上限。2026-09-10 前這裡永遠是 null——欄位當時真的不存在。
+    // 組員已新增 `limit_amount`，全庫暫時仍是 NULL（資料尚未登錄），
+    // 但欄位本身是真的，不再是寫死的佔位值。
+    capacity: normalizeNullableNumber(row.limit_amount),
     currentAmount: normalizeNumber(row.current_amount, 0),
     category: row.type,
     type: row.type,
     description: row.rag_context || '',
-    syllabus: row.rag_context || '',
     catalogCourseCode: row.subid3,
     // Courses.target_grade 的唯一 API 名稱。0＝無年級限制，1～4＝大一至大四，
     // 5＝碩士／博士／研究所；不要再衍生 targetGrade 或 course.grade 別名。
@@ -237,6 +265,19 @@ function mapCourseRow(row) {
     timeBitmask: row.time_bitmask,
     ragTag: parseJson(row.rag_tag, []),
     selectionCode: row.selection_code,
+    // 2026-09-10：組員新增到 Course_Sections 的 5 個評量特徵欄位。
+    // 三態（true／false／null）——null 代表尚未登錄，不是「確認沒有」。
+    // 全庫目前仍是 100% NULL，這裡先接上讀取路徑；`CONTENT_PREFERENCE_RULES`
+    // 的 noMidterm／noGroupReport／englishTaught 已改為優先信任這些欄位，
+    // 資料一旦補齊會自動生效，不需要再回頭改程式。
+    hasMidterm: normalizeTriBoolean(row.has_midterm),
+    hasFinalExam: normalizeTriBoolean(row.has_final),
+    hasTeamwork: normalizeTriBoolean(row.has_teamwork),
+    hasPresentation: normalizeTriBoolean(row.has_presentation),
+    isEnglishTaught: normalizeTriBoolean(row.is_english_taught),
+    // JSON 欄位，語意未知（組員尚未說明格式），原樣帶出不強加結構；
+    // 待確認具體用途後再決定要不要拆成獨立欄位。
+    assessmentSummary: parseJson(row.assessment_summary, null),
   };
 }
 
@@ -462,22 +503,17 @@ function readProfileDepartment(row) {
 // 資工系選課公告明文「不接受必修課程換班級的要求」，因此必修範圍必須收斂到班別
 // （見 `docs/COURSE_SELECTION_RULES.md` 第八節）。
 //
-// **目標狀態是 `User_Profiles.class_name` 欄位。** 該表與組員共用，本專案不自行
-// `ALTER TABLE`；欄位一出現，下方的 `hasUserProfileClassNameColumn()` 會偵測到，
-// 讀寫自動改走 SQL，不需要再改任何程式。
+// **`User_Profiles.class_name` 是唯一儲存體。** 該表與組員共用，本專案不自行
+// `ALTER TABLE`；欄位是否存在由 `hasUserProfileClassNameColumn()` 動態偵測，
+// 讀寫自動改走 SQL，組員增減欄位不需要再改任何程式。
 //
-// 欄位還沒出現前的後備順序（讀取時優先度亦同）：
-//
-// | 順位 | 位置 | 適用 |
-// | ---: | --- | --- |
-// | 1 | `User_Profiles.class_name` | 欄位存在時的唯一真相來源 |
-// | 2 | `users.json` 的 `className` | demo 登入使用者（`studentId` 或 `id` 對得到） |
-//
-// 曾經有第 3 順位 `user_preferences.json`，用來接住「在 `User_Profiles` 裡、
-// 但 `users.json` 沒有對應列」的使用者。該檔已於 2026-08-11 刪除（同一份 profile
-// 存兩個檔案必然漂移），因此這種使用者的班別**無處可存**。
-// `pickClassNameTarget()` 對這種情況回傳 `null`，由 `upsertByField()` 拋錯——
-// 不得靜默丟棄。先前那個 bug 正是「儲存成功但值消失」。
+// 曾經有 `users.json` 的 `className` 作為欄位還沒出現前的後備位置，也曾有
+// 第 3 順位 `user_preferences.json` 接住「`User_Profiles` 裡、但 `users.json`
+// 沒有對應列」的使用者。兩者都已刪除（2026-09-09／2026-08-11）——同一份資料
+// 存兩處必然漂移，第二輪欄位盤點直接連線共用 MySQL 核對後，確認欄位已存在且
+// 現有值與 `users.json` 完全一致，才拿掉後備路徑。欄位不存在時，寫入直接由
+// `updateMysqlUserPreference()` 靜默跳過該欄（與 `schemaVersion`／`admissionYear`
+// 等其餘選用欄位同一套模式），不再假裝存進了另一個地方。
 
 function normalizeClassName(value) {
   const className = String(value ?? '').trim();
@@ -567,69 +603,6 @@ function hasUserProfileAdmissionYearColumn() {
   return admissionYearColumnPromise;
 }
 
-function readClassNameOverrides() {
-  const index = new Map();
-
-  for (const user of readCollection('users')) {
-    const className = normalizeClassName(user.className);
-    if (!className) continue;
-
-    if (user.studentId !== null && user.studentId !== undefined && String(user.studentId).trim()) {
-      index.set(String(user.studentId).trim(), className);
-    }
-    if (user.id !== undefined) index.set(String(user.id), className);
-  }
-
-  return index;
-}
-
-function applyClassNameOverride(profile, overrides) {
-  // 已有值代表來自 `User_Profiles.class_name`（順位 1），不得被後備來源覆蓋。
-  if (!profile || profile.className) return profile;
-
-  const className = overrides.get(String(profile.userId));
-  return className ? { ...profile, className } : profile;
-}
-
-// 寫入 `users.json` 的對應使用者。找不到對應列時回傳 false。
-function writeClassNameOverride(userId, className) {
-  const users = readCollection('users');
-  const index = users.findIndex(user =>
-    sameId(user.studentId, userId) || sameId(user.id, userId)
-  );
-
-  if (index === -1) return false;
-
-  users[index] = { ...users[index], className: normalizeClassName(className) };
-  writeCollection('users', users);
-  return true;
-}
-
-function hasUsersJsonRow(userId) {
-  return readCollection('users').some(user =>
-    sameId(user.studentId, userId) || sameId(user.id, userId)
-  );
-}
-
-// 班別要寫到哪裡。純函式，與 I/O 分離才測得到。
-//
-// 回傳 `null` 代表**無處可存**：這位使用者在 `User_Profiles` 裡，但該表還沒有
-// `class_name` 欄位，`users.json` 也沒有他的列。這種情況必須讓寫入失敗，
-// 不得回報成功——「儲存成功但值消失」正是先前那個 bug。
-export function pickClassNameTarget({ isMysqlProfileWrite, hasColumn, hasUsersJsonRow: hasRow }) {
-  if (isMysqlProfileWrite && hasColumn) return 'column';
-  if (hasRow) return 'usersJson';
-  return null;
-}
-
-async function resolveClassNameTarget(userId, isMysqlProfileWrite) {
-  return pickClassNameTarget({
-    isMysqlProfileWrite,
-    hasColumn: isMysqlProfileWrite ? await hasUserProfileClassNameColumn() : false,
-    hasUsersJsonRow: hasUsersJsonRow(userId),
-  });
-}
-
 // 寫入前的 department 正規化，與 `mapUserProfileRow()` 共用同一套規則，
 // 避免依資料來源不同而有兩種 department 值。
 function normalizeProfileDepartment(profile) {
@@ -680,17 +653,27 @@ function mapUserProfileRow(row) {
     userId: row.student_id || toCanonicalUserId(row.user_id),
     studentId: row.student_id || toCanonicalUserId(row.user_id),
     mysqlUserId: String(row.user_id),
-    displayName: `User ${row.user_id}`,
+    // 2026-09-10 前這裡寫死 `User ${row.user_id}`，因為當時不確定
+    // `User_Profiles.name` 是不是給這個專案用的。現在接上：欄位有值就直接讀；
+    // 還沒有值（例如新帳號尚未跑過下方的一次性回填）才退回合成值，
+    // 不得留白造成畫面顯示空白名字。
+    displayName: row.name || `User ${row.user_id}`,
     department: readProfileDepartment(row),
     gradeLevel: normalizeNumber(row.grade_level),
-    // `class_name` 欄位還不存在時 row 沒有這個鍵，值為 null，
-    // 由 applyClassNameOverride() 從後備來源補上。
+    // `class_name` 欄位還不存在時 row 沒有這個鍵，值為 null——不再有後備來源。
     className: normalizeClassName(row.class_name),
     // `admission_year` 欄位還不存在時 row 沒有這個鍵 → null（＝入學年度未知），
     // 不從 gradeLevel 推導補值：那會讓「推導值」與「使用者填的值」無從區分。
     admissionYear: normalizeNumber(row.admission_year, null),
-    // 校規下限 12、上限 25（見 docs/COURSE_SELECTION_RULES.md）。
-    targetCreditsMin: 12,
+    // 校規下限 12（四年級 9）、上限 25（見 docs/COURSE_SELECTION_RULES.md）。
+    //
+    // **2026-09-10 修正**：這裡先前寫死 `targetCreditsMin: 12`，忽略年級。
+    // `scheduler.js` 的 `defaultMinCredits()` 本來就有「四年級以上是 9」的判斷，
+    // 但只在 `constraints.minCredits` 是 `undefined` 時才會被呼叫——這裡寫死的
+    // 12 會沿著 `constraintService.js` 的 `input.minCredits ?? prefs.targetCreditsMin`
+    // 變成明確存在的值，蓋過那個判斷，導致四年級下限從未在真實請求中生效過。
+    // 改呼叫 `resolveMinCredits()`，與 `scheduler.js` 共用同一份規則。
+    targetCreditsMin: resolveMinCredits(row.grade_level),
     targetCreditsMax: normalizeNumber(row.max_credits, 25) || 25,
     blockedPeriods: normalizeAvoidTime(row.avoid_time),
     preferredCategories: tags,
@@ -735,7 +718,14 @@ async function getMysqlCourses() {
       cs.\`current_amount\`,
       cs.\`rag_context\`,
       cs.\`rag_tag\`,
-      cs.\`selection_code\`
+      cs.\`selection_code\`,
+      cs.\`limit_amount\`,
+      cs.\`has_midterm\`,
+      cs.\`has_final\`,
+      cs.\`has_teamwork\`,
+      cs.\`has_presentation\`,
+      cs.\`is_english_taught\`,
+      cs.\`assessment_summary\`
     FROM \`Course_Sections\` cs
     -- Courses.course_id 與 Course_Sections.course_id 的 collation 不同，直接用 =
     -- 比較會拋出 ER_CANT_AGGREGATE_2COLLATIONS。這裡是代碼精確匹配，因此用
@@ -799,6 +789,10 @@ async function getMysqlUserPreferences() {
     'preference_tags',
     'avoid_time',
     'max_credits',
+    // `name`：2026-09-10 直接連線共用 MySQL 確認欄位已存在（不是「可能還沒
+    // 加」的狀態，不需要走下面那套動態偵測），只是全庫目前皆為 NULL。
+    // 顯示名稱的權威來源，`users.json.name` 已同步移除。
+    'name',
     'program_type',
     'enrolled_programs',
     'college',
@@ -825,13 +819,10 @@ async function getMysqlUserPreferences() {
     ORDER BY \`user_id\`
   `);
   // `User_Profiles` 是 profile 的**唯一**來源。先前這裡還會串接
-  // `user_preferences.json` 裡沒有 MySQL 對應列的 profile——同一份資料存兩個
-  // 檔案、各自演化，實測就出現過 MySQL 與 JSON 對同一個偏好給出相反答案。
-  // 該檔已於 2026-08-11 刪除。
-  const classNames = readClassNameOverrides();
-  return rows
-    .map(mapUserProfileRow)
-    .map(profile => applyClassNameOverride(profile, classNames));
+  // `user_preferences.json` 裡沒有 MySQL 對應列的 profile、以及 `users.json`
+  // 的 `className` 後備——同一份資料存兩個檔案、各自演化，實測就出現過 MySQL
+  // 與 JSON 對同一個偏好給出相反答案。兩者已分別於 2026-08-11、2026-09-09 刪除。
+  return rows.map(mapUserProfileRow);
 }
 
 async function updateMysqlUserPreference(canonicalId, item) {
@@ -898,12 +889,18 @@ async function updateMysqlUserPreference(canonicalId, item) {
     }
   }
   if (item.programType !== undefined) {
-    updates.push('\`program_type\` = ?');
+    updates.push('`program_type` = ?');
     params.push(String(item.programType ?? '').trim() || null);
   }
   if (item.college !== undefined) {
-    updates.push('\`college\` = ?');
+    updates.push('`college` = ?');
     params.push(String(item.college ?? '').trim() || null);
+  }
+  // 顯示名稱。欄位已確認存在（不像 class_name 當年要動態偵測），直接寫。
+  // 空字串視為「清除」寫入 NULL，不留下一個看起來像值的空字串。
+  if (item.displayName !== undefined) {
+    updates.push('`name` = ?');
+    params.push(String(item.displayName ?? '').trim() || null);
   }
   // 班別。欄位一旦由組員新增就自動改走 SQL，不需要再改程式。
   if (item.className !== undefined && await hasUserProfileClassNameColumn()) {
@@ -1034,33 +1031,10 @@ export async function upsertByField(collection, field, value, item) {
     && collection === 'user_preferences'
     && field === 'userId';
 
-  // 班別的儲存位置：`User_Profiles.class_name` > `users.json`。
-  // 見上方 resolveClassNameTarget() 的說明。
-  //
-  // 這裡不可原地 delete——`normalizeProfileForWrite()` 在不需正規化時會原樣
-  // 回傳呼叫端傳進來的物件，改到它等於改到呼叫端的資料。
-  if (collection === 'user_preferences' && payload?.className !== undefined) {
-    const className = payload.className;
-    const classNameTarget = await resolveClassNameTarget(value, isMysqlProfileWrite);
-
-    if (classNameTarget === null) {
-      // 兩個位置都沒有，班別無處可存。靜默丟棄會讓使用者以為存好了，
-      // 下一次排課卻退回系所 + 年級而沒有任何跡象。
-      throw new Error(
-        `班別無處可存：${JSON.stringify(String(value))} 在 User_Profiles 中，`
-        + '但該表沒有 class_name 欄位，`users.json` 也沒有對應列。'
-        + '請先在 `users.json` 建立該使用者，或請組員為 User_Profiles 新增 class_name 欄位。'
-      );
-    }
-
-    if (classNameTarget === 'usersJson') {
-      // 已經存進 users.json，就從 payload 移除，避免同一個值在兩處各存一份而漂移。
-      writeClassNameOverride(value, className);
-      const { className: _storedInUsersJson, ...rest } = payload;
-      payload = rest;
-    }
-    // `column` 保留在 payload 交給 SQL。
-  }
+  // 班別現在只有 `User_Profiles.class_name` 一個目的地——`payload.className`
+  // 原樣流進 `updateMysqlUserPreference()`，欄位不存在時該函式會靜默跳過
+  // 這個欄位（與 `schemaVersion`／`admissionYear` 等其餘選用欄位同一套模式），
+  // 不再有 `users.json` 後備路徑可以漂移。
 
   if (isMysqlProfileWrite) {
     const updated = await updateMysqlUserPreference(value, payload);
