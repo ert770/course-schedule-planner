@@ -4,8 +4,9 @@
 
 ## 2026-09-13
 
-1. [退役 Profile v0 相容層](./2026-09-13-retire-profile-v0-compatibility.md)
-2. [Profile 欄位去重、課程評量欄位接線與 v0 相容層修復](./2026-09-13-profile-field-dedup-and-evaluation-columns.md)
+1. [新增 project-guide 專案說明文件集（12 檔）](./2026-09-13-project-guide-documentation-set.md)
+2. [退役 Profile v0 相容層](./2026-09-13-retire-profile-v0-compatibility.md)
+3. [Profile 欄位去重、課程評量欄位接線與 v0 相容層修復](./2026-09-13-profile-field-dedup-and-evaluation-columns.md)
 
 ## 2026-09-11
 
