@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 // 退課原因清單 (之後若心樂決定修改文字，直接在這裡改陣列內容即可)
 const REASONS = [
