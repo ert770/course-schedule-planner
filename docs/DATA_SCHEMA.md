@@ -289,7 +289,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 | `grade_level` | int | `profile.gradeLevel` |
 | `name` | varchar(50) | `profile.displayName`；2026-09-10 接上，取代原本 `users.json.name`（已刪除，見下方） |
 | `class_name` | varchar(45) | `profile.className`；**已完成**（見下方「`className`（班別）」，不再有 `users.json` 後備） |
-| `profile_schema_version` | int | `profile.schemaVersion`；目前版本 `1`（migration 目標欄位，DDL 未套用） |
+| `profile_schema_version` | int | 只有寫入路徑會用（`updateMysqlUserPreference()`，且需欄位存在）；目前版本 `1`。讀取端的 `storedSchemaVersion` 已隨 v0 相容層於 2026-09-13 移除。migration 目標欄位，DDL 未套用 |
 | `preference_tags` | json | `profile.preferenceTags`, `profile.preferredCategories` |
 | `avoid_time` | json | `profile.blockedPeriods`（見下方說明） |
 | `completed_courses` | json | **已停用**。本專案不再讀寫；歷史修課唯一來源為 `User_Course_History` |
@@ -299,7 +299,7 @@ API 回傳的 `review.courseId` 是 join 後的 `Course_Sections.section_id`，�
 
 `student_id` 與 `profile_schema_version` 的 DDL 與安全 migration 已備妥，
 但 shared MySQL 尚未套用；必須先取得組員協調確認。程式會偵測欄位是否存在，
-因此 rollout 前可讀既有 v0 row，rollout 後改以 `student_id` 查詢。
+因此 rollout 前仍可讀既有資料列，rollout 後改以 `student_id` 查詢。
 `class_name`、`name` 與 `admission_year` 已存在於 shared MySQL。
 
 **選用欄位的偵測方式**：`database.js` 對 `class_name`、`profile_schema_version`、
@@ -364,10 +364,40 @@ npm run migrate:admission-year --prefix server -- --rollback --confirm-shared-my
 
 ### Profile schema v1 與 migration
 
-API Profile 的 canonical shape 固定回傳 `schemaVersion: 1`。缺少版本的既有資料視為 v0，
-由 `server/src/data/profileSchema.js` 的集中式 normalizer 轉為 v1；欄位型別由 validator
-檢查。資料庫 migration 位於 `server/migrations/001_profile_schema_v1.*.sql`，執行器為
+API Profile 的 canonical shape 固定回傳 `schemaVersion: 1`，由
+`server/src/data/profileSchema.js` 的集中式 normalizer 產生，欄位型別由 validator 檢查。
+資料庫 migration 位於 `server/migrations/001_profile_schema_v1.*.sql`，執行器為
 `server/scripts/profileSchemaMigration.js`。
+
+**v0 相容層已於 2026-09-13 整組退役。** 退役的是下列 5 項，全部經 grep 確認零生產呼叫端：
+
+| 項目 | 原位置 |
+| --- | --- |
+| `gradeLevel` 的 `?? profile.grade` 別名 | `profileSchema.js` |
+| `targetCreditsMax` 的 `?? profile.maxCredits` 別名 | `profileSchema.js` |
+| `blockedPeriods` 的 `?? profile.avoidTime` 別名 | `profileSchema.js` |
+| `migrateProfileV0ToV1()`（輸出恆等於 `normalizeProfile()`） | `profileSchema.js` |
+| `storedSchemaVersion`（v0 偵測欄位） | `database.js` 的 `mapUserProfileRow()` |
+
+寫入端 `updateMysqlUserPreference()` 的兩個對應別名（`item.avoidTime`、`item.maxCredits`）
+一併移除。**這是唯一一項對外行為變更**：這兩個名稱從未寫進 `docs/API_SPEC.md`，前端只送
+v1 名稱，Agent 的 `update_preferences`／`update_student_profile` 工具 schema 是
+`additionalProperties: false` 且只宣告 v1 名稱，因此沒有已知呼叫端受影響。
+
+退役的依據是「v0 資料在這個系統裡不存在」：profile 的唯一儲存體是 `User_Profiles`，
+欄位名為 `grade_level`／`max_credits`／`avoid_time`，經 `mapUserProfileRow()` 出來一律是
+v1 名稱；`user_preferences.json` 已於 2026-08-11 刪除；版本偵測欄位
+`profile_schema_version` 在共用 MySQL 根本不存在（見上方 migration 001 說明）。
+
+**`maxCredits` 要與 v0 分清楚**：它同時是 constraints 命名空間裡活著的公開參數
+（`POST /api/schedule/generate` 與 Agent 的 `run_csp_scheduler`），由
+`services/constraintService.js` 與 profile 的 `targetCreditsMax` 銜接。這次移除的只是
+「把 constraints 形狀的物件當 profile 正規化」這條沒人走的路，constraints 那邊完全不受影響。
+
+`PROFILE_SCHEMA_VERSION` 與 `validateProfile()` 的版本檢查**刻意保留**——那是擋下
+「繞過 normalize 自己組一份 profile」的防呆，不是遷移設施。
+回歸測試見 `server/test/profileSchema.test.js` 的 `P3-B`，三組別名一起釘死，
+避免重演 2026-09-11 只掃掉其中一組的半殘狀態。
 
 ```text
 # 預設只做 dry-run，不修改資料庫

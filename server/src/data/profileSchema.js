@@ -3,6 +3,14 @@ import { normalizeDepartment } from '../utils/text.js';
 import { extractTags, tagsToFlags } from './preferenceTags.js';
 import { normalizeAdmissionYear } from './graduationRuleVersions.js';
 
+// Profile 的 canonical shape 永遠標記為這個版本。
+//
+// **這不是遷移設施，是防呆。** v0→v1 的相容層已於 2026-09-13 整組退役
+// （見 `docs/CHANGE_REPORTS/2026-09-13-retire-profile-v0-compatibility.md`）：
+// v0 欄位名（`grade`／`maxCredits`／`avoidTime`）在這個專案裡已經沒有任何產出者，
+// profile 的唯一儲存體 `User_Profiles` 用的是 `grade_level`／`max_credits`／`avoid_time`，
+// 而 `mapUserProfileRow()` 輸出的一律是 v1 名稱。版本號留著的理由只有一個：
+// `validateProfile()` 據此擋下「繞過 normalize 自己組一份 profile」的呼叫端。
 export const PROFILE_SCHEMA_VERSION = 1;
 
 function toFiniteNumber(value, fallback) {
@@ -33,20 +41,24 @@ export function normalizeProfile(profile = {}) {
     ...profile,
     schemaVersion: PROFILE_SCHEMA_VERSION,
     department: profile.department == null ? null : normalizeDepartment(profile.department),
-    // `?? profile.grade` 是 v0 相容別名，與下方 `maxCredits`、`avoidTime` 同一套。
-    // 2026-09-11 的課程年級改名曾把這一組（連同下方的 `delete normalized.grade`）
-    // 一起掃掉，導致 `migrateProfileV0ToV1()` 對舊 profile 產出 gradeLevel=null。
-    // 課程年級用的 `grade` 是「班級年次」（見 `skills/courseScope.js`），與 profile
-    // 的年級是不同概念，不會在這裡互撞——三組別名要留就一起留、要退役就一起退役。
-    gradeLevel: toFiniteNumber(profile.gradeLevel ?? profile.grade, null),
+    gradeLevel: toFiniteNumber(profile.gradeLevel, null),
     className: String(profile.className ?? '').trim() || null,
     // 入學年度（民國學年度）。決定套用哪一版畢業規則（Roadmap #23）。
     // 未提供時為 null＝未知，**不從 gradeLevel 推導**：推導值與使用者填的值
     // 一旦混在同一個欄位就再也分不出來，規則版本也就無從標示可信度。
     admissionYear: normalizeAdmissionYear(profile.admissionYear),
     targetCreditsMin: toFiniteNumber(profile.targetCreditsMin, 12),
-    targetCreditsMax: toFiniteNumber(profile.targetCreditsMax ?? profile.maxCredits, 25),
-    blockedPeriods: normalizeBlockedPeriods(profile.blockedPeriods ?? profile.avoidTime ?? []),
+    // 這兩個欄位曾經各帶一個 v0 別名（`?? profile.maxCredits`、`?? profile.avoidTime`）。
+    // 三組別名（含 `grade`）已於 2026-09-13 一起移除：這支函式正規化的是 **profile**，
+    // 而 profile 的唯一儲存體 `User_Profiles` 經 `mapUserProfileRow()` 出來一律是 v1 名稱，
+    // 沒有任何產出者會送 v0 名稱進來。
+    //
+    // **`maxCredits` 不是單純的 v0 遺跡，要分清楚**：它同時是 constraints 命名空間裡
+    // 活著的公開參數（`POST /api/schedule/generate` 與 Agent 的 `run_csp_scheduler`），
+    // 兩個命名空間由 `services/constraintService.js` 銜接。移除的只是「把 constraints
+    // 形狀的物件當 profile 正規化」這條沒人走的路，constraints 那邊完全不受影響。
+    targetCreditsMax: toFiniteNumber(profile.targetCreditsMax, 25),
+    blockedPeriods: normalizeBlockedPeriods(profile.blockedPeriods ?? []),
     preferenceTags: tags,
     selectedTags: tags,
     preferredCategories: tags,
@@ -61,8 +73,6 @@ export function normalizeProfile(profile = {}) {
     ...tagsToFlags(tags),
   };
 
-  delete normalized.grade;
-  delete normalized.avoidTime;
   return normalized;
 }
 
@@ -102,13 +112,13 @@ export function validateProfile(profile) {
   return { valid: errors.length === 0, errors };
 }
 
-export function migrateProfileV0ToV1(profile = {}) {
-  return normalizeProfile({ ...profile, schemaVersion: PROFILE_SCHEMA_VERSION });
-}
+// `migrateProfileV0ToV1()` 已於 2026-09-13 移除。它從誕生起就沒有生產呼叫端，
+// 而且輸出**恆等於** `normalizeProfile()`——`normalizeProfile()` 本來就無條件寫入
+// `schemaVersion: PROFILE_SCHEMA_VERSION`，那層 spread 是多餘的。需要正規化任何
+// 來源的 profile 時直接呼叫 `normalizeProfile()`。
 
 export default {
   PROFILE_SCHEMA_VERSION,
   normalizeProfile,
   validateProfile,
-  migrateProfileV0ToV1,
 };

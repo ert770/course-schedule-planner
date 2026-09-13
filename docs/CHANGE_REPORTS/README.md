@@ -4,7 +4,8 @@
 
 ## 2026-09-13
 
-1. [Profile 欄位去重、課程評量欄位接線與 v0 相容層修復](./2026-09-13-profile-field-dedup-and-evaluation-columns.md)
+1. [退役 Profile v0 相容層](./2026-09-13-retire-profile-v0-compatibility.md)
+2. [Profile 欄位去重、課程評量欄位接線與 v0 相容層修復](./2026-09-13-profile-field-dedup-and-evaluation-columns.md)
 
 ## 2026-09-11
 

@@ -98,9 +98,10 @@ B11）。`CONTENT_PREFERENCE_RULES` 的 `noMidterm`／`noGroupReport`／`english
 `maxCredits`／`avoidTime` 兩組相同性質的別名不一致，導致 `migrateProfileV0ToV1()`
 對舊 profile 產出 `gradeLevel: null`（`server/test/profileSchema.test.js` 起初失敗）。
 本次補回這兩行並加註解，說明三組別名要嘛一起留、要嘛一起退役，不能只改其中一組。
-是否要整組退役 v0 相容層（`migrateProfileV0ToV1()`、`storedSchemaVersion` 等 5 個
-無生產呼叫端、且共用 MySQL 至今未套用 `profile_schema_version` 欄位的死路徑）
-留待下次獨立處理，本次只修復 regression。
+本次只修復 regression。整組退役 v0 相容層（`migrateProfileV0ToV1()`、
+`storedSchemaVersion` 等 5 個無生產呼叫端、且共用 MySQL 至今未套用
+`profile_schema_version` 欄位的死路徑）已於同日獨立處理完成，見
+[退役 Profile v0 相容層](./2026-09-13-retire-profile-v0-compatibility.md)。
 
 ### 8. 開發環境 port 設定修正
 

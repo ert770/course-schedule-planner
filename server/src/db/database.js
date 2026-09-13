@@ -685,7 +685,9 @@ function mapUserProfileRow(row) {
     enrolledPrograms: parseJson(row.enrolled_programs, []),
     college: row.college ?? null,
     mustTakeCourses: parseJson(row.must_take_courses, []),
-    storedSchemaVersion: normalizeNumber(row.profile_schema_version, 0),
+    // `storedSchemaVersion` 已於 2026-09-13 隨 v0 相容層一起移除：它是 v0 偵測用的
+    // 欄位，全專案零消費者，而且 `profile_schema_version` 這一欄在共用 MySQL 裡
+    // 根本不存在（migration 001 只套用了 `class_name`），算出來永遠是 0。
 
     // 偏好旗標**由標籤推導**，且只展開為 true 的項目。
     //
@@ -867,14 +869,18 @@ async function updateMysqlUserPreference(canonicalId, item) {
 
   // `avoid_time` 保存第 1～14 節，不篩掉任何節次。正規化只是把時間字串
   // （legacy 匯入格式）換算成 `{ day, period }`，讓讀寫兩端格式一致。
-  if (item.blockedPeriods !== undefined || item.avoidTime !== undefined) {
-    const raw = item.blockedPeriods ?? item.avoidTime ?? [];
+  //
+  // 2026-09-13：這兩個分支原本各接受一個 v0 別名（`item.avoidTime`、`item.maxCredits`），
+  // 隨 v0 相容層一起移除。確認過沒有任何產出者：前端只送 v1 名稱，Agent 的
+  // `update_preferences`／`update_student_profile` 工具 schema 是
+  // `additionalProperties: false` 且只宣告 v1 名稱，兩個別名也從未寫進 `docs/API_SPEC.md`。
+  if (item.blockedPeriods !== undefined) {
     updates.push('`avoid_time` = ?');
-    params.push(JSON.stringify(normalizeBlockedPeriods(raw)));
+    params.push(JSON.stringify(normalizeBlockedPeriods(item.blockedPeriods ?? [])));
   }
-  if (item.targetCreditsMax !== undefined || item.maxCredits !== undefined) {
+  if (item.targetCreditsMax !== undefined) {
     updates.push('`max_credits` = ?');
-    params.push(item.targetCreditsMax ?? item.maxCredits);
+    params.push(item.targetCreditsMax);
   }
   const jsonColumns = [
     ['enrolledPrograms', 'enrolled_programs'],
@@ -933,8 +939,16 @@ async function updateMysqlUserPreference(canonicalId, item) {
     }
   }
 
+  // 沒有任何可寫欄位**不是錯誤**，是 no-op：這一列存在得好好的，只是這次送進來的
+  // 東西沒有一個是這裡認得的欄位。先前這裡和「查無此列」一樣回 `null`，
+  // 而 `upsertByField()` 把 `null` 一律當成查無此列並拋錯，於是 no-op 會變成
+  // HTTP 500 + 一句與事實不符的「找不到對應的資料列」。
+  //
+  // 這個路徑在 2026-09-13 退役 v0 相容層後才變得容易踩到：`maxCredits`／`avoidTime`
+  // 從「認得的別名」變成「不認得的欄位」，只送這兩個名稱的請求就會整包落到這裡。
+  // 回傳目前這一列的內容，讓呼叫端拿到未變更的 profile。
   if (updates.length === 0) {
-    return null;
+    return currentProfileRow(canonicalId, userId, hasStudentId);
   }
 
   params.push(hasStudentId ? canonicalId : userId);
@@ -947,7 +961,11 @@ async function updateMysqlUserPreference(canonicalId, item) {
     return null;
   }
 
-  // 回傳的 profile 以 canonical（學號）為鍵，不是剛才用來 UPDATE 的數字主鍵。
+  return currentProfileRow(canonicalId, userId, hasStudentId);
+}
+
+// 回傳的 profile 以 canonical（學號）為鍵，不是剛才用來 UPDATE 的數字主鍵。
+async function currentProfileRow(canonicalId, userId, hasStudentId) {
   const allProfiles = await getMysqlUserPreferences();
   return allProfiles.find(profile => (
     hasStudentId
