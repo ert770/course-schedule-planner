@@ -28,26 +28,40 @@ export default function OnboardingPage() {
           </p>
         </div>
 
-        <button
-          className="onboarding-btn"
-          onClick={handleAgree}
-          id="onboarding-agree-btn"
-        >
-          同意並開始設定
-        </button>
+        {/* 調整後的動作區域：直立堆疊、加大間距與視覺層級 */}
+        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '12px', marginTop: '24px' }}>
+          <button
+            className="onboarding-btn"
+            onClick={handleAgree}
+            id="onboarding-agree-btn"
+            style={{ width: '100%', margin: 0 }}
+          >
+            同意並開始設定
+          </button>
 
-        <button 
-          onClick={() => {
-            logout();
-            window.location.href = '/login';
-          }}
-          style={{
-            marginTop: '16px', background: 'transparent', border: 'none', 
-            color: '#888', cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline'
-          }}
-        >
-          切換帳號 (重新登入)
-        </button>
+          <div style={{ height: '1px', backgroundColor: 'var(--border-color, #e5e7eb)', width: '100%', margin: '4px 0' }} />
+
+          <button
+            onClick={() => {
+              logout();
+              window.location.href = '/login';
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#6b7280',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+              padding: '6px',
+              textDecoration: 'none',
+              transition: 'color 0.2s'
+            }}
+            onMouseEnter={(e) => e.target.style.color = '#374151'}
+            onMouseLeave={(e) => e.target.style.color = '#6b7280'}
+          >
+            切換帳號 (重新登入)
+          </button>
+        </div>
       </div>
     </div>
   );

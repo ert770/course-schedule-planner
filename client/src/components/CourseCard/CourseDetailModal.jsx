@@ -1,11 +1,7 @@
 import { formatCourseTime } from '../../utils/courseTime';
+import { Heart, Plus, X } from 'lucide-react';
 
-// 課程詳情彈窗（含 roadmap #26 的推薦理由）。
-//
-// **抽成共用元件的理由**：`SchedulePage.jsx` 與 `DashboardPage.jsx` 原本各有一份
-// 幾乎相同的彈窗，兩邊已經開始漂移（Dashboard 少了地點與時間）。推薦理由是一段
-// 有實質規則的 UI（什麼時候能講涼度、什麼時候要說沒有依據），複製兩份必然走樣。
-
+// 課程詳情彈窗（含推薦理由與互動按鈕）
 const SELECTION_LABELS = {
   REQUIRED_COURSE: '這是你的必修課',
   RETAKE_REQUIRED: '這是需要重補修的必修',
@@ -22,10 +18,8 @@ const CONFIDENCE_LABELS = {
   low: { text: '依據不足，請自行確認', className: 'reason-confidence-low' },
 };
 
-// 涼度來源決定措辭。這條規則與後端 `resolveEasiness()`／`PROMPT_DESIGN.md`
-// 是同一條：只有 `reviews` 是證據，`proxy` 是推估，`none` 不得提涼度。
 const EASINESS_LABELS = {
-  reviews: null, // 有評價時改為顯示實際評價筆數，不用這裡的文字
+  reviews: null,
   proxy: '涼度為依課程屬性推估，不是實際評價',
   none: '沒有涼度依據',
 };
@@ -39,7 +33,6 @@ function ReasonSection({ reason }) {
   return (
     <div className="detail-reason">
       <div className="detail-desc-label">為什麼推薦這門課</div>
-
       <p className="reason-headline">
         {SELECTION_LABELS[reason.selectedBecause] || '依排課結果選入'}
         <span className={`reason-confidence ${confidence.className}`}>{confidence.text}</span>
@@ -51,18 +44,13 @@ function ReasonSection({ reason }) {
           {reason.matchedPreferences.map(item => item.label).join('、')}
         </p>
       ) : (
-        // 沒命中就照實說，不要硬掰一個理由——這是 #26 的核心要求。
         <p className="reason-line reason-muted">它沒有命中你設定的任何偏好。</p>
       )}
 
       <p className="reason-line">
         <strong>評價證據：</strong>
-        {reason.reviewEvidence
-          ? `${reason.reviewEvidence.reviewCount} 則評價`
-          : '這門課沒有評價資料'}
-        {EASINESS_LABELS[reason.easinessSource]
-          ? `（${EASINESS_LABELS[reason.easinessSource]}）`
-          : ''}
+        {reason.reviewEvidence ? `${reason.reviewEvidence.reviewCount} 則評價` : '這門課沒有評價資料'}
+        {EASINESS_LABELS[reason.easinessSource] ? `（${EASINESS_LABELS[reason.easinessSource]}）` : ''}
       </p>
 
       {reason.constraintTradeoffs?.length > 0 && (
@@ -72,7 +60,6 @@ function ReasonSection({ reason }) {
         </p>
       )}
 
-      {/* 「沒有競爭者」與「還沒算」必須分得出來，不能都顯示成空白。 */}
       {alternatives?.status === 'no-competitors' && (
         <p className="reason-line reason-muted">同一個時段沒有其他課與它競爭。</p>
       )}
@@ -97,12 +84,23 @@ function ReasonSection({ reason }) {
   );
 }
 
-export default function CourseDetailModal({ course, onClose, onRemove, showTime = true }) {
+export default function CourseDetailModal({ 
+  course, 
+  onClose, 
+  onRemove, 
+  showTime = true,
+  isWatched = false,
+  isAdded = false,
+  onToggleWatchlist,
+  onToggleCourse,
+  validating = false,
+  watchlistUpdating = false
+}) {
   if (!course) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
         <button className="modal-close" onClick={onClose}>✕</button>
         <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>{course.name}</h2>
         <span className="detail-code">{course.code}</span>
@@ -122,14 +120,43 @@ export default function CourseDetailModal({ course, onClose, onRemove, showTime 
           </div>
         )}
 
-        {onRemove && (
-          <button
-            className="action-btn secondary modal-remove-course"
-            onClick={() => onRemove(course)}
-          >
-            從課表移除
-          </button>
-        )}
+        {/* 修正：彈窗底部的互動按鈕列，保證按鈕比例 1:1 */}
+        <div style={{ display: 'flex', gap: '12px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color, #e5e7eb)' }}>
+          {onToggleWatchlist && (
+            <button
+              type="button"
+              className={`course-card-action ${isWatched ? 'active' : ''}`}
+              onClick={(e) => onToggleWatchlist(e, course)}
+              disabled={watchlistUpdating}
+              style={{ flex: 1, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', borderRadius: '6px', cursor: 'pointer', border: '1px solid #d1d5db', backgroundColor: isWatched ? '#fee2e2' : 'transparent', color: isWatched ? '#ef4444' : 'inherit' }}
+            >
+              <Heart size={16} fill={isWatched ? 'currentColor' : 'none'} />
+              {watchlistUpdating ? '更新中…' : (isWatched ? '已關注' : '加入關注')}
+            </button>
+          )}
+
+          {onToggleCourse && (
+            <button
+              type="button"
+              className={`course-card-action ${isAdded ? 'danger' : 'primary'}`}
+              onClick={(e) => onToggleCourse(e, course)}
+              disabled={validating && !isAdded}
+              style={{ flex: 1, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              {isAdded ? <><X size={16} /> 取消加選</> : <><Plus size={16} /> {validating ? '驗證中…' : '加入課表'}</>}
+            </button>
+          )}
+
+          {onRemove && !onToggleCourse && (
+            <button
+              type="button"
+              onClick={() => onRemove(course)}
+              style={{ flex: 1, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', borderRadius: '6px', cursor: 'pointer', border: '1px solid #ef4444', backgroundColor: 'transparent', color: '#ef4444' }}
+            >
+              <X size={16} /> 從課表移除
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
