@@ -25,6 +25,7 @@ import {
 } from './scheduler.js';
 import { getPassedCourseCodes } from '../data/courseHistory.js';
 import { CONSTRAINTS } from '../data/constraintSchema.js';
+import { courseGradeLevelLabel, isCourseGradeEligible } from '../data/courseGradeLevel.js';
 
 function courseRef(course) {
   return { id: course.id, name: course.name };
@@ -112,6 +113,14 @@ function checkCourseMetadata(schedule, constraints) {
 
   for (const course of schedule) {
     const isExplicit = explicitIds.has(Number(course.id));
+
+    if (isCourseGradeEligible(course, constraints.gradeLevel) === false) {
+      violations.push(buildViolation(
+        'COURSE_GRADE_MISMATCH',
+        [courseRef(course)],
+        `「${course.name}」限 ${courseGradeLevelLabel(course.gradeLevel)}，不符合學生年級`
+      ));
+    }
 
     if (!isExplicit && course.eligibility === 'unknown') {
       violations.push(buildViolation(

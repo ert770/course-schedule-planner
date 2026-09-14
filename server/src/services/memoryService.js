@@ -2,7 +2,8 @@ import {
   getAll, insert, upsertByField, clearCollection, getUserCourseHistory,
 } from '../db/database.js';
 import { normalizeProfile } from '../data/profileSchema.js';
-import { queryRows } from '../db/mysql.js';
+import { isMysqlConfigured, queryRows } from '../db/mysql.js';
+import { DEFAULT_MIN_CREDITS } from '../data/creditPolicy.js';
 
 // 沒有 profile 時的骨架。
 //
@@ -17,9 +18,14 @@ function emptyProfile(identity) {
   return {
     userId: String(identity.canonicalId),
     studentId: identity.studentId ?? null,
-    displayName: identity.displayName || '使用者',
+    // 完全沒有 Profile 列，`User_Profiles.name` 無從查起，用通用預設。
+    // `identity` 不再帶 displayName（2026-09-10 隨 users.json.name 一併移除，
+    // 見 `identityService.js` 的說明），這裡不假裝還有別的來源可以退回。
+    displayName: '使用者',
     courseHistory: [],
-    targetCreditsMin: 12,
+    // 完全沒有 profile 列時連年級都不知道，無法判斷是否適用四年級下限 9，
+    // 因此仍用未知年級的安全預設（見 `data/creditPolicy.js`）。
+    targetCreditsMin: DEFAULT_MIN_CREDITS,
     targetCreditsMax: 25,
     blockedPeriods: [],
     preferredCategories: [],
@@ -27,7 +33,7 @@ function emptyProfile(identity) {
     selectedTags: [],
     mustTakeCourses: [],
     avoidInstructors: [],
-    preferencesJson: {},
+    preferencesJson: { schemaVersion: 1, values: {} },
   };
 }
 
@@ -53,7 +59,8 @@ async function readCourseHistory(identity) {
 // | 偏好標籤與其推導出的旗標 | `User_Profiles.preference_tags` | 有對應欄位；標籤是儲存格式 |
 // | `blockedPeriods`（第 1～14 節） | `User_Profiles.avoid_time` | 有對應欄位 |
 // | `targetCreditsMax` | `User_Profiles.max_credits` | 有對應欄位 |
-// | `studentId`、`name`、`className` | `users.json` | `User_Profiles` 沒有這些欄位 |
+// | `className` | `User_Profiles.class_name` | 有對應欄位（2026-09-09 起，原 `users.json` 後備已刪除） |
+// | `studentId`、`name` | `users.json` | `User_Profiles` 雖有 `name` 欄位，但目前未被任何寫入路徑使用 |
 // | `courseHistory` | `User_Course_History` | 11 欄完整歷史修課契約；只從 MySQL 讀取 |
 //
 // **修課歷史只有 `courseHistory` 一個代表。** `completedCourseCodes`、
@@ -98,16 +105,86 @@ export async function updateUserPreferences(identity, updates) {
   return getUserPreferences(identity);
 }
 
-export async function getSavedSchedules(userId) {
-  return (await getAll('saved_schedules'))
-    .filter(schedule => String(schedule.userId) === String(userId));
+function scheduleIdentity(identity) {
+  if (identity && typeof identity === 'object') {
+    return { canonicalId: String(identity.canonicalId), numericId: Number(identity.numericId) };
+  }
+  return { canonicalId: String(identity), numericId: Number.NaN };
 }
 
-export async function saveSchedule(userId, name, scheduleData, totalCredits) {
+// 測試套件使用 DATA_DIR fixture；即使 dotenv 又載入 shared DB 設定，也不得讓
+// account-isolation 測試寫進正式 Saved_Schedules。真實 runtime 仍以 MySQL 為主。
+function usesMysqlSavedSchedules() {
+  return isMysqlConfigured() && process.env.NODE_ENV !== 'test';
+}
+
+function parseScheduleJson(value) {
+  if (value && typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch { return {}; }
+}
+
+function mapSavedScheduleRow(row, canonicalId) {
+  const payload = parseScheduleJson(row.schedule_json);
+  return {
+    id: Number(row.schedule_id),
+    userId: canonicalId,
+    name: row.name,
+    scheduleData: Array.isArray(payload) ? payload : (payload.courses ?? []),
+    totalCredits: Number(row.total_credits ?? 0),
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    schemaVersion: Array.isArray(payload) ? 0 : (payload.schemaVersion ?? 1),
+    term: Array.isArray(payload) ? null : (payload.term ?? null),
+  };
+}
+
+export async function getSavedSchedules(identity) {
+  const resolved = scheduleIdentity(identity);
+  if (usesMysqlSavedSchedules()) {
+    if (!Number.isInteger(resolved.numericId) || resolved.numericId <= 0) {
+      throw new Error('缺少 Saved_Schedules.user_id 所需的 numeric identity');
+    }
+    const rows = await queryRows(`
+      SELECT \`schedule_id\`, \`name\`, \`schedule_json\`, \`total_credits\`, \`created_at\`
+      FROM \`Saved_Schedules\`
+      WHERE \`user_id\` = ?
+      ORDER BY \`created_at\` ASC, \`schedule_id\` ASC
+    `, [resolved.numericId]);
+    return rows.map(row => mapSavedScheduleRow(row, resolved.canonicalId));
+  }
+  return (await getAll('saved_schedules'))
+    .filter(schedule => String(schedule.userId) === resolved.canonicalId);
+}
+
+export async function saveSchedule(identity, name, scheduleData) {
+  const resolved = scheduleIdentity(identity);
+  const courses = Array.isArray(scheduleData) ? scheduleData : [];
+  const totalCredits = courses.reduce((sum, course) => sum + (Number(course?.credits) || 0), 0);
+  const safeName = String(name ?? '').trim().slice(0, 100) || '我的課表';
+  if (usesMysqlSavedSchedules()) {
+    if (!Number.isInteger(resolved.numericId) || resolved.numericId <= 0) {
+      throw new Error('缺少 Saved_Schedules.user_id 所需的 numeric identity');
+    }
+    const first = courses[0];
+    const payload = {
+      schemaVersion: 1,
+      term: first?.year && first?.semester ? { year: first.year, semester: first.semester } : null,
+      courses,
+    };
+    const result = await queryRows(`
+      INSERT INTO \`Saved_Schedules\`
+        (\`user_id\`, \`name\`, \`schedule_json\`, \`total_credits\`, \`created_at\`)
+      VALUES (?, ?, ?, ?, UTC_TIMESTAMP(3))
+    `, [resolved.numericId, safeName, JSON.stringify(payload), totalCredits]);
+    const [saved] = await queryRows(`
+      SELECT \`schedule_id\`, \`name\`, \`schedule_json\`, \`total_credits\`, \`created_at\`
+      FROM \`Saved_Schedules\` WHERE \`schedule_id\` = ?
+    `, [result.insertId]);
+    return mapSavedScheduleRow(saved, resolved.canonicalId);
+  }
   return insert('saved_schedules', {
-    userId,
-    name,
-    scheduleData,
+    userId: resolved.canonicalId,
+    name: safeName,
+    scheduleData: courses,
     totalCredits,
     createdAt: new Date().toISOString(),
   });
@@ -124,10 +201,8 @@ async function replaceJsonCollection(collection, rows) {
 export async function deleteUserServiceData(identity) {
   if (!identity.numericId) throw new Error('缺少 User_Profiles numeric ID，無法執行完整刪除');
 
+  const scheduleResult = await queryRows('DELETE FROM `Saved_Schedules` WHERE `user_id` = ?', [identity.numericId]);
   const profileResult = await queryRows('DELETE FROM `User_Profiles` WHERE `user_id` = ?', [identity.numericId]);
-  const savedSchedules = await getAll('saved_schedules');
-  const remainingSchedules = savedSchedules.filter(row => String(row.userId) !== String(identity.canonicalId));
-  await replaceJsonCollection('saved_schedules', remainingSchedules);
 
   const users = await getAll('users');
   const remainingUsers = users.filter(row => (
@@ -138,7 +213,7 @@ export async function deleteUserServiceData(identity) {
 
   return {
     profileRowsDeleted: Number(profileResult.affectedRows || 0),
-    savedSchedulesDeleted: savedSchedules.length - remainingSchedules.length,
+    savedSchedulesDeleted: Number(scheduleResult.affectedRows || 0),
     accountRowsDeleted: users.length - remainingUsers.length,
   };
 }

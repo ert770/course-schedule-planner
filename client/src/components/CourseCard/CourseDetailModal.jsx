@@ -1,4 +1,5 @@
 import { formatCourseTime } from '../../utils/courseTime';
+import { formatCourseGradeLevel } from '../../utils/courseGradeLevel';
 
 // 課程詳情彈窗（含 roadmap #26 的推薦理由）。
 //
@@ -109,11 +110,21 @@ export default function CourseDetailModal({ course, onClose, onRemove, showTime 
         <div className="detail-meta">
           <span>👤 {course.instructor}</span>
           <span>📚 {course.credits} 學分</span>
+          <span>🎓 {formatCourseGradeLevel(course.gradeLevel)}</span>
           {showTime && <span>📍 {course.location}</span>}
           {showTime && <span>⏰ {formatCourseTime(course)}</span>}
         </div>
 
         <ReasonSection reason={course.recommendationReason} />
+
+        <div className="detail-desc">
+          <div className="detail-desc-label">先修條件</div>
+          <p>{course.prerequisites === null
+            ? '尚未取得官方先修資料'
+            : (Array.isArray(course.prerequisites)
+              ? course.prerequisites.join('、') || '無'
+              : String(course.prerequisites))}</p>
+        </div>
 
         {course.description && (
           <div className="detail-desc">

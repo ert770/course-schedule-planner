@@ -18,7 +18,7 @@ import { collectSchemaKeywords, SUPPORTED_SCHEMA_KEYWORDS } from '../src/service
 const SCHEDULER_PARAMS = [
   'minCredits', 'maxCredits', 'maxCoursesPerDay',
   'blockedPeriods', 'mondayFree', 'noMorningClasses', 'noEveningClasses', 'lunchBreakFree',
-  'mustTakeCourseIds',
+  'mustTakeCourseIds', 'avoidInstructors',
   'selectedCourseIds', 'watchingCourseIds', 'courseStates',
   'noMidterm', 'noGroupReport', 'discussion', 'learnMore',
   'weightDaily', 'practicalExam', 'finalReport', 'englishTaught',
@@ -217,14 +217,26 @@ describe('P4 Roadmap #24：永久寫入的兩段式確認', () => {
 });
 
 describe('P5 Roadmap #24：偏好強度的判讀', () => {
-  test('nonNegotiablePreferenceIds 只接受三個可放寬的偏好', () => {
+  test('nonNegotiablePreferenceIds 接受四個可放寬的偏好', () => {
     const scheduler = toolByName.get('run_csp_scheduler');
     const { enum: allowed } = scheduler.parameters.properties.nonNegotiablePreferenceIds.items;
 
     assert.deepEqual(
       [...allowed].sort(),
-      ['LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES', 'NO_MORNING_CLASSES']
+      ['AVOID_INSTRUCTOR', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES', 'NO_MORNING_CLASSES']
     );
+  });
+
+  test('avoidInstructors 有工具欄位、理解代號與防止編造姓名指示', () => {
+    const scheduler = toolByName.get('run_csp_scheduler');
+    const topics = scheduler.parameters.properties.interpretation
+      .properties.nonNegotiable.items.enum;
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(Object.hasOwn(scheduler.parameters.properties, 'avoidInstructors'));
+    assert.ok(topics.includes('AVOID_INSTRUCTOR'));
+    assert.ok(prompt.includes('教師完整姓名'));
+    assert.ok(prompt.includes('不得自行猜測'));
   });
 
   test('system prompt 教模型分辨語氣強弱', () => {

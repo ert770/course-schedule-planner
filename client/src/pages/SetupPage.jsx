@@ -28,7 +28,11 @@ export default function SetupPage() {
   // 年級必須帶入使用者的實際年級。排課的必修範圍依系所與年級判定（#13），
   // 這裡若固定送出預設大一，三年級學生的設定會被存成大一，拿到的是大一必修。
   // 因此在 profile 載入完成前不開放送出（見 `profileLoaded`）。
-  const [grade, setGrade] = useState('1');
+  const [gradeLevel, setGradeLevel] = useState('1');
+  const [programType, setProgramType] = useState('');
+  const [college, setCollege] = useState('');
+  const [enrolledPrograms, setEnrolledPrograms] = useState('');
+  const [avoidInstructors, setAvoidInstructors] = useState('');
   // 必修不得換班（資工系明文），因此必修範圍要收斂到班別而不只是系所與年級。
   // 班別清單向後端取得，不在前端複製一份系所簡稱對照表。
   const [className, setClassName] = useState('');
@@ -72,9 +76,13 @@ export default function SetupPage() {
       .then(profile => {
         if (cancelled || !profile) return;
         if (profile.department) setDepartment(profile.department);
-        const savedGrade = profile.gradeLevel ?? profile.grade;
-        if (savedGrade) setGrade(String(savedGrade));
+        const savedGrade = profile.gradeLevel;
+        if (savedGrade) setGradeLevel(String(savedGrade));
         if (profile.className) setClassName(profile.className);
+        setProgramType(profile.programType || '');
+        setCollege(profile.college || '');
+        setEnrolledPrograms((profile.enrolledPrograms || []).join('、'));
+        setAvoidInstructors((profile.avoidInstructors || []).join('、'));
 
         // 已儲存的偏好必須帶回表單，否則使用者一進設定頁按儲存，
         // 先前勾選的標籤會被空的初始值蓋掉——與班別是同一類問題。
@@ -97,7 +105,7 @@ export default function SetupPage() {
   useEffect(() => {
     let cancelled = false;
 
-    coursesAPI.getClasses(department, grade)
+    coursesAPI.getClasses(department, gradeLevel, programType)
       .then(data => {
         if (cancelled) return;
         const classes = data.classes || [];
@@ -110,7 +118,7 @@ export default function SetupPage() {
       });
 
     return () => { cancelled = true; };
-  }, [department, grade]);
+  }, [department, gradeLevel, programType]);
 
   const toggleTag = (tag) => {
     setSelectedTags(prev => {
@@ -137,8 +145,12 @@ export default function SetupPage() {
       // 同一份資訊存兩種格式，而兩種格式一旦不同步就沒有東西能判斷誰對。
       const prefData = {
         department,
-        grade,
+        gradeLevel: Number(gradeLevel),
         className,
+        programType: programType || null,
+        college: college || null,
+        enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
+        avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
         // 第 1～14 節皆可。後端不再篩掉第 1 節。
         blockedPeriods: avoidPeriods,
@@ -204,11 +216,12 @@ export default function SetupPage() {
                   <option value="電機工程學系">電機工程學系</option>
                   <option value="企業管理學系">企業管理學系</option>
                 </select>
-                <select value={grade} onChange={e => setGrade(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                <select value={gradeLevel} onChange={e => setGradeLevel(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
                   <option value="1">大一</option>
                   <option value="2">大二</option>
                   <option value="3">大三</option>
                   <option value="4">大四</option>
+                  <option value="5">研究所</option>
                 </select>
                 {/* 系上不接受必修換班，必修範圍必須收斂到班別。 */}
                 <select
@@ -223,6 +236,32 @@ export default function SetupPage() {
                     <option key={option} value={option}>{option}</option>
                   ))}
                 </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px', marginBottom: '20px' }}>
+                <select
+                  value={programType}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setProgramType(next);
+                    if (next === 'master' || next === 'doctoral') setGradeLevel('5');
+                    else if (gradeLevel === '5') setGradeLevel('1');
+                  }}
+                  aria-label="學制"
+                >
+                  {programType && !['bachelor', 'master', 'doctoral'].includes(programType) && (
+                    <option value={programType}>既有值：{programType}（待確認）</option>
+                  )}
+                  <option value="">學制未確認</option>
+                  <option value="bachelor">學士</option>
+                  <option value="master">碩士</option>
+                  <option value="doctoral">博士</option>
+                </select>
+                <input value={college} onChange={e => setCollege(e.target.value)} placeholder="學院（例：資訊電機學院）" />
+                <input value={enrolledPrograms} onChange={e => setEnrolledPrograms(e.target.value)} placeholder="學程，多筆以頓號分隔" />
+                <input value={avoidInstructors} onChange={e => setAvoidInstructors(e.target.value)} placeholder="避開教師，多筆以頓號分隔" />
+              </div>
+              <div style={{ marginTop: '-12px', marginBottom: '20px', fontSize: '0.8rem', color: '#6b7280' }}>
+                學制、學程與學院目前只保存資料；正式適用規則尚待系辦／校方書面確認。
               </div>
               <div style={{ marginTop: '-12px', marginBottom: '20px', fontSize: '0.8rem', color: '#6b7280' }}>
                 系上不接受必修課程換班。指定班別後，才只會排入你實際選得到的必修。

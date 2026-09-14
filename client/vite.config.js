@@ -5,12 +5,12 @@ import process from 'node:process'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  server: process.env.VITE_API_PROXY_TARGET ? {
+  server: {
     proxy: {
       '/api': {
-        target: process.env.VITE_API_PROXY_TARGET,
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:27151',
         changeOrigin: true,
       },
     },
-  } : undefined,
+  },
 })

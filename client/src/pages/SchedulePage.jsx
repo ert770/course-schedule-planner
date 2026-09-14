@@ -237,6 +237,9 @@ export default function SchedulePage() {
 
             {showUserMenu && (
               <div className="user-dropdown-menu">
+                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 個人資料設定
+                </button>
                 <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
                   <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
                 </button>
@@ -343,7 +346,7 @@ export default function SchedulePage() {
                 <input
                   className="input-field"
                   value={courseSearchScope
-                    ? `${courseSearchScope.department}／大${courseSearchScope.grade}／${courseSearchScope.className}班`
+                    ? `${courseSearchScope.department}／${courseSearchScope.gradeLevel === 5 ? '研究所' : `大${courseSearchScope.gradeLevel}`}／${courseSearchScope.className}班`
                     : ''}
                   readOnly
                   disabled

@@ -10,6 +10,7 @@ import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, Ro
 import '../App.css'; // Reuse some layout styles
 import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
+import { formatCourseGradeLevel } from '../utils/courseGradeLevel';
 
 const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
@@ -44,7 +45,7 @@ export default function SearchPage() {
   // Form states for Tab 1
   const [deptForm, setDeptForm] = useState({
     department: '',
-    grade: '',
+    gradeLevel: '',
     className: '',
     category: '',
     keyword: ''
@@ -80,7 +81,7 @@ export default function SearchPage() {
         setDeptForm(prev => ({
           ...prev,
           department: scope?.department || '',
-          grade: scope?.grade ? String(scope.grade) : '',
+          gradeLevel: scope?.gradeLevel ? String(scope.gradeLevel) : '',
           className: scope?.className || '',
         }));
         setSearchError(scope?.className ? '' : CLASS_REQUIRED_MESSAGE);
@@ -282,6 +283,9 @@ export default function SearchPage() {
             
             {showUserMenu && (
               <div className="user-dropdown-menu">
+                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 個人資料設定
+                </button>
                 <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
                   <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
                 </button>
@@ -334,12 +338,13 @@ export default function SearchPage() {
               </div>
               <div className="form-group">
                 <label>年級 (Grade)</label>
-                <select value={deptForm.grade} disabled>
+                <select value={deptForm.gradeLevel} disabled>
                   <option value="">全部 (All)</option>
                   <option value="1">大一</option>
                   <option value="2">大二</option>
                   <option value="3">大三</option>
                   <option value="4">大四</option>
+                  <option value="5">研究所</option>
                 </select>
               </div>
               <div className="form-group">
@@ -530,6 +535,7 @@ export default function SearchPage() {
                   <div className="course-card-footer">
                     <span className="tag">{course.category}</span>
                     <span className="tag">{course.credits} 學分</span>
+                    <span className="tag">{formatCourseGradeLevel(course.gradeLevel)}</span>
                     {course.category === '通識' && (
                       <span className="tag">
                         {course.generalEducationDomain || '不分領域'}
@@ -598,6 +604,15 @@ export default function SearchPage() {
             <div className="detail-meta">
               <span>👤 {detailCourse.instructor}</span>
               <span>📚 {detailCourse.credits} 學分</span>
+              <span>🎓 {formatCourseGradeLevel(detailCourse.gradeLevel)}</span>
+            </div>
+            <div className="detail-desc">
+              <div className="detail-desc-label">先修條件</div>
+              <p>{detailCourse.prerequisites === null
+                ? '尚未取得官方先修資料'
+                : (Array.isArray(detailCourse.prerequisites)
+                  ? detailCourse.prerequisites.join('、') || '無'
+                  : String(detailCourse.prerequisites))}</p>
             </div>
             {detailCourse.description && (
               <div className="detail-desc">

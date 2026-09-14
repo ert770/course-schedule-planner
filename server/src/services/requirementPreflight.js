@@ -84,8 +84,14 @@ function countAvailableSlots(constraints) {
 const RELAXABLE_FLAG_BY_ID = {
   NO_MORNING_CLASSES: 'noMorningClasses',
   LUNCH_BREAK_FREE: 'lunchBreakFree',
+  AVOID_INSTRUCTOR: 'avoidInstructors',
   NO_EVENING_CLASSES: 'noEveningClasses',
 };
+
+function isPreferenceEnabled(constraints, flag) {
+  const value = constraints[flag];
+  return Array.isArray(value) ? value.length > 0 : value === true;
+}
 
 /**
  * 排課前的矛盾與資料不足檢查。
@@ -279,7 +285,7 @@ export function checkPreflightContradictions({
   // 照著排下去會產生一份與使用者語意不符的課表。
   for (const id of constraints.nonNegotiablePreferenceIds ?? []) {
     const flag = RELAXABLE_FLAG_BY_ID[id];
-    if (!flag || constraints[flag] === true) continue;
+    if (!flag || isPreferenceEnabled(constraints, flag)) continue;
 
     questions.push({
       id: 'confirm-preference-strength',
@@ -328,7 +334,7 @@ export function checkPreflightContradictions({
     // 精準得多，也不會因為模型換一種寫法就漏判。
     for (const [constraintId, flag] of Object.entries(RELAXABLE_FLAG_BY_ID)) {
       if (!nonNegotiable.has(constraintId)) continue;
-      if (constraints[flag] === true && declared.has(constraintId)) continue;
+      if (isPreferenceEnabled(constraints, flag) && declared.has(constraintId)) continue;
 
       questions.push({
         id: 'confirm-interpretation-mismatch',

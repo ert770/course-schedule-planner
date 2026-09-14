@@ -17,7 +17,7 @@ describe('課程搜尋的班級範圍', () => {
   test('資訊三甲只取得本人班級與同年級合班', () => {
     const result = filterCourses(courses, {
       department: '資訊工程學系',
-      grade: 3,
+      gradeLevel: 3,
       className: '甲',
     });
 
@@ -27,12 +27,12 @@ describe('課程搜尋的班級範圍', () => {
   test('年級與班別實際改變搜尋結果', () => {
     const gradeTwo = filterCourses(courses, {
       department: '資訊工程學系',
-      grade: 2,
+      gradeLevel: 2,
       className: '甲',
     });
     const gradeThreeB = filterCourses(courses, {
       department: '資訊工程學系',
-      grade: 3,
+      gradeLevel: 3,
       className: '乙',
     });
 
@@ -43,7 +43,7 @@ describe('課程搜尋的班級範圍', () => {
   test('其他搜尋條件會在班級範圍內繼續收斂', () => {
     const result = filterCourses(courses, {
       department: '資訊工程學系',
-      grade: 3,
+      gradeLevel: 3,
       className: '甲',
       keyword: '合班',
     });
@@ -112,7 +112,7 @@ const categorizedCourses = [
 
 const studentScope = buildCourseQueryScope({
   department: '資訊工程學系',
-  grade: 3,
+  gradeLevel: 3,
   className: '乙',
 });
 
@@ -219,7 +219,7 @@ describe('#12A 先分類再搜尋', () => {
   });
 
   test('三個學生範圍欄位不完整時不得退回廣泛搜尋', () => {
-    const incompleteScope = buildCourseQueryScope({ department: '資訊工程學系', grade: 3 });
+    const incompleteScope = buildCourseQueryScope({ department: '資訊工程學系', gradeLevel: 3 });
     assert.throws(
       () => filterCategorizedCourses(categorizedCourses, {}, incompleteScope),
       error => error.code === 'CLASS_NAME_REQUIRED'

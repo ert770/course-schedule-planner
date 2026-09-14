@@ -78,7 +78,7 @@ router.delete('/personalization', requireIdentity, async (req, res) => {
 router.get('/export', requireIdentity, async (req, res) => {
   try {
     const [profile, schedules, privacy, interactionEvents, learnedPreferenceWeights] = await Promise.all([
-      getUserPreferences(req.identity), getSavedSchedules(req.identity.canonicalId), getConsentStatus(req.identity),
+      getUserPreferences(req.identity), getSavedSchedules(req.identity), getConsentStatus(req.identity),
       getInteractionEventsForExport(req.identity),
       // roadmap #30：匯出目前**已存**的權重，不在匯出當下重算——匯出應該反映
       // 「系統實際在用什麼」，不是「現在重跑一次會得到什麼」。從未算過（consent

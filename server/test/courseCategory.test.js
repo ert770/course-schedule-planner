@@ -131,7 +131,7 @@ describe('#20 refineOutsideElectiveScopeReason', () => {
 });
 
 describe('#20 annotateCourseCategory：term／scopeReason 附加到候選課程', () => {
-  const scope = buildCourseQueryScope({ department: '資訊工程學系', grade: 3, className: '乙' });
+  const scope = buildCourseQueryScope({ department: '資訊工程學系', gradeLevel: 3, className: '乙' });
 
   test('本學期候選課程帶有 term.isActiveTerm 為 true', () => {
     const course = annotateCourseCategory(

@@ -2,6 +2,21 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-13
+
+1. [新增 project-guide 專案說明文件集（12 檔）](./2026-09-13-project-guide-documentation-set.md)
+2. [退役 Profile v0 相容層](./2026-09-13-retire-profile-v0-compatibility.md)
+3. [Profile 欄位去重、課程評量欄位接線與 v0 相容層修復](./2026-09-13-profile-field-dedup-and-evaluation-columns.md)
+
+## 2026-09-11
+
+1. [專案外部資料需求 PDF](./2026-09-11-project-external-data-requirements-pdf.md)
+2. [課程年級、Profile 擴充與已存課表接線](./2026-09-11-course-grade-profile-saved-schedules.md)
+
+## 2026-09-10
+
+1. [Saved_Schedules／Profile 擴充 migration 與避開教師限制](./2026-09-10-saved-schedules-profile-extras-avoid-instructors.md)
+
 ## 2026-09-08
 
 1. [Roadmap #36（二輪）：修正 preference sensitivity sweep 的量測方法](./2026-09-08-roadmap-36-sensitivity-sweep-fix.md)

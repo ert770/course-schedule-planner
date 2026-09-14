@@ -8,8 +8,8 @@
 // 本檔案把每個既有限制類型（硬性與軟性都算）正式登記成資料，補上 roadmap #21
 // 要求的 4 個欄位：`weight`、`relaxable`、`source`、`confidence`，並額外加上
 // `exemptForRequiredCourses`（必修是否無條件豁免）與 `enforced`（validator
-// 是否真的檢查得到）。**這是純資料表，不是新的執行邏輯**——`scheduler.js`
-// 目前的排除／評分機制完全不變，這裡只是把「目前的行為分類」寫成可查詢的
+// 是否真的檢查得到）。`scheduler.js` 以這份登記表提供結構化結果與放寬階梯，
+// 這裡把「目前的行為分類」寫成可查詢的
 // 資料，供 `scheduleValidator.js`（roadmap #21 的獨立 validator）與
 // `generateSchedule()` 的結構化 conflict set／放寬階梯使用。
 
@@ -41,6 +41,7 @@ export const CONSTRAINT_SOURCE = Object.freeze({
 export const DEFAULT_TIME_PREFERENCE_PRIORITY = [
   'NO_MORNING_CLASSES',
   'LUNCH_BREAK_FREE',
+  'AVOID_INSTRUCTOR',
   'NO_EVENING_CLASSES',
 ];
 
@@ -52,8 +53,8 @@ export const DEFAULT_TIME_PREFERENCE_PRIORITY = [
 //   （`constraints.allowRelaxation`）納入放寬；false = 永遠不進入階梯。
 // - exemptForRequiredCourses：true 時，排入 `isRequiredForStudent()===true`
 //   的課程時這項檢查無條件跳過，與 `allowRelaxation` 無關、永遠生效。目前
-//   僅 3 個時段類舒適偏好為 true；`BLOCKED_PERIODS`（代表真實的外部不可用
-//   時段，例如工作）明確為 false——必修課也不豁免。
+//   3 個時段舒適偏好與避開指定教師為 true；`BLOCKED_PERIODS`（代表真實的
+//   外部不可用時段，例如工作）明確為 false——必修課也不豁免。
 // - weight：對可放寬條目而言是階梯的預設退回排序；對軟性內容條目而言是
 //   scorer 實際讀取的加減分係數（#7）。
 // - source：CONSTRAINT_SOURCE 其中一個值。
@@ -206,6 +207,30 @@ export const CONSTRAINTS = Object.freeze({
     enforced: true,
     flag: 'lunchBreakFree',
     label: '午休保留',
+  },
+  COURSE_GRADE_MISMATCH: {
+    id: 'COURSE_GRADE_MISMATCH',
+    category: CONSTRAINT_CATEGORY.HARD,
+    relaxable: false,
+    exemptForRequiredCourses: false,
+    weight: null,
+    source: CONSTRAINT_SOURCE.CATALOG_ELIGIBILITY,
+    confidence: 1,
+    enforced: true,
+  },
+  AVOID_INSTRUCTOR: {
+    id: 'AVOID_INSTRUCTOR',
+    category: CONSTRAINT_CATEGORY.HARD,
+    relaxable: true,
+    exemptForRequiredCourses: true,
+    // 排在午休（20）與晚課（30）之間；使用者仍可透過
+    // timePreferencePriority 自訂放寬順序。
+    weight: 25,
+    source: CONSTRAINT_SOURCE.USER_FLAG,
+    confidence: 1,
+    enforced: true,
+    flag: 'avoidInstructors',
+    label: '避開指定教師',
   },
   NO_EVENING_CLASSES: {
     id: 'NO_EVENING_CLASSES',
