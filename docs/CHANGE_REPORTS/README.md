@@ -13,6 +13,7 @@
 3. [修復 K25／P0-0：`getMysqlCourses()` 欄位名稱與共用資料庫不符](./2026-09-17-fix-k25-course-sections-columns.md)
 4. [修正 D3／D4／D6／D26–D29（過時文件與註解）](./2026-09-17-resolve-d3-d4-d6-d26-d29.md)
 5. [修正 D24／D25／D30，刪除 D5（過時文件）](./2026-09-17-resolve-d5-d24-d25-d30.md)
+6. [刪除 project-guide 專案說明文件集（與 application-portfolio 功能重複）](./2026-09-17-remove-project-guide.md)
 
 ## 2026-09-13
 
