@@ -75,9 +75,6 @@ const WITHDRAW_REASON_RULES = Object.freeze({
   content: { axis: 'interest', ruleId: 'WITHDRAW_CONTENT' },
 });
 
-// 接受方案 → 影響的軸。對應 `scheduler.js` 的 `PLAN_VARIANTS` id。只有這三個
-// variant 主打單一軸；`required_first`（必修優先）與 `max_credits`（學分最大化）
-// 不代表任何偏好方向，接受這兩種方案說明不了使用者在乎哪個軸，因此不映射。
 const VARIANT_AXIS = Object.freeze({
   compact: 'compact',
   easy_score: 'easy',

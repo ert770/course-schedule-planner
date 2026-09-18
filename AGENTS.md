@@ -12,7 +12,7 @@
 C:/Users/yamat/Agent_project
 ├── client/                 # React + Vite 前端
 ├── server/                 # Node.js + Express 後端
-├── server/data/            # JSON 檔案式資料庫
+├── server/data/            # 以 MySQL 為主；未設定 MySQL 或測試時的 JSON 後備資料
 ├── docs/                   # 正式系統規範
 ├── report/                 # 專題報告與展示素材
 ├── package.json            # 根目錄工作區腳本
@@ -89,7 +89,7 @@ node --check src/app.js
 - API route 放在 `server/src/routes/`。
 - 核心服務放在 `server/src/services/`。
 - 排課、課程查詢、評價查詢等工具放在 `server/src/skills/`。
-- JSON 檔案式資料庫工具放在 `server/src/db/database.js`。
+- 資料庫存取層（以 MySQL 為主，JSON 為後備）放在 `server/src/db/database.js`。
 - 不得把真實 API key 寫入程式或文件。
 - 若新增 API，需同步更新 `docs/API_SPEC.md`。
 - 若修改資料欄位，需同步更新 `docs/DATA_SCHEMA.md`。

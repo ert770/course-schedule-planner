@@ -11,6 +11,7 @@
 1. [修復 K3／P0-3：學習權重在排課路徑生效](./2026-09-17-fix-k3-p0-3-learned-weights-on-scheduling-path.md)
 2. [修復 K2／P0-2：Dashboard 用固定字串覆寫忠實度檢查過的 Agent 回覆](./2026-09-17-fix-k2-dashboard-reply-override.md)
 3. [修復 K25／P0-0：`getMysqlCourses()` 欄位名稱與共用資料庫不符](./2026-09-17-fix-k25-course-sections-columns.md)
+4. [修正 D3／D4／D6／D26–D29（過時文件與註解）](./2026-09-17-resolve-d3-d4-d6-d26-d29.md)
 
 ## 2026-09-13
 
