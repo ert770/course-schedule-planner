@@ -4,7 +4,8 @@
 
 ## 2026-09-18
 
-1. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
+1. [更新 DEPARTMENT_MAPPING.md：記錄 #13C 待確認問題的答案](./2026-09-18-department-mapping-13c-answers.md)
+2. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
 
 ## 2026-09-17
 
