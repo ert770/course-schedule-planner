@@ -333,6 +333,9 @@ export function getAgentTools() {
           targetCreditsMin: { type: 'integer' },
           targetCreditsMax: { type: 'integer' },
           blockedPeriods: SCHEDULER_PARAMETERS.blockedPeriods,
+          preferredTrack: SCHEDULER_PARAMETERS.preferredTrack,
+          interests: SCHEDULER_PARAMETERS.interests,
+          preferredKeywords: SCHEDULER_PARAMETERS.preferredKeywords,
           confirmationToken: {
             type: 'string',
             description: '上一次呼叫回傳的 token。使用者確認後才帶，不可自行編造。',
@@ -506,6 +509,8 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 
 排課偏好使用說明：
 - preferredKeywords、interests、preferCompact、preferEasyCourses、preferChallengingCourses 會影響單門課挑選及多個方案的主推排序。
+- 使用者要求個人化推薦，但目前使用者偏好中的「興趣關鍵字」與「修課路徑」都未設定，且這一輪也沒有說明興趣時，先用一個簡短問題詢問方向；可舉「技術應用、網路與安全、嵌入式系統」或目前課程主題為例，不要替使用者選。若使用者只要一般排課或明確表示沒有特定方向，直接排課，不得強迫回答。
+- 使用者說「這次想排資安相關」時，把方向放進單次 run_csp_scheduler；只有使用者明確表示要長期保存，才使用 update_preferences 的 preferredTrack／interests／preferredKeywords。
 - 使用者明確說要避開某位教師時，把教師完整姓名放進 avoidInstructors；不得自行猜測、補姓氏或改寫姓名。
 - preferEasyCourses 與 preferChallengingCourses 方向相反，不得同時設為 true；使用者若兩者都提到，要先確認實際想要哪一個。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。

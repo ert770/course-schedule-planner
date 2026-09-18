@@ -33,6 +33,23 @@ describe('P3 versioned Profile schema', () => {
     profile.schemaVersion = 0;
     assert.equal(validateProfile(profile).valid, false);
   });
+
+  test('從 preferencesJson 還原並驗證興趣偏好', () => {
+    const profile = normalizeProfile({
+      preferencesJson: {
+        schemaVersion: 1,
+        values: {
+          preferredTrack: '網路與安全類',
+          interests: ['資安', '網路'],
+        },
+      },
+    });
+
+    assert.equal(profile.preferredTrack, '網路與安全類');
+    assert.deepEqual(profile.interests, ['資安', '網路']);
+    assert.deepEqual(profile.preferredKeywords, []);
+    assert.equal(validateProfile(profile).valid, true);
+  });
 });
 
 // v0 相容層已於 2026-09-13 整組退役。這一組測試釘住的是「退役後的行為」，

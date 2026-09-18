@@ -110,6 +110,11 @@ export const coursesAPI = {
     if (programType) params.append('programType', programType);
     return request(`/courses/classes?${params}`);
   },
+  getInterestOptions: (department, gradeLevel, className) => {
+    const params = new URLSearchParams({ department, gradeLevel });
+    if (className) params.append('className', className);
+    return request(`/courses/interest-options?${params}`);
+  },
   getInstructors: () => request('/courses/instructors'),
 };
 

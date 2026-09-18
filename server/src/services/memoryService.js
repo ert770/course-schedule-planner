@@ -4,6 +4,7 @@ import {
 import { normalizeProfile } from '../data/profileSchema.js';
 import { isMysqlConfigured, queryRows } from '../db/mysql.js';
 import { DEFAULT_MIN_CREDITS } from '../data/creditPolicy.js';
+import { mergeInterestPreferences } from '../data/interestPreferences.js';
 
 // 沒有 profile 時的骨架。
 //
@@ -97,9 +98,22 @@ export async function getUserPreferences(identity) {
 export async function updateUserPreferences(identity, updates) {
   const canonicalId = String(identity.canonicalId);
 
+  // 興趣是 preferences_json 裡的可擴充偏好。寫入前先與既有 values 合併，
+  // 避免 Setup 只改興趣時把其他個人化資料整包覆蓋。
+  const hasInterestUpdate = ['preferredTrack', 'interests', 'preferredKeywords']
+    .some(field => Object.hasOwn(updates, field));
+  let writeUpdates = updates;
+  if (hasInterestUpdate) {
+    const current = await getUserPreferences(identity);
+    writeUpdates = {
+      ...updates,
+      preferencesJson: mergeInterestPreferences(current.preferencesJson, updates),
+    };
+  }
+
   await upsertByField('user_preferences', 'userId', canonicalId, {
     userId: canonicalId,
-    ...updates,
+    ...writeUpdates,
     updatedAt: new Date().toISOString(),
   });
   return getUserPreferences(identity);

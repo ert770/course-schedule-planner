@@ -393,6 +393,31 @@ Response:
 }
 ```
 
+### `GET /api/courses/interest-options`
+
+回傳設定頁可詢問使用者的課程方向。`department`、`gradeLevel` 必填；`className`
+尚未提供時仍回傳該系的官方修課路徑，但 `topics` 為空。班別完整時，`topics`
+由目前排課候選課程的 `Course_Sections.rag_tag` 統計而來，不在前端寫死。
+同一課程的不同 section 對相同主題只計一次。
+
+```json
+{
+  "tracks": ["嵌入式系統類", "技術應用類", "網路與安全類"],
+  "topics": [
+    { "name": "人工智慧", "courseCount": 12 },
+    { "name": "資訊安全", "courseCount": 8 }
+  ],
+  "scopeReady": true,
+  "candidateCourseCount": 365,
+  "topicCourseCount": 53
+}
+```
+
+上述三條官方路徑只適用資訊工程學系；其他系所的 `tracks` 為空陣列。
+`topics` 只統計本系選修或已有正式修課路徑的課程，避免完整候選池中的通識與跨院課
+把專業方向淹沒；`candidateCourseCount` 仍表示完整排課候選數，`topicCourseCount` 是實際
+用來產生主題的課程數。
+
 ### `GET /api/courses/:id`
 
 `id` is `Course_Sections.section_id`.
@@ -1039,6 +1064,20 @@ tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`err
 ### `POST /api/profile`
 
 只更新 session 使用者的 `User_Profiles` 支援欄位。request 不需也不應傳 `userId`。
+
+興趣方向可用下列欄位更新：
+
+```json
+{
+  "preferredTrack": "網路與安全類",
+  "interests": ["資訊安全", "網路"],
+  "preferredKeywords": ["密碼學"]
+}
+```
+
+`preferredTrack` 必須是字串或 `null`；`interests` 與 `preferredKeywords` 必須是陣列。
+這三個 API 欄位持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
+更新時會保留 `values` 中其他個人化資料。
 
 `department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
 

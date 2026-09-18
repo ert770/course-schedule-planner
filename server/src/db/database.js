@@ -639,6 +639,7 @@ function normalizeProfileForWrite(item) {
 
 function mapUserProfileRow(row) {
   const preferenceTags = parseJson(row.preference_tags, []);
+  const preferencesJson = parseJson(row.preferences_json, { schemaVersion: 1, values: {} });
 
   // `avoid_time` 與偏好標籤是兩組獨立的設定，不互相推導。
   //
@@ -681,7 +682,7 @@ function mapUserProfileRow(row) {
     preferenceTags: tags,
     selectedTags: tags,
     avoidInstructors: parseJson(row.avoid_instructors, []),
-    preferencesJson: parseJson(row.preferences_json, { schemaVersion: 1, values: {} }),
+    preferencesJson,
     programType: row.program_type ?? null,
     enrolledPrograms: parseJson(row.enrolled_programs, []),
     college: row.college ?? null,

@@ -2,6 +2,7 @@ import { normalizeBlockedPeriods } from '../utils/periods.js';
 import { normalizeDepartment } from '../utils/text.js';
 import { extractTags, tagsToFlags } from './preferenceTags.js';
 import { normalizeAdmissionYear } from './graduationRuleVersions.js';
+import { readInterestPreferences } from './interestPreferences.js';
 
 // Profile 的 canonical shape 永遠標記為這個版本。
 //
@@ -37,6 +38,7 @@ function normalizePreferencesJson(value) {
 
 export function normalizeProfile(profile = {}) {
   const tags = extractTags(profile) ?? [];
+  const interestPreferences = readInterestPreferences(profile);
   const normalized = {
     ...profile,
     schemaVersion: PROFILE_SCHEMA_VERSION,
@@ -70,6 +72,7 @@ export function normalizeProfile(profile = {}) {
     mustTakeCourses: Array.isArray(profile.mustTakeCourses) ? profile.mustTakeCourses : [],
     avoidInstructors: normalizeStringList(profile.avoidInstructors),
     preferencesJson: normalizePreferencesJson(profile.preferencesJson),
+    ...interestPreferences,
     ...tagsToFlags(tags),
   };
 
@@ -106,6 +109,11 @@ export function validateProfile(profile) {
   if (!Array.isArray(profile.enrolledPrograms)) errors.push('enrolledPrograms 必須是陣列');
   if (!Array.isArray(profile.mustTakeCourses)) errors.push('mustTakeCourses 必須是陣列');
   if (!Array.isArray(profile.avoidInstructors)) errors.push('avoidInstructors 必須是陣列');
+  if (profile.preferredTrack !== null && typeof profile.preferredTrack !== 'string') {
+    errors.push('preferredTrack 必須是字串或 null');
+  }
+  if (!Array.isArray(profile.interests)) errors.push('interests 必須是陣列');
+  if (!Array.isArray(profile.preferredKeywords)) errors.push('preferredKeywords 必須是陣列');
   if (!profile.preferencesJson || typeof profile.preferencesJson !== 'object' || Array.isArray(profile.preferencesJson)) {
     errors.push('preferencesJson 必須是物件');
   }

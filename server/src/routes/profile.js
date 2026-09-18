@@ -46,10 +46,19 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
       return res.status(400).json({ error: 'department 必須是非空字串' });
     }
 
-    for (const field of ['enrolledPrograms', 'mustTakeCourses', 'avoidInstructors']) {
+    for (const field of [
+      'enrolledPrograms', 'mustTakeCourses', 'avoidInstructors', 'interests', 'preferredKeywords',
+    ]) {
       if (updates[field] !== undefined && !Array.isArray(updates[field])) {
         return res.status(400).json({ error: `${field} 必須是陣列` });
       }
+    }
+    if (
+      updates.preferredTrack !== undefined
+      && updates.preferredTrack !== null
+      && typeof updates.preferredTrack !== 'string'
+    ) {
+      return res.status(400).json({ error: 'preferredTrack 必須是字串或 null' });
     }
     if (
       updates.preferencesJson !== undefined

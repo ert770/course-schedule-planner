@@ -78,9 +78,9 @@
 }
 .setup-card {
   background: var(--bg-card); border-radius: var(--radius-xl); padding: 40px;
-  width: 100%; max-width: 960px; box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 1120px; box-shadow: var(--shadow-lg);
 }
-.setup-content { display: grid; grid-template-columns: 200px 1fr 1fr; gap: 32px; }
+.setup-content { display: grid; grid-template-columns: 200px 1fr 1.2fr; gap: 32px; }
 .setup-steps { border-right: 1px solid var(--border-color); padding-right: 24px; }
 .setup-heading { font-size: 1.1rem; font-weight: 700; margin-bottom: 24px; }
 .setup-step {
@@ -142,6 +142,19 @@
   border-color: var(--accent-blue); color: var(--accent-blue);
   background: rgba(74,124,247,0.08); font-weight: 600;
 }
+.setup-interest-help {
+  margin: -6px 0 16px; color: var(--text-muted); font-size: 0.84rem; line-height: 1.55;
+}
+.setup-interest-status { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+.setup-interest-input {
+  width: 100%; margin-top: 12px; padding: 9px 11px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-primary);
+}
+.setup-interest-clear {
+  margin-top: 9px; padding: 0; border: 0; background: transparent; color: var(--accent-blue);
+  font-size: 0.82rem; cursor: pointer; text-decoration: underline;
+}
+.setup-secondary-title { margin-top: 28px; }
 .setup-footer { margin-top: 32px; display: flex; justify-content: flex-end; }
 .setup-submit-btn {
   display: flex; align-items: center; gap: 8px;

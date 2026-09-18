@@ -41,6 +41,11 @@ export default function SetupPage() {
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [selectedTags, setSelectedTags] = useState(new Set());
+  const [preferredTrack, setPreferredTrack] = useState('');
+  const [selectedInterests, setSelectedInterests] = useState(new Set());
+  const [customInterests, setCustomInterests] = useState('');
+  const [interestOptions, setInterestOptions] = useState({ tracks: [], topics: [] });
+  const [interestOptionsLoading, setInterestOptionsLoading] = useState(false);
   // 標籤目錄由後端提供（單一定義來源），不在前端寫死。
   const [tagGroups, setTagGroups] = useState([]);
   // 對應 `User_Profiles.avoid_time`，第 1～14 節皆可。與 `#不排早八` 標籤
@@ -93,6 +98,11 @@ export default function SetupPage() {
         if (Array.isArray(profile.blockedPeriods)) {
           setAvoidPeriods(profile.blockedPeriods);
         }
+        setPreferredTrack(profile.preferredTrack || '');
+        setSelectedInterests(new Set([
+          ...(Array.isArray(profile.interests) ? profile.interests : []),
+          ...(Array.isArray(profile.preferredKeywords) ? profile.preferredKeywords : []),
+        ]));
       })
       .catch(() => { /* 讀不到就沿用初始值，不阻斷設定流程 */ })
       .finally(() => {
@@ -120,11 +130,42 @@ export default function SetupPage() {
     return () => { cancelled = true; };
   }, [department, gradeLevel, programType]);
 
+  // 細部興趣不是前端固定清單，而是目前學生排課候選的 rag_tag 統計結果。
+  // 班別尚未選好時 API 仍會回官方修課路徑，主題則等範圍完整後再顯示。
+  useEffect(() => {
+    let cancelled = false;
+    setInterestOptionsLoading(true);
+
+    coursesAPI.getInterestOptions(department, gradeLevel, className)
+      .then(data => {
+        if (!cancelled) {
+          setInterestOptions({ tracks: data.tracks || [], topics: data.topics || [] });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setInterestOptions({ tracks: [], topics: [] });
+      })
+      .finally(() => {
+        if (!cancelled) setInterestOptionsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [department, gradeLevel, className]);
+
   const toggleTag = (tag) => {
     setSelectedTags(prev => {
       const next = new Set(prev);
       if (next.has(tag)) next.delete(tag);
       else next.add(tag);
+      return next;
+    });
+  };
+
+  const toggleInterest = (interest) => {
+    setSelectedInterests(prev => {
+      const next = new Set(prev);
+      if (next.has(interest)) next.delete(interest);
+      else next.add(interest);
       return next;
     });
   };
@@ -152,6 +193,14 @@ export default function SetupPage() {
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
+        preferredTrack: preferredTrack || null,
+        interests: [...new Set([
+          ...selectedInterests,
+          ...customInterests
+            .split(/[、,，]/)
+            .map(value => value.trim())
+            .filter(Boolean),
+        ])],
         // 第 1～14 節皆可。後端不再篩掉第 1 節。
         blockedPeriods: avoidPeriods,
       };
@@ -270,13 +319,84 @@ export default function SetupPage() {
 
             {/* Right - Preference tags */}
             <div className="setup-preferences">
-              <h3 className="setup-section-title">2. 排課偏好設定</h3>
+              <h3 className="setup-section-title">2. 感興趣的課程方向</h3>
+              <p className="setup-interest-help">
+                選擇想深入的方向，系統會用課程的主題標籤調整推薦排序；這是偏好，不會排除其他必修課。
+              </p>
+
+              {interestOptions.tracks.length > 0 && (
+                <div className="setup-pref-group" id="interest-track-options">
+                  <h4 className="setup-pref-category">主要修課路徑（單選）</h4>
+                  <div className="setup-pref-tags">
+                    {interestOptions.tracks.map(track => (
+                      <button
+                        type="button"
+                        key={track}
+                        className={`setup-tag ${preferredTrack === track ? 'selected' : ''}`}
+                        onClick={() => setPreferredTrack(prev => prev === track ? '' : track)}
+                        aria-pressed={preferredTrack === track}
+                        id={`interest-track-${track}`}
+                      >
+                        {track}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="setup-pref-group" id="interest-topic-options">
+                <h4 className="setup-pref-category">想接觸的課程主題（可複選）</h4>
+                {interestOptionsLoading ? (
+                  <p className="setup-interest-status">正在整理目前可選課程的主題…</p>
+                ) : interestOptions.topics.length > 0 ? (
+                  <div className="setup-pref-tags">
+                    {[...new Set([
+                      ...interestOptions.topics.map(topic => topic.name),
+                      ...selectedInterests,
+                    ])].map(topic => (
+                      <button
+                        type="button"
+                        key={topic}
+                        className={`setup-tag ${selectedInterests.has(topic) ? 'selected' : ''}`}
+                        onClick={() => toggleInterest(topic)}
+                        aria-pressed={selectedInterests.has(topic)}
+                        id={`interest-topic-${topic}`}
+                      >
+                        {topic}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="setup-interest-status">選好班別後會顯示目前課程資料中的熱門主題。</p>
+                )}
+                <input
+                  className="setup-interest-input"
+                  value={customInterests}
+                  onChange={event => setCustomInterests(event.target.value)}
+                  placeholder="其他興趣，例如：生成式 AI、雲端；多筆以頓號分隔"
+                  aria-label="其他課程興趣"
+                />
+                <button
+                  type="button"
+                  className="setup-interest-clear"
+                  onClick={() => {
+                    setPreferredTrack('');
+                    setSelectedInterests(new Set());
+                    setCustomInterests('');
+                  }}
+                >
+                  目前沒有特定方向，先平均探索
+                </button>
+              </div>
+
+              <h3 className="setup-section-title setup-secondary-title">3. 排課偏好設定</h3>
               {tagGroups.map(({ category, tags }) => (
                 <div key={category} className="setup-pref-group">
                   <h4 className="setup-pref-category">{category}</h4>
                   <div className="setup-pref-tags">
                     {tags.map(tag => (
                       <button
+                        type="button"
                         key={tag}
                         className={`setup-tag ${selectedTags.has(tag) ? 'selected' : ''}`}
                         onClick={() => toggleTag(tag)}

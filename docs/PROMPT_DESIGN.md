@@ -154,6 +154,12 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 `run_csp_scheduler`。未帶入時系統只產生不假設偏好方向的綜合與較多學分策略，推薦會失去
 個人化，且回應的 `hasExpressedPreference` 會是 `false`。
 
+當使用者要求個人化推薦，而已儲存 Profile 與本輪訊息都沒有興趣方向時，Agent 先問一個
+簡短問題，可列舉「技術應用、網路與安全、嵌入式系統」讓使用者選擇。使用者只要求一般
+排課或明確表示沒有特定方向時直接排課，不得強迫回答。這次使用的興趣直接帶進
+`run_csp_scheduler`；只有使用者明確要求「以後都照這個方向」時，才以兩段式
+`update_preferences` 保存 `preferredTrack`、`interests` 或 `preferredKeywords`。
+
 `preferEasyCourses` 與 `preferChallengingCourses` 方向相反，**不得同時帶入 `true`**。
 使用者若話裡同時提到兩者（例如「我想要涼一點但也想挑戰自己」），Agent 應先向使用者
 確認實際想要哪一個方向，不得自行猜測或兩個都帶——排課引擎會把矛盾視為未表態並發出

@@ -333,7 +333,7 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 | --- | --- | --- |
 | `must_take_courses` | JSON NULL | `profile.mustTakeCourses`；Profile API 已接讀寫 |
 | `avoid_instructors` | JSON NULL | `profile.avoidInstructors`；持久化並接入排課限制 |
-| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }` |
+| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位 |
 | `password_hash` | varchar(255) NULL | 刻意不搬 `users.json.password` 明碼；雜湊方案另案處理 |
 | `watchlist` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
 | `skill_tree` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
@@ -344,6 +344,23 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 `total_credits`、`created_at`。設定 DB 連線時 runtime 直接讀寫此表，`schedule_json`
 使用 `{ schemaVersion, term, courses }`；`total_credits` 由後端依 courses 重算，不信任前端總數。
 未設定 DB 的測試環境才保留 JSON fallback。
+
+興趣偏好沿用 `preferences_json`，沒有新增 `preferred_track` 等平行欄位。範例：
+
+```json
+{
+  "schemaVersion": 1,
+  "values": {
+    "preferredTrack": "技術應用類",
+    "interests": ["人工智慧", "資料科學"],
+    "preferredKeywords": ["深度學習"]
+  }
+}
+```
+
+`memoryService.updateUserPreferences()` 只合併本次有提供的興趣鍵，既有的學習結果或其他
+`values` 成員保持不變。`profileSchema.normalizeProfile()` 再把三個值展開到 Profile 頂層，
+讓 REST 與 Agent 排課共用 `constraintService.js` 的既有合併邏輯。
 
 ### `Courses.target_grade` 與 `Courses.prerequisites`
 

@@ -688,6 +688,19 @@ Constraint Schema（Roadmap #21）」一節。
   期末報告（`finalReport`）、英文授課（`englishTaught`）、學到較多內容（`learnMore`），
   見下方「內容偏好評分與訊號可靠度警告」。
 
+興趣可以由設定頁明確詢問，不需等待互動學習。資訊工程學系先讓使用者單選正式課程地圖的
+`嵌入式系統類`、`技術應用類`、`網路與安全類`，再從目前排課候選課程的
+`Course_Sections.rag_tag` 顯示可複選的細部主題；使用者也可輸入自訂關鍵字或選擇
+「沒有特定方向」。這些值保存於 `User_Profiles.preferences_json.values`，經 Profile
+映射為上述三個 constraint 欄位。
+
+主題目錄只統計本系選修或已對應正式修課路徑的課程。完整 scheduling pool 還包含通識與
+跨院課，若全部一起統計，熱門項目會被「語言學習／文化研究」等通識主題占據，無法回答
+使用者想發展的專業方向；這項過濾只影響設定頁選項，不縮小真正的排課候選池。
+
+排課器以課名、課號、教師、系所、分類、課程描述、正式修課路徑與 `ragTag` 做包含比對。
+興趣命中只提高單門課與方案的偏好分數，不會排除未命中的課，也不會壓過必修與重補修。
+
 ## Hard/Soft Constraint Schema（Roadmap #21）
 
 `server/src/data/constraintSchema.js` 的 `CONSTRAINTS` 表，把上方「硬性限制」與
