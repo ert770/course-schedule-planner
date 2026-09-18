@@ -4,8 +4,9 @@
 
 ## 2026-09-18
 
-1. [更新 DEPARTMENT_MAPPING.md：記錄 #13C 待確認問題的答案](./2026-09-18-department-mapping-13c-answers.md)
-2. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
+1. [實作 roadmap #13C／#13D：B～F 班級適用規則、同系跨年級選修、本系優先排序](./2026-09-18-implement-13c-13d-eligibility-rules.md)
+2. [更新 DEPARTMENT_MAPPING.md：記錄 #13C 待確認問題的答案](./2026-09-18-department-mapping-13c-answers.md)
+3. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
 
 ## 2026-09-17
 

@@ -10,6 +10,9 @@ import { buildPlanStrategies } from './planStrategies.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
 import {
   buildStudentScope,
+  isCrossYearOwnDepartmentElective,
+  isOwnDepartmentClass,
+  isOwnDepartmentElective,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
 } from './courseScope.js';
@@ -94,6 +97,35 @@ const CATEGORY_WEIGHT = 120;
 // 會有兩個實作，遲早漂移。
 const REQUIRED_COURSE_BONUS = 5000;
 
+// **本系優先的排序階層**（Roadmap #13C／#13D，2026-09-18 專案負責人決定）：
+//
+//   本人必修（+5,000）→ 本年級的本系選修（0）→ 他年級的本系選修（-2,500）
+//   → 非本系課程：B～F 班級、通識、外系課（-5,000）
+//
+// 候選池放寬（學院綜合班、學分學程、外語選修…）之後實測發現，涼課或英文授課
+// 偏好會讓外語與通識課塞滿課表，資工系學生只剩 1 門資工課——那些課有評價，
+// 資工選修多半沒有。這是「偏好照設計運作」，但不符合本系統「資工系個人化課表」
+// 的定位，因此改成先排本系課，學分還沒滿才補非本系課。
+//
+// 階層間距 2,500 大於偏好各項能造成的最大分差（興趣、集中各 ±480、涼度 ±240、
+// 八項內容偏好 ±320、學分係數約 72，合計約 2,150），所以階層之間不會被偏好翻轉；
+// 偏好只在同一階層內決定順序。只在學生系所年級可判定時生效，範圍不明時維持舊排序。
+const CROSS_YEAR_ELECTIVE_PENALTY = -2500;
+const OUTSIDE_OWN_DEPARTMENT_PENALTY = -5000;
+
+function departmentTierComponents(course, scope, categoryPriority) {
+  if (!scope?.resolved || categoryPriority === CATEGORY_PRIORITY['必修']) {
+    return { crossYearElective: 0, outsideOwnDepartment: 0 };
+  }
+  if (isOwnDepartmentClass(course, scope)) {
+    return {
+      crossYearElective: isCrossYearOwnDepartmentElective(course, scope) ? CROSS_YEAR_ELECTIVE_PENALTY : 0,
+      outsideOwnDepartment: 0,
+    };
+  }
+  return { crossYearElective: 0, outsideOwnDepartment: OUTSIDE_OWN_DEPARTMENT_PENALTY };
+}
+
 // 警告訊息中只列出前幾個課名。全部列出會有數十行，反而讓其他警告看不到。
 function summarizeNames(names, limit = UNSCHEDULED_NAMES_IN_WARNING) {
   const shown = names.slice(0, limit).join('、');
@@ -107,6 +139,16 @@ function toArray(value) {
 
 function toIdSet(value) {
   return new Set(toArray(value).map(Number).filter(Number.isFinite));
+}
+
+// 課名結尾的 (一)(二)…，例如 `日文(一)` 與 `日文(二)` 屬於同一系列 `日文`。
+// 只認中文數字：`程式設計(III)`／`(IV)` 這類羅馬數字的必修是學校安排同學期修的，
+// 不該被這條推測規則誤傷。
+const SERIES_SUFFIX = /^(.+?)\s*[（(]([一二三四五六七八九十])[)）]\s*$/u;
+
+function getCourseSeriesKey(course) {
+  const match = String(course?.name || '').trim().match(SERIES_SUFFIX);
+  return match ? match[1].trim() : null;
 }
 
 function getCategoryPriority(course) {
@@ -817,6 +859,7 @@ function computeScoreComponents(
     base: 1000,
     requiredSelection: requiredIds.has(Number(course.id)) ? 10000 : 0,
     requiredCourse: categoryPriority === CATEGORY_PRIORITY['必修'] ? REQUIRED_COURSE_BONUS : 0,
+    ...departmentTierComponents(course, scope, categoryPriority),
     category: -categoryPriority * CATEGORY_WEIGHT * policy.categoryCoefficient,
     credits: (course.credits || 0) * 12 * policy.creditCoefficient,
     contentPreference: getContentPreferenceScore(course, constraints),
@@ -848,6 +891,26 @@ function evaluateCoursePlacement(plan, course, constraints, options = {}) {
     const placed = plan.placedCourseKeys.get(courseKey);
     const message = `已排入同一門課的其他班次（${placed.department}／${placed.instructor || '未定'}）`;
     return { allowed: false, message, constraintId: 'DUPLICATE_SECTION', conflictingCourse: placed };
+  }
+
+  // 同一系列的 (一)(二)… 不排在同一學期（2026-09-18 專案負責人決定）。
+  // 資料庫沒有先修資料（`prerequisites` 全為空），這是依課名推測的規則，不是校方
+  // 規定，因此本人必修（學校可能本來就安排同學期修，例如 程式設計(III)/(IV)）
+  // 與使用者明確指定的課不受限制，獨立驗證器也不複查這一條。
+  const seriesKey = getCourseSeriesKey(course);
+  if (seriesKey && options.formallyRequired !== true && options.required !== true) {
+    const explicitIds = collectExplicitCourseIds(constraints);
+    const sibling = [...plan.placedCourseKeys.values()].find(placed => (
+      getCourseSeriesKey(placed) === seriesKey && getCourseKey(placed) !== courseKey
+    ));
+    if (sibling && !explicitIds.has(Number(course.id)) && !explicitIds.has(Number(sibling.id))) {
+      return {
+        allowed: false,
+        message: `與「${sibling.name}」是同一系列的課，不排在同一學期`,
+        constraintId: 'SAME_SERIES_SAME_TERM',
+        conflictingCourse: sibling,
+      };
+    }
   }
 
   // roadmap #21：正式必修（`isRequiredForStudent()===true`，見 buildPlan()
@@ -1210,6 +1273,8 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   const unrecognizedExplicit = [];
   const unknownEligibilityNames = new Set();
   const unknownEligibilityExplicit = [];
+  const ineligibleNames = new Set();
+  const ineligibleExplicit = [];
   const offTermNames = new Set();
   const offTermExplicit = [];
   const gradeMismatchNames = new Set();
@@ -1250,7 +1315,12 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
       orphanedInternshipNames.add(`${course.name}（${course.catalogCourseCode}）`);
     }
 
-    if (isCourseGradeEligible(course, scope.gradeLevel) === false) {
+    // 同系選修的 target_grade 是開課年級，不是限修年級（#13C-5）：放行，
+    // 排序交給 CROSS_YEAR_ELECTIVE_PENALTY。
+    if (
+      isCourseGradeEligible(course, scope.gradeLevel) === false
+      && !isOwnDepartmentElective(course, scope)
+    ) {
       gradeMismatchNames.add(`${course.name}（${courseGradeLevelLabel(course.gradeLevel)}）`);
       exclusions.push({
         course,
@@ -1294,6 +1364,21 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
       }
 
       unknownEligibilityExplicit.push(course);
+    }
+
+    // #13C／#13D：B～F 依適用規則判定不可修。一般候選池已經不放這類課
+    // （`courseQuery.js` 的 schedulingPool），會走到這裡的是繞過候選池查詢的
+    // 兩條路徑：使用者明確勾選的 courseIds 與重補修 union。處理方式與 unknown 相同。
+    if (course.eligibility === 'ineligible' && course.classGroup && course.classGroup !== 'A') {
+      const label = `${course.name}（${course.department}）`;
+
+      if (!explicitIds.has(Number(course.id))) {
+        ineligibleNames.add(label);
+        exclusions.push({ course, reason: course.eligibilityReason, constraintId: 'ELIGIBILITY_INELIGIBLE' });
+        continue;
+      }
+
+      ineligibleExplicit.push(course);
     }
 
     const outside = evaluateOutsideElective(course, scope);
@@ -1383,7 +1468,28 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     warnings.push(
       `已保守排除 ${unknownEligibilityNames.size} 門資格待確認的 B～F 類課程`
       + `（${summarizeNames([...unknownEligibilityNames])}）。`
-      + '系統尚無正式適用對象規則，不會自動把它們排入課表。'
+      + '這些班級沒有適用規則，或你的系所、年級資料不足以判定，不會自動把它們排入課表。'
+    );
+  }
+
+  if (ineligibleNames.size > 0) {
+    warnings.push(
+      `已排除 ${ineligibleNames.size} 門依適用規則你不能修的 B～F 類課程`
+      + `（${summarizeNames([...ineligibleNames])}）。`
+    );
+  }
+
+  if (ineligibleExplicit.length > 0) {
+    const detail = ineligibleExplicit
+      .slice(0, UNSCHEDULED_NAMES_IN_WARNING)
+      .map(course => `${course.name}（${course.eligibilityReason}）`)
+      .join('；');
+    const rest = ineligibleExplicit.length > UNSCHEDULED_NAMES_IN_WARNING
+      ? ` 等 ${ineligibleExplicit.length} 門`
+      : '';
+    warnings.push(
+      `你指定的課程中有 ${ineligibleExplicit.length} 門依適用規則你不能修：${detail}${rest}。`
+      + '本方案依你的指定保留，但請先向開課單位確認能否修習。'
     );
   }
 
@@ -1404,8 +1510,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   if (unknownEligibilityWithReviews > 0) {
     warnings.push(
       `已保守排除的資格待確認課程中有 ${unknownEligibilityWithReviews} 門有課程評價`
-      + `（共 ${unknownEligibilityReviewCount} 則），因適用對象規則尚未確認`
-      + '（roadmap #13C）而未納入涼度評分。'
+      + `（共 ${unknownEligibilityReviewCount} 則），因資格無法判定而未納入涼度評分。`
     );
   }
 

@@ -160,11 +160,11 @@
 「明確指定」= `POST /api/schedule/generate` 的 `courseIds`、`selectedCourseIds`、
 `mustTakeCourseIds`。
 
-### B～F 班級分類與 unknown eligibility
+### B～F 班級分類與適用規則（#13B／#13C／#13D）
 
 現行 MySQL 的 562 個相異 `Courses.dept` 已全部分類：483 個可由一般語法解析的 A 類、
-8 個明確對照的特殊格式 A 類，以及 71 個 B～F 類。B～F 目錄位於
-`server/src/data/classKindCatalog.js`，分類只回答「這是哪一種班級」，不回答「誰可以修」。
+8 個明確對照的特殊格式 A 類，以及 71 個 B～F 類。B～F 目錄與適用規則都在
+`server/src/data/classKindCatalog.js`。
 
 - B：全校共同與通識班級。
 - C：學院綜合班。
@@ -172,11 +172,31 @@
 - E：學分學程。
 - F：用途待確認班級。
 
-在 #13C 取得正式適用規則前，B～F 一律回傳 `eligibility: 'unknown'` 與
-`eligibilityReason`。搜尋保留這些課讓使用者看得到；排課器不得自動排入，會把課程及
-原因放入 `excludedCourses` 並彙整 warning。使用者透過 `courseIds`、
-`selectedCourseIds` 或 `mustTakeCourseIds` 明確指定時，課程仍保留並排入，但 warning
-必須顯示「資格待確認」。
+**適用規則（`ELIGIBILITY_RULES`）來自專案負責人 2026-09-18 口頭確認，不是校方書面文件**，
+`eligibilitySource` 因此標為 `class-catalog:owner-confirmed-2026-09-18`。完整規則表見
+`docs/DEPARTMENT_MAPPING.md`，摘要如下：
+
+| 類別 | 規則 |
+| --- | --- |
+| B | `人文藝術與社會經典教育`、`軍訓(一年級)` 限一年級；`大二英文綜合班` 限二年級；`國文綜合班`、`核心必修綜合班` 限一、二年級；其他不限年級 |
+| C | 學院綜合班：該學院學生可修（系所欄就是該綜合班，或系所屬於該學院，對照表 `COLLEGE_DEPARTMENTS`）；`創能學院綜合班`、`社會創新學院綜合班` 任何人可修；碩士綜合班大學部不可修 |
+| D | 獨立學制，本系統內沒有學生屬於這些班 → 不可修 |
+| E | 不需報名，任何人可修 |
+| F | 排除於本系統外 → 不可修 |
+
+判定結果：
+
+- `eligible`：與 A 類一樣進入排課候選池。
+- `ineligible`：排課候選池不收（連通識分支也不收）；繞過候選池查詢的路徑（明確指定的
+  `courseIds`、重補修 union）由 `prepareCandidates()` 以 `ELIGIBILITY_INELIGIBLE` 排除並
+  彙整 warning，使用者明確指定時保留並警告。
+- `unknown`：沒有規則的班級（`進修英班`、`大二進修英班`），或規則需要的學生資料不足
+  （例如沒有年級、系所沒有學院對照）。搜尋保留；排課器不自動排入，以
+  `ELIGIBILITY_UNKNOWN` 放入 `excludedCourses`；明確指定時保留並顯示「資格待確認」。
+
+**`eligibility` 只回答能不能修，不回答算哪一類畢業學分。** 學院綜合班、學程課程的類別多半
+是 MySQL 原始的 `選修`；畢業頁的補學分推薦（`graduation.js`）因此對 B～F 仍只推通識，
+不把它們當成本系選修。排課的 `graduationCredits` 目前會把它們計入，這是已知的近似。
 
 ### Active Term（Roadmap #20）
 
@@ -209,13 +229,42 @@
 0 一律可進候選，其他值必須與學生 `gradeLevel` 相同；年級不符屬不可放寬的結構性排除。
 班名中的碩一／碩二另存為 scope 的 `classYear`，不得與研究所層級 5 混用。
 
+**例外：同系、同學制的選修（#13C-5，2026-09-18）。** 同系其他年級開的選修可以修，
+`target_grade` 對它們只代表開課年級，不是限修年級。排課候選池（`schedulingPool`）、
+`prepareCandidates()` 的年級閘門與獨立驗證器都放行這類課（判定：`courseScope.js` 的
+`isOwnDepartmentElective()`），排序由下一節的階層處理。**必修不適用**：必修不得換班，
+他年級必修仍屬於別人。課程搜尋頁與 Agent 查課不套用這個例外，那兩條路徑的年級是使用者
+自己選的篩選條件。
+
+### 本系優先的排序階層（2026-09-18）
+
+學生系所年級可判定時，`computeScoreComponents()` 對候選加上固定的階層分：
+
+| 階層 | 分數項 | 分數 |
+| --- | --- | ---: |
+| 本人必修 | `requiredCourse` | +5,000 |
+| 本年級的本系選修 | — | 0 |
+| 他年級的本系選修 | `crossYearElective` | -2,500 |
+| 非本系課程（B～F、通識、外系） | `outsideOwnDepartment` | -5,000 |
+
+階層間距 2,500 大於偏好各項能造成的最大分差（約 2,150），偏好只在同一階層內決定順序；
+學分還沒滿時，下一階層的課照樣補進去。這個階層是在候選池放寬後加上的：實測涼課或英文
+授課偏好會讓有評價的外語、通識課塞滿課表，Persona C 與 U1 都只剩 1 門資工課。
+
+### 同一系列的 (一)(二) 不排同學期（2026-09-18）
+
+課名只差結尾中文數字（`日文(一)`、`日文(二)`）的課屬於同一系列，`evaluateCoursePlacement()`
+只排其中一門，另一門以 `SAME_SERIES_SAME_TERM` 排除。資料庫沒有先修資料，這是依課名
+推測的規則，因此：本人必修與使用者明確指定的課豁免；只認中文數字（`程式設計(III)`／
+`(IV)` 是學校安排同學期修的必修）；獨立驗證器不複查。
+
 ### 候選課程的可追溯 metadata（Roadmap #20）
 
 每門候選課除了既有的 `eligibility`／`eligibilityReason`，另外附加三個欄位：
 
 | 欄位 | 說明 |
 | --- | --- |
-| `eligibilitySource` | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`（例如 `department-required-table`、`class-catalog:unconfirmed-rules`），供 UI／Agent／未來的 evidence-based reason（#26）追查來源 |
+| `eligibilitySource` | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`（例如 `department-required-table`、`class-catalog:owner-confirmed-2026-09-18`、`class-catalog:unconfirmed-rules`），供 UI／Agent／evidence-based reason（#26）追查來源 |
 | `term` | `{ academicYear, semester, isActiveTerm }`，這門課**自己的**開課學期與是否為 active term |
 | `scopeReason` | 給人看的完整白話說明，融合 term／類別／eligibility／系外選修認列結果；優先序為：非本學期 → `eligibility=unknown` → 必修判定（本人／他人）→ 通識 → 系外選修 → 一般選修 |
 
@@ -228,8 +277,8 @@
 | 可加選 | `eligibility !== 'ineligible'` 且 `term.isActiveTerm`；`scopeReason` 講明是哪個閘門在擋 | `courseCategory.js`（term 與 eligibility 融合） |
 | 可計入畢業學分 | 本人必修／本系選修／通識預設可計；系外選修委由 `evaluateOutsideElective().eligible` | `outsideElective.js`（不動）；文字併入 `scopeReason` |
 
-B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決，`eligibility` 與
-`scopeReason` 在那些情境下維持 `unknown`／保守排除，不因本項完成而宣稱已知誰可以修。
+B～F 適用對象（#13C）與學制／學程（#13D）已於 2026-09-18 依專案負責人口頭確認的規則
+實作（見上方「B～F 班級分類與適用規則」）；沒有規則或資料不足的情境仍維持 `unknown`。
 
 ### 無法判定時
 
@@ -331,13 +380,15 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 
 ### 尚未定義的部分
 
-通識與共同科目（`國文綜合班`、`大二英文綜合班`、`核心必修綜合班`、`軍訓(一年級)`）、學院綜合班、英語授課班與國際學程、學分學程的**班級種類已於 #13B 完成分類**；正式適用對象仍未確認，整理於路線圖 `#13C` 與 `docs/DEPARTMENT_MAPPING.md`。目前搜尋保留並標示 `unknown`，排課不會自動納入。
+通識與共同科目、學院綜合班、英語授課班與國際學程、學分學程的班級種類已於 #13B 完成分類，
+適用規則已於 2026-09-18 依專案負責人口頭確認實作（#13C／#13D，見上方「B～F 班級分類與
+適用規則」）。**仍未定義**：`進修英班`／`大二進修英班` 的適用對象、研究生對碩士綜合班的
+適用範圍、B～F 課程算哪一類畢業學分、他系選修的可修範圍（系統目前只服務資訊工程學系）。
 
 **#20 本輪已完成**：active term 過濾、`eligibilitySource`／`scopeReason`／`term` 三個
-可追溯欄位、四種候選判定的正式對照（見上方兩節）。**仍未解決**：B～F 的正式適用對象
-（卡 `#13C`，需系辦／校方書面規則）、學制與學程欄位（卡 `#13D`，需 Profile schema
-擴充學制／雙聯學程／英語班／已報名學分學程等欄位，目前 `User_Profiles` 沒有這些欄位）。
-這兩項在取得前維持 `unknown`，不得用猜測填入判定邏輯。
+可追溯欄位、四種候選判定的正式對照（見上方兩節）。#13D 原本規劃的「已報名學分學程」
+欄位不再需要（學分學程不需報名即可修）；D 類獨立學制不在 `User_Profiles.department`
+的值域內，因此一律不可修，也不需要額外欄位。
 
 ## 大二以上排課流程
 
@@ -394,8 +445,10 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 屬於此類），否則「A 輸給 B」是假的。
 
 **方案數少於 5 時要說明原因**：`warnings` 會指出哪些取向被合併、以及可競爭的課程數。
-最常見的原因不是排序邏輯，而是**可修的課太少**（demo 帳號實測 227 門候選裡 211 門
-因 #13C 適用對象規則未確認而保守排除，真正能競爭的只有 16 門）。
+過去最常見的原因不是排序邏輯，而是**可修的課太少**（demo 帳號實測 227 門候選裡 211 門
+因 #13C 適用對象規則未確認而保守排除，真正能競爭的只有 16 門）。2026-09-18 #13C 實作後，
+同一帳號可競爭的課程增加到 365 門；但「本系優先」的階層讓各方案在本系課程上仍高度重疊，
+方案數仍以實測為準（P0-5）。
 另外，使用者若本來就勾了「盡量集中排課」，每個方案本來就會集中，
 「集中排課」方案自然不會再產生第二種答案——這是合理結果，warnings 會明講。
 
@@ -495,7 +548,7 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 
 **方案層涼度（`preferenceBreakdown.easy`）與課程層不同調，是刻意設計**：課程層排序需要每門課都有分數，因此無證據給中性分；方案層是「這個方案涼度 68%」這種對使用者的宣稱，只在**有評價證據的課**上取平均，無證據的課不參與，且可能回傳 `null`（代表整個方案沒有任何一門課帶評價）。覆蓋率另外由 `plan.reviewCoverage`（`{ rated, total, ratio }`）回報，讓使用者分得清楚「涼度 68%」是由幾門課推出來的。
 
-**已知限制**：181 筆評價中最大一塊（68 筆通識）因 #13C（B～F 類正式適用對象規則尚未確認）被保守排除，不會進入自動排課，因此不影響涼度評分。實際會生效的評價依候選池而定，warnings 會列出「有課程評價但因資格待確認未納入」的統計。
+**已知限制**：181 筆評價中最大一塊（68 筆通識）在 #13C 實作前（2026-09-18 以前）被保守排除。實作後這些課依適用規則進入候選池，但排在本系課程之後（本系優先階層），所以涼度偏好主要在同一階層內起作用。資格仍無法判定的課程，warnings 會列出「有課程評價但因資格待確認未納入」的統計。
 
 ### 涼度來源：`easinessSource`（Roadmap #10）
 
@@ -805,6 +858,7 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 確實不變，附上原因）／`not-applicable`（這項偏好目前沒開）。demo 帳號實測：13 項偏好裡
 5 項目前開著，全部落在 `unchanged`——可競爭的課只有 16 門，候選用完就停了，偏好沒有
 發揮空間；把候選池放大模擬 `#13C` 已解後，同一支端點對同一組偏好回傳真正的 `changed`。
+（2026-09-03 的量測；#13C 已於 2026-09-18 實作，真實帳號的結果需重新量測。）
 
 **曝光紀錄要記下「這次顯示過的每一個方案」，不是只記主推的那一個。** 這是瀏覽器實測時
 發現的真實 bug：切到方案切換列的第二個方案再按「符合」，被 `assertProvenance()` 拒絕，

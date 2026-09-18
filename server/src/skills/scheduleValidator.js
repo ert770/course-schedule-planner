@@ -26,6 +26,7 @@ import {
 import { getPassedCourseCodes } from '../data/courseHistory.js';
 import { CONSTRAINTS } from '../data/constraintSchema.js';
 import { courseGradeLevelLabel, isCourseGradeEligible } from '../data/courseGradeLevel.js';
+import { buildStudentScope, isOwnDepartmentElective } from './courseScope.js';
 
 function courseRef(course) {
   return { id: course.id, name: course.name };
@@ -110,11 +111,16 @@ function checkCourseMetadata(schedule, constraints) {
   const violations = [];
   const completedCodes = new Set(getPassedCourseCodes(constraints.courseHistory));
   const explicitIds = collectExplicitCourseIds(constraints);
+  // 只有 constraints 帶了系所與年級時才認得出「同系選修」；沒帶時照舊嚴格檢查年級。
+  const scope = buildStudentScope(constraints);
 
   for (const course of schedule) {
     const isExplicit = explicitIds.has(Number(course.id));
 
-    if (isCourseGradeEligible(course, constraints.gradeLevel) === false) {
+    if (
+      isCourseGradeEligible(course, constraints.gradeLevel) === false
+      && !isOwnDepartmentElective(course, scope)
+    ) {
       violations.push(buildViolation(
         'COURSE_GRADE_MISMATCH',
         [courseRef(course)],
@@ -127,6 +133,21 @@ function checkCourseMetadata(schedule, constraints) {
         'ELIGIBILITY_UNKNOWN',
         [courseRef(course)],
         course.eligibilityReason || `「${course.name}」資格待確認`
+      ));
+    }
+
+    // A 類的 ineligible 是「別人的必修」，由 OTHER_STUDENT_REQUIRED 的既有流程處理；
+    // 這裡只管 B～F 依適用規則判定不可修的課。
+    if (
+      !isExplicit
+      && course.eligibility === 'ineligible'
+      && course.classGroup
+      && course.classGroup !== 'A'
+    ) {
+      violations.push(buildViolation(
+        'ELIGIBILITY_INELIGIBLE',
+        [courseRef(course)],
+        course.eligibilityReason || `「${course.name}」依適用規則不可修`
       ));
     }
 

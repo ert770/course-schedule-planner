@@ -19,6 +19,7 @@ import { getAbbreviations, getDepartmentByAbbreviation } from '../src/data/depar
 import {
   NON_DEPARTMENT_CLASS_CATALOG,
   SPECIAL_DEPARTMENT_CLASS_CATALOG,
+  getEligibilityRule,
 } from '../src/data/classKindCatalog.js';
 import { generateSchedule } from '../src/skills/scheduler.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
@@ -211,15 +212,87 @@ describe('#13B 班級種類與修課資格', () => {
     assert.equal(parseClassName('大二英文綜合班').grade, 2);
   });
 
-  test('B～F 只標記資格待確認，不猜測正式適用對象', () => {
-    for (const name of ['國文綜合班', '資電學院綜合班', '建設英班', '資通安全學程']) {
-      const result = resolveCourseEligibility(
-        { department: name, category: '選修' },
-        buildCourseQueryScope({ department: '資訊工程學系', gradeLevel: 3, className: '乙' })
-      );
-      assert.equal(result.eligibility, 'unknown', name);
-      assert.match(result.eligibilityReason, /正式適用對象規則尚未確認/, name);
+  test('#13C／#13D B～F 依 2026-09-18 確認的規則判定（資工三年級）', () => {
+    const scope = buildCourseQueryScope({ department: '資訊工程學系', gradeLevel: 3, className: '乙' });
+    const expected = {
+      國文綜合班: 'ineligible',        // 限一、二年級
+      人文藝術與社會經典教育: 'ineligible', // 限一年級
+      大二英文綜合班: 'ineligible',     // 限二年級
+      體育選修: 'eligible',             // 不限年級
+      資電學院綜合班: 'eligible',       // 資工系屬資訊電機學院
+      商學院綜合班: 'ineligible',       // 別的學院
+      創能學院綜合班: 'eligible',       // 全校開課平台
+      社會創新學院綜合班: 'eligible',
+      資電學院碩士綜合班: 'ineligible', // 大學部不可修
+      建設英班: 'ineligible',           // D 類獨立學制
+      '資工一(SFSU)': 'ineligible',
+      資通安全學程: 'eligible',         // E 類不需報名
+      '未完成課程(大學)': 'ineligible',  // F 類排除
+      進修英班: 'unknown',              // 刻意沒有規則
+    };
+
+    for (const [name, eligibility] of Object.entries(expected)) {
+      const result = resolveCourseEligibility({ department: name, category: '選修' }, scope);
+      assert.equal(result.eligibility, eligibility, name);
+      assert.ok(result.eligibilityReason, name);
     }
+  });
+
+  test('#13C 依年級的規則：同一門課對不同年級結論不同', () => {
+    const forGrade = grade => resolveCourseEligibility(
+      { department: '國文綜合班', category: '必修' },
+      buildCourseQueryScope({ department: '資訊工程學系', gradeLevel: grade, className: '甲' })
+    ).eligibility;
+
+    assert.equal(forGrade(1), 'eligible');
+    assert.equal(forGrade(2), 'eligible');
+    assert.equal(forGrade(3), 'ineligible');
+  });
+
+  test('#13C 規則需要的學生資料不足時回 unknown，不猜', () => {
+    const noGrade = resolveCourseEligibility(
+      { department: '國文綜合班', category: '必修' },
+      buildCourseQueryScope({ department: '資訊工程學系' })
+    );
+    assert.equal(noGrade.eligibility, 'unknown');
+
+    const unmappedDepartment = resolveCourseEligibility(
+      { department: '資電學院綜合班', category: '選修' },
+      buildCourseQueryScope({ department: '財經法律研究所', gradeLevel: 1, className: '甲' })
+    );
+    assert.equal(unmappedDepartment.eligibility, 'unknown');
+    assert.match(unmappedDepartment.eligibilityReason, /沒有學院對照/);
+  });
+
+  test('#13C 系所欄是未分流的學院綜合班時，視為該學院的學生', () => {
+    const scope = buildCourseQueryScope({ department: '資電學院綜合班', gradeLevel: 1 });
+    assert.equal(
+      resolveCourseEligibility({ department: '資電學院綜合班', category: '選修' }, scope).eligibility,
+      'eligible'
+    );
+    assert.equal(
+      resolveCourseEligibility({ department: '商學院綜合班', category: '選修' }, scope).eligibility,
+      'ineligible'
+    );
+  });
+
+  test('#13C 財務金融學系同時屬商學院與金融學院，兩邊的綜合班都可修', () => {
+    const scope = buildCourseQueryScope({ department: '財務金融學系', gradeLevel: 1, className: '甲' });
+    for (const name of ['商學院綜合班', '金融學院綜合班']) {
+      assert.equal(
+        resolveCourseEligibility({ department: name, category: '選修' }, scope).eligibility,
+        'eligible',
+        name
+      );
+    }
+  });
+
+  test('#13C 每個 B～F 班級都有規則，只有進修英班兩個刻意留白', () => {
+    const withoutRule = NON_DEPARTMENT_CLASS_CATALOG
+      .filter(entry => !getEligibilityRule(entry.className))
+      .map(entry => entry.className)
+      .sort();
+    assert.deepEqual(withoutRule, ['大二進修英班', '進修英班']);
   });
 
   test('不在目錄的新名稱明確標成 unclassified', () => {
@@ -246,13 +319,24 @@ describe('#20 eligibilitySource：eligibility 結論的可追溯來源', () => {
     assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.UNCLASSIFIED);
   });
 
-  test('B～F 已分類但規則未確認 → UNCONFIRMED_RULES', () => {
+  test('B～F 已分類但沒有規則 → UNCONFIRMED_RULES', () => {
     const result = resolveCourseEligibility(
-      { department: '國文綜合班', category: '選修' },
+      { department: '進修英班', category: '選修' },
       resolvedScope
     );
     assert.equal(result.eligibility, 'unknown');
     assert.equal(result.eligibilitySource, ELIGIBILITY_SOURCE.UNCONFIRMED_RULES);
+  });
+
+  test('B～F 套用 #13C 規則得出結論 → CONFIRMED_RULES（eligible／ineligible 皆同一來源）', () => {
+    const eligible = resolveCourseEligibility({ department: '資通安全學程', category: '選修' }, resolvedScope);
+    const ineligible = resolveCourseEligibility({ department: '國文綜合班', category: '必修' }, resolvedScope);
+
+    assert.equal(eligible.eligibility, 'eligible');
+    assert.equal(ineligible.eligibility, 'ineligible');
+    assert.equal(eligible.eligibilitySource, ELIGIBILITY_SOURCE.CONFIRMED_RULES);
+    assert.equal(ineligible.eligibilitySource, ELIGIBILITY_SOURCE.CONFIRMED_RULES);
+    assert.equal(ELIGIBILITY_SOURCE.CONFIRMED_RULES, 'class-catalog:owner-confirmed-2026-09-18');
   });
 
   test('A 表必修但學生範圍未 resolved → REQUIRED_SCOPE_UNRESOLVED', () => {
@@ -637,10 +721,15 @@ describe('#13 端到端：課表不得出現他系或他年級的必修', () => 
     // 兩門課同時段且學分上限只容得下一門。選修排在候選清單前面，
     // 因此只要非本人必修不再享有較高的類別優先度，選修就會被選中；
     // 若它仍是必修優先度（0 對 2，分數差 240），順序再前面也會被壓過。
+    //
+    // #13C（2026-09-18）之後國文綜合班對一年級是 eligible，會真的進入比較，這個測試
+    // 才又有意義（先前它是 unknown、整門被排除，測試其實是空轉）。國文給 2 學分、
+    // 選修 3 學分：沒有必修加分時選修多 12 分會贏；國文若還拿到必修加分，
+    // 5000 分的差距無論如何都會壓過。
     const sameSlot = { dayOfWeek: 2, startPeriod: 2, endPeriod: 3 };
     const courses = [
       makeCourse(11, { category: '選修', department: '資訊一甲', ...sameSlot }),
-      makeCourse(10, { category: '必修', department: '國文綜合班', ...sameSlot }),
+      makeCourse(10, { category: '必修', department: '國文綜合班', credits: 2, ...sameSlot }),
     ];
 
     const result = generateSchedule(courses, {
@@ -653,13 +742,14 @@ describe('#13 端到端：課表不得出現他系或他年級的必修', () => 
     assert.deepEqual(result.schedule.map(course => course.id), [11]);
   });
 
-  test('通識與共同科目仍可辨識，但資格未確認前不自動排課', () => {
-    const withCommon = [
+  test('沒有適用規則的共同科目仍保守排除，不自動排課', () => {
+    // 進修英班是 #13C 刻意沒有給規則的班級（英文能力分班代號，適用對象未確認）。
+    const withPending = [
       ...candidates,
-      makeCourse(6, { category: '必修', department: '國文綜合班', dayOfWeek: 6, startPeriod: 2, endPeriod: 3 }),
+      makeCourse(6, { category: '選修', department: '進修英班', dayOfWeek: 6, startPeriod: 2, endPeriod: 3 }),
     ];
 
-    const result = generateSchedule(withCommon, {
+    const result = generateSchedule(withPending, {
       department: '資訊工程學系',
       gradeLevel: 1,
       minCredits: 0,
@@ -669,13 +759,30 @@ describe('#13 端到端：課表不得出現他系或他年級的必修', () => 
 
     assert.ok(!result.schedule.some(course => course.id === 6), '資格待確認課程不得自動排入');
     assert.ok(
-      result.excludedCourses.some(item => item.course.id === 6 && item.reason.includes('正式適用對象規則尚未確認')),
+      result.excludedCourses.some(item => item.course.id === 6 && item.reason.includes('適用對象規則尚未確認')),
       '被保守排除的課程必須保留可讀原因'
     );
     assert.ok(
       result.warnings.some(w => w.includes('資格待確認')),
       result.warnings.join(' | ')
     );
+  });
+
+  test('#13C 國文綜合班依年級判定：一年級可自動排入，三年級依規則排除', () => {
+    const chinese = makeCourse(6, {
+      category: '必修', department: '國文綜合班', dayOfWeek: 6, startPeriod: 2, endPeriod: 3,
+    });
+    const base = { department: '資訊工程學系', minCredits: 0, maxCredits: 99, maxCoursesPerDay: 99 };
+
+    const freshman = generateSchedule([chinese], { ...base, gradeLevel: 1 });
+    assert.ok(freshman.schedule.some(course => course.id === 6), freshman.warnings.join(' | '));
+
+    const junior = generateSchedule([chinese], { ...base, gradeLevel: 3 });
+    assert.ok(!junior.schedule.some(course => course.id === 6));
+    assert.ok(junior.excludedCourses.some(item => (
+      item.course.id === 6 && item.constraintId === 'ELIGIBILITY_INELIGIBLE'
+    )));
+    assert.ok(junior.warnings.some(w => w.includes('依適用規則你不能修')), junior.warnings.join(' | '));
   });
 
   test('系所與年級由已儲存偏好帶入排課限制', () => {

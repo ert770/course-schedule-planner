@@ -912,7 +912,7 @@ Response（`valid`／`conflicts`／`duplicates`／`totalCredits`／`graduationCr
   "nonGraduationCredits": 1,
   "hardConstraintsValid": true,
   "violations": [],
-  "unchecked": ["PREREQUISITE", "COREQUISITE"]
+  "unchecked": ["SAME_SERIES_SAME_TERM", "PREREQUISITE", "COREQUISITE"]
 }
 ```
 
@@ -931,7 +931,7 @@ Response（`valid`／`conflicts`／`duplicates`／`totalCredits`／`graduationCr
     { "constraintId": "CREDIT_CEILING", "severity": "hard", "relaxable": false,
       "source": "user:numeric-limit", "confidence": 1, "courses": [], "reason": "課表共 28 學分，超過上限 25 學分" }
   ],
-  "unchecked": ["PREREQUISITE", "COREQUISITE"]
+  "unchecked": ["SAME_SERIES_SAME_TERM", "PREREQUISITE", "COREQUISITE"]
 }
 ```
 
@@ -940,7 +940,8 @@ Response（`valid`／`conflicts`／`duplicates`／`totalCredits`／`graduationCr
 （只查衝堂與重複班次）範圍更完整。
 
 `unchecked` 永遠包含 `PREREQUISITE`／`COREQUISITE`（先修／共修，見 Roadmap #21）——這
-兩項專案裡完全沒有資料來源可查。**`COREQUISITE_PAIR_INCOMPLETE`（Roadmap #15）只在
+兩項專案裡完全沒有資料來源可查。2026-09-18 起也永遠包含 `SAME_SERIES_SAME_TERM`：同一
+系列的 (一)(二) 不排同學期是排課時依課名推測的規則，validator 刻意不複查。**`COREQUISITE_PAIR_INCOMPLETE`（Roadmap #15）只在
 送入的課程物件完全沒有任何一門帶 `corequisiteRole` 欄位時才會出現在 `unchecked`
 裡**——這個欄位只由 `generateSchedule()` 產出的課表天生帶著；外部直接組出來、沒有這
 個欄位的原始課程物件無法讓 validator 安全判斷哪些課「應該」有搭檔（`catalogCourseCode`

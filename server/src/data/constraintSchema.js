@@ -131,6 +131,35 @@ export const CONSTRAINTS = Object.freeze({
     overridableBy: CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION,
     enforced: true,
   },
+  // Roadmap #13C／#13D：B～F 類班級依適用規則判定為不可修（例如大四學生遇到
+  // 限一年級的共同科目、D 類獨立學制的班級）。與 ELIGIBILITY_UNKNOWN 同樣允許
+  // 使用者明確指定時保留並警告——規則來自口頭確認，不是校方書面文件。
+  ELIGIBILITY_INELIGIBLE: {
+    id: 'ELIGIBILITY_INELIGIBLE',
+    category: CONSTRAINT_CATEGORY.HARD,
+    relaxable: false,
+    exemptForRequiredCourses: false,
+    weight: null,
+    source: CONSTRAINT_SOURCE.CATALOG_ELIGIBILITY,
+    confidence: 1,
+    overridableBy: CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION,
+    enforced: true,
+  },
+  // 同一系列的 (一)(二)… 不排在同一學期。依課名推測（資料庫沒有先修資料），
+  // 本人必修與使用者明確指定的課豁免，見 scheduler.js 的 evaluateCoursePlacement()。
+  // `enforced: false`：獨立驗證器不複查這一條（外部提供的課表沒有必修／指定的上下文，
+  // 推測規則也不該讓一份課表被判不合法），因此會列在驗證結果的 `unchecked`。
+  SAME_SERIES_SAME_TERM: {
+    id: 'SAME_SERIES_SAME_TERM',
+    category: CONSTRAINT_CATEGORY.HARD,
+    relaxable: false,
+    exemptForRequiredCourses: true,
+    weight: null,
+    source: CONSTRAINT_SOURCE.CATALOG_ELIGIBILITY,
+    confidence: 1,
+    overridableBy: CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION,
+    enforced: false,
+  },
   ALREADY_TAKEN_PASSED: {
     id: 'ALREADY_TAKEN_PASSED',
     category: CONSTRAINT_CATEGORY.HARD,

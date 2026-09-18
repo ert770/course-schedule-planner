@@ -118,9 +118,10 @@ describe('S3-S4 必修與重補修優先', () => {
 });
 
 describe('#13B 資格待確認課程', () => {
+  // #13C 之後國文綜合班已有年級規則；改用刻意沒有規則的進修英班當「資格待確認」的例子。
   const pendingCourse = makeCourse(901, {
-    name: '共同國文',
-    department: '國文綜合班',
+    name: '進修英文',
+    department: '進修英班',
     category: '選修',
   });
   const student = {
@@ -137,7 +138,7 @@ describe('#13B 資格待確認課程', () => {
     assert.equal(result.schedule.length, 0);
     assert.ok(result.excludedCourses.some(item => (
       item.course.id === pendingCourse.id
-      && item.reason.includes('正式適用對象規則尚未確認')
+      && item.reason.includes('適用對象規則尚未確認')
     )));
     assert.ok(result.warnings.some(warning => warning.includes('資格待確認')));
   });
@@ -150,8 +151,203 @@ describe('#13B 資格待確認課程', () => {
 
     assert.ok(result.schedule.some(course => course.id === pendingCourse.id));
     assert.ok(result.warnings.some(warning => (
-      warning.includes('資格待確認') && warning.includes('共同國文')
+      warning.includes('資格待確認') && warning.includes('進修英文')
     )));
+  });
+});
+
+// #13C-5（2026-09-18 專案負責人確認）：同系其他年級開的選修可以修，但本年級的選修優先。
+describe('CY1-CY5 同系跨年級選修：可排入，但排在本年級選修之後', () => {
+  const juniorCs = {
+    department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲', minCredits: 0,
+  };
+  const ownYear = makeCourse(401, {
+    name: '本年級選修', department: '資訊三合', category: '選修', gradeLevel: 3,
+    catalogCourseCode: 'IECS3900', dayOfWeek: 1,
+  });
+  const crossYear = makeCourse(402, {
+    name: '二年級選修', department: '資訊二合', category: '選修', gradeLevel: 2,
+    catalogCourseCode: 'IECS2900', dayOfWeek: 2,
+  });
+
+  test('CY1 學分只容得下一門時，本年級選修優先——即使跨年級那門偏好分數高得多', () => {
+    const result = generateSchedule([crossYear, ownYear], {
+      ...juniorCs,
+      maxCredits: 3,
+      preferEasyCourses: true,
+      courseReviews: [makeEasyReview(402), makeToughReview(401)],
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [401]);
+  });
+
+  test('CY2 學分還夠時，跨年級選修照樣排入', () => {
+    const result = generateSchedule([crossYear, ownYear], { ...juniorCs, maxCredits: 9 });
+
+    assert.ok(result.schedule.some(course => course.id === 401));
+    assert.ok(result.schedule.some(course => course.id === 402));
+    assert.ok(!result.excludedCourses.some(item => item.course.id === 402));
+  });
+
+  test('CY3 分數組成揭露跨年級扣分，本年級選修沒有這一項', () => {
+    const result = generateSchedule([crossYear, ownYear], { ...juniorCs, maxCredits: 9 });
+    const breakdownOf = id => result.schedule
+      .find(course => course.id === id).recommendationReason.scoreBreakdown;
+
+    assert.ok(breakdownOf(402).some(item => item.component === 'crossYearElective' && item.value === -2500));
+    assert.ok(!breakdownOf(401).some(item => item.component === 'crossYearElective'));
+  });
+
+  test('CY4 同系他年級的必修仍然不能排（不適用跨年級規則）', () => {
+    const otherYearRequired = makeCourse(403, {
+      name: '二年級必修', department: '資訊二甲', category: '必修', gradeLevel: 2, dayOfWeek: 3,
+    });
+    const result = generateSchedule([otherYearRequired], { ...juniorCs, maxCredits: 9 });
+
+    assert.ok(!result.schedule.some(course => course.id === 403));
+  });
+
+  test('CY5 獨立驗證器不把跨年級同系選修判成年級不符，外系照舊判', () => {
+    const otherDepartment = makeCourse(404, {
+      name: '外系二年級選修', department: '電機二甲', category: '選修', gradeLevel: 2, dayOfWeek: 4,
+    });
+    const check = validateScheduleAgainstConstraints([crossYear, otherDepartment], {
+      ...juniorCs, mustTakeCourseIds: [],
+    });
+    const flagged = check.violations
+      .filter(item => item.constraintId === 'COURSE_GRADE_MISMATCH')
+      .flatMap(item => item.courses.map(course => course.id));
+
+    assert.deepEqual(flagged, [404]);
+  });
+});
+
+// 2026-09-18 實測：候選池放寬後，涼課偏好讓外語與通識課塞滿資工學生的課表
+// （有評價的課集中在那裡）。專案負責人決定改成本系優先的排序階層。
+describe('DT1-DT3 本系優先的排序階層', () => {
+  const juniorCs = {
+    department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲', minCredits: 0,
+  };
+  const csElective = makeCourse(701, {
+    name: '本系選修', department: '資訊三合', category: '選修', gradeLevel: 3,
+    catalogCourseCode: 'IECS3901', dayOfWeek: 1,
+  });
+  const csCrossYear = makeCourse(702, {
+    name: '本系二年級選修', department: '資訊二合', category: '選修', gradeLevel: 2,
+    catalogCourseCode: 'IECS2901', dayOfWeek: 2,
+  });
+  const language = makeCourse(703, {
+    name: '日文(一)', department: '應用外語選修', category: '選修', gradeLevel: 0,
+    catalogCourseCode: 'FL0001', dayOfWeek: 3,
+  });
+
+  test('DT1 學分只夠一門時，本系選修壓過評價極好的非本系課', () => {
+    const result = generateSchedule([language, csElective], {
+      ...juniorCs,
+      maxCredits: 3,
+      preferEasyCourses: true,
+      courseReviews: [makeEasyReview(703), makeToughReview(701)],
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [701]);
+  });
+
+  test('DT2 他年級本系選修仍排在非本系課前面', () => {
+    const result = generateSchedule([language, csCrossYear], {
+      ...juniorCs,
+      maxCredits: 3,
+      preferEasyCourses: true,
+      courseReviews: [makeEasyReview(703), makeToughReview(702)],
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [702]);
+  });
+
+  test('DT3 學分還夠時非本系課照樣補進去，分數組成揭露階層扣分', () => {
+    const result = generateSchedule([language, csElective, csCrossYear], { ...juniorCs, maxCredits: 9 });
+    const breakdownOf = id => result.schedule
+      .find(course => course.id === id).recommendationReason.scoreBreakdown;
+
+    assert.deepEqual(result.schedule.map(course => course.id).sort(), [701, 702, 703]);
+    assert.ok(breakdownOf(703).some(item => item.component === 'outsideOwnDepartment' && item.value === -5000));
+    assert.ok(!breakdownOf(701).some(item => item.component === 'outsideOwnDepartment'));
+  });
+});
+
+describe('SS1-SS4 同一系列的 (一)(二) 不排在同一學期', () => {
+  const student = {
+    department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲', minCredits: 0, maxCredits: 25,
+  };
+  const series = (id, name, dayOfWeek, overrides = {}) => makeCourse(id, {
+    name, department: '應用外語選修', category: '選修', gradeLevel: 0,
+    catalogCourseCode: `FL${id}`, dayOfWeek, ...overrides,
+  });
+
+  test('SS1 日文(一) 與 日文(二) 只排一門，另一門附原因排除', () => {
+    const result = generateSchedule([series(801, '日文(一)', 1), series(802, '日文(二)', 2)], student);
+
+    assert.equal(result.schedule.length, 1);
+    assert.ok(result.excludedCourses.some(item => (
+      item.constraintId === 'SAME_SERIES_SAME_TERM' && item.reason.includes('同一系列')
+    )));
+  });
+
+  test('SS2 不同系列、或只是名稱相近的課不受影響', () => {
+    const result = generateSchedule([
+      series(803, '日文(一)', 1), series(804, '韓文(一)', 2), series(805, '日文會話', 3),
+    ], student);
+
+    assert.equal(result.schedule.length, 3);
+  });
+
+  test('SS3 使用者明確指定時兩門都保留', () => {
+    const result = generateSchedule([series(806, '日文(一)', 1), series(807, '日文(二)', 2)], {
+      ...student, explicitCourseIds: [806, 807],
+    });
+
+    assert.equal(result.schedule.length, 2);
+  });
+
+  test('SS4 羅馬數字的系列不套用（程式設計(III)/(IV) 是同學期的必修）', () => {
+    const result = generateSchedule([
+      series(808, '程式設計(III)', 1, { department: '資訊三合' }),
+      series(809, '程式設計(IV)', 2, { department: '資訊三合' }),
+    ], student);
+
+    assert.equal(result.schedule.length, 2);
+  });
+});
+
+describe('#13C ELIGIBILITY_INELIGIBLE：依適用規則不可修的 B～F 課程', () => {
+  const senior = {
+    department: '資訊工程學系', gradeLevel: 4, className: '資訊四合', minCredits: 0, maxCredits: 9,
+  };
+  const freshmanOnly = makeCourse(501, {
+    name: '經典閱讀', department: '人文藝術與社會經典教育', category: '選修',
+  });
+
+  test('系統自撿時排除並附原因', () => {
+    const result = generateSchedule([freshmanOnly], senior);
+
+    assert.equal(result.schedule.length, 0);
+    assert.ok(result.excludedCourses.some(item => (
+      item.course.id === 501 && item.constraintId === 'ELIGIBILITY_INELIGIBLE' && item.reason.includes('一年級')
+    )));
+  });
+
+  test('使用者明確指定時保留並警告，驗證器不擋', () => {
+    const result = generateSchedule([freshmanOnly], { ...senior, mustTakeCourseIds: [501] });
+
+    assert.ok(result.schedule.some(course => course.id === 501));
+    assert.ok(result.warnings.some(w => w.includes('依適用規則你不能修') && w.includes('經典閱讀')));
+    assert.equal(result.success, true);
+  });
+
+  test('驗證器對系統自撿的不可修課程回報 ELIGIBILITY_INELIGIBLE', () => {
+    const annotated = { ...freshmanOnly, eligibility: 'ineligible', classGroup: 'B', eligibilityReason: '限一年級' };
+    const check = validateScheduleAgainstConstraints([annotated], senior);
+
+    assert.ok(check.violations.some(item => item.constraintId === 'ELIGIBILITY_INELIGIBLE'));
   });
 });
 
@@ -1553,7 +1749,7 @@ describe('V20-V28 評價驅動的涼度評分', () => {
 
   test('V28 有評價的課因 eligibility 為 unknown 被排除時，警告會統計這種情況', () => {
     const pendingCourse = makeCourse(901, {
-      name: '共同國文', department: '國文綜合班', category: '選修',
+      name: '進修英文', department: '進修英班', category: '選修',
     });
     const courseReviews = [makeEasyReview(901)];
 
@@ -1570,7 +1766,7 @@ describe('V20-V28 評價驅動的涼度評分', () => {
     assert.ok(result.warnings.some(warning => (
       warning.includes('有課程評價')
       && warning.includes('資格待確認')
-      && warning.includes('#13C')
+      && warning.includes('未納入涼度評分')
     )));
   });
 });

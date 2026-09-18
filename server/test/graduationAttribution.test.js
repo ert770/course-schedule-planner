@@ -364,10 +364,12 @@ describe('G15 推薦的排序與去重', () => {
 });
 
 describe('G22 推薦要涵蓋每一個有缺口的分類，不被最大的缺口吃光', () => {
+  // #13C 之後「人文藝術與社會經典教育」限一年級，對這裡的三年級學生是 ineligible；
+  // 改用不限年級的通識領域班級，測試的意圖（缺通識就要推得出通識）不變。
   function geCourse(overrides = {}) {
     return course({
       id: 900, catalogCourseCode: 'GEH1028', name: '決策與賽局', credits: 2,
-      type: '選修', department: '人文藝術與社會經典教育', ...overrides,
+      type: '選修', department: '世界格局與歷史地理視野', ...overrides,
     });
   }
 
@@ -391,9 +393,9 @@ describe('G22 推薦要涵蓋每一個有缺口的分類，不被最大的缺口
     assert.ok(recommendations.some(item => item.fillsGap === 'elective'));
   });
 
-  // 通識的 eligibility 是 unknown（#13B 對 B 類一律保守），但官方明載四大領域
-  // 「不是班級，適用全校學生」。推薦放行，但必須把「資格待確認」講出來。
-  test('G22 通識推薦帶 needsEligibilityConfirmation，並在文字裡講明', () => {
+  // #13C（2026-09-18）之後通識領域班級已確定不限年級（eligible），推薦不再需要
+  // 附帶「資格待確認」。
+  test('G22 資格已確認的通識推薦不再帶 needsEligibilityConfirmation', () => {
     const [recommendation] = buildCreditRecommendations({
       courses: [geCourse()],
       scope: CS_SCOPE,
@@ -402,12 +404,23 @@ describe('G22 推薦要涵蓋每一個有缺口的分類，不被最大的缺口
     });
 
     assert.equal(recommendation.fillsGap, 'general');
-    assert.equal(recommendation.needsEligibilityConfirmation, true);
-    assert.match(recommendation.message, /資格/);
+    assert.equal(recommendation.needsEligibilityConfirmation, false);
   });
 
-  test('G22 通識以外的 unknown 資格課程仍然不推薦', () => {
-    // 學院綜合班（C 類）同樣是 unknown，但沒有「適用全校」的官方依據。
+  test('G22 依 #13C 規則不可修的通識不推薦', () => {
+    const recommendations = buildCreditRecommendations({
+      courses: [geCourse({ department: '人文藝術與社會經典教育' })],
+      scope: CS_SCOPE,
+      gaps: { required: 0, elective: 0, general: 4, external: 0, unspecified: 0 },
+      rule: RULE,
+    });
+
+    assert.deepEqual(recommendations, []);
+  });
+
+  test('G22 可修但學分歸屬未知的 B～F 課程不推薦', () => {
+    // 資電學院綜合班對資工系學生是 eligible（#13C），但「能修」不等於「算本系選修」。
+    // 沒有學分歸屬規則前，B～F 只推通識，避免把學院課程誤推成本系選修。
     const collegeWide = course({
       id: 901, catalogCourseCode: 'XXXX1234', name: '學院綜合課程',
       department: '資電學院綜合班',

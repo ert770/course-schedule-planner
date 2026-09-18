@@ -1,7 +1,7 @@
 import { getAll, getById } from '../db/database.js';
 import { isCourseGradeEligible } from '../data/courseGradeLevel.js';
 import { summarizeReviews } from './reviewStats.js';
-import { classSuffixCovers, parseClassName } from './courseScope.js';
+import { classSuffixCovers, isOwnDepartmentElective, parseClassName } from './courseScope.js';
 import {
   annotateCourseCategory,
   refineOutsideElectiveScopeReason,
@@ -148,11 +148,22 @@ function categorizeCourses(courseList, scope) {
   });
 }
 
+function isNonDepartmentClass(course) {
+  const parsed = parseClassName(course.department);
+  return !parsed.isDepartmentClass && Boolean(parsed.classGroup);
+}
+
+// `schedulingPool`：排課候選池比「本班課程＋通識」再寬一點（Roadmap #13C／#13D，
+// 2026-09-18）。課程搜尋與 Agent 查課不帶這個選項——那兩條路徑的年級與班級
+// 是使用者自己選的篩選條件，不是「這位學生能修什麼」。
+//   - 同系任何年級的選修（排序由 scheduler 的跨年級扣分處理，本年級優先）
+//   - B～F 類裡，依適用規則判定為 eligible 的班級（學院綜合班、學分學程等）
+//   - 依規則判定為 ineligible 的 B～F 班級，連通識也不放進來——它們不是候選
 export function filterCategorizedCourses(
   courseList = [],
   filters = {},
   scope,
-  { includeGeneralEducation = false } = {}
+  { includeGeneralEducation = false, schedulingPool = false } = {}
 ) {
   validateCategorizedSearch(filters, scope);
 
@@ -164,7 +175,11 @@ export function filterCategorizedCourses(
   courses = courses.filter(course => course.term.isActiveTerm);
   // Courses.target_grade 已在資料層映射為 gradeLevel。0 表示全年級可修；
   // 1～5 必須與學生 gradeLevel 相同。未知值保留並交由 UI 標示，不假裝不符合。
-  courses = courses.filter(course => isCourseGradeEligible(course, scope.gradeLevel) !== false);
+  // 排課候選池例外：同系選修的 target_grade 只代表開課年級，不是限修年級。
+  courses = courses.filter(course => (
+    isCourseGradeEligible(course, scope.gradeLevel) !== false
+    || (schedulingPool && isOwnDepartmentElective(course, scope))
+  ));
   if (filters.category === CATEGORY_OUTSIDE_ELECTIVE) {
     courses = courses.filter(course => {
       if (course.category !== CATEGORY_OUTSIDE_ELECTIVE) return false;
@@ -174,10 +189,15 @@ export function filterCategorizedCourses(
   } else if (filters.category === CATEGORY_GENERAL_EDUCATION) {
     courses = courses.filter(course => course.category === CATEGORY_GENERAL_EDUCATION);
   } else {
-    courses = courses.filter(course => (
-      isInStudentClass(course, scope)
-      || (includeGeneralEducation && course.category === CATEGORY_GENERAL_EDUCATION)
-    ));
+    courses = courses.filter(course => {
+      if (schedulingPool && isNonDepartmentClass(course)) {
+        if (course.eligibility === 'ineligible') return false;
+        if (course.eligibility === 'eligible') return true;
+      }
+      return isInStudentClass(course, scope)
+        || (includeGeneralEducation && course.category === CATEGORY_GENERAL_EDUCATION)
+        || (schedulingPool && isOwnDepartmentElective(course, scope));
+    });
     if (filters.category) {
       courses = courses.filter(course => course.category === filters.category);
     }
@@ -218,7 +238,7 @@ export async function searchCoursesForStudent(filters, scope) {
 }
 
 export async function searchCoursesForSchedule(filters, scope) {
-  return runCategorizedSearch(filters, scope, { includeGeneralEducation: true });
+  return runCategorizedSearch(filters, scope, { includeGeneralEducation: true, schedulingPool: true });
 }
 
 export async function searchCoursesForAgent(filters, scope) {

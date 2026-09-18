@@ -195,11 +195,37 @@ describe('#12A 先分類再搜尋', () => {
     assert.equal(result[0].classificationSource, 'general_education_department');
     assert.equal(result[1].generalEducationDomain, '世界格局與歷史地理視野');
     assert.equal(result[1].classificationSource, 'general_education_recognition');
-    assert.equal(result[0].eligibility, 'unknown');
+    // #13C／#13D（2026-09-18）：通識領域班級不限年級、學分學程不需報名，皆為 eligible。
+    assert.equal(result[0].eligibility, 'eligible');
     assert.equal(result[0].classKind, 'commonCurriculum');
-    assert.match(result[0].eligibilityReason, /正式適用對象規則尚未確認/);
-    assert.equal(result[1].eligibility, 'unknown');
+    assert.match(result[0].eligibilityReason, /任何學生皆可修/);
+    assert.equal(result[1].eligibility, 'eligible');
     assert.equal(result[1].classKind, 'creditProgram');
+  });
+
+  test('#13C 排課候選池：同系他年級選修與可修的 B～F 班級納入，不可修的排除', () => {
+    const courses = [
+      ...categorizedCourses,
+      { id: 30, name: 'Web程式設計', catalogCourseCode: 'IECS2072', department: '資訊二合', category: '選修', gradeLevel: 2 },
+      { id: 31, name: '他年級必修', catalogCourseCode: 'IECS2001', department: '資訊二甲', category: '必修', gradeLevel: 2 },
+      { id: 32, name: '資電學院選修', catalogCourseCode: 'EECS0001', department: '資電學院綜合班', category: '選修' },
+      { id: 33, name: '商學院選修', catalogCourseCode: 'BUS0001', department: '商學院綜合班', category: '選修' },
+      { id: 34, name: '外系他年級選修', catalogCourseCode: 'ACCT2001', department: '會計二甲', category: '選修', gradeLevel: 2 },
+    ];
+    const ids = options => filterCategorizedCourses(courses, {}, studentScope, options).map(course => course.id);
+
+    const pool = ids({ includeGeneralEducation: true, schedulingPool: true });
+    assert.ok(pool.includes(30), '同系他年級選修要納入');
+    assert.ok(!pool.includes(31), '同系他年級必修不納入');
+    assert.ok(pool.includes(32), '本學院綜合班要納入');
+    assert.ok(!pool.includes(33), '別的學院綜合班不納入');
+    assert.ok(!pool.includes(34), '外系他年級選修不納入');
+    assert.ok(pool.includes(19), '學分學程要納入');
+    assert.ok(!pool.includes(16) && !pool.includes(20), '核心必修綜合班限一、二年級，三年級不納入');
+
+    // 一般搜尋（不帶 schedulingPool）維持原本的本班範圍。
+    const ordinary = ids({});
+    assert.ok(!ordinary.includes(30) && !ordinary.includes(32));
   });
 
   test('排課候選可在本人班級課程之外納入通識，普通搜尋仍維持 F7', () => {

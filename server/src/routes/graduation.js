@@ -174,6 +174,13 @@ export function buildCreditRecommendations({
     // 不放行的話，缺通識的使用者永遠看不到任何通識建議——那正是本次要修的問題。
     const needsEligibilityConfirmation = annotated.eligibility === 'unknown';
     if (needsEligibilityConfirmation && annotated.category !== CATEGORY_GENERAL_EDUCATION) continue;
+    // #13C／#13D（2026-09-18）之後，學院綜合班、學分學程等 B～F 班級可能判定為
+    // eligible，但那只回答「能不能修」，不回答「算哪一類畢業學分」。它們的類別
+    // 多半是 MySQL 原始的 `選修`，而上面的 CATEGORY_TO_GAP 會把 `選修` 對到
+    // **本系選修**——那是為本系未細分的選修設計的，套到學院綜合班或學程課程上
+    // 就是錯誤的學分歸屬。沒有歸屬規則前，B～F 只推通識。
+    const isNonDepartmentClass = Boolean(annotated.classGroup) && annotated.classGroup !== 'A';
+    if (isNonDepartmentClass && annotated.category !== CATEGORY_GENERAL_EDUCATION) continue;
 
     const gapBefore = Number(gaps[gapKey] || 0);
     if (gapBefore <= 0) continue;

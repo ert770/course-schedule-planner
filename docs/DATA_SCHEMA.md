@@ -166,8 +166,12 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `eligibility` | `eligible` \| `ineligible` \| `unknown` | 對目前學生的班級適用資格 |
 | `eligibilityReason` | string | 判定或未知的可讀原因 |
 
-`eligibility` 不代表學分是否可計入畢業。B～F 類正式適用規則仍待 roadmap #13C，
-目前一律為 `unknown`；系外選修畢業認列仍由 `outsideElective` 獨立判定。
+| `eligibilitySource` | string | 判定套用的規則代號；B～F 依 2026-09-18 確認的規則判定時為 `class-catalog:owner-confirmed-2026-09-18`，沒有規則或資料不足時為 `class-catalog:unconfirmed-rules` |
+
+`eligibility` 不代表學分是否可計入畢業。B～F 類依 roadmap #13C／#13D 的規則（專案負責人
+2026-09-18 口頭確認，見 `docs/DEPARTMENT_MAPPING.md`）判定為 `eligible`／`ineligible`，
+沒有規則的班級（`進修英班`、`大二進修英班`）或學生資料不足時為 `unknown`；
+系外選修畢業認列仍由 `outsideElective` 獨立判定。
 
 | 應用程式欄位 | 型別 | 說明 |
 | --- | --- | --- |
@@ -666,7 +670,7 @@ validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。
 | `overridableBy` | string（可選） | 使用者可用哪種方式繞過這項排除（目前只有 `CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION`） |
 | `flag` | string（可選） | 對應到 `constraints` 上的旗標／清單名稱；3 個時段類舒適偏好是布林，`AVOID_INSTRUCTOR` 對應教師姓名清單 |
 | `label` | string（可選） | 中文顯示標籤，供揭露警告與放寬訊息使用 |
-| `enforced` | boolean | validator 是否真的檢查得到；`false` 只有先修／共修（`PREREQUISITE`／`COREQUISITE`），因為完全沒有資料來源 |
+| `enforced` | boolean | validator 是否真的檢查得到；`false` 的有先修／共修（`PREREQUISITE`／`COREQUISITE`，完全沒有資料來源），以及 `SAME_SERIES_SAME_TERM`（依課名推測的 (一)(二) 同學期規則，只在排課時執行，validator 不複查） |
 
 `CONSTRAINT_SOURCE` 為固定列舉字串（例如 `'user:flag'`、`'academic-record:completed-courses'`），
 比照 `resolveCourseEligibility()` 的 `ELIGIBILITY_SOURCE`「不得用裸字串」的紀律，但這是**限制類型
