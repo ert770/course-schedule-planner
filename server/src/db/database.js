@@ -246,10 +246,11 @@ function mapCourseRow(row) {
     // grep 確認零消費者（2026-09-10），已移除，不需要組員配合就能刪。
     location: row.room,
     // 容量上限。2026-09-10 前這裡永遠是 null——欄位當時真的不存在。
-    // 組員已新增 `limit_amount`，全庫暫時仍是 NULL（資料尚未登錄），
-    // 但欄位本身是真的，不再是寫死的佔位值。
-    capacity: normalizeNullableNumber(row.limit_amount),
-    currentAmount: normalizeNumber(row.current_amount, 0),
+    // 組員後來新增了容量欄位，但欄位名稱是 `limit_student`／`current_student`，
+    // 不是最初文件裡的 `limit_amount`／`current_amount`（2026-09-17 發現改名，K25）。
+    // 全庫目前仍是 NULL（資料尚未登錄），但欄位本身是真的，不是寫死的佔位值。
+    capacity: normalizeNullableNumber(row.limit_student),
+    currentAmount: normalizeNumber(row.current_student, 0),
     category: row.type,
     type: row.type,
     description: row.rag_context || '',
@@ -717,11 +718,11 @@ async function getMysqlCourses() {
       cs.\`time_bitmask\`,
       cs.\`year\`,
       cs.\`semester\`,
-      cs.\`current_amount\`,
+      cs.\`current_student\`,
       cs.\`rag_context\`,
       cs.\`rag_tag\`,
       cs.\`selection_code\`,
-      cs.\`limit_amount\`,
+      cs.\`limit_student\`,
       cs.\`has_midterm\`,
       cs.\`has_final\`,
       cs.\`has_teamwork\`,

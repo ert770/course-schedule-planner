@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-17
+
+1. [修復 K25／P0-0：`getMysqlCourses()` 欄位名稱與共用資料庫不符](./2026-09-17-fix-k25-course-sections-columns.md)
+
 ## 2026-09-13
 
 1. [新增 project-guide 專案說明文件集（12 檔）](./2026-09-13-project-guide-documentation-set.md)
