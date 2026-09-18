@@ -585,12 +585,20 @@ solver 狀態，以及課程、評價與 `recommendationReason` 欄位。這避�
 幫我排一份不要早八的課表，我對網路和資安有興趣。
 ```
 
-模型（實際觀察到的 `function_call` 參數）：
+模型（`function_call` 參數，含目前規則要求的 `interpretation`）：
 
 ```json
-{"noMorningClasses":true,"minCredits":12,"maxCredits":25,
- "interests":["網路","資安"],"preferredKeywords":["網路","資安"]}
+{"noMorningClasses":true,
+ "interests":["網路","資安"],"preferredKeywords":["網路","資安"],
+ "interpretation":{
+   "nonNegotiable":["NO_MORNING_CLASSES"],
+   "flexible":[],
+   "creditGoal":{"min":null,"max":null},
+   "notMentioned":["LUNCH_BREAK_FREE","MONDAY_FREE","AVOID_INSTRUCTOR","CREDIT_RANGE","MUST_TAKE_COURSES"]
+ }}
 ```
+
+`interpretation` 是 `run_csp_scheduler` 的必填欄位（`promptService.js:391` 的 `required: ['interpretation']`），三個清單一律填 `INTERPRETATION_TOPICS` 的代號，不寫自由文字。使用者沒有明講學分數字，所以 `minCredits`／`maxCredits` 不能帶進參數，`creditGoal` 也維持 `null`——已儲存的學分偏好由伺服器自己套用。
 
 排課成功後，模型的文字回覆必須以「這份課表是否符合你的需求？」收尾。使用者回答
 「『資訊安全管理』那門時間不行」之後，**那一回合的第一個工具呼叫必須是**：

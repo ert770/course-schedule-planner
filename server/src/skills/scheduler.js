@@ -1552,21 +1552,54 @@ function finalizePlan(plan, prepared, constraints, otherRequired = []) {
   return plan;
 }
 
+// 使用者指定必排的課程 id（`selectedCourseIds` ＋ `mustTakeCourseIds`／`mustTakeCourses`），
+// 已經修過並通過的先拿掉。
+//
+// **為什麼不能留著。** 已修排除是硬性限制，那門課一定會被濾出 `eligible`，於是
+// 「必排」永遠無法滿足：REQUIRED_COURSE_COVERAGE 掛著、整份請求變成 infeasible，
+// 連其他沒問題的課都排不出來，而畫面上顯示的是「指定課程 ID:X 不在候選課程資料中」
+// ——一句與事實相反的話（課就在資料裡，只是已經修過）。P0-4／K5 要修的就是這個。
+//
+// 這裡刻意**不**把它當成重修意圖照排：已修排除沒有 `overridableBy`，繞過它要一路
+// 改限制結構、驗證器與修復路徑。降級成「不必排」並明講，其餘指定課程照常排入。
+function partitionRequiredIds(prepared, constraints) {
+  const requiredIds = new Set([
+    ...toIdSet(constraints.selectedCourseIds),
+    ...toIdSet([
+      ...toArray(constraints.mustTakeCourseIds),
+      ...toArray(constraints.mustTakeCourses),
+    ]),
+  ]);
+  const completedCodes = new Set(getPassedCourseCodes(constraints.courseHistory));
+  const alreadyTaken = prepared.courses.filter(course => (
+    requiredIds.has(Number(course.id)) && completedCodes.has(course.catalogCourseCode)
+  ));
+  alreadyTaken.forEach(course => requiredIds.delete(Number(course.id)));
+  return { requiredIds, alreadyTaken };
+}
+
+function alreadyTakenRequiredWarning(alreadyTaken) {
+  if (alreadyTaken.length === 1) {
+    const [course] = alreadyTaken;
+    return `${course.name}（課號 ${course.catalogCourseCode}）你已經修過並通過，`
+      + '已從指定課程清單移除，其餘指定課程照常排入。';
+  }
+  const names = [...new Set(alreadyTaken.map(course => `${course.name}（課號 ${course.catalogCourseCode}）`))];
+  return `你指定的課程中有 ${alreadyTaken.length} 門已經修過並通過，已從指定課程清單移除：`
+    + `${summarizeNames(names)}。其餘指定課程照常排入。`;
+}
+
 function buildPlan(prepared, constraints, variant) {
   const candidateCourses = prepared.courses;
   const plan = createEmptyPlan(variant, constraints);
   // 系外選修認列條件的排除結果對每個方案都相同，直接帶進各方案的排除清單，
   // 讓使用者在任何一個方案上都看得到「為什麼這門課不見了」。
   plan.excludedCourses.push(...prepared.exclusions);
-  const selectedIds = toIdSet(constraints.selectedCourseIds);
-  const mustTakeIds = toIdSet([
-    ...toArray(constraints.mustTakeCourseIds),
-    ...toArray(constraints.mustTakeCourses),
-  ]);
   const failedRequired = getFailedRequiredCourses(constraints.courseHistory);
   const failedRequiredCodes = new Set(failedRequired.map(entry => entry.courseCode));
   const completedCodes = new Set(getPassedCourseCodes(constraints.courseHistory));
-  const requiredIds = new Set([...selectedIds, ...mustTakeIds]);
+  const { requiredIds, alreadyTaken } = partitionRequiredIds(prepared, constraints);
+  if (alreadyTaken.length > 0) plan.warnings.push(alreadyTakenRequiredWarning(alreadyTaken));
 
   // #13：`Courses.type = '必修'` 是「某系所某年級的必修」，不是「這位學生的必修」。
   // 未依系所與年級收斂時，全校 2094 筆必修都會被當成這位學生的必修。
@@ -1865,12 +1898,9 @@ function rollbackDecision(plan, snapshot) {
 }
 
 function buildRepairCandidateContext(prepared, constraints) {
-  const selectedIds = toIdSet(constraints.selectedCourseIds);
-  const mustTakeIds = toIdSet([
-    ...toArray(constraints.mustTakeCourseIds),
-    ...toArray(constraints.mustTakeCourses),
-  ]);
-  const requiredIds = new Set([...selectedIds, ...mustTakeIds]);
+  // 已修過的指定課程在這裡也要先拿掉，否則修復路徑仍會為了一門排不進去的課
+  // 反覆搜尋，最後回報 REQUIRED_COURSE_COVERAGE。警告只在 buildPlan 發一次。
+  const { requiredIds } = partitionRequiredIds(prepared, constraints);
   const failedRequiredCodes = new Set(
     getFailedRequiredCourses(constraints.courseHistory).map(entry => entry.courseCode)
   );
@@ -2289,7 +2319,9 @@ function runRepair(prepared, constraints, preferenceProfile, baselinePlans, runt
       clonePlanForSearch(search.solution.plan), prepared, constraints, context.otherRequired
     );
     const check = validateScheduleAgainstConstraints(
-      [...candidate.schedule, ...candidate.unscheduledCourses], constraints
+      [...candidate.schedule, ...candidate.unscheduledCourses],
+      constraints,
+      { excludedCourses: candidate.excludedCourses }
     );
     if (check.valid) {
       candidate.preferenceScore = evaluatePreference(candidate, constraints, preferenceProfile).score;
@@ -2612,7 +2644,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   const baselinePrimary = plans[0];
   const baselineCheck = baselinePrimary?.success
     ? validateScheduleAgainstConstraints(
-      [...baselinePrimary.schedule, ...baselinePrimary.unscheduledCourses], constraints
+      [...baselinePrimary.schedule, ...baselinePrimary.unscheduledCourses],
+      constraints,
+      { excludedCourses: baselinePrimary.excludedCourses }
     )
     : { valid: false, violations: [] };
   const baseline = baselinePrimary ? {
@@ -2768,7 +2802,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   // （見 `addCourseToPlan()` 的說明），只查 `schedule` 會讓
   // REQUIRED_COURSE_COVERAGE 對這類課程誤判為缺漏。
   const selfCheck = validateScheduleAgainstConstraints(
-    [...primary.schedule, ...primary.unscheduledCourses], constraints
+    [...primary.schedule, ...primary.unscheduledCourses],
+    constraints,
+    { excludedCourses: primary.excludedCourses }
   );
   if (!selfCheck.valid) {
     return {

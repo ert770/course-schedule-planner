@@ -264,9 +264,12 @@ export default function DashboardPage() {
         // `generateForUser()` 時已經固定帶 `surface:'chat', trigger:'chat_tool'`，
         // 伺服器在算出結果時就直接寫入了。
         replaceSchedule(res.data.schedule, buildRecommendation(res.data), res.data.plans, res.data.planDiversity);
-        setChatHistory(prev => [...prev, { 
-          role: 'bot', 
-          text: `成功生成課表！共 ${res.data.schedule.length} 門課，${res.data.totalCredits} 學分。`,
+        // 顯示的文字必須是 res.reply（已經過忠實度檢查），不能換成固定字串——
+        // 換掉等於讓忠實度檢查的結果沒有出現在使用者真正看到的畫面上。
+        // 課表本身另外用下面的 schedule 卡片呈現，不需要靠這句文字重複交代。
+        setChatHistory(prev => [...prev, {
+          role: 'bot',
+          text: res.reply,
           schedule: res.data.schedule,
           totalCredits: res.data.totalCredits
         }]);

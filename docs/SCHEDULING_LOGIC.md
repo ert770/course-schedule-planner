@@ -678,8 +678,10 @@ Constraint Schema（Roadmap #21）」一節。
 物件上由 `addCourseToPlan()` 寫入的 `formallyRequired` 標記；外部提供的課表（例如
 `/api/schedule/validate` 帶 `constraints` 時）沒有這個標記，一律照嚴格規則檢查。
 
-**opt-in 放寬階梯**：`constraints.allowRelaxation`（預設 `false`，沒有任何呼叫端
-會設定，行為與改動前完全相同）。啟用後，若方案的選修側因時段或教師舒適偏好排掉太多候選、
+**opt-in 放寬階梯**：`constraints.allowRelaxation`（預設 `false`）。目前唯一會設定它的
+呼叫端是 AI Agent：`promptService.js` 把 `allowRelaxation` 列為 `run_csp_scheduler` 的
+工具參數，系統提示指示模型在使用者語氣有彈性（例如沒有明確排除某類時段）時才設為
+`true`；一般表單路徑仍維持預設 `false`，行為與加入這個旗標前相同。啟用後，若方案的選修側因時段或教師舒適偏好排掉太多候選、
 導致湊不到學分下限，`generateSchedule()` 會依 `constraints.timePreferencePriority`
 （使用者自訂的 constraintId 陣列，未提供時退回 schema 的預設順序）逐一清除
 `relaxable:true` 的旗標並重試，一旦成功就停止，並在回應附上 `relaxedConstraints`
@@ -695,7 +697,9 @@ Constraint Schema（Roadmap #21）」一節。
 
 ### Bounded backtracking repair（Roadmap #22）
 
-系統保留五個既有 greedy variant 作為 baseline。主推 baseline 未通過獨立 validator，或
+系統把 `buildPlanStrategies()` 產生的每個 greedy variant 都保留作為 baseline——數量不是固定
+五個，而是依使用者已表態、非零權重的偏好軸數量動態決定（1 到 5 個：`personalized` 固定 1 個，
+之後每個非零軸各加 1 個，再加 1 個 `personalized_credits`）。主推 baseline 未通過獨立 validator，或
 所有通過 validator 的 baseline 都低於 `minCredits` 時，才啟動 repair；已合法且達最低學分
 的 baseline 不額外搜尋。
 

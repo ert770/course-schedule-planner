@@ -36,6 +36,10 @@ import {
 // 取代五個固定 variant 時的工作。呼叫端（`getPersonalizationSource()` 的
 // 回傳、`PreferenceSourceBadge` 的文案）不必因此再改——`appliedToScheduling`
 // 的語意本來就只承諾「有進排課決策」，不是「每個層級都用到」。
+//
+// P0-3（2026-09-17）：`getSchedulingPreferenceWeights()` 與 `getPersonalizationSource()`
+// 現在共用同一套過期判定（`ensureFreshLearnedWeights()`），排課請求本身也會在
+// 權重過期時觸發重算，不再需要先開過隱私頁才看得到學到的效果。
 export const LEARNED_WEIGHTS_APPLIED_TO_SCHEDULING = true;
 
 // Roadmap #31：`getPersonalizationSource()` 的過期判定用——純時間衰減即使
@@ -176,9 +180,11 @@ async function upsertRow(row) {
 /**
  * 對指定使用者重算一次偏好權重並覆寫儲存的那一列。
  *
- * **這輪不接進排課**（見 roadmap #30 的 3.6）——這個函式的輸出目前只寫進
- * `Learned_Preference_Weights`，`buildScheduleConstraints()`／
- * `buildPreferenceProfile()` 都不讀它。
+ * 已接進排課（見上方 `LEARNED_WEIGHTS_APPLIED_TO_SCHEDULING` 的說明）：
+ * 這個函式的輸出寫進 `Learned_Preference_Weights`，`getSchedulingPreferenceWeights()`
+ * 會在方案層讀取並套用。P0-3 之前，只有呼叫本函式的地方（例如隱私頁的個人化 API）
+ * 才會重算；現在 `ensureFreshLearnedWeights()`（見下方）在權重過期時也會呼叫它，
+ * 排課請求本身因此也可能觸發重算，不再限定於隱私頁。
  */
 export async function recomputeLearnedWeights(identity, options = {}) {
   const subjectId = deriveSubjectId(identity.canonicalId);
@@ -229,13 +235,51 @@ export async function getStoredLearnedWeights(identity) {
 }
 
 /**
- * Roadmap #5B：排課要用的權重。**只讀已存的那一列，絕不重算。**
+ * P0-3：讀已存的權重，過期才重算——`getPersonalizationSource()`（隱私頁）與
+ * `getSchedulingPreferenceWeights()`（排課）共用同一套過期判定，原本兩邊各自
+ * 一份邏輯，容易像 `scheduleService.js` 開頭警告的那樣悄悄分岔。
  *
- * 與 `getPersonalizationSource()` 的差別是刻意的：那支是給來源標示 UI 的，
- * 允許過期時順手重算（一次全量事件掃描**加一次寫入**）；排課是熱路徑，
- * 每次產生課表都會走一次，不能把一次讀取變成一次全量重算加一次寫入。
- * 這裡的語意因此是「用上一次算好的結果」，落後由回傳的 `computedAt` 誠實
- * 揭露，不隱藏。
+ * 過期只在下列任一條件成立時才觸發重算：從沒算過、`modelVersion` 是舊版、
+ * 有新事件、或已存結果超過一天沒更新（時間衰減即使沒有新事件也會讓結果隨
+ * 時間改變，一天遠低於半衰期，成本可忽略）。呼叫端**已經確認過 consent**
+ * 才會呼叫到這裡——`recomputeLearnedWeights()` 內部仍會自己再查一次，
+ * 是防的是「用了已撤回同意的資料推導權重」，不是省略這裡的呼叫端責任。
+ *
+ * 沒過期時只有一次讀取；過期時多一次全量事件掃描加一次寫入，不論呼叫端是
+ * 排課請求還是隱私頁，這個代價都一樣真實，只是現在排課請求也可能付。
+ */
+async function ensureFreshLearnedWeights(identity, options = {}) {
+  const prefs = options.prefs ?? await getUserPreferences(identity);
+  const now = options.now ?? nowDate();
+
+  let stored = await getStoredLearnedWeights(identity);
+  const latestEventAt = await getLatestInteractionEventTime(identity);
+  const staleByAge = stored?.computedAt
+    ? new Date(now).getTime() - new Date(stored.computedAt).getTime() > STALENESS_TTL_MS
+    : true;
+  const staleByNewEvent = Boolean(
+    stored?.computedAt && latestEventAt && new Date(latestEventAt) > new Date(stored.computedAt)
+  );
+  const stale = !stored || stored.modelVersion !== PREFERENCE_LEARNING_MODEL_VERSION || staleByNewEvent || staleByAge;
+
+  if (stale) {
+    await recomputeLearnedWeights(identity, { prefs, now: options.now, activeTerm: options.activeTerm });
+    stored = await getStoredLearnedWeights(identity);
+  }
+  return stored;
+}
+
+/**
+ * Roadmap #5B／P0-3：排課要用的權重。**過期才重算**（`ensureFreshLearnedWeights()`，
+ * 與 `getPersonalizationSource()` 共用同一套判定），沒過期時只有一次讀取。
+ *
+ * 在 P0-3 之前，這裡只讀已存的那一列、絕不重算——理由是排課是熱路徑，
+ * 不該把每一次讀取都變成一次全量事件掃描加一次寫入。P0-3 把這個判斷改成
+ * 「只在真的過期時才付那個代價」：從沒算過、`modelVersion` 是舊版、有新
+ * 互動事件、或超過 24 小時沒更新。大多數排課請求（權重還新鮮）行為與之前
+ * 完全相同；只有極少數真的過期的請求會變慢，換來的是「互動紀錄會影響排序」
+ * 這句話不再需要使用者先去開過隱私頁才成立。落後仍由回傳的 `computedAt`
+ * 誠實揭露，不隱藏。
  *
  * **使用時重新檢查 consent，不倚賴 `#31` 的撤回鉤子已經刪掉那一列**——
  * 「用了已撤回同意的資料推導出的權重」正是 `#33` 存在要防的失敗，多一次
@@ -252,8 +296,11 @@ export async function getSchedulingPreferenceWeights(identity, options = {}) {
 
   if (!await hasPersonalizationConsent(identity)) return absent('no-consent');
 
-  const stored = await getStoredLearnedWeights(identity);
+  const stored = await ensureFreshLearnedWeights(identity, options);
   if (!stored) return absent('absent');
+  // `ensureFreshLearnedWeights()` 已經在版本不符時重算過一次；這裡留著是防
+  // 重算後仍然拿不到現行版本的極端情況（例如重算過程中 consent 被撤回），
+  // 不能假設它一定成功。
   if (stored.modelVersion !== PREFERENCE_LEARNING_MODEL_VERSION) return absent('stale-model-version');
   if (stored.sufficiency?.status !== SUFFICIENCY_STATUS.SUFFICIENT) return absent('insufficient');
 
@@ -323,9 +370,9 @@ export async function resetPersonalization(identity, { requestId = null } = {}) 
 /**
  * Roadmap #31：目前個人化用的是顯式設定、學到的權重、還是資料不足／未同意。
  *
- * **已存 + 精確過期判定，不是每次都重算**：正式環境目前沒有任何東西主動呼叫
- * `recomputeLearnedWeights()`，只讀已存的話每個人永遠是 `null`；每次都重算
- * 又讓一次 GET 付出全量事件掃描的代價。過期只在下列任一條件成立時才觸發：
+ * **已存 + 精確過期判定，不是每次都重算**：過期判定與重算現在由
+ * `ensureFreshLearnedWeights()` 統一處理（P0-3 起與 `getSchedulingPreferenceWeights()`
+ * 共用同一套邏輯，不再各自維護一份）。過期只在下列任一條件成立時才觸發：
  * 從沒算過、`modelVersion` 是舊版（`#31` 把 v1 升成 v2）、有新事件、
  * 或已存結果超過一天沒更新——最後一條是因為時間衰減即使沒有新事件也會讓
  * 結果隨時間改變，一天遠低於半衰期，成本可忽略。
@@ -354,24 +401,7 @@ export async function getPersonalizationSource(identity, options = {}) {
   const explicitProfile = deriveExplicitProfile(prefs);
   const explicitProfileEmpty = PREFERENCE_AXES.every(axis => (explicitProfile[axis] ?? 0) === 0);
 
-  // `options.now`／`options.activeTerm`：跟 `recomputeLearnedWeights()` 一樣的
-  // 覆寫模式，讓測試能固定時鐘；production 呼叫端不傳，退回真實現在時間。
-  const now = options.now ?? nowDate();
-
-  let stored = await getStoredLearnedWeights(identity);
-  const latestEventAt = await getLatestInteractionEventTime(identity);
-  const staleByAge = stored?.computedAt
-    ? new Date(now).getTime() - new Date(stored.computedAt).getTime() > STALENESS_TTL_MS
-    : true;
-  const staleByNewEvent = Boolean(
-    stored?.computedAt && latestEventAt && new Date(latestEventAt) > new Date(stored.computedAt)
-  );
-  const stale = !stored || stored.modelVersion !== PREFERENCE_LEARNING_MODEL_VERSION || staleByNewEvent || staleByAge;
-
-  if (stale) {
-    await recomputeLearnedWeights(identity, { prefs, now: options.now, activeTerm: options.activeTerm });
-    stored = await getStoredLearnedWeights(identity);
-  }
+  const stored = await ensureFreshLearnedWeights(identity, { prefs, now: options.now, activeTerm: options.activeTerm });
 
   const sufficiency = stored?.sufficiency ?? {
     status: SUFFICIENCY_STATUS.INSUFFICIENT,

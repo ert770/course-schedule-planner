@@ -445,6 +445,112 @@ describe('H4-H8 已修課程依課號排除', () => {
     assert.ok(result.schedule.some(course => course.id === 505));
     assert.ok(!result.excludedCourses.some(item => item.reason.includes('已修過並通過')));
   });
+
+  // P0-4／K5：已通過的課號被放進指定清單時，原本整份請求會變成 infeasible，
+  // 而且訊息是「指定課程 ID:X 不在候選課程資料中」——與事實相反（課就在資料裡）。
+  test('H9 已通過的課號放進 mustTakeCourseIds 時降級為不必排，其餘課照常排入', () => {
+    const taken = makeCourse(101, {
+      name: '計算機演算法',
+      catalogCourseCode: 'IECS3002',
+    });
+    const other = makeCourse(202, {
+      name: '作業系統',
+      catalogCourseCode: 'IECS3010',
+      dayOfWeek: 3,
+    });
+
+    const result = generateSchedule([taken, other], {
+      courseHistory: passedHistory,
+      mustTakeCourseIds: [101],
+      minCredits: 3,
+      maxCredits: 9,
+    });
+
+    assert.notEqual(result.solver.status, 'infeasible');
+    assert.equal(result.success, true);
+    // 沒問題的那門課照常排入，不因為一門排不了的指定課而整份失敗。
+    assert.ok(result.schedule.some(course => course.id === 202));
+    assert.ok(!result.schedule.some(course => course.id === 101));
+
+    assert.ok(result.warnings.some(warning => warning.includes('已經修過並通過')));
+    assert.ok(result.warnings.some(warning => warning.includes('IECS3002')));
+    // 舊的誤導訊息不得再出現。
+    assert.ok(!result.warnings.some(warning => warning.includes('不在候選課程資料中')));
+
+    // 排除原因仍照常記錄，且不再掛著解不掉的必排需求。
+    assert.ok(result.excludedCourses.some(item => (
+      item.course.id === 101 && item.constraintId === 'ALREADY_TAKEN_PASSED'
+    )));
+    assert.ok(!result.unmetRequirements.some(item => item.courseIds.includes(101)));
+    assert.equal(result.clarification.required, false);
+  });
+
+  test('H10 指定清單全部都是已通過課號時仍排出課表，不回 infeasible', () => {
+    const takenA = makeCourse(101, { name: '計算機演算法', catalogCourseCode: 'IECS3002' });
+    const takenB = makeCourse(102, { name: '計算機結構學', catalogCourseCode: 'IECS3003', dayOfWeek: 2 });
+    const other = makeCourse(202, { name: '作業系統', catalogCourseCode: 'IECS3010', dayOfWeek: 3 });
+
+    const result = generateSchedule([takenA, takenB, other], {
+      courseHistory: [
+        { courseCode: 'IECS3002', passed: true },
+        { courseCode: 'IECS3003', passed: true },
+      ],
+      mustTakeCourseIds: [101, 102],
+      minCredits: 3,
+      maxCredits: 9,
+    });
+
+    assert.notEqual(result.solver.status, 'infeasible');
+    assert.ok(result.schedule.some(course => course.id === 202));
+    // 兩門一起以「有 N 門」的形式合併成一句，不是兩句。
+    const merged = result.warnings.filter(warning => warning.includes('已經修過並通過'));
+    assert.equal(merged.length, 1);
+    assert.ok(merged[0].includes('2 門'));
+  });
+
+  // 驗證器放行「已修過所以排不進去」的必排課程時，不能只看呼叫端給的排除理由，
+  // 否則等於讓被驗證的一方自己決定驗證結果。
+  test('H9b 驗證器只在課程真的已通過時才放行必排涵蓋率缺漏', () => {
+    const taken = makeCourse(101, { name: '計算機演算法', catalogCourseCode: 'IECS3002' });
+    const constraints = { mustTakeCourseIds: [101], courseHistory: passedHistory };
+
+    const justified = validateScheduleAgainstConstraints([], constraints, {
+      excludedCourses: [{ course: taken, constraintId: 'ALREADY_TAKEN_PASSED' }],
+    });
+    assert.equal(justified.valid, true);
+
+    // 同樣的排除宣稱，但修課紀錄裡沒有這門課 → 不得放行。
+    const unjustified = validateScheduleAgainstConstraints([], {
+      mustTakeCourseIds: [101],
+      courseHistory: [],
+    }, {
+      excludedCourses: [{ course: taken, constraintId: 'ALREADY_TAKEN_PASSED' }],
+    });
+    assert.equal(unjustified.valid, false);
+    assert.ok(unjustified.violations.some(v => v.constraintId === 'REQUIRED_COURSE_COVERAGE'));
+
+    // 沒有附排除清單時（例如外部呼叫 /api/schedule/validate）行為不變。
+    const bare = validateScheduleAgainstConstraints([], constraints);
+    assert.equal(bare.valid, false);
+  });
+
+  test('H11 尚未通過的必修放進 mustTakeCourseIds 不受影響，仍然必排', () => {
+    const retake = makeCourse(303, {
+      name: '線性代數',
+      catalogCourseCode: 'IEE1005',
+      category: '必修',
+    });
+
+    const result = generateSchedule([retake], {
+      courseHistory: [{ courseCode: 'IEE1005', passed: false, requirementType: '必修' }],
+      mustTakeCourseIds: [303],
+      minCredits: 0,
+      maxCredits: 9,
+    });
+
+    assert.ok(result.schedule.some(course => course.id === 303));
+    assert.ok(!result.warnings.some(warning => warning.includes('已經修過並通過')));
+  });
 });
 
 describe('S5-S6 核心選修路徑', () => {
