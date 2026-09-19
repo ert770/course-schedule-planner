@@ -597,6 +597,42 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 | PM5 | 欄位一致 | `planMetrics.preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位相同 |
 | PM6 | 不改變決策 | 加了 `planMetrics` 前後，排出來的課程集合不變 |
 
+`server/test/planDiversityAcceptance.test.js` 的 PDA1-PDA8（Roadmap #10 量化驗收純函式）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PDA1 | 4 個策略得到 3 個方案 | 保留率 75%，方案數門檻通過 |
+| PDA2 | 4 個策略只得到 2 個方案 | 保留率 50%，驗收失敗 |
+| PDA3 | 無偏好 persona 嘗試綜合與較多學分兩個策略 | 只要求 2 個方案，不強制 3 個 |
+| PDA4 | 課表含必修、重補修、使用者指定及一般選修 | 前三類從競爭課程集合排除，只比較一般選修 |
+| PDA5 | 兩組課程集合有 2 門交集、4 門聯集 | Jaccard similarity 為 0.5；兩組皆空時為 1 |
+| PDA6 | 偶數筆相似度 | 中位數取排序後中間兩筆平均 |
+| PDA7 | 多數方案只替換極少課程 | 中位 Jaccard 超過 0.75 時驗收失敗 |
+| PDA8 | 兩個方案只有 section ID 不同、正式課號相同 | `meaningfulDistinctPlans` 仍為 1，實際課程差異失敗 |
+
+`server/test/planDiversityDiagnostics.test.js` 的 PDD1-PDD5（Roadmap #10 塌縮診斷）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PDD1 | 兩個策略產生相同課程集合 | 去重後雖只有一個正式方案，診斷仍保存兩個策略的完整 `courseSet`，並標出 `duplicateOfVariantId` |
+| PDD2 | 診斷一個貪婪決策點 | 保存前 4 名候選；每門課的 `totalScore` 等於同筆 `scoreComponents` 加總 |
+| PDD3 | 候選因學分上限未入選 | 每門未入選課都有結構化原因，且本情境為 `CREDIT_CEILING` |
+| PDD4 | 候選與已選課衝堂 | 原因沿用 `TIME_CONFLICT`，並保留實際衝突課程 |
+| PDD5 | 正式排課未啟用診斷 | 回應不含 `generationDiagnostics`，避免把大型診斷資料送到一般 API |
+
+真實資料驗收使用：
+
+```bash
+npm run bench:plan-diversity --prefix server -- --markdown
+```
+
+runner 使用目前 MySQL 與正式排課器，報告寫入
+`server/test/reports/plan-diversity-acceptance-latest.json`。命令 exit code 0 代表所有 case
+通過；exit code 1 代表至少一個 case 未達門檻。這不是測試程式崩潰，應讀取報告的
+`criteria` 判斷是方案數、保留率、相似度、實際課程差異或安全檢查失敗。
+同一命令另寫入 `server/test/reports/plan-diversity-diagnostics-latest.json`；此 sidecar 保存
+去重前課程集合、每次選課的前 4 名分數拆解，以及所有未入選候選的原因，供失敗時定位塌縮。
+
 `server/test/planComparison.test.js` 的 CF1-CF4（純函式，不需網路或資料庫）：
 
 | 編號 | 情境 | 預期結果 |

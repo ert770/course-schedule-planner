@@ -17,6 +17,7 @@
     "migrate:saved-schedules": "node scripts/savedSchedulesMigration.js",
     "seed:demo-personas": "node scripts/demoPersonasSeed.js",
     "bench:personalization": "node scripts/personalizationBenchmark.js",
+    "bench:plan-diversity": "node scripts/planDiversityAcceptanceReport.js",
     "bench:scheduler": "node scripts/schedulerBenchmarkReport.js",
     "eval:golden-set": "node scripts/agentGoldenSetReport.js",
     "configure:privacy": "node scripts/configurePrivacyEnvironment.js",

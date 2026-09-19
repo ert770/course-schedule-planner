@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-19T07:59:43.139Z",
+  "dataSource": "mysql-read-only",
+  "activeTerm": {
+    "academicYear": 114,
+    "semester": "下學期"
+  },
+  "thresholds": {
+    "retentionRate": 0.75,
+    "medianJaccardSimilarity": 0.75,
+    "preferredPersonaMinimumDistinctPlans": 3,
+    "noPreferenceMinimumDistinctPlans": 2,
+    "minimumPairwiseCompetitiveCourseDifference": 1
+  },
+  "pass": false,
+  "cases": [
+    {
+      "caseId": "persona-compact",
+      "candidatePoolSize": 362,
+      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
+      "learnedPreference": {
+        "applied": true,
+        "reason": "applied-read-only-recompute",
+        "modelVersion": "preference-learning-v2",
+        "sufficiencyStatus": "sufficient"
+      },
+      "safety": [
+        {
+          "planId": "personalized",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      ],
+      "pass": false,
+      "hasExpressedPreference": true,
+      "requestedVariants": 3,
+      "reportedDistinctPlans": 1,
+      "meaningfulDistinctPlans": 1,
+      "requiredDistinctPlans": 3,
+      "requiredByRetention": 3,
+      "retentionThreshold": 0.75,
+      "retentionRate": 0.3333,
+      "similarityThreshold": 0.75,
+      "medianJaccardSimilarity": null,
+      "criteria": {
+        "enoughDistinctPlans": false,
+        "retentionRate": false,
+        "medianSimilarity": false,
+        "actualCourseDifference": false,
+        "safety": true
+      },
+      "pairs": []
+    },
+    {
+      "caseId": "no-preference-control",
+      "candidatePoolSize": 362,
+      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
+      "learnedPreference": {
+        "applied": false,
+        "reason": "control-disabled",
+        "modelVersion": null,
+        "sufficiencyStatus": null
+      },
+      "safety": [
+        {
+          "planId": "personalized",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      ],
+      "pass": false,
+      "hasExpressedPreference": false,
+      "requestedVariants": 2,
+      "reportedDistinctPlans": 1,
+      "meaningfulDistinctPlans": 1,
+      "requiredDistinctPlans": 2,
+      "requiredByRetention": 2,
+      "retentionThreshold": 0.75,
+      "retentionRate": 0.5,
+      "similarityThreshold": 0.75,
+      "medianJaccardSimilarity": null,
+      "criteria": {
+        "enoughDistinctPlans": false,
+        "retentionRate": false,
+        "medianSimilarity": false,
+        "actualCourseDifference": false,
+        "safety": true
+      },
+      "pairs": []
+    },
+    {
+      "caseId": "persona-challenge",
+      "candidatePoolSize": 362,
+      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
+      "learnedPreference": {
+        "applied": true,
+        "reason": "applied-read-only-recompute",
+        "modelVersion": "preference-learning-v2",
+        "sufficiencyStatus": "sufficient"
+      },
+      "safety": [
+        {
+          "planId": "personalized",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      ],
+      "pass": false,
+      "hasExpressedPreference": true,
+      "requestedVariants": 3,
+      "reportedDistinctPlans": 1,
+      "meaningfulDistinctPlans": 1,
+      "requiredDistinctPlans": 3,
+      "requiredByRetention": 3,
+      "retentionThreshold": 0.75,
+      "retentionRate": 0.3333,
+      "similarityThreshold": 0.75,
+      "medianJaccardSimilarity": null,
+      "criteria": {
+        "enoughDistinctPlans": false,
+        "retentionRate": false,
+        "medianSimilarity": false,
+        "actualCourseDifference": false,
+        "safety": true
+      },
+      "pairs": []
+    },
+    {
+      "caseId": "persona-easy",
+      "candidatePoolSize": 362,
+      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
+      "learnedPreference": {
+        "applied": true,
+        "reason": "applied-read-only-recompute",
+        "modelVersion": "preference-learning-v2",
+        "sufficiencyStatus": "sufficient"
+      },
+      "safety": [
+        {
+          "planId": "personalized",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        {
+          "planId": "personalized_credits",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      ],
+      "pass": false,
+      "hasExpressedPreference": true,
+      "requestedVariants": 3,
+      "reportedDistinctPlans": 2,
+      "meaningfulDistinctPlans": 2,
+      "requiredDistinctPlans": 3,
+      "requiredByRetention": 3,
+      "retentionThreshold": 0.75,
+      "retentionRate": 0.6667,
+      "similarityThreshold": 0.75,
+      "medianJaccardSimilarity": 0.6667,
+      "criteria": {
+        "enoughDistinctPlans": false,
+        "retentionRate": false,
+        "medianSimilarity": true,
+        "actualCourseDifference": true,
+        "safety": true
+      },
+      "pairs": [
+        {
+          "leftPlanId": "personalized",
+          "rightPlanId": "personalized_credits",
+          "leftCompetitiveCourseCount": 10,
+          "rightCompetitiveCourseCount": 10,
+          "sharedCourseCount": 8,
+          "differenceCount": 4,
+          "jaccardSimilarity": 0.6667
+        }
+      ]
+    }
+  ]
+}

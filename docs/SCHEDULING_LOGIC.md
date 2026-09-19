@@ -851,6 +851,47 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 `reason: same-course-combination`。重複結果只證明這次調整取捨仍得到相同組合，不能單憑
 這點判定候選池不足；`describePlanCollapse()` 從同一份結構產生使用者可讀的說明。
 
+### 多方案量化驗收（Roadmap #10）
+
+`npm run bench:plan-diversity --prefix server -- --markdown` 以目前 MySQL 課程、三位 demo
+persona 與一組無偏好對照重跑正式 `generateSchedule()`。runner 只執行 SELECT；不呼叫會
+記錄推薦曝光的 service，也不把重算的 learned weights 寫回資料庫。每個 case 保存候選池
+hash，確保同一次 case 的所有策略使用相同候選集合。
+
+驗收規則如下：
+
+1. `reportedDistinctPlans / requestedVariants >= 0.75`；整數門檻使用
+   `ceil(requestedVariants * 0.75)`。
+2. 有偏好時至少 3 個不重複方案；無偏好時只有綜合與較多學分策略，因此至少 2 個。
+3. 比較內容前排除 `REQUIRED_COURSE`、`RETAKE_REQUIRED`、`USER_SPECIFIED`，避免所有方案
+   必然相同的課程把重疊率拉高。
+4. 課程身分以 `catalogCourseCode` 為準；同課號只換 section 不算新的競爭課程組合。
+5. 所有保留方案兩兩計算 Jaccard similarity（交集／聯集），中位數必須 `<= 0.75`；每一對
+   方案的競爭課程對稱差至少 1 門。
+6. 每個方案另以 `validateScheduleAgainstConstraints()` 複查，hard violation 必須為 0。
+
+若只有一個方案，沒有可計算的 pair；此時 similarity 為 `null`，方案數與實際差異兩項直接
+失敗，不能把「沒有比較對象」當成低重疊。報告不保存姓名、學號或完整課表，只保存匿名 case、
+候選池 hash、方案數、相似度、差異數與 validator 結果。
+
+#### 塌縮診斷資料
+
+benchmark 另以 `runtimeOptions.includePlanDiagnostics: true` 啟用唯讀診斷；正式 API 不設定此
+選項，因此不增加一般回應大小，也不改變分數、排序或選課結果。診斷保存於
+`server/test/reports/plan-diversity-diagnostics-latest.json`，包含：
+
+1. 每個策略在 `uniquePlans()` 去重前的 `courseSet`，以及相同組合所對應的
+   `duplicateOfVariantId`。
+2. 貪婪填充每個決策點的前 4 名候選（勝出者加 3 名競爭者）、當下總分與
+   `computeScoreComponents()` 的完整分數組成；診斷不得另寫第二套評分公式。
+3. 每門未入選候選的結構化原因。優先沿用正式 `constraintId`（例如 `TIME_CONFLICT`、
+   `CREDIT_CEILING`）；只有「其他班次已入選」「無時間的非必要課」「排課停止前未輪到」等
+   原流程沒有代碼的情況，才使用診斷專用代碼。
+
+`courseSet.all.length + watchedCourses.length + unselectedCourses.length` 必須等於該 case 的候選池數量，
+避免只解釋被嘗試過的課、遺漏因停止條件而未輪到的候選。診斷 sidecar 含匿名 case 的完整課程
+集合與決策軌跡，不含姓名、學號、密碼或其他帳號識別資料；不應直接當作正式 API payload。
+
 ### 方案比較與 counterfactual（Roadmap #27）
 
 `#10`（方案真的是不同課程集合）與 `#26`（每門課有理由物件）都完成後，前端才第一次讀取
