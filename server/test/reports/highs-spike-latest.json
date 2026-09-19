@@ -1,0 +1,419 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-19T08:02:45.780Z",
+  "dataSource": "mysql-read-only",
+  "activeTerm": {
+    "academicYear": 114,
+    "semester": "下學期"
+  },
+  "highsVersion": "1.15.3",
+  "coldStartMs": 26.74,
+  "warmRuns": 20,
+  "p95BudgetMs": 200,
+  "go": true,
+  "goReasons": [],
+  "cases": [
+    {
+      "caseId": "persona-compact",
+      "candidatePoolSize": 362,
+      "fixedCourses": 0,
+      "fixedCredits": 0,
+      "creditBounds": [
+        9,
+        25
+      ],
+      "maxCoursesPerDay": null,
+      "prefilter": {
+        "competitive": 321,
+        "blockedAgainstFixed": 23,
+        "missingCorequisite": 0
+      },
+      "modelStats": {
+        "sectionVars": 298,
+        "courseVars": 218,
+        "rows": 286,
+        "nonzeros": 2078,
+        "slotRows": 57,
+        "buildMs": 3.47,
+        "lpTextKb": 24.1
+      },
+      "statuses": [
+        "optimal"
+      ],
+      "allOptimal": true,
+      "mipGapMax": 0,
+      "warmSolveMs": {
+        "p50": 19.84,
+        "p95": 34.14,
+        "max": 119.94
+      },
+      "deterministic": true,
+      "memory": {
+        "maxHeapDeltaMb": 1.83,
+        "maxRssDeltaMb": 37.71
+      },
+      "validator": {
+        "milp": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "s0": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      },
+      "comparisonWithS0": {
+        "s0": {
+          "fillCourses": 10,
+          "totalCredits": 25,
+          "fillScore": -10814
+        },
+        "milp": {
+          "fillCourses": 4,
+          "totalCredits": 11,
+          "fillScore": 1178,
+          "objective": 1178
+        },
+        "removedFromS0": [
+          "IECS3059",
+          "IECS2024",
+          "IECS3053",
+          "IECS2014",
+          "ATHL2050",
+          "IECS2027"
+        ],
+        "addedVsS0": []
+      },
+      "creditParity": {
+        "statuses": [
+          "optimal"
+        ],
+        "p95Ms": 23.3,
+        "totalCredits": 25,
+        "fillScore": -6690,
+        "validator": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "codeDiffVsS0": {
+          "removed": [
+            "IECS4943",
+            "IECS2024",
+            "IECS3053",
+            "IECS2014",
+            "ATHL2050",
+            "IECS2027"
+          ],
+          "added": [
+            "IECS2053",
+            "IECS3074",
+            "IECS3071",
+            "IECS3048",
+            "IECS4944"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "no-preference-control",
+      "candidatePoolSize": 362,
+      "fixedCourses": 0,
+      "fixedCredits": 0,
+      "creditBounds": [
+        9,
+        25
+      ],
+      "maxCoursesPerDay": null,
+      "prefilter": {
+        "competitive": 321,
+        "blockedAgainstFixed": 23,
+        "missingCorequisite": 0
+      },
+      "modelStats": {
+        "sectionVars": 298,
+        "courseVars": 218,
+        "rows": 286,
+        "nonzeros": 2078,
+        "slotRows": 57,
+        "buildMs": 0.89,
+        "lpTextKb": 24.1
+      },
+      "statuses": [
+        "optimal"
+      ],
+      "allOptimal": true,
+      "mipGapMax": 0,
+      "warmSolveMs": {
+        "p50": 15.81,
+        "p95": 19.82,
+        "max": 20.73
+      },
+      "deterministic": true,
+      "memory": {
+        "maxHeapDeltaMb": 1.37,
+        "maxRssDeltaMb": 5.4
+      },
+      "validator": {
+        "milp": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "s0": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      },
+      "comparisonWithS0": {
+        "s0": {
+          "fillCourses": 10,
+          "totalCredits": 25,
+          "fillScore": -11620
+        },
+        "milp": {
+          "fillCourses": 4,
+          "totalCredits": 11,
+          "fillScore": 792,
+          "objective": 792
+        },
+        "removedFromS0": [
+          "IECS3059",
+          "IECS2053",
+          "IECS2041",
+          "HSS2033",
+          "IECS2014",
+          "IECS2027"
+        ],
+        "addedVsS0": []
+      },
+      "creditParity": {
+        "statuses": [
+          "optimal"
+        ],
+        "p95Ms": 14.86,
+        "totalCredits": 25,
+        "fillScore": -7500,
+        "validator": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "codeDiffVsS0": {
+          "removed": [
+            "IECS4943",
+            "IECS2041",
+            "HSS2033",
+            "IECS2014",
+            "IECS2027"
+          ],
+          "added": [
+            "IECS3074",
+            "IECS3071",
+            "IECS3048",
+            "IECS4944"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "persona-challenge",
+      "candidatePoolSize": 362,
+      "fixedCourses": 0,
+      "fixedCredits": 0,
+      "creditBounds": [
+        9,
+        25
+      ],
+      "maxCoursesPerDay": null,
+      "prefilter": {
+        "competitive": 324,
+        "blockedAgainstFixed": 0,
+        "missingCorequisite": 0
+      },
+      "modelStats": {
+        "sectionVars": 324,
+        "courseVars": 225,
+        "rows": 301,
+        "nonzeros": 2241,
+        "slotRows": 63,
+        "buildMs": 1.08,
+        "lpTextKb": 26.11
+      },
+      "statuses": [
+        "optimal"
+      ],
+      "allOptimal": true,
+      "mipGapMax": 0,
+      "warmSolveMs": {
+        "p50": 21.58,
+        "p95": 23.03,
+        "max": 26.39
+      },
+      "deterministic": true,
+      "memory": {
+        "maxHeapDeltaMb": 1.45,
+        "maxRssDeltaMb": 1.35
+      },
+      "validator": {
+        "milp": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "s0": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      },
+      "comparisonWithS0": {
+        "s0": {
+          "fillCourses": 10,
+          "totalCredits": 25,
+          "fillScore": -9486
+        },
+        "milp": {
+          "fillCourses": 4,
+          "totalCredits": 11,
+          "fillScore": 1696,
+          "objective": 1696
+        },
+        "removedFromS0": [
+          "IECS2024",
+          "IECS2053",
+          "IECS3021",
+          "IECS2014",
+          "ATHL3063",
+          "IECS2075"
+        ],
+        "addedVsS0": []
+      },
+      "creditParity": {
+        "statuses": [
+          "optimal"
+        ],
+        "p95Ms": 36.62,
+        "totalCredits": 25,
+        "fillScore": -5568,
+        "validator": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "codeDiffVsS0": {
+          "removed": [
+            "IECS4942",
+            "IECS2014",
+            "ATHL3063"
+          ],
+          "added": [
+            "IECS3074",
+            "IECS4944"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "persona-easy",
+      "candidatePoolSize": 362,
+      "fixedCourses": 0,
+      "fixedCredits": 0,
+      "creditBounds": [
+        9,
+        25
+      ],
+      "maxCoursesPerDay": null,
+      "prefilter": {
+        "competitive": 328,
+        "blockedAgainstFixed": 0,
+        "missingCorequisite": 0
+      },
+      "modelStats": {
+        "sectionVars": 328,
+        "courseVars": 222,
+        "rows": 297,
+        "nonzeros": 2262,
+        "slotRows": 63,
+        "buildMs": 1.2,
+        "lpTextKb": 27.47
+      },
+      "statuses": [
+        "optimal"
+      ],
+      "allOptimal": true,
+      "mipGapMax": 0,
+      "warmSolveMs": {
+        "p50": 22.2,
+        "p95": 26.24,
+        "max": 27.57
+      },
+      "deterministic": true,
+      "memory": {
+        "maxHeapDeltaMb": 1.56,
+        "maxRssDeltaMb": 8.48
+      },
+      "validator": {
+        "milp": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "s0": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      },
+      "comparisonWithS0": {
+        "s0": {
+          "fillCourses": 10,
+          "totalCredits": 25,
+          "fillScore": -10144.51
+        },
+        "milp": {
+          "fillCourses": 4,
+          "totalCredits": 10,
+          "fillScore": 1302.23,
+          "objective": 1302.23
+        },
+        "removedFromS0": [
+          "IINE1803",
+          "IECS2026",
+          "IECS3074",
+          "IECS2006",
+          "IECS3062",
+          "IECS4074"
+        ],
+        "addedVsS0": []
+      },
+      "creditParity": {
+        "statuses": [
+          "optimal"
+        ],
+        "p95Ms": 31.07,
+        "totalCredits": 25,
+        "fillScore": -6274.71,
+        "validator": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "codeDiffVsS0": {
+          "removed": [
+            "IECS4944",
+            "IINE1803",
+            "IECS3062"
+          ],
+          "added": [
+            "IECS3061",
+            "IECS4943"
+          ]
+        }
+      }
+    }
+  ]
+}

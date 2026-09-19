@@ -1957,6 +1957,38 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     }
   }
 
+  // roadmap #10 任務 1 spike：MILP 求解器需要「固定課程排完、貪婪填充開始前」
+  // 的同一份候選與狀態。只在 opt-in 時擷取，掛成不可列舉屬性，不進 API 回應；
+  // 靜態檢查直接用正式的 evaluateCoursePlacement()，不另寫第二套規則。
+  if (diagnosticOptions.includeMipInputs) {
+    const describe = course => ({
+      course,
+      courseKey: getCourseKey(course),
+      seriesKey: getCourseSeriesKey(course),
+      placement: evaluateCoursePlacement(plan, course, constraints),
+    });
+    Object.defineProperty(plan, '_mipInputs', {
+      configurable: true,
+      enumerable: false,
+      value: {
+        fixedSchedule: [...plan.schedule],
+        fixedUnscheduled: [...plan.unscheduledCourses],
+        fixedCredits: plan.totalCredits,
+        minCredits: plan.minCredits,
+        maxCredits: plan.maxCredits,
+        maxCoursesPerDay: plan.maxCoursesPerDay,
+        explicitIds: [...collectExplicitCourseIds(constraints)],
+        competitive: remaining.map(course => ({
+          ...describe(course),
+          score: scoreCourse(course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore),
+        })),
+        internships: eligible
+          .filter(course => course.corequisiteRole === 'internship' && !placedIds.has(Number(course.id)))
+          .map(describe),
+      },
+    });
+  }
+
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
     remaining.sort((a, b) => (
       scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
@@ -2984,7 +3016,10 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   const includePlanDiagnostics = runtimeOptions.includePlanDiagnostics === true;
   const allVariantPlans = strategies
     .map(variant => {
-      const plan = buildPlan(prepared, constraints, variant, { includeDiagnostics: includePlanDiagnostics });
+      const plan = buildPlan(prepared, constraints, variant, {
+        includeDiagnostics: includePlanDiagnostics,
+        includeMipInputs: runtimeOptions.includeMipInputs === true,
+      });
       const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
       plan.preferenceScore = score;
       plan.preferenceBreakdown = breakdown;
@@ -3279,7 +3314,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     ? `目前沒有可排入的正式加選課程，僅顯示 ${primary.watchedCourses.length} 門關注課程供你比較時段。`
     : `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課${unscheduledNote}，${creditNote}`;
 
-  return {
+  const result = {
     success: true,
     watchOnly: primary.watchOnly,
     schedule: primary.schedule,
@@ -3306,6 +3341,17 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     ...(generationDiagnostics ? { generationDiagnostics } : {}),
     message,
   };
+  // roadmap #10 任務 1 spike：只有 opt-in 時掛上基準策略（strategies[0]）的 MILP 輸入，
+  // 不可列舉，JSON 序列化與 API 回應都看不到。
+  if (runtimeOptions.includeMipInputs === true) {
+    const basePlan = allVariantPlans.find(plan => plan.id === strategies[0].id);
+    Object.defineProperty(result, 'mipInputs', {
+      configurable: true,
+      enumerable: false,
+      value: basePlan?._mipInputs ? { ...basePlan._mipInputs, basePlan } : null,
+    });
+  }
+  return result;
 }
 
 export function validateSchedule(courses = []) {

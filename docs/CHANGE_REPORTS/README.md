@@ -2,11 +2,17 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-19
+
+1. [Roadmap #10 任務 1：HiGHS 求解器 spike（真實候選池量測，GO）](./2026-09-19-roadmap-10-highs-spike.md)
+
 ## 2026-09-18
 
-1. [實作 roadmap #13C／#13D：B～F 班級適用規則、同系跨年級選修、本系優先排序](./2026-09-18-implement-13c-13d-eligibility-rules.md)
-2. [更新 DEPARTMENT_MAPPING.md：記錄 #13C 待確認問題的答案](./2026-09-18-department-mapping-13c-answers.md)
-3. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
+1. [Roadmap #10 方案塌縮診斷：去重前逐策略對帳入選與未入選原因](./2026-09-18-roadmap-10-collapse-diagnostics.md)
+2. [Roadmap #10 多方案量化驗收：真實 MySQL 唯讀 benchmark 與正式門檻](./2026-09-18-roadmap-10-acceptance.md)
+3. [實作 roadmap #13C／#13D：B～F 班級適用規則、同系跨年級選修、本系優先排序](./2026-09-18-implement-13c-13d-eligibility-rules.md)
+4. [更新 DEPARTMENT_MAPPING.md：記錄 #13C 待確認問題的答案](./2026-09-18-department-mapping-13c-answers.md)
+5. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
 
 ## 2026-09-17
 
