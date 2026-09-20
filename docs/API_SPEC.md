@@ -849,6 +849,62 @@ metadata」兩節。
 這個欄位推論候選池不足。失敗回應（`success:false`）也會帶這個欄位；`collapsed` 沒有
 塌縮時為空陣列，不是 `null`。
 
+**2026-09-19 起（Roadmap #10 任務 1）**：替代方案改由 HiGHS MILP 產生，`requestedVariants`
+固定為 4（S₀ 加三個主軸），每個 `collapsed` 項目帶 `reason`，另有 `solver` 摘要：
+
+```json
+{
+  "requestedVariants": 4,
+  "distinctPlans": 3,
+  "reason": "milp-candidate-unavailable",
+  "collapsed": [
+    { "variantId": "personalized_interest", "title": "興趣導向方案", "reason": "no-signal",
+      "detail": "threshold-unreachable" }
+  ],
+  "competablePoolSize": 218,
+  "solver": {
+    "method": "dinkelbach-milp",
+    "status": "generated",
+    "elapsedMs": 1240,
+    "axes": [
+      { "archetype": "easy", "status": "generated", "reason": null, "candidateCount": 1,
+        "candidates": [{ "ratio": 75.0, "qualityRetention": 1,
+          "distanceFromBase": { "removed": [], "added": [], "hammingDistance": 8, "replacementDistance": 4 },
+          "convergence": { "converged": true, "reason": null, "iterations": 2, "residual": 0,
+            "initialSolution": "quality-optimal" },
+          "category": "optimal" }] },
+      { "archetype": "interest", "status": "no-signal", "reason": "no-signal",
+        "detail": "threshold-unreachable", "candidateCount": 0 }
+    ]
+  }
+}
+```
+
+`collapsed[].reason` 可能值：`no-signal`、`rating-coverage-infeasible`、
+`axis-threshold-infeasible`、`insufficient-difference`、`quality-floor`、
+`credit-parity-infeasible`、`hierarchy-parity-infeasible`、`combined-constraints`、`solver-time-limit`、
+`solver-budget-exceeded`、`solver-unavailable`。不可行時 `solver.axes[].diagnosis` 列出
+`resolvedBy`（只放寬哪一組限制就可行）。
+
+`reason` 為 `no-signal` 時另帶 `detail`，說明是哪一項資料條件不成立：
+`no-interest-keywords`、`no-easiness-baseline`、`insufficient-rating`、`flat-scores`、
+`threshold-unreachable`（主軸門檻超出「固定課 ∪ 競爭課」的可達範圍，做不到比 S₀ 更好）、
+`single-day`、`fixed-days-blocked`。**前端在 `detail` 有更精確說法時優先依 `detail` 顯示**：`threshold-unreachable` 顯示「綜合方案已達目前課程資料可改善的界線，無法再產生有意義的主軸改善」，其餘 `no-signal` 才顯示「候選課缺少可區分的資料」（`client/src/components/Schedule/PlanSwitcher.jsx`）。
+
+MILP 方案另帶：
+
+- `comparisonToBaseline`：相較 S₀ 的 `removed`／`added`、`hammingDistance`、
+  `replacementDistance`、`utility`、`baselineUtility`、`qualityRetention`（`1 − d/qualityScale`）、
+  `axisValue`、`usedDays`、`bindingConstraints`。
+- `milpSolver`：`method`、`category`（`optimal`／`limit-with-solution`…）、`rawStatus`（HiGHS 原始
+  狀態字串）、`approximate`、`convergence`、`trace`（每輪 λ、耗時、N̂、D̂、殘差、暖啟動狀態）。
+- `milpChecks`：獨立驗證器與 `milpPlanChecks` 的結果，後者另回傳跨年級／系外
+  `hierarchyCounts`。品質效用排除 `base`、`crossYearElective`、`outsideOwnDepartment`；兩個
+  階層項改由與 S₀ 相同門數的硬限制保護。
+
+頂層另新增 `recommendedPlanId`（推薦方案，恆等於 `plans[0]`；經 service 後為 `planId`）與
+`displayOrder`（方案顯示順序）。舊的 `personalized_credits` 與各軸 ×1.5 方案已移除。
+
 ### `POST /api/schedule/counterfactual`（Roadmap #27）
 
 「取消某項偏好，課表會怎麼變」。**獨立端點，不併入 `/generate`**——實測候選池放大後

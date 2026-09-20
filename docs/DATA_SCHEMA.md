@@ -782,7 +782,14 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
 
 `planPolicies` 是既有 JSON envelope 的附加欄位，因此事件 `schemaVersion` 維持 1，MySQL
-也不需要 migration。歷史曝光缺少此欄位時正規化為空陣列，仍可重播；新曝光必須讓每個
+也不需要 migration。
+
+**2026-09-19（Roadmap #10 任務 1）**：`planPolicies` 每項可再帶 `archetype`
+（`balanced`／`easy`／`challenge`／`interest`／`compact`）與 `solver`
+（`{ method: "dinkelbach-milp", category: "optimal"|"limit-with-solution", rawStatus, approximate }`）；
+MILP 方案的 `stopWhen` 為 `milp-optimized`，policy 版本升為 `personalized-scoring-v2`。
+兩個欄位都是選填附加欄位：舊事件缺少時照舊驗證通過，`creditCoefficient` 仍接受歷史值
+`1` 與 `3`、`stopWhen` 仍接受 `candidate-exhausted`，但新版產生器只會產生 `1`。歷史曝光缺少此欄位時正規化為空陣列，仍可重播；新曝光必須讓每個
 policy 的 `planId` 對得上 `displayedPlanIds`，接受方案時也會核對 `variantId`。
 
 ### Event types

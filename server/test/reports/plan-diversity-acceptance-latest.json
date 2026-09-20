@@ -1,17 +1,31 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-19T07:59:43.139Z",
+  "generatedAt": "2026-09-20T08:50:29.039Z",
   "dataSource": "mysql-read-only",
   "activeTerm": {
     "academicYear": 114,
     "semester": "下學期"
   },
+  "solverOptions": {
+    "profile": "benchmark",
+    "candidatesPerAxis": 3,
+    "maxIterations": 8,
+    "residualTolerance": 0.000001,
+    "denominatorEpsilon": 0.001,
+    "qualityLossFraction": 0.13,
+    "minQualityScale": 1000,
+    "perSolveSeconds": 0.8,
+    "totalBudgetMs": 2500,
+    "mipRelGap": 0.0001,
+    "axisMinGain": 0.02
+  },
   "thresholds": {
     "retentionRate": 0.75,
+    "qualityRetention": 0.87,
     "medianJaccardSimilarity": 0.75,
     "preferredPersonaMinimumDistinctPlans": 3,
     "noPreferenceMinimumDistinctPlans": 2,
-    "minimumPairwiseCompetitiveCourseDifference": 1
+    "minimumReplacementDistance": 2
   },
   "pass": false,
   "cases": [
@@ -27,31 +41,372 @@
       },
       "safety": [
         {
+          "planId": "personalized_compact",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        {
           "planId": "personalized",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        {
+          "planId": "personalized_easy",
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
         }
       ],
-      "pass": false,
+      "generationMs": 3006.56,
+      "planDiversity": {
+        "requestedVariants": 4,
+        "distinctPlans": 3,
+        "reason": "milp-candidate-unavailable",
+        "collapsed": [
+          {
+            "variantId": "personalized_interest",
+            "title": "興趣導向方案",
+            "reason": "no-signal",
+            "detail": "no-interest-keywords"
+          }
+        ],
+        "competablePoolSize": 227,
+        "solver": {
+          "method": "dinkelbach-milp",
+          "status": "generated",
+          "elapsedMs": 2524.5725999999995,
+          "axes": [
+            {
+              "archetype": "easy",
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 74.88986784140968,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2027",
+                      "code:IECS3053",
+                      "code:IECS2014",
+                      "code:IECS3059",
+                      "code:IECS2024",
+                      "code:IECS3021",
+                      "code:IECS4943",
+                      "code:IECS4071",
+                      "code:ATHL2050"
+                    ],
+                    "added": [
+                      "code:IINE2003",
+                      "code:IECS2041",
+                      "code:IECS2026",
+                      "code:IECS2053",
+                      "code:IECS3071",
+                      "code:IECS3048",
+                      "code:IECS4074",
+                      "code:IECS4944"
+                    ],
+                    "hammingDistance": 17,
+                    "replacementDistance": 8
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 1.3877787807814457e-17,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 59.471365638766514,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2027",
+                      "code:IECS3053",
+                      "code:IECS2014",
+                      "code:IECS4943",
+                      "code:IECS4073",
+                      "code:ATHL2050"
+                    ],
+                    "added": [
+                      "code:IECS2075",
+                      "code:IECS3074",
+                      "code:IECS3050",
+                      "code:IECS4944",
+                      "code:IECS4052"
+                    ],
+                    "hammingDistance": 11,
+                    "replacementDistance": 5
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 57.268722466960355,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2027",
+                      "code:IECS3053",
+                      "code:IECS2014",
+                      "code:IECS3059",
+                      "code:IECS2024",
+                      "code:IECS3021",
+                      "code:IECS4073",
+                      "code:ATHL2050"
+                    ],
+                    "added": [
+                      "code:IECS2026",
+                      "code:IECS2053",
+                      "code:IECS3074",
+                      "code:IECS3071",
+                      "code:IECS3061",
+                      "code:IECS4074",
+                      "code:SPAN1001"
+                    ],
+                    "hammingDistance": 15,
+                    "replacementDistance": 7
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
+            },
+            {
+              "archetype": "interest",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-interest-keywords",
+              "candidateCount": 0,
+              "candidates": []
+            },
+            {
+              "archetype": "compact",
+              "status": "generated",
+              "reason": "solver-budget-exceeded",
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 66.07929515418502,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2027",
+                      "code:IECS3053",
+                      "code:IECS2014",
+                      "code:IECS2024",
+                      "code:IECS3021",
+                      "code:IECS4943",
+                      "code:IECS4071",
+                      "code:ATHL2050"
+                    ],
+                    "added": [
+                      "code:IECS2026",
+                      "code:IECS2075",
+                      "code:IECS3048",
+                      "code:IECS3050",
+                      "code:IECS4074",
+                      "code:IECS4944",
+                      "code:JAPN1003"
+                    ],
+                    "hammingDistance": 15,
+                    "replacementDistance": 7
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 55.06607929515418,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2027",
+                      "code:IECS3053",
+                      "code:IECS2014",
+                      "code:IECS3059",
+                      "code:IECS4943",
+                      "code:IECS4071",
+                      "code:ATHL2050"
+                    ],
+                    "added": [
+                      "code:IECS2041",
+                      "code:IECS3074",
+                      "code:IECS3050",
+                      "code:IECS3061",
+                      "code:IECS4944",
+                      "code:SPAN1001"
+                    ],
+                    "hammingDistance": 13,
+                    "replacementDistance": 6
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 48.4581497797357,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2027",
+                      "code:IECS3053",
+                      "code:IECS2014",
+                      "code:IECS2024",
+                      "code:IECS3021",
+                      "code:IECS4943",
+                      "code:ATHL2050"
+                    ],
+                    "added": [
+                      "code:IINE1806",
+                      "code:IECS2041",
+                      "code:IECS3074",
+                      "code:IECS3048",
+                      "code:IECS3061",
+                      "code:IECS4074"
+                    ],
+                    "hammingDistance": 13,
+                    "replacementDistance": 6
+                  },
+                  "convergence": {
+                    "converged": false,
+                    "reason": "deadline",
+                    "iterations": 0,
+                    "residual": null,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "limit-with-solution"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "candidateMetrics": [
+        {
+          "planId": "personalized_compact",
+          "totalCredits": 25,
+          "qualityRetention": 1,
+          "replacementDistance": 7,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        },
+        {
+          "planId": "personalized",
+          "totalCredits": 25,
+          "qualityRetention": null,
+          "replacementDistance": null,
+          "convergence": null,
+          "category": null
+        },
+        {
+          "planId": "personalized_easy",
+          "totalCredits": 25,
+          "qualityRetention": 1,
+          "replacementDistance": 8,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 1.3877787807814457e-17,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        }
+      ],
+      "pass": true,
       "hasExpressedPreference": true,
       "requestedVariants": 3,
-      "reportedDistinctPlans": 1,
-      "meaningfulDistinctPlans": 1,
+      "rawRequestedVariants": 4,
+      "excludedNoSignalVariants": [
+        "personalized_interest"
+      ],
+      "reportedDistinctPlans": 3,
+      "meaningfulDistinctPlans": 3,
       "requiredDistinctPlans": 3,
       "requiredByRetention": 3,
       "retentionThreshold": 0.75,
-      "retentionRate": 0.3333,
+      "retentionRate": 1,
       "similarityThreshold": 0.75,
-      "medianJaccardSimilarity": null,
+      "qualityRetentionThreshold": 0.87,
+      "minimumQualityRetention": 1,
+      "minimumReplacementDistance": 2,
+      "medianJaccardSimilarity": 0.1176,
       "criteria": {
-        "enoughDistinctPlans": false,
-        "retentionRate": false,
-        "medianSimilarity": false,
-        "actualCourseDifference": false,
+        "enoughDistinctPlans": true,
+        "retentionRate": true,
+        "medianSimilarity": true,
+        "actualCourseDifference": true,
+        "qualityFloor": true,
+        "creditParity": true,
+        "modelChecks": true,
         "safety": true
       },
-      "pairs": []
+      "pairs": [
+        {
+          "leftPlanId": "personalized_compact",
+          "rightPlanId": "personalized",
+          "leftCompetitiveCourseCount": 9,
+          "rightCompetitiveCourseCount": 10,
+          "sharedCourseCount": 2,
+          "differenceCount": 15,
+          "replacementDistance": 7,
+          "jaccardSimilarity": 0.1176
+        },
+        {
+          "leftPlanId": "personalized_compact",
+          "rightPlanId": "personalized_easy",
+          "leftCompetitiveCourseCount": 9,
+          "rightCompetitiveCourseCount": 9,
+          "sharedCourseCount": 5,
+          "differenceCount": 8,
+          "replacementDistance": 4,
+          "jaccardSimilarity": 0.3846
+        },
+        {
+          "leftPlanId": "personalized",
+          "rightPlanId": "personalized_easy",
+          "leftCompetitiveCourseCount": 10,
+          "rightCompetitiveCourseCount": 9,
+          "sharedCourseCount": 1,
+          "differenceCount": 17,
+          "replacementDistance": 8,
+          "jaccardSimilarity": 0.0556
+        }
+      ]
     },
     {
       "caseId": "no-preference-control",
@@ -69,27 +424,362 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        },
+        {
+          "planId": "personalized_easy",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        {
+          "planId": "personalized_compact",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
         }
       ],
-      "pass": false,
+      "generationMs": 1832.44,
+      "planDiversity": {
+        "requestedVariants": 4,
+        "distinctPlans": 3,
+        "reason": "milp-candidate-unavailable",
+        "collapsed": [
+          {
+            "variantId": "personalized_interest",
+            "title": "興趣導向方案",
+            "reason": "no-signal",
+            "detail": "no-interest-keywords"
+          }
+        ],
+        "competablePoolSize": 227,
+        "solver": {
+          "method": "dinkelbach-milp",
+          "status": "generated",
+          "elapsedMs": 1280.5447000000004,
+          "axes": [
+            {
+              "archetype": "easy",
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 66.07929515418502,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2041",
+                      "code:IECS2027",
+                      "code:IECS2053",
+                      "code:IECS2014",
+                      "code:IECS3059",
+                      "code:IECS4943",
+                      "code:IECS4073",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IECS3071",
+                      "code:IECS3048",
+                      "code:IECS3050",
+                      "code:IECS3061",
+                      "code:IECS4074",
+                      "code:IECS4944",
+                      "code:IECS4052"
+                    ],
+                    "hammingDistance": 15,
+                    "replacementDistance": 7
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 55.06607929515418,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2027",
+                      "code:IECS2053",
+                      "code:IECS3059",
+                      "code:IECS3021",
+                      "code:IECS4071",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IECS2075",
+                      "code:IECS2024",
+                      "code:IECS3074",
+                      "code:IECS4074",
+                      "code:IECS4052"
+                    ],
+                    "hammingDistance": 11,
+                    "replacementDistance": 5
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 48.45814977973568,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2041",
+                      "code:IECS2027",
+                      "code:IECS2014",
+                      "code:IECS3059",
+                      "code:IECS4943",
+                      "code:IECS4071",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IINE2003",
+                      "code:IECS3074",
+                      "code:IECS3071",
+                      "code:IECS3048",
+                      "code:IECS4074",
+                      "code:IECS4944"
+                    ],
+                    "hammingDistance": 13,
+                    "replacementDistance": 6
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
+            },
+            {
+              "archetype": "interest",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-interest-keywords",
+              "candidateCount": 0,
+              "candidates": []
+            },
+            {
+              "archetype": "compact",
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 66.07929515418502,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2041",
+                      "code:IECS2027",
+                      "code:IECS2053",
+                      "code:IECS2014",
+                      "code:IECS3059",
+                      "code:IECS4943",
+                      "code:IECS4073",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IECS2075",
+                      "code:IECS2024",
+                      "code:IECS3074",
+                      "code:IECS3048",
+                      "code:IECS3050",
+                      "code:IECS4944",
+                      "code:IECS3052"
+                    ],
+                    "hammingDistance": 15,
+                    "replacementDistance": 7
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 59.471365638766514,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2041",
+                      "code:IECS2027",
+                      "code:IECS2053",
+                      "code:IECS2014",
+                      "code:IECS3021",
+                      "code:IECS4943",
+                      "code:IECS4073",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IECS3053",
+                      "code:IECS2026",
+                      "code:IECS3071",
+                      "code:IECS3048",
+                      "code:IECS4074",
+                      "code:IECS4944",
+                      "code:IECS4052"
+                    ],
+                    "hammingDistance": 15,
+                    "replacementDistance": 7
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 57.268722466960355,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2041",
+                      "code:IECS3059",
+                      "code:IECS3021",
+                      "code:IECS4071",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IINE2824",
+                      "code:IECS2026",
+                      "code:IECS2024",
+                      "code:IECS4074"
+                    ],
+                    "hammingDistance": 9,
+                    "replacementDistance": 4
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "candidateMetrics": [
+        {
+          "planId": "personalized",
+          "totalCredits": 25,
+          "qualityRetention": null,
+          "replacementDistance": null,
+          "convergence": null,
+          "category": null
+        },
+        {
+          "planId": "personalized_easy",
+          "totalCredits": 25,
+          "qualityRetention": 1,
+          "replacementDistance": 7,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        },
+        {
+          "planId": "personalized_compact",
+          "totalCredits": 25,
+          "qualityRetention": 1,
+          "replacementDistance": 7,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        }
+      ],
+      "pass": true,
       "hasExpressedPreference": false,
-      "requestedVariants": 2,
-      "reportedDistinctPlans": 1,
-      "meaningfulDistinctPlans": 1,
+      "requestedVariants": 3,
+      "rawRequestedVariants": 4,
+      "excludedNoSignalVariants": [
+        "personalized_interest"
+      ],
+      "reportedDistinctPlans": 3,
+      "meaningfulDistinctPlans": 3,
       "requiredDistinctPlans": 2,
-      "requiredByRetention": 2,
+      "requiredByRetention": 3,
       "retentionThreshold": 0.75,
-      "retentionRate": 0.5,
+      "retentionRate": 1,
       "similarityThreshold": 0.75,
-      "medianJaccardSimilarity": null,
+      "qualityRetentionThreshold": 0.87,
+      "minimumQualityRetention": 1,
+      "minimumReplacementDistance": 2,
+      "medianJaccardSimilarity": 0.1176,
       "criteria": {
-        "enoughDistinctPlans": false,
-        "retentionRate": false,
-        "medianSimilarity": false,
-        "actualCourseDifference": false,
+        "enoughDistinctPlans": true,
+        "retentionRate": true,
+        "medianSimilarity": true,
+        "actualCourseDifference": true,
+        "qualityFloor": true,
+        "creditParity": true,
+        "modelChecks": true,
         "safety": true
       },
-      "pairs": []
+      "pairs": [
+        {
+          "leftPlanId": "personalized",
+          "rightPlanId": "personalized_easy",
+          "leftCompetitiveCourseCount": 10,
+          "rightCompetitiveCourseCount": 9,
+          "sharedCourseCount": 2,
+          "differenceCount": 15,
+          "replacementDistance": 7,
+          "jaccardSimilarity": 0.1176
+        },
+        {
+          "leftPlanId": "personalized",
+          "rightPlanId": "personalized_compact",
+          "leftCompetitiveCourseCount": 10,
+          "rightCompetitiveCourseCount": 9,
+          "sharedCourseCount": 2,
+          "differenceCount": 15,
+          "replacementDistance": 7,
+          "jaccardSimilarity": 0.1176
+        },
+        {
+          "leftPlanId": "personalized_easy",
+          "rightPlanId": "personalized_compact",
+          "leftCompetitiveCourseCount": 9,
+          "rightCompetitiveCourseCount": 9,
+          "sharedCourseCount": 5,
+          "differenceCount": 8,
+          "replacementDistance": 4,
+          "jaccardSimilarity": 0.3846
+        }
+      ]
     },
     {
       "caseId": "persona-challenge",
@@ -109,22 +799,108 @@
           "constraintIds": []
         }
       ],
+      "generationMs": 802.62,
+      "planDiversity": {
+        "requestedVariants": 4,
+        "distinctPlans": 1,
+        "reason": "milp-candidate-unavailable",
+        "collapsed": [
+          {
+            "variantId": "personalized_challenge",
+            "title": "挑戰導向方案",
+            "reason": "no-signal",
+            "detail": "no-easiness-baseline"
+          },
+          {
+            "variantId": "personalized_interest",
+            "title": "興趣導向方案",
+            "reason": "no-signal",
+            "detail": "no-interest-keywords"
+          },
+          {
+            "variantId": "personalized_compact",
+            "title": "集中排課方案",
+            "reason": "axis-threshold-infeasible"
+          }
+        ],
+        "competablePoolSize": 225,
+        "solver": {
+          "method": "dinkelbach-milp",
+          "status": "no-signal",
+          "elapsedMs": 496.54320000000007,
+          "axes": [
+            {
+              "archetype": "challenge",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-easiness-baseline",
+              "candidateCount": 0,
+              "candidates": []
+            },
+            {
+              "archetype": "interest",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-interest-keywords",
+              "candidateCount": 0,
+              "candidates": []
+            },
+            {
+              "archetype": "compact",
+              "status": "axis-threshold-infeasible",
+              "reason": "axis-threshold-infeasible",
+              "diagnosis": {
+                "reason": "axis-threshold-infeasible",
+                "resolvedBy": [
+                  "axis",
+                  "quality",
+                  "hierarchy"
+                ],
+                "complete": true
+              },
+              "candidateCount": 0,
+              "candidates": []
+            }
+          ]
+        }
+      },
+      "candidateMetrics": [
+        {
+          "planId": "personalized",
+          "totalCredits": 25,
+          "qualityRetention": null,
+          "replacementDistance": null,
+          "convergence": null,
+          "category": null
+        }
+      ],
       "pass": false,
       "hasExpressedPreference": true,
-      "requestedVariants": 3,
+      "requestedVariants": 2,
+      "rawRequestedVariants": 4,
+      "excludedNoSignalVariants": [
+        "personalized_challenge",
+        "personalized_interest"
+      ],
       "reportedDistinctPlans": 1,
       "meaningfulDistinctPlans": 1,
-      "requiredDistinctPlans": 3,
-      "requiredByRetention": 3,
+      "requiredDistinctPlans": 2,
+      "requiredByRetention": 2,
       "retentionThreshold": 0.75,
-      "retentionRate": 0.3333,
+      "retentionRate": 0.5,
       "similarityThreshold": 0.75,
+      "qualityRetentionThreshold": 0.87,
+      "minimumQualityRetention": null,
+      "minimumReplacementDistance": 2,
       "medianJaccardSimilarity": null,
       "criteria": {
         "enoughDistinctPlans": false,
         "retentionRate": false,
         "medianSimilarity": false,
         "actualCourseDifference": false,
+        "qualityFloor": true,
+        "creditParity": true,
+        "modelChecks": true,
         "safety": true
       },
       "pairs": []
@@ -141,45 +917,554 @@
       },
       "safety": [
         {
-          "planId": "personalized",
+          "planId": "personalized_easy",
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
         },
         {
-          "planId": "personalized_credits",
+          "planId": "personalized_compact",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        {
+          "planId": "personalized",
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
         }
       ],
-      "pass": false,
+      "generationMs": 2370.71,
+      "planDiversity": {
+        "requestedVariants": 4,
+        "distinctPlans": 3,
+        "reason": "milp-candidate-unavailable",
+        "collapsed": [
+          {
+            "variantId": "personalized_interest",
+            "title": "興趣導向方案",
+            "reason": "no-signal",
+            "detail": "no-interest-keywords"
+          }
+        ],
+        "competablePoolSize": 222,
+        "solver": {
+          "method": "dinkelbach-milp",
+          "status": "generated",
+          "elapsedMs": 2232.6755999999987,
+          "axes": [
+            {
+              "archetype": "easy",
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 0.4734318862814032,
+                  "qualityRetention": 0.9153687999999991,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IINE1803",
+                      "code:IECS2026",
+                      "code:IECS3062",
+                      "code:IECS4944",
+                      "code:IECS4071"
+                    ],
+                    "added": [
+                      "code:IINE2003",
+                      "code:IECS2072",
+                      "code:IECS2027",
+                      "code:IECS4943"
+                    ],
+                    "hammingDistance": 9,
+                    "replacementDistance": 4
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 0.4068917496675719,
+                  "qualityRetention": 0.9290415999999994,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IINE1803",
+                      "code:IECS2026",
+                      "code:IECS4944",
+                      "code:IECS4071"
+                    ],
+                    "added": [
+                      "code:IECS2072",
+                      "code:IECS4942",
+                      "code:IEE6014"
+                    ],
+                    "hammingDistance": 7,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 0.33315577182765405,
+                  "qualityRetention": 0.9153687999999991,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IINE1803",
+                      "code:IECS2026",
+                      "code:IECS3062",
+                      "code:IECS4944",
+                      "code:IECS4071"
+                    ],
+                    "added": [
+                      "code:IECS2072",
+                      "code:IECS3061",
+                      "code:IECS4943",
+                      "code:JAPN1002"
+                    ],
+                    "hammingDistance": 9,
+                    "replacementDistance": 4
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
+            },
+            {
+              "archetype": "interest",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-interest-keywords",
+              "candidateCount": 0,
+              "candidates": []
+            },
+            {
+              "archetype": "compact",
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 0.5711801678934517,
+                  "qualityRetention": 0.9300231999999989,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IINE1803",
+                      "code:IECS2006",
+                      "code:IECS3062",
+                      "code:IECS4944",
+                      "code:IECS4073"
+                    ],
+                    "added": [
+                      "code:IECS2011",
+                      "code:IECS2027",
+                      "code:IECS4943",
+                      "code:KORN1002"
+                    ],
+                    "hammingDistance": 9,
+                    "replacementDistance": 4
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 0.48122306113303365,
+                  "qualityRetention": 0.9027143999999991,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IINE1803",
+                      "code:IECS2041",
+                      "code:IECS3074",
+                      "code:IECS4944",
+                      "code:IECS4071"
+                    ],
+                    "added": [
+                      "code:IECS2072",
+                      "code:IECS2027",
+                      "code:IECS4942",
+                      "code:COME2031"
+                    ],
+                    "hammingDistance": 9,
+                    "replacementDistance": 4
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 0.5711801678934517,
+                  "qualityRetention": 0.9300231999999989,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IINE1803",
+                      "code:IECS2006",
+                      "code:IECS3062",
+                      "code:IECS4944",
+                      "code:IECS4073"
+                    ],
+                    "added": [
+                      "code:IECS2011",
+                      "code:IECS3061",
+                      "code:IECS4942",
+                      "code:JAPN1002"
+                    ],
+                    "hammingDistance": 9,
+                    "replacementDistance": 4
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "candidateMetrics": [
+        {
+          "planId": "personalized_easy",
+          "totalCredits": 25,
+          "qualityRetention": 0.9153687999999991,
+          "replacementDistance": 4,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        },
+        {
+          "planId": "personalized_compact",
+          "totalCredits": 25,
+          "qualityRetention": 0.9300231999999989,
+          "replacementDistance": 4,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        },
+        {
+          "planId": "personalized",
+          "totalCredits": 25,
+          "qualityRetention": null,
+          "replacementDistance": null,
+          "convergence": null,
+          "category": null
+        }
+      ],
+      "pass": true,
       "hasExpressedPreference": true,
       "requestedVariants": 3,
-      "reportedDistinctPlans": 2,
-      "meaningfulDistinctPlans": 2,
+      "rawRequestedVariants": 4,
+      "excludedNoSignalVariants": [
+        "personalized_interest"
+      ],
+      "reportedDistinctPlans": 3,
+      "meaningfulDistinctPlans": 3,
       "requiredDistinctPlans": 3,
       "requiredByRetention": 3,
       "retentionThreshold": 0.75,
-      "retentionRate": 0.6667,
+      "retentionRate": 1,
       "similarityThreshold": 0.75,
-      "medianJaccardSimilarity": 0.6667,
+      "qualityRetentionThreshold": 0.87,
+      "minimumQualityRetention": 0.9154,
+      "minimumReplacementDistance": 2,
+      "medianJaccardSimilarity": 0.3571,
       "criteria": {
-        "enoughDistinctPlans": false,
-        "retentionRate": false,
+        "enoughDistinctPlans": true,
+        "retentionRate": true,
         "medianSimilarity": true,
         "actualCourseDifference": true,
+        "qualityFloor": true,
+        "creditParity": true,
+        "modelChecks": true,
         "safety": true
       },
       "pairs": [
         {
-          "leftPlanId": "personalized",
-          "rightPlanId": "personalized_credits",
-          "leftCompetitiveCourseCount": 10,
+          "leftPlanId": "personalized_easy",
+          "rightPlanId": "personalized_compact",
+          "leftCompetitiveCourseCount": 9,
+          "rightCompetitiveCourseCount": 9,
+          "sharedCourseCount": 5,
+          "differenceCount": 8,
+          "replacementDistance": 4,
+          "jaccardSimilarity": 0.3846
+        },
+        {
+          "leftPlanId": "personalized_easy",
+          "rightPlanId": "personalized",
+          "leftCompetitiveCourseCount": 9,
           "rightCompetitiveCourseCount": 10,
-          "sharedCourseCount": 8,
-          "differenceCount": 4,
-          "jaccardSimilarity": 0.6667
+          "sharedCourseCount": 5,
+          "differenceCount": 9,
+          "replacementDistance": 4,
+          "jaccardSimilarity": 0.3571
+        },
+        {
+          "leftPlanId": "personalized_compact",
+          "rightPlanId": "personalized",
+          "leftCompetitiveCourseCount": 9,
+          "rightCompetitiveCourseCount": 10,
+          "sharedCourseCount": 5,
+          "differenceCount": 9,
+          "replacementDistance": 4,
+          "jaccardSimilarity": 0.3571
+        }
+      ]
+    },
+    {
+      "caseId": "fixed-courses-control",
+      "candidatePoolSize": 581,
+      "candidatePoolHash": "d86e335598fe4662deb4321e79a58271319ce54ce3895b4d6c5a8754ba4eeb12",
+      "learnedPreference": {
+        "applied": false,
+        "reason": "control-disabled",
+        "modelVersion": null,
+        "sufficiencyStatus": null
+      },
+      "safety": [
+        {
+          "planId": "personalized_interest",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        {
+          "planId": "personalized",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      ],
+      "generationMs": 2465.53,
+      "planDiversity": {
+        "requestedVariants": 4,
+        "distinctPlans": 2,
+        "reason": "milp-candidate-unavailable",
+        "collapsed": [
+          {
+            "variantId": "personalized_easy",
+            "title": "輕鬆導向方案",
+            "reason": "no-signal",
+            "detail": "no-easiness-baseline"
+          },
+          {
+            "variantId": "personalized_compact",
+            "title": "集中排課方案",
+            "reason": "no-signal",
+            "detail": "fixed-days-blocked"
+          }
+        ],
+        "competablePoolSize": 245,
+        "solver": {
+          "method": "dinkelbach-milp",
+          "status": "generated",
+          "elapsedMs": 181.81330000000162,
+          "axes": [
+            {
+              "archetype": "easy",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-easiness-baseline",
+              "candidateCount": 0,
+              "candidates": []
+            },
+            {
+              "archetype": "interest",
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 24.489795918367346,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2011",
+                      "code:IECS2053",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IINE1806",
+                      "code:IECS2041",
+                      "code:IECS2006"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 16.3265306122449,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2011",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IINE2811",
+                      "code:IECS2006"
+                    ],
+                    "hammingDistance": 4,
+                    "replacementDistance": 2
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 1,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 16.3265306122449,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2053",
+                      "code:HSS2033"
+                    ],
+                    "added": [
+                      "code:IECS2006",
+                      "code:GEK1039"
+                    ],
+                    "hammingDistance": 4,
+                    "replacementDistance": 2
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 1,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
+            },
+            {
+              "archetype": "compact",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "fixed-days-blocked",
+              "candidateCount": 0,
+              "candidates": []
+            }
+          ]
+        }
+      },
+      "candidateMetrics": [
+        {
+          "planId": "personalized_interest",
+          "totalCredits": 25,
+          "qualityRetention": 1,
+          "replacementDistance": 3,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        },
+        {
+          "planId": "personalized",
+          "totalCredits": 25,
+          "qualityRetention": null,
+          "replacementDistance": null,
+          "convergence": null,
+          "category": null
+        }
+      ],
+      "pass": true,
+      "hasExpressedPreference": true,
+      "requestedVariants": 2,
+      "rawRequestedVariants": 4,
+      "excludedNoSignalVariants": [
+        "personalized_easy",
+        "personalized_compact"
+      ],
+      "reportedDistinctPlans": 2,
+      "meaningfulDistinctPlans": 2,
+      "requiredDistinctPlans": 2,
+      "requiredByRetention": 2,
+      "retentionThreshold": 0.75,
+      "retentionRate": 1,
+      "similarityThreshold": 0.75,
+      "qualityRetentionThreshold": 0.87,
+      "minimumQualityRetention": 1,
+      "minimumReplacementDistance": 2,
+      "medianJaccardSimilarity": 0,
+      "criteria": {
+        "enoughDistinctPlans": true,
+        "retentionRate": true,
+        "medianSimilarity": true,
+        "actualCourseDifference": true,
+        "qualityFloor": true,
+        "creditParity": true,
+        "modelChecks": true,
+        "safety": true
+      },
+      "pairs": [
+        {
+          "leftPlanId": "personalized_interest",
+          "rightPlanId": "personalized",
+          "leftCompetitiveCourseCount": 3,
+          "rightCompetitiveCourseCount": 3,
+          "sharedCourseCount": 0,
+          "differenceCount": 6,
+          "replacementDistance": 3,
+          "jaccardSimilarity": 0
         }
       ]
     }

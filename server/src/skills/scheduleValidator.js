@@ -23,7 +23,7 @@ import {
   OVERLOAD_MAX_CREDITS,
   getUsedDays,
 } from './scheduler.js';
-import { getPassedCourseCodes } from '../data/courseHistory.js';
+import { getFailedRequiredCourseCodes, getPassedCourseCodes } from '../data/courseHistory.js';
 import { CONSTRAINTS } from '../data/constraintSchema.js';
 import { courseGradeLevelLabel, isCourseGradeEligible } from '../data/courseGradeLevel.js';
 import { buildStudentScope, isOwnDepartmentElective } from './courseScope.js';
@@ -113,6 +113,8 @@ function checkCourseMetadata(schedule, constraints) {
   const explicitIds = collectExplicitCourseIds(constraints);
   // 只有 constraints 帶了系所與年級時才認得出「同系選修」；沒帶時照舊嚴格檢查年級。
   const scope = buildStudentScope(constraints);
+  // 與排課器相同：不及格必修的重補修不受開課年級限制。
+  const failedRequiredCodes = new Set(getFailedRequiredCourseCodes(constraints.courseHistory));
 
   for (const course of schedule) {
     const isExplicit = explicitIds.has(Number(course.id));
@@ -120,6 +122,7 @@ function checkCourseMetadata(schedule, constraints) {
     if (
       isCourseGradeEligible(course, constraints.gradeLevel) === false
       && !isOwnDepartmentElective(course, scope)
+      && !failedRequiredCodes.has(course.catalogCourseCode)
     ) {
       violations.push(buildViolation(
         'COURSE_GRADE_MISMATCH',

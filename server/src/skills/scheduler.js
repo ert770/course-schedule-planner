@@ -6,7 +6,7 @@ import {
   resolveScoringPolicy, normalizeCourseFeatures, computePreferenceComponents,
   EASY_DIRECTION, resolveEasyDirection,
 } from './scoringPolicy.js';
-import { buildPlanStrategies } from './planStrategies.js';
+import { buildPlanStrategies, buildDiverseArchetypes } from './planStrategies.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
 import {
   buildStudentScope,
@@ -25,6 +25,7 @@ import {
   UNRECOGNIZED_OUTSIDE_ELECTIVE,
 } from '../data/generalEducation.js';
 import {
+  getFailedRequiredCourseCodes,
   getFailedRequiredCourses,
   getPassedCourseCodes,
 } from '../data/courseHistory.js';
@@ -49,6 +50,15 @@ import {
   DEFAULT_SOLVER_SEED,
 } from './scheduleSolver.js';
 import { resolveMinCredits } from '../data/creditPolicy.js';
+import { generateDiverseCandidates } from './optimization/diversePlanSolver.js';
+import { checkMilpPlan } from './optimization/milpPlanChecks.js';
+import { solveLpTextSync } from './optimization/highsRuntime.js';
+
+let configuredHighsRuntime = null;
+
+export function setSchedulingHighsRuntime(runtime) {
+  configuredHighsRuntime = runtime || null;
+}
 
 // 校規：每學期上限 25 學分、下限 12 學分（四年級 9，見 `data/creditPolicy.js`），
 // 超修申請後至多 30。見 `docs/COURSE_SELECTION_RULES.md`。先前寫死的 15／22 沒有出處。
@@ -1315,6 +1325,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   const offTermNames = new Set();
   const offTermExplicit = [];
   const gradeMismatchNames = new Set();
+  const failedRequiredCodes = new Set(getFailedRequiredCourseCodes(constraints.courseHistory));
   let outsideExclusionCount = 0;
   // 有評價卻因資格待確認（#13C）而被排除的課程要單獨統計。使用者看到
   // 「涼課方案沒有通識」時，必須分得出來是「沒抓到評價」還是「抓到了但規則擋住」。
@@ -1354,9 +1365,12 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
 
     // 同系選修的 target_grade 是開課年級，不是限修年級（#13C-5）：放行，
     // 排序交給 CROSS_YEAR_ELECTIVE_PENALTY。
+    // 不及格必修的重補修一定是回頭修低年級開的課，年級限制不適用（2026-09-19 修正：
+    // 先前二年級重修一年級必修會被這裡整批排除，S4 重補修實際上排不進去）。
     if (
       isCourseGradeEligible(course, scope.gradeLevel) === false
       && !isOwnDepartmentElective(course, scope)
+      && !failedRequiredCodes.has(course.catalogCourseCode)
     ) {
       gradeMismatchNames.add(`${course.name}（${courseGradeLevelLabel(course.gradeLevel)}）`);
       exclusions.push({
@@ -1961,12 +1975,25 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
   // 的同一份候選與狀態。只在 opt-in 時擷取，掛成不可列舉屬性，不進 API 回應；
   // 靜態檢查直接用正式的 evaluateCoursePlacement()，不另寫第二套規則。
   if (diagnosticOptions.includeMipInputs) {
+    const interestKeywords = collectInterestKeywords(constraints);
+    const normalizedInterest = course => {
+      if (interestKeywords.length === 0) return 0;
+      return clamp01(
+        getInterestScore(course, constraints) / (interestKeywords.length * INTEREST_KEYWORD_SCORE)
+      );
+    };
     const describe = course => ({
       course,
       courseKey: getCourseKey(course),
       seriesKey: getCourseSeriesKey(course),
       placement: evaluateCoursePlacement(plan, course, constraints),
+      interestScore: normalizedInterest(course),
+      easyScore: getEasyCourseScore(course) === null
+        ? null
+        : clamp01(getEasyCourseScore(course) / MAX_EASY_COURSE_SCORE),
+      rated: Boolean(course.reviewEvidence),
     });
+    const fixedScheduledFeatures = plan.schedule.map(course => describe(course));
     Object.defineProperty(plan, '_mipInputs', {
       configurable: true,
       enumerable: false,
@@ -1980,11 +2007,36 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         explicitIds: [...collectExplicitCourseIds(constraints)],
         competitive: remaining.map(course => ({
           ...describe(course),
-          score: scoreCourse(course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore),
+          scoreComponents: computeScoreComponents(
+            course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+          ),
+          score: scoreCourse(
+            course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+          ),
         })),
         internships: eligible
           .filter(course => course.corequisiteRole === 'internship' && !placedIds.has(Number(course.id)))
           .map(describe),
+        featureSummary: {
+          hasInterestKeywords: interestKeywords.length > 0,
+          fixedCount: fixedScheduledFeatures.length,
+          fixedInterestSum: fixedScheduledFeatures.reduce((sum, entry) => sum + entry.interestScore, 0),
+          fixedRatedCount: fixedScheduledFeatures.filter(entry => entry.rated).length,
+          fixedEasySum: fixedScheduledFeatures.reduce(
+            (sum, entry) => sum + (entry.rated ? entry.easyScore : 0), 0
+          ),
+          // 主軸可達範圍要把固定課一起算進來（平均值含固定課）。
+          fixedInterestMax: finiteBound(
+            fixedScheduledFeatures.map(entry => entry.interestScore), Math.max
+          ),
+          fixedEasyMax: finiteBound(
+            fixedScheduledFeatures.filter(entry => entry.rated).map(entry => entry.easyScore), Math.max
+          ),
+          fixedEasyMin: finiteBound(
+            fixedScheduledFeatures.filter(entry => entry.rated).map(entry => entry.easyScore), Math.min
+          ),
+          fixedDays: new Set(plan.schedule.flatMap(course => [...getUsedDays(course)])).size,
+        },
       },
     });
   }
@@ -2659,8 +2711,52 @@ function buildReviewCoverage(plan) {
 // `warnings` 陣列裡的一則。前端要照驗收標準「誠實顯示實際方案數與重複原因」，
 // 就只能去 parse 中文字串——那是必然會壞的作法。改成先算出結構，句子再從結構
 // 產生：兩個出口，一份資料。
-function buildPlanDiversity(allPlans, dedupedPlans, prepared) {
+function buildPlanDiversity(allPlans, dedupedPlans, prepared, milpGeneration = null) {
   const survivingIds = new Set(dedupedPlans.map(plan => plan.id));
+  if (milpGeneration) {
+    const labels = {
+      easy: { id: 'personalized_easy', title: '輕鬆導向方案' },
+      challenge: { id: 'personalized_challenge', title: '挑戰導向方案' },
+      interest: { id: 'personalized_interest', title: '興趣導向方案' },
+      compact: { id: 'personalized_compact', title: '集中排課方案' },
+    };
+    const collapsed = (milpGeneration.collapseReasons || []).map(item => {
+      const definition = labels[item.archetype];
+      return {
+        variantId: definition?.id ?? item.archetype,
+        title: definition?.title ?? item.archetype,
+        reason: item.reason,
+        ...(item.detail ? { detail: item.detail } : {}),
+      };
+    });
+    return {
+      requestedVariants: 4,
+      distinctPlans: dedupedPlans.length,
+      reason: collapsed.length > 0 ? 'milp-candidate-unavailable' : null,
+      collapsed,
+      competablePoolSize: milpGeneration.baseSelection
+        ? (milpGeneration.universeSize ?? prepared?.courses?.length ?? 0)
+        : (prepared?.courses?.length ?? 0),
+      solver: {
+        method: milpGeneration.method ?? 'dinkelbach-milp',
+        status: milpGeneration.status,
+        elapsedMs: milpGeneration.elapsedMs ?? 0,
+        axes: milpGeneration.axes?.map(axis => ({
+          archetype: axis.archetype, status: axis.status, reason: axis.reason,
+          ...(axis.detail ? { detail: axis.detail } : {}),
+          ...(axis.diagnosis ? { diagnosis: axis.diagnosis } : {}),
+          candidateCount: axis.candidates?.length ?? 0,
+          candidates: axis.candidates?.map(candidate => ({
+            ratio: candidate.ratio,
+            qualityRetention: candidate.qualityRetention,
+            distanceFromBase: candidate.distanceFromBase,
+            convergence: candidate.convergence,
+            category: candidate.category,
+          })) ?? [],
+        })) ?? [],
+      },
+    };
+  }
   return {
     requestedVariants: allPlans.length,
     distinctPlans: dedupedPlans.length,
@@ -2804,11 +2900,41 @@ function buildGenerationDiagnostics(allPlans, prepared, candidateCourses) {
   };
 }
 
+// 塌縮原因的中文說法。warnings 是直接給使用者看的句子，不該把 `no-signal` 這種代碼印出去。
+// 這份文案與 client/src/components/Schedule/PlanSwitcher.jsx 的 reasonText／detailText 對齊；
+// 前後端不共用程式碼，所以各有一份——改其中一邊時兩邊都要改。
+const COLLAPSE_REASON_TEXT = {
+  'no-signal': '候選課缺少可區分的資料',
+  'insufficient-difference': '無法在品質下限內換進、換出至少兩門課',
+  'credit-parity-infeasible': '無法維持綜合方案的學分',
+  'axis-threshold-infeasible': '無法達到主軸改善門檻',
+  'hierarchy-parity-infeasible': '無法維持與綜合方案相同的本系／跨年級／系外課程結構',
+  'rating-coverage-infeasible': '有評價的課不足，無法在維持評價涵蓋下提高主軸表現',
+  'quality-floor': '換課後品質會低於綜合方案的 87%',
+  'combined-constraints': '學分、品質、換課與主軸門檻無法同時滿足',
+  'solver-time-limit': '單次求解時間不足',
+  'solver-budget-exceeded': '求解時間已達本次上限',
+  'solver-unavailable': '求解器目前無法使用',
+  'same-course-combination': '排出來的課程組合與其他方案相同',
+  infeasible: '限制組合下沒有可行解',
+};
+
+// no-signal 太籠統時改用 detail 的說法——「已經做不到更好」和「資料分不出差別」是兩件事。
+const COLLAPSE_DETAIL_TEXT = {
+  'threshold-unreachable': '綜合方案已達目前課程資料可改善的界線，無法再產生有意義的主軸改善',
+};
+
 function describePlanCollapse(diversity) {
   if (!diversity || diversity.collapsed.length === 0) return null;
-  return `${diversity.collapsed.map(item => item.title).join('、')}排出的課表與其他方案相同，已合併，`
+  const details = diversity.collapsed.map(item => {
+    const text = COLLAPSE_DETAIL_TEXT[item.detail]
+      || COLLAPSE_REASON_TEXT[item.reason]
+      || COLLAPSE_REASON_TEXT['same-course-combination'];
+    return `${item.title}：${text}`;
+  }).join('；');
+  return `${details}，因此未能保留為獨立方案。`
     + `目前提供 ${diversity.distinctPlans} 種方案。可競爭的課程共 ${diversity.competablePoolSize} 門；`
-    + '本次調整取捨仍得到相同組合，不能僅憑重複結果判定是候選池不足。';
+    + '系統已保留實際原因，沒有把標題或排序差異當成新方案。';
 }
 
 function uniquePlans(plans) {
@@ -2830,6 +2956,265 @@ function comparePlans(a, b) {
     return b.preferenceScore - a.preferenceScore;
   }
   return b.totalCredits - a.totalCredits;
+}
+
+// 主軸可達範圍的容差：門檻與極值只差浮點誤差時視為可達。
+const AXIS_BOUND_EPSILON = 1e-9;
+
+// 取有限值的極值；沒有任何可用值（沒有固定課、沒有評價）時回傳 null。
+function finiteBound(values, pick) {
+  const finite = values.filter(Number.isFinite);
+  return finite.length > 0 ? finite.reduce((best, value) => pick(best, value)) : null;
+}
+
+// 依序檢查訊號條件，回傳第一個不成立的原因；全部成立回傳 null。
+function firstBlocker(checks) {
+  const blocked = checks.find(([ok]) => !ok);
+  return blocked ? blocked[1] : null;
+}
+
+
+function distinctNumericValues(values) {
+  return new Set(values.filter(Number.isFinite).map(value => Number(value.toFixed(6)))).size;
+}
+
+// 匯出供單元測試驗證訊號判定；排課流程只在 generateMilpPlans() 內呼叫。
+export function buildMilpAxes(inputs, basePlan, easyIntent, minGain = 0.02) {
+  const summary = inputs.featureSummary || {};
+  const archetypes = buildDiverseArchetypes(easyIntent.label);
+  const interestValues = inputs.competitive.map(entry => entry.interestScore);
+  const ratedEntries = inputs.competitive.filter(entry => entry.rated);
+  const ratedValues = ratedEntries.map(entry => entry.easyScore);
+  // 2026-09-20 使用者決定：評價數下限取 S₀ 的一半（至少 2 門）。要求替代方案的
+  // 評價覆蓋率不低於 S₀ 會讓整條主軸直接無解，那不是資料沒有訊號。
+  const minRated = Math.max(2, Math.ceil((basePlan.reviewCoverage?.rated || 0) / 2));
+  // 主軸限制是「整份方案（固定課＋競爭課）的平均值 ≥／≤ 門檻」。平均值不可能高於
+  // 池中的最大值、也不可能低於最小值，所以固定課的分數必須一起納入上下限，否則
+  // 只看競爭課會把「其實做得到」誤判成 no-signal。門檻落在可達範圍外＝資料上不可能
+  // 改善，回報 no-signal；有改善空間卻求不出解，才由求解後的診斷分類為
+  // axis-threshold-infeasible／combined-constraints。
+  const interestBound = finiteBound([...interestValues, summary.fixedInterestMax], Math.max);
+  const easyUpperBound = finiteBound([...ratedValues, summary.fixedEasyMax], Math.max);
+  const easyLowerBound = finiteBound([...ratedValues, summary.fixedEasyMin], Math.min);
+
+  return archetypes.map(definition => {
+    if (definition.archetype === 'interest') {
+      const baseline = basePlan.preferenceBreakdown?.interest ?? 0;
+      const threshold = Math.min(1, baseline + minGain);
+      const blocked = firstBlocker([
+        [Boolean(summary.hasInterestKeywords), 'no-interest-keywords'],
+        [distinctNumericValues(interestValues) > 1, 'flat-scores'],
+        [interestBound !== null && interestBound >= threshold - AXIS_BOUND_EPSILON, 'threshold-unreachable'],
+      ]);
+      return {
+        ...definition, type: 'interest', signal: blocked === null,
+        reason: blocked === null ? null : 'no-signal',
+        detail: blocked,
+        threshold,
+        reachableBound: interestBound,
+        fixedCount: summary.fixedCount || 0,
+        fixedScoreSum: summary.fixedInterestSum || 0,
+      };
+    }
+    if (definition.archetype === 'easy' || definition.archetype === 'challenge') {
+      const baseline = basePlan.preferenceBreakdown?.easy;
+      const challenge = definition.archetype === 'challenge';
+      const hasBaseline = Number.isFinite(baseline);
+      const threshold = hasBaseline
+        ? (challenge ? Math.max(0, baseline - minGain) : Math.min(1, baseline + minGain))
+        : null;
+      const bound = challenge ? easyLowerBound : easyUpperBound;
+      const reachable = hasBaseline && bound !== null && (challenge
+        ? bound <= threshold + AXIS_BOUND_EPSILON
+        : bound >= threshold - AXIS_BOUND_EPSILON);
+      const blocked = firstBlocker([
+        [hasBaseline, 'no-easiness-baseline'],
+        [ratedEntries.length + (summary.fixedRatedCount || 0) >= minRated, 'insufficient-rating'],
+        [distinctNumericValues(ratedValues) > 1, 'flat-scores'],
+        [reachable, 'threshold-unreachable'],
+      ]);
+      return {
+        ...definition, type: challenge ? 'challenge' : 'easy', signal: blocked === null,
+        reason: blocked === null ? null : 'no-signal',
+        detail: blocked,
+        threshold,
+        reachableBound: bound,
+        minRated,
+        fixedRatedCount: summary.fixedRatedCount || 0,
+        fixedEasySum: summary.fixedEasySum || 0,
+      };
+    }
+    const baseDays = basePlan.planMetrics?.usedDays ?? 0;
+    const blocked = firstBlocker([
+      [baseDays > 1, 'single-day'],
+      [baseDays - 1 >= (summary.fixedDays || 0), 'fixed-days-blocked'],
+    ]);
+    return {
+      ...definition, type: 'compact', signal: blocked === null,
+      reason: blocked === null ? null : 'no-signal', detail: blocked,
+      maxDays: Math.max(0, baseDays - 1),
+    };
+  });
+}
+
+function cloneMilpCourse(entry, variant, constraints) {
+  const course = entry.course;
+  const credits = Number(course.credits) || 0;
+  const nonGraduationCategory = getNonGraduationCategory(course);
+  const reason = `由「${variant.title}」的整體最佳化模型排入`;
+  return {
+    ...course,
+    scheduleState: 'selected',
+    reason,
+    countsTowardGraduation: nonGraduationCategory === null,
+    nonGraduationCategory,
+    recommendationReason: buildRecommendationReason({
+      course: { ...course, countsTowardGraduation: nonGraduationCategory === null, nonGraduationCategory },
+      placementReason: reason,
+      scoreComponents: entry.scoreComponents ?? null,
+      scoringPolicy: variant.scoringPolicy,
+      contentHits: collectContentPreferenceHits(course, constraints),
+      interestHits: collectInterestHits(course, constraints),
+      alternatives: { status: COMPETITION_STATUS.NOT_APPLICABLE_MILP, candidates: [] },
+    }),
+    _creditsForSummary: credits,
+  };
+}
+
+function materializeMilpPlan(candidate, definition, inputs, constraints, prepared, preferenceProfile) {
+  const scoringPolicy = resolveScoringPolicy(constraints);
+  const plan = createEmptyPlan({
+    id: definition.id,
+    title: definition.title,
+    description: definition.description,
+    scoringPolicy: {
+      ...scoringPolicy,
+      archetype: definition.archetype,
+      solver: {
+        method: 'dinkelbach-milp',
+        category: candidate.category,
+        rawStatus: candidate.rawStatus,
+        approximate: candidate.approximate,
+      },
+    },
+    stopWhen: 'milp-optimized',
+  }, constraints);
+
+  plan.schedule = (inputs.fixedSchedule || []).map(course => ({ ...course }));
+  plan.unscheduledCourses = (inputs.fixedUnscheduled || []).map(course => ({ ...course }));
+  plan.watchedCourses = (inputs.basePlan.watchedCourses || []).map(course => ({ ...course }));
+  plan.excludedCourses = [...prepared.exclusions];
+  const chosen = candidate.selectedSections.map(entry => cloneMilpCourse(entry, definition, constraints));
+  plan.schedule.push(...chosen.filter(course => getTimeBlocks(course).length > 0));
+  plan.unscheduledCourses.push(...chosen.filter(course => getTimeBlocks(course).length === 0));
+  plan.schedule.sort((left, right) => (
+    Number(left.dayOfWeek) - Number(right.dayOfWeek)
+    || Number(left.startPeriod) - Number(right.startPeriod)
+    || Number(left.id) - Number(right.id)
+  ));
+  const selected = [...plan.schedule, ...plan.unscheduledCourses];
+  plan.totalCredits = selected.reduce((sum, course) => sum + (Number(course.credits) || 0), 0);
+  plan.graduationCredits = selected.reduce(
+    (sum, course) => sum + (countsTowardGraduation(course) ? (Number(course.credits) || 0) : 0), 0
+  );
+  plan.nonGraduationCredits = plan.totalCredits - plan.graduationCredits;
+  plan.courseCount = selected.length;
+  plan.success = true;
+  plan.watchOnly = false;
+  plan.warnings = candidate.approximate
+    ? [`方案「${definition.title}」為近似解：${candidate.convergence.reason}`]
+    : [];
+  delete plan.placedCourseKeys;
+
+  const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
+  plan.preferenceScore = score;
+  plan.preferenceBreakdown = breakdown;
+  plan.reviewCoverage = buildReviewCoverage(plan);
+  plan.planMetrics = computePlanMetrics(plan);
+  const baseCodes = new Map((inputs.competitive || []).map(entry => [entry.courseKey, entry.course]));
+  plan.comparisonToBaseline = {
+    removed: candidate.distanceFromBase.removed.map(key => diagnosticCourse(baseCodes.get(key))),
+    added: candidate.distanceFromBase.added.map(key => diagnosticCourse(baseCodes.get(key))),
+    hammingDistance: candidate.distanceFromBase.hammingDistance,
+    replacementDistance: candidate.distanceFromBase.replacementDistance,
+    utility: candidate.utility,
+    baselineUtility: candidate.baselineUtility,
+    qualityRetention: candidate.qualityRetention,
+    axisValue: breakdown[definition.archetype === 'challenge' ? 'easy' : definition.archetype] ?? null,
+    usedDays: plan.planMetrics.usedDays,
+    bindingConstraints: candidate.bindingConstraints,
+  };
+  plan.milpSolver = {
+    method: 'dinkelbach-milp', category: candidate.category, rawStatus: candidate.rawStatus,
+    approximate: candidate.approximate, convergence: candidate.convergence, trace: candidate.trace,
+  };
+  return plan;
+}
+
+function generateMilpPlans(basePlan, inputs, constraints, prepared, preferenceProfile, easyIntent, runtimeOptions) {
+  const definitions = buildDiverseArchetypes(easyIntent.label);
+  if (runtimeOptions.planSet === 'primary-only') {
+    return { plans: [], axes: [], status: 'primary-only' };
+  }
+  const runtime = runtimeOptions.highsRuntime ?? configuredHighsRuntime;
+  if (!runtime) return {
+    plans: [], axes: [], status: 'solver-unavailable',
+    collapseReasons: definitions.map(axis => ({
+      archetype: axis.archetype, reason: 'solver-unavailable',
+    })),
+  };
+  const axes = buildMilpAxes(inputs, basePlan, easyIntent, runtimeOptions.axisMinGain ?? 0.02);
+  const generated = generateDiverseCandidates(inputs, {
+    axes,
+    options: runtimeOptions.diverseSolverOptions,
+    solve: (model, options) => solveLpTextSync(runtime, model.lpText, model.columnNames, options),
+  });
+
+  const selectedPlans = [];
+  const selectedCourseSets = [generated.baseSelection || new Set()];
+  const collapseReasons = [];
+  for (const axisResult of generated.axes) {
+    const definition = axes.find(axis => axis.archetype === axisResult.archetype);
+    if (axisResult.status === 'no-signal') {
+      collapseReasons.push({
+        archetype: axisResult.archetype, reason: 'no-signal', detail: axisResult.detail ?? null,
+      });
+      continue;
+    }
+    const ranked = [...axisResult.candidates].sort((left, right) => right.ratio - left.ratio);
+    let accepted = null;
+    for (const candidate of ranked) {
+      if (!selectedCourseSets.every(reference => (
+        Math.min(
+          [...reference].filter(key => !candidate.selectedKeys.has(key)).length,
+          [...candidate.selectedKeys].filter(key => !reference.has(key)).length
+        ) >= 2
+      ))) continue;
+      const plan = materializeMilpPlan(
+        candidate, definition, inputs, constraints, prepared, preferenceProfile
+      );
+      const courses = [...plan.schedule, ...plan.unscheduledCourses];
+      const validator = validateScheduleAgainstConstraints(courses, constraints, {
+        excludedCourses: plan.excludedCourses,
+      });
+      const modelCheck = checkMilpPlan(courses, inputs, {
+        creditTarget: basePlan.totalCredits,
+        hierarchyTargets: generated.hierarchyTargets,
+      });
+      plan.milpChecks = { validator, model: modelCheck };
+      if (validator.valid && modelCheck.valid) {
+        accepted = plan;
+        selectedCourseSets.push(candidate.selectedKeys);
+        break;
+      }
+    }
+    if (accepted) selectedPlans.push(accepted);
+    else collapseReasons.push({
+      archetype: axisResult.archetype,
+      reason: axisResult.reason || axisResult.status || 'insufficient-difference',
+    });
+  }
+  return { ...generated, plans: selectedPlans, collapseReasons };
 }
 
 // roadmap #21：無解時的結構化 conflict set，取代「只回傳第一個錯誤字串」。
@@ -3014,11 +3399,13 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   const scoringPolicy = resolveScoringPolicy(constraints);
   const strategies = buildPlanStrategies(scoringPolicy);
   const includePlanDiagnostics = runtimeOptions.includePlanDiagnostics === true;
-  const allVariantPlans = strategies
+  const needMipInputs = runtimeOptions.includeMipInputs === true
+    || runtimeOptions.planSet !== 'primary-only';
+  let allVariantPlans = strategies
     .map(variant => {
       const plan = buildPlan(prepared, constraints, variant, {
         includeDiagnostics: includePlanDiagnostics,
-        includeMipInputs: runtimeOptions.includeMipInputs === true,
+        includeMipInputs: needMipInputs,
       });
       const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
       plan.preferenceScore = score;
@@ -3031,17 +3418,33 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     .sort(comparePlans);
 
   let plans = uniquePlans(allVariantPlans);
+  const basePlan = allVariantPlans.find(plan => plan.id === strategies[0].id) ?? plans[0];
+  const mipInputs = basePlan?._mipInputs ? { ...basePlan._mipInputs, basePlan } : null;
+  const milpGeneration = mipInputs
+    ? generateMilpPlans(
+      basePlan, mipInputs, constraints, prepared, preferenceProfile, easyIntent, runtimeOptions
+    )
+    : { plans: [], axes: [], status: 'data-insufficient', collapseReasons: [] };
+  if (milpGeneration.plans?.length > 0) {
+    allVariantPlans = [...allVariantPlans, ...milpGeneration.plans];
+    plans = uniquePlans(allVariantPlans).sort(comparePlans);
+  }
   // roadmap #10：方案數少於 variant 數時要說出**為什麼**，不能讓使用者以為
   // 系統只想得出這幾種。原因有兩類且處置完全不同：候選池太小（等 #13C 的
   // 適用對象規則）與某個 variant 沒有可用訊號（資料缺口）。
   // roadmap #27：同一份資料另外以 `planDiversity` 結構化回傳給前端。
-  const planDiversity = buildPlanDiversity(allVariantPlans, plans, prepared);
+  const planDiversity = buildPlanDiversity(
+    allVariantPlans,
+    plans,
+    prepared,
+    runtimeOptions.planSet === 'primary-only' ? null : milpGeneration
+  );
   const generationDiagnostics = includePlanDiagnostics
     ? buildGenerationDiagnostics(allVariantPlans, prepared, candidateCourses)
     : null;
   const collapsedVariantWarning = describePlanCollapse(planDiversity);
 
-  const baselinePrimary = plans[0];
+  const baselinePrimary = basePlan;
   const baselineCheck = baselinePrimary?.success
     ? validateScheduleAgainstConstraints(
       [...baselinePrimary.schedule, ...baselinePrimary.unscheduledCourses],
@@ -3128,11 +3531,14 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
           ...relaxed.relaxedConstraints.map(r => r.reason),
         ])];
 
+        const relaxedPlans = uniquePlans([relaxed.plan, ...plans]);
         return {
           success: true,
           watchOnly: relaxed.plan.watchOnly,
           schedule: relaxed.plan.schedule,
-          plans: uniquePlans([relaxed.plan, ...plans]),
+          plans: relaxedPlans,
+          recommendedPlanId: relaxed.plan.id,
+          displayOrder: relaxedPlans.map(plan => plan.id),
           totalCredits: relaxed.plan.totalCredits,
           graduationCredits: relaxed.plan.graduationCredits,
           nonGraduationCredits: relaxed.plan.nonGraduationCredits,
@@ -3250,6 +3656,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
 
   const allWarnings = [...new Set(plans.flatMap(plan => plan.warnings))];
   if (collapsedVariantWarning) allWarnings.push(collapsedVariantWarning);
+  if (milpGeneration.status === 'solver-unavailable') {
+    allWarnings.push('多方案求解器尚未就緒，本次只提供綜合方案。');
+  }
   if (!hasExpressedPreference) {
     allWarnings.push('未設定興趣關鍵字、集中排課或涼課／挑戰難課偏好，主推方案改以總學分決定，個人化程度有限。');
   }
@@ -3319,6 +3728,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     watchOnly: primary.watchOnly,
     schedule: primary.schedule,
     plans,
+    recommendedPlanId: primary.id,
+    displayOrder: plans.map(plan => plan.id),
     planDiversity,
     totalCredits: primary.totalCredits,
     graduationCredits: primary.graduationCredits,
@@ -3344,7 +3755,6 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   // roadmap #10 任務 1 spike：只有 opt-in 時掛上基準策略（strategies[0]）的 MILP 輸入，
   // 不可列舉，JSON 序列化與 API 回應都看不到。
   if (runtimeOptions.includeMipInputs === true) {
-    const basePlan = allVariantPlans.find(plan => plan.id === strategies[0].id);
     Object.defineProperty(result, 'mipInputs', {
       configurable: true,
       enumerable: false,

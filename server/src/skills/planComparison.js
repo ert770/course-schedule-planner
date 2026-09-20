@@ -110,7 +110,7 @@ export function summarizeMetricDifferences(plans = []) {
 // 一次請求、或是瀏覽器自己說的，兩邊輸入不同就不是 counterfactual 而是誤導。
 export function buildCounterfactuals(candidateCourses, constraints, options = {}) {
   const preferences = options.preferences ?? COUNTERFACTUAL_PREFERENCES;
-  const baseResult = generateSchedule(candidateCourses, constraints);
+  const baseResult = generateSchedule(candidateCourses, constraints, { planSet: 'primary-only' });
   const basePlan = baseResult.plans?.[0] ?? null;
 
   const results = preferences.map(preference => {
@@ -126,7 +126,8 @@ export function buildCounterfactuals(candidateCourses, constraints, options = {}
 
     const variantResult = generateSchedule(
       candidateCourses,
-      { ...constraints, [preference.preferenceId]: false }
+      { ...constraints, [preference.preferenceId]: false },
+      { planSet: 'primary-only' }
     );
     const variantPlan = variantResult.plans?.[0] ?? null;
     const diff = diffPlans(basePlan, variantPlan);

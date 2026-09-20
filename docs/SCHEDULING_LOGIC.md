@@ -236,6 +236,12 @@
 他年級必修仍屬於別人。課程搜尋頁與 Agent 查課不套用這個例外，那兩條路徑的年級是使用者
 自己選的篩選條件。
 
+**例外：不及格必修的重補修（2026-09-19）。** `courseHistory` 中不及格的必修課號
+（`getFailedRequiredCourseCodes()`）不受開課年級限制：重補修一定是回頭修低年級開的課。
+`prepareCandidates()` 的年級閘門與獨立驗證器用同一條件放行。修正前，二年級重修一年級必修
+會被 `COURSE_GRADE_MISMATCH` 整批排除，S4 重補修實際上排不進去（`fixed-courses-control`
+驗收案例發現）。只放行有不及格紀錄的課號；其他低年級必修仍受年級限制。
+
 ### 本系優先的排序階層（2026-09-18）
 
 學生系所年級可判定時，`computeScoreComponents()` 對候選加上固定的階層分：
@@ -407,12 +413,13 @@ B～F 適用對象（#13C）與學制／學程（#13D）已於 2026-09-18 依專
 0，已表態軸的絕對值落在 `[1,2]`，其中學到的 boost 只能加強顯式方向，不能自行新增
 方向或推翻方向。`easy < 0` 代表挑戰難課。
 
-系統不再固定產生五種預設取向。每次先建立「個人化綜合方案」，再只針對使用者已表達的
-軸建立加重 1.5 倍的比較方案，最後加入一個提高學分係數的方案；總數上限仍為 5。沒有
-偏好時只嘗試綜合與較多學分兩種策略，不把「涼課」或其他未表態取向塞給使用者。
+**2026-09-19 起（Roadmap #10 任務 1）**：greedy 只產生一個「個人化綜合方案」S₀；
+「已表達軸 ×1.5」與「較多學分（學分係數 ×3）」兩類策略已移除——這正是 Trapp & Konrad
+（2015）實測會得到「品質高但很像」或「很不同但品質差」的擾動目標係數做法，也是 #10
+方案塌縮的根因。替代方案改由 HiGHS MILP 依主軸產生，見下方「多方案 MILP」。
 
-`scoringPolicy.js` 負責權重範圍、特徵正規化與各軸分數；`planStrategies.js` 只建立有限且
-可重現的搜尋策略；`scheduler.js` 套用策略。方案 ID 是生成策略的識別值，不能當成使用者
+`scoringPolicy.js` 負責權重範圍、特徵正規化與各軸分數；`planStrategies.js` 定義 S₀ 與
+三個主軸（`buildDiverseArchetypes()`）；`scheduler.js` 套用策略。方案 ID 是生成策略的識別值，不能當成使用者
 接受某一偏好軸的證據。每個方案都保存實際 `generationPolicy`，每門經排序加入的課也在
 `recommendationReason.scoringPolicy` 保存同一快照。
 
@@ -763,9 +770,8 @@ Constraint Schema（Roadmap #21）」一節。
 
 ### Bounded backtracking repair（Roadmap #22）
 
-系統把 `buildPlanStrategies()` 產生的每個 greedy variant 都保留作為 baseline——數量不是固定
-五個，而是依使用者已表態、非零權重的偏好軸數量動態決定（1 到 5 個：`personalized` 固定 1 個，
-之後每個非零軸各加 1 個，再加 1 個 `personalized_credits`）。主推 baseline 未通過獨立 validator，或
+repair 的 baseline 是 greedy 產生的 S₀（2026-09-19 起 `buildPlanStrategies()` 只回傳
+`personalized` 一個策略；MILP 主軸方案不作為 repair baseline）。主推 baseline 未通過獨立 validator，或
 所有通過 validator 的 baseline 都低於 `minCredits` 時，才啟動 repair；已合法且達最低學分
 的 baseline 不額外搜尋。
 
@@ -835,9 +841,9 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 
 ## 多方案課表
 
-`generateSchedule()` 依當次個人化權重產生最多 5 個策略方案（見「方案分化：個人化權重
-與有限替代策略（Roadmap #7）」）：個人化綜合方案、已啟用偏好軸的加重方案，以及較多
-學分方案。`#22` bounded backtracking 失敗時可插入非常態的 `限制修復方案`。每個方案帶：
+`generateSchedule()` 最多回傳 4 個方案：greedy 的個人化綜合方案 S₀，加上 MILP 主軸方案
+（輕鬆或挑戰、興趣、集中；見下一節）。`#22` bounded backtracking 失敗時可插入非常態的
+`限制修復方案`。每個方案帶：
 
 - 課程清單（`schedule`／`unscheduledCourses`／`watchedCourses`）。
 - 總學分（`totalCredits`／`graduationCredits`／`nonGraduationCredits`）。
@@ -851,6 +857,102 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 `reason: same-course-combination`。重複結果只證明這次調整取捨仍得到相同組合，不能單憑
 這點判定候選池不足；`describePlanCollapse()` 從同一份結構產生使用者可讀的說明。
 
+### 多方案 MILP（Roadmap #10 任務 1，2026-09-19）
+
+**依據與對外宣稱。** 採 Petit & Trapp（IJCAI 2015）允許非最佳起點的框架，以 Trapp &
+Konrad（IIE Trans. 2015）的 centroid 多樣性與 Dinkelbach 轉換建立 MILP，距離硬限制取自
+Hebrard 等（AAAI 2005）；內層由 HiGHS（npm `highs` 1.15.3，第三方 highs-js 包裝，求解
+核心由愛丁堡大學團隊開發）求解。對外只能這樣宣稱：**Dinkelbach 各輪回傳 Optimal、殘差
+收斂且未撞迭代上限時，所得為「所建模比值問題」在 `mip_rel_gap`（1e-4）內的最佳解**；
+不擴大成「現實中最好的課表」。任一條件不成立的候選標為 `approximate` 並附原因。
+
+**模型**（`optimization/scheduleMipModel.js`）。班次 `s_j` 與課號 `z_k` 兩層二元變數，
+`Σ_{j∈k} s_j = z_k`。固定課程（本人必修、重補修、明確指定）沿用 S₀ 的班次，以常數參與；
+候選先用正式的 `evaluateCoursePlacement()` 對「只有固定課」的狀態做靜態檢查。限制：
+
+| 限制 | 寫法 |
+| --- | --- |
+| 衝堂 | 每個（星期, 節次）`Σ s_j ≤ 1` |
+| 學分 | `≥ S₀ 學分`（學分對齊，硬限制）且 `≤ maxCredits` |
+| 每日課數 | 每日 `Σ s_j ≤ maxCoursesPerDay − 當日固定課數` |
+| 共同必修 | `z正課 = z實習` |
+| 同系列 | 同系列課號 `Σ z ≤ 1`，明確指定豁免 |
+| 至少換 2 門 | 對每個參考方案 P：`Σ_{k∈P∩C}(1−z_k) ≥ 2` 且 `Σ_{k∈C\P} z_k ≥ 2` |
+| 品質下限 | `d ≥ U(S₀) − U(z)`、`0 ≤ d ≤ 0.13·qualityScale` |
+| 本系階層 | 跨年級與系外競爭課門數各自等於 S₀；只在同階層內換課 |
+| 主軸門檻 | 興趣：`Σ(interest_k − T)z_k ≥ …`；輕鬆／挑戰：只計有評價課，另加評價數下限；集中：日變數 `y_d`，`Σ y_d ≤ days(S₀) − 1` |
+
+興趣與難度主軸的最小改善量 `minGain` 經真實資料校準為 0.02；0.04 仍使無偏好案例的
+難度主軸不可行。這只改主軸要比 S₀ 改善多少，不放寬 87% 品質、學分、換課或階層限制。
+
+品質 `U(z) = Σ (score_j − base_j − crossYearElective_j − outsideOwnDepartment_j)·s_j`，
+`score_j` 是 greedy 填充前以使用者 policy 算出的靜態分數。`−2500`／`−5000` 的本系階層差
+改由上表的硬限制保護，不拿它稀釋 87% 的偏好品質門檻；`qualityScale = max(|U(S₀)|, 1000)`；**品質保留率一律為
+`1 − d/qualityScale`**（`U(S₀)` 實測為負數，不能用 `U/U(S₀)`）。
+
+**Dinkelbach**（`optimization/diversePlanSolver.js`）。`N̂ = Σ_k[c_k(1−z_k)+(1−c_k)z_k]/|C|`
+（`c_k` 為課號在參考集合中的比例，分母為固定常數），`D̂ = d/qualityScale + 1e-3`。
+
+1. **x⁰**：同一組限制下最大化 `U(z)` 的 MILP（T&K Algorithm 1 允許任一可行解起步）。
+   係數各不相同，求解遠快於多樣性目標；x⁰ 只提供 λ₁ 與暖啟動，不參與收斂判定。
+2. 以 `λ₁ = N̂(x⁰)/D̂(x⁰)` 起步，每輪求 `max N̂ − λ·D̂`，並把上一輪解交給 HiGHS 當起始解
+   （T&K §3.3.1）。每輪解完**都用選課結果重算** `d = max(0, U(S₀) − U(z))`，再更新 λ。
+3. 殘差 `|N̂ − λ·D̂| ≤ 1e-6` 停止；最多 8 輪。收斂僅在「每輪 optimal、殘差收斂、未撞上限」
+   時成立；否則 `approximate`，原因為 `iteration-limit`／`solver-limit`／`deadline`。
+4. 求解器判定不可行時，逐一放寬單一限制群組重解，找出「只放寬這一組就可行」的群組，
+   回報 `rating-coverage-infeasible`、`axis-threshold-infeasible`、`insufficient-difference`、
+   `quality-floor`、`credit-parity-infeasible` 或 `hierarchy-parity-infeasible`；沒有單一群組能解開時為
+   `combined-constraints`。放寬後的解只用於說明，一律不採用。
+5. 沒有訊號時不建模（`no-signal`）。依序檢查下列條件，第一個不成立的記在 `detail`：
+   - 興趣：沒有興趣關鍵字（`no-interest-keywords`）、興趣分數全部相同（`flat-scores`）、
+     門檻落在可達範圍外（`threshold-unreachable`）。
+   - 輕鬆／挑戰：S₀ 沒有難度基準（`no-easiness-baseline`）、有評價的課不足 `minRated`
+     （`insufficient-rating`）、難度分數全部相同（`flat-scores`）、門檻落在可達範圍外
+     （`threshold-unreachable`）。
+   - 集中：S₀ 只用一天（`single-day`）、固定課已佔滿可減少的天數（`fixed-days-blocked`）。
+
+   **可達範圍**：主軸門檻限制的是「整份方案（固定課＋競爭課）的平均值」。平均值不可能
+   高於池中最大值、也不可能低於最小值，所以上下限取「競爭課 ∪ 固定課」的極值——只看
+   競爭課會把「固定課本來就能把平均拉上去」的案例誤判成沒有訊號。這是必要條件而非
+   充分條件：門檻在可達範圍內仍可能與學分、換課、品質或階層限制組合後無解，那時才由
+   第 4 點的診斷分類為 `axis-threshold-infeasible`／`combined-constraints`。換句話說，
+   **「資料上不可能改善」回報 `no-signal`，「有改善空間但湊不出合法方案」回報不可行**。
+
+   評價數下限 `minRated = max(2, ⌈S₀ 有評價課數 ÷ 2⌉)`（2026-09-20 使用者決定）。要求
+   替代方案的評價覆蓋率不得低於 S₀ 會讓整條主軸直接無解，那不是資料沒有訊號。診斷
+   放寬評價數下限時仍保留至少 1 門，避免平均門檻因「一門都不選」而空洞成立。
+
+**時間預算。** 線上與 benchmark 是兩組分開記錄的設定（`optimization/diversePlanSolver.js`），改一邊不會動到另一邊：
+線上 `DEFAULT_DIVERSE_OPTIONS` 為每主軸 1 個候選（`candidatesPerAxis: 1`）、共用 2.5 秒 deadline、單次求解上限 `min(0.8 秒, 剩餘時間)`（2026-09-19 使用者決定）；
+`BENCHMARK_DIVERSE_OPTIONS` 只把候選數覆寫為 3，供 `bench:plan-diversity` 量完整候選池，其餘預算與線上相同，報告的 `solverOptions.profile` 會記成 `benchmark`。
+單次上限撞到但全域仍有餘裕記為
+`solver-time-limit`，全域用盡記為 `deadline`／`solver-budget-exceeded`。
+`model.run()` 為同步、單執行緒，會阻塞 event loop；多人部署前需改 `worker_threads`。
+伺服器啟動時載入 WASM 一次；載入失敗時只回 S₀ 並附 `solver-unavailable`。
+
+**暫時挑選器與推薦方案。** 候選池先放入 S₀；依主軸順序取比值最高、且與所有已選方案
+`replacementDistance ≥ 2` 的候選，並須通過獨立驗證器與 `milpPlanChecks`（學分上下限與
+對齊、固定課覆蓋、共同必修、同課一班、同系列、每日上限、階層配額）。此挑選有順序偏差，任務 2
+（Danna & Woodruff 2009）會取代。挑選完成後仍由 `comparePlans` 決定推薦方案並移到
+`plans[0]`，`recommendedPlanId === plans[0].id`。
+
+**距離名稱。** `hammingDistance = |A △ B|`；`replacementDistance = min(|A\B|, |B\A|)`，
+兩者分開記錄，不混用。
+
+**說明方式。** MILP 方案不包裝成「A 課在某一步贏過 B 課」（`alternatives` 標
+`not-applicable-milp`），改以 `comparisonToBaseline` 說明相較 S₀ 移除／加入的課、品質保留、
+主軸指標、上課日數與 `bindingConstraints`（以相對容差 `1e-6·max(1,|bound|)` 判定）。
+
+**與論文的差異（誠實紀錄）。**
+
+| 項目 | 論文 | 本系統 |
+| --- | --- | --- |
+| 起點 | T&K 以原問題最佳解起步 | 採 P&T：S₀ 是 greedy 解，不一定最佳 |
+| 品質 | 原目標函數 | greedy 靜態逐課分數（不含集中度的遞增效果） |
+| 集中度 | — | 只用上課日數；「日數相同再比空堂」未實作 |
+| 挑選最終方案 | Danna & Woodruff 由大候選池挑 | 暫時的順序挑選器（任務 2 取代） |
+| 候選數 | 論文設定 K=10 | 線上每主軸 K=1、共用 2.5 秒 deadline；benchmark 覆寫為 K=3 |
+
 ### 多方案量化驗收（Roadmap #10）
 
 `npm run bench:plan-diversity --prefix server -- --markdown` 以目前 MySQL 課程、三位 demo
@@ -862,13 +964,20 @@ hash，確保同一次 case 的所有策略使用相同候選集合。
 
 1. `reportedDistinctPlans / requestedVariants >= 0.75`；整數門檻使用
    `ceil(requestedVariants * 0.75)`。
-2. 有偏好時至少 3 個不重複方案；無偏好時只有綜合與較多學分策略，因此至少 2 個。
+2. 有偏好時至少 3 個不重複方案，無偏好時至少 2 個，且不超過分母。2026-09-19 起 S₀ 加三個主軸
+   共 4 個；**因資料本身沒有訊號（`no-signal`）而合併的主軸不計入分母**（使用者決定），報告以
+   `rawRequestedVariants` 與 `excludedNoSignalVariants` 列出被排除者；其他合併原因（不可行、
+   超時等）照常計入分母。
 3. 比較內容前排除 `REQUIRED_COURSE`、`RETAKE_REQUIRED`、`USER_SPECIFIED`，避免所有方案
    必然相同的課程把重疊率拉高。
 4. 課程身分以 `catalogCourseCode` 為準；同課號只換 section 不算新的競爭課程組合。
 5. 所有保留方案兩兩計算 Jaccard similarity（交集／聯集），中位數必須 `<= 0.75`；每一對
-   方案的競爭課程對稱差至少 1 門。
+   方案都必須雙向至少換入／換出 2 門競爭課程（`replacementDistance >= 2`）。
 6. 每個方案另以 `validateScheduleAgainstConstraints()` 複查，hard violation 必須為 0。
+7. （2026-09-19 起）MILP 替代方案另須：品質保留率 `1 − d/qualityScale ≥ 0.87`、學分不少於
+   S₀、與其他方案 `replacementDistance ≥ 2`，並通過 `milpPlanChecks`。
+8. 另有 `fixed-courses-control`：真實課程資料上的二年級資工，含本人必修、一門不及格的
+   三年級必修（重補修）與一門指定課，`maxCoursesPerDay = 3`，驗證固定課路徑。
 
 若只有一個方案，沒有可計算的 pair；此時 similarity 為 `null`，方案數與實際差異兩項直接
 失敗，不能把「沒有比較對象」當成低重疊。報告不保存姓名、學號或完整課表，只保存匿名 case、

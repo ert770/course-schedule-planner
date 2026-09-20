@@ -2,9 +2,14 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-20
+
+1. [Roadmap #10 任務 1 修正：主軸訊號判定（評價下限、可達範圍、no-signal 與不可行的界線）](./2026-09-20-roadmap-10-axis-signal-correction.md)
+
 ## 2026-09-19
 
-1. [Roadmap #10 任務 1：HiGHS 求解器 spike（真實候選池量測，GO）](./2026-09-19-roadmap-10-highs-spike.md)
+1. [Roadmap #10 任務 1：HiGHS MILP＋Dinkelbach 候選池](./2026-09-19-roadmap-10-milp-candidate-generation.md)
+2. [Roadmap #10 任務 1：HiGHS 求解器 spike（真實候選池量測，GO）](./2026-09-19-roadmap-10-highs-spike.md)
 
 ## 2026-09-18
 

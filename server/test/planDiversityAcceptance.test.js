@@ -50,6 +50,41 @@ describe('Roadmap #10 方案多樣性驗收', () => {
     assert.equal(evaluated.pass, true);
   });
 
+  test('no-signal 合併的主軸不計入分母，其他合併原因照常計入', () => {
+    const plans = [plan('personalized', ['A', 'B', 'C', 'D']), plan('personalized_compact', ['A', 'B', 'E', 'F'])];
+    const noSignal = evaluatePlanDiversityAcceptance({
+      plans,
+      hasExpressedPreference: false,
+      planDiversity: {
+        requestedVariants: 4,
+        distinctPlans: 2,
+        collapsed: [
+          { variantId: 'personalized_interest', reason: 'no-signal' },
+          { variantId: 'personalized_easy', reason: 'no-signal' },
+        ],
+      },
+    });
+    assert.equal(noSignal.rawRequestedVariants, 4);
+    assert.equal(noSignal.requestedVariants, 2);
+    assert.deepEqual(noSignal.excludedNoSignalVariants, ['personalized_interest', 'personalized_easy']);
+    assert.equal(noSignal.criteria.retentionRate, true);
+
+    const infeasible = evaluatePlanDiversityAcceptance({
+      plans,
+      hasExpressedPreference: false,
+      planDiversity: {
+        requestedVariants: 4,
+        distinctPlans: 2,
+        collapsed: [
+          { variantId: 'personalized_interest', reason: 'no-signal' },
+          { variantId: 'personalized_easy', reason: 'rating-coverage-infeasible' },
+        ],
+      },
+    });
+    assert.equal(infeasible.requestedVariants, 3);
+    assert.equal(infeasible.criteria.retentionRate, false);
+  });
+
   test('4 個策略只剩 2 個方案時保留率不通過', () => {
     const evaluated = evaluatePlanDiversityAcceptance(result([
       plan('a', ['A']),
@@ -61,7 +96,7 @@ describe('Roadmap #10 方案多樣性驗收', () => {
     assert.equal(evaluated.pass, false);
   });
 
-  test('無偏好 persona 只要求綜合與較多學分兩個方案', () => {
+  test('無偏好 persona 只要求至少兩個可比較方案', () => {
     const evaluated = evaluatePlanDiversityAcceptance(result([
       plan('general', ['A']),
       plan('credits', ['B']),

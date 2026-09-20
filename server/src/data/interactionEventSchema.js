@@ -157,6 +157,13 @@ function normalizePlanPolicies(value) {
     categoryCoefficient: item?.categoryCoefficient,
     creditCoefficient: item?.creditCoefficient,
     stopWhen: asTrimmedString(item?.stopWhen),
+    archetype: asTrimmedString(item?.archetype),
+    solver: item?.solver && typeof item.solver === 'object' ? {
+      method: asTrimmedString(item.solver.method),
+      category: asTrimmedString(item.solver.category),
+      rawStatus: asTrimmedString(item.solver.rawStatus),
+      approximate: item.solver.approximate,
+    } : null,
     source: { learnedApplied: item?.source?.learnedApplied,
       reason: asTrimmedString(item?.source?.reason), modelVersion: asTrimmedString(item?.source?.modelVersion) },
   }));
@@ -393,7 +400,13 @@ export function validateInteractionEvent(input) {
             && value >= (axis === 'easy' ? -3 : 0) && value <= 3)
           || ![0.35, 1].includes(policy.categoryCoefficient)
           || ![1, 3].includes(policy.creditCoefficient)
-          || !['no-credit-progress', 'candidate-exhausted'].includes(policy.stopWhen)
+          || !['no-credit-progress', 'candidate-exhausted', 'milp-optimized'].includes(policy.stopWhen)
+          || (policy.archetype && !['balanced', 'easy', 'challenge', 'interest', 'compact'].includes(policy.archetype))
+          || (policy.solver && (
+            policy.solver.method !== 'dinkelbach-milp'
+            || !['optimal', 'limit-with-solution'].includes(policy.solver.category)
+            || typeof policy.solver.approximate !== 'boolean'
+          ))
           || typeof policy.source.learnedApplied !== 'boolean') {
           errors.push('planPolicies 含無效方案、版本或權重');
         }

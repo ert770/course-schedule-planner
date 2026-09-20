@@ -46,7 +46,7 @@ const CF_STATUS_TEXT = {
   'not-applicable': '你目前沒有開啟這項偏好',
 };
 
-export default function PlanComparison({ plans = [], constraints = {}, courseIds = [], filters = {}, surface }) {
+export default function PlanComparison({ plans = [], recommendedPlanId, constraints = {}, courseIds = [], filters = {}, surface }) {
   const [showCounterfactual, setShowCounterfactual] = useState(false);
   const [cfState, setCfState] = useState({ status: 'idle', data: null, error: null });
 
@@ -63,10 +63,15 @@ export default function PlanComparison({ plans = [], constraints = {}, courseIds
 
   const courseDiffs = useMemo(() => {
     if (plans.length < 2) return [];
-    const base = plans[0];
-    return plans.slice(1).map(plan => ({
+    const base = plans.find(plan => plan.id === 'personalized') ?? plans[0];
+    return plans.filter(plan => plan.id !== base.id).map(plan => ({
       plan,
-      diff: diffCourses(base.schedule, plan.schedule),
+      diff: plan.comparisonToBaseline
+        ? {
+          removed: plan.comparisonToBaseline.removed || [],
+          added: plan.comparisonToBaseline.added || [],
+        }
+        : diffCourses(base.schedule, plan.schedule),
     }));
   }, [plans]);
 
@@ -106,7 +111,11 @@ export default function PlanComparison({ plans = [], constraints = {}, courseIds
               <thead>
                 <tr>
                   <th>項目</th>
-                  {plans.map(plan => <th key={plan.id}>{plan.title}</th>)}
+                  {plans.map(plan => (
+                    <th key={plan.id}>
+                      {plan.title}{plan.planId === recommendedPlanId ? '（主推）' : ''}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -128,7 +137,7 @@ export default function PlanComparison({ plans = [], constraints = {}, courseIds
         {courseDiffs.map(({ plan, diff }) => (
           (diff.added.length > 0 || diff.removed.length > 0) && (
             <p key={plan.id} className="plan-comparison-course-diff">
-              <strong>{plan.title}</strong> 相對主推方案：
+              <strong>{plan.title}</strong> 相對綜合方案：
               {diff.removed.length > 0 && (
                 <span className="plan-comparison-diff-removed">
                   {' '}少了 {diff.removed.map(c => c.name).join('、')}
@@ -137,6 +146,12 @@ export default function PlanComparison({ plans = [], constraints = {}, courseIds
               {diff.added.length > 0 && (
                 <span className="plan-comparison-diff-added">
                   {' '}多了 {diff.added.map(c => c.name).join('、')}
+                </span>
+              )}
+              {plan.comparisonToBaseline?.qualityRetention != null && (
+                <span>
+                  {' '}・品質保留 {Math.round(plan.comparisonToBaseline.qualityRetention * 100)}%
+                  ・上課 {plan.comparisonToBaseline.usedDays} 天
                 </span>
               )}
             </p>

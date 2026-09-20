@@ -24,6 +24,7 @@ import { resetRateLimiterForTests } from '../src/utils/rateLimiter.js';
 import { recordScheduleFeedback } from '../src/services/scheduleFeedbackService.js';
 import { annotateScheduleIdentifiers } from '../src/services/scheduleService.js';
 import { deriveSubjectId } from '../src/services/privacyService.js';
+import { SCORING_POLICY_VERSION } from '../src/skills/scoringPolicy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const demo = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'data', 'users.json'), 'utf8'))[0];
@@ -157,7 +158,7 @@ describe('#2 consent boundary', () => {
     const serialized = JSON.stringify(stored);
     assert.equal(serialized.includes(demo.studentId), false);
     assert.equal(serialized.includes(deriveSubjectId(identityA.canonicalId)), false);
-    assert.equal(stored[0].versionSnapshot.modelVersion, 'personalized-scoring-v1');
+    assert.equal(stored[0].versionSnapshot.modelVersion, SCORING_POLICY_VERSION);
     assert.equal(stored[0].versionSnapshot.recommendationReasonVersion, null);
   });
 

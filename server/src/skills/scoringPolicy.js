@@ -1,5 +1,5 @@
 // Roadmap #7：排課生成與推薦理由共用同一份版本化、有限範圍的評分規則。
-export const SCORING_POLICY_VERSION = 'personalized-scoring-v1';
+export const SCORING_POLICY_VERSION = 'personalized-scoring-v2';
 export const PREFERENCE_AXES = Object.freeze(['interest', 'compact', 'easy']);
 export const PREFERENCE_SCALE = 240;
 

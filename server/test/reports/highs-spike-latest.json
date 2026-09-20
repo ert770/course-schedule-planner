@@ -1,13 +1,71 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-19T08:02:45.780Z",
+  "generatedAt": "2026-09-19T13:40:17.048Z",
   "dataSource": "mysql-read-only",
   "activeTerm": {
     "academicYear": 114,
     "semester": "下學期"
   },
   "highsVersion": "1.15.3",
-  "coldStartMs": 26.74,
+  "coldStartMs": 23.1,
+  "soak": {
+    "caseId": "persona-compact",
+    "runs": 500,
+    "startRssMb": 254.05,
+    "samples": [
+      {
+        "run": 50,
+        "rssMb": 276.2,
+        "heapMb": 91.57
+      },
+      {
+        "run": 100,
+        "rssMb": 260,
+        "heapMb": 70.67
+      },
+      {
+        "run": 150,
+        "rssMb": 255.49,
+        "heapMb": 49.4
+      },
+      {
+        "run": 200,
+        "rssMb": 243.71,
+        "heapMb": 28.09
+      },
+      {
+        "run": 250,
+        "rssMb": 268.47,
+        "heapMb": 95.54
+      },
+      {
+        "run": 300,
+        "rssMb": 262.61,
+        "heapMb": 74.08
+      },
+      {
+        "run": 350,
+        "rssMb": 255.92,
+        "heapMb": 52.29
+      },
+      {
+        "run": 400,
+        "rssMb": 250.04,
+        "heapMb": 30.55
+      },
+      {
+        "run": 450,
+        "rssMb": 272.13,
+        "heapMb": 97.63
+      },
+      {
+        "run": 500,
+        "rssMb": 264.65,
+        "heapMb": 75.47
+      }
+    ],
+    "note": "連續求解的 RSS 趨勢觀測，不代表長時間執行不會累積"
+  },
   "warmRuns": 20,
   "p95BudgetMs": 200,
   "go": true,
@@ -18,6 +76,8 @@
       "candidatePoolSize": 362,
       "fixedCourses": 0,
       "fixedCredits": 0,
+      "fixedCourseSources": {},
+      "expected": null,
       "creditBounds": [
         9,
         25
@@ -34,7 +94,7 @@
         "rows": 286,
         "nonzeros": 2078,
         "slotRows": 57,
-        "buildMs": 3.47,
+        "buildMs": 3.32,
         "lpTextKb": 24.1
       },
       "statuses": [
@@ -43,14 +103,14 @@
       "allOptimal": true,
       "mipGapMax": 0,
       "warmSolveMs": {
-        "p50": 19.84,
-        "p95": 34.14,
-        "max": 119.94
+        "p50": 16.55,
+        "p95": 25.59,
+        "max": 99.22
       },
       "deterministic": true,
       "memory": {
-        "maxHeapDeltaMb": 1.83,
-        "maxRssDeltaMb": 37.71
+        "maxHeapDeltaMb": 1.84,
+        "maxRssDeltaMb": 36.19
       },
       "validator": {
         "milp": {
@@ -62,6 +122,15 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        }
+      },
+      "modelChecks": {
+        "valid": true,
+        "violations": [],
+        "totalCredits": 11,
+        "hierarchyCounts": {
+          "cross-year": 1,
+          "outside": 0
         }
       },
       "comparisonWithS0": {
@@ -90,13 +159,22 @@
         "statuses": [
           "optimal"
         ],
-        "p95Ms": 23.3,
+        "p95Ms": 20.95,
         "totalCredits": 25,
         "fillScore": -6690,
         "validator": {
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        },
+        "modelChecks": {
+          "valid": true,
+          "violations": [],
+          "totalCredits": 25,
+          "hierarchyCounts": {
+            "cross-year": 6,
+            "outside": 0
+          }
         },
         "codeDiffVsS0": {
           "removed": [
@@ -122,6 +200,8 @@
       "candidatePoolSize": 362,
       "fixedCourses": 0,
       "fixedCredits": 0,
+      "fixedCourseSources": {},
+      "expected": null,
       "creditBounds": [
         9,
         25
@@ -138,7 +218,7 @@
         "rows": 286,
         "nonzeros": 2078,
         "slotRows": 57,
-        "buildMs": 0.89,
+        "buildMs": 0.98,
         "lpTextKb": 24.1
       },
       "statuses": [
@@ -147,14 +227,14 @@
       "allOptimal": true,
       "mipGapMax": 0,
       "warmSolveMs": {
-        "p50": 15.81,
-        "p95": 19.82,
-        "max": 20.73
+        "p50": 14.22,
+        "p95": 15.07,
+        "max": 15.3
       },
       "deterministic": true,
       "memory": {
-        "maxHeapDeltaMb": 1.37,
-        "maxRssDeltaMb": 5.4
+        "maxHeapDeltaMb": 1.39,
+        "maxRssDeltaMb": 3.08
       },
       "validator": {
         "milp": {
@@ -166,6 +246,15 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        }
+      },
+      "modelChecks": {
+        "valid": true,
+        "violations": [],
+        "totalCredits": 11,
+        "hierarchyCounts": {
+          "cross-year": 1,
+          "outside": 0
         }
       },
       "comparisonWithS0": {
@@ -194,13 +283,22 @@
         "statuses": [
           "optimal"
         ],
-        "p95Ms": 14.86,
+        "p95Ms": 13.34,
         "totalCredits": 25,
         "fillScore": -7500,
         "validator": {
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        },
+        "modelChecks": {
+          "valid": true,
+          "violations": [],
+          "totalCredits": 25,
+          "hierarchyCounts": {
+            "cross-year": 6,
+            "outside": 0
+          }
         },
         "codeDiffVsS0": {
           "removed": [
@@ -224,6 +322,8 @@
       "candidatePoolSize": 362,
       "fixedCourses": 0,
       "fixedCredits": 0,
+      "fixedCourseSources": {},
+      "expected": null,
       "creditBounds": [
         9,
         25
@@ -240,7 +340,7 @@
         "rows": 301,
         "nonzeros": 2241,
         "slotRows": 63,
-        "buildMs": 1.08,
+        "buildMs": 0.86,
         "lpTextKb": 26.11
       },
       "statuses": [
@@ -249,14 +349,14 @@
       "allOptimal": true,
       "mipGapMax": 0,
       "warmSolveMs": {
-        "p50": 21.58,
-        "p95": 23.03,
-        "max": 26.39
+        "p50": 20,
+        "p95": 20.71,
+        "max": 20.77
       },
       "deterministic": true,
       "memory": {
-        "maxHeapDeltaMb": 1.45,
-        "maxRssDeltaMb": 1.35
+        "maxHeapDeltaMb": 1.47,
+        "maxRssDeltaMb": 2.52
       },
       "validator": {
         "milp": {
@@ -268,6 +368,15 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        }
+      },
+      "modelChecks": {
+        "valid": true,
+        "violations": [],
+        "totalCredits": 11,
+        "hierarchyCounts": {
+          "cross-year": 1,
+          "outside": 0
         }
       },
       "comparisonWithS0": {
@@ -296,13 +405,22 @@
         "statuses": [
           "optimal"
         ],
-        "p95Ms": 36.62,
+        "p95Ms": 34.42,
         "totalCredits": 25,
         "fillScore": -5568,
         "validator": {
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        },
+        "modelChecks": {
+          "valid": true,
+          "violations": [],
+          "totalCredits": 25,
+          "hierarchyCounts": {
+            "cross-year": 6,
+            "outside": 0
+          }
         },
         "codeDiffVsS0": {
           "removed": [
@@ -322,6 +440,8 @@
       "candidatePoolSize": 362,
       "fixedCourses": 0,
       "fixedCredits": 0,
+      "fixedCourseSources": {},
+      "expected": null,
       "creditBounds": [
         9,
         25
@@ -338,7 +458,7 @@
         "rows": 297,
         "nonzeros": 2262,
         "slotRows": 63,
-        "buildMs": 1.2,
+        "buildMs": 0.98,
         "lpTextKb": 27.47
       },
       "statuses": [
@@ -347,14 +467,14 @@
       "allOptimal": true,
       "mipGapMax": 0,
       "warmSolveMs": {
-        "p50": 22.2,
-        "p95": 26.24,
-        "max": 27.57
+        "p50": 20.53,
+        "p95": 22.13,
+        "max": 22.31
       },
       "deterministic": true,
       "memory": {
-        "maxHeapDeltaMb": 1.56,
-        "maxRssDeltaMb": 8.48
+        "maxHeapDeltaMb": 1.57,
+        "maxRssDeltaMb": 6.35
       },
       "validator": {
         "milp": {
@@ -366,6 +486,15 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        }
+      },
+      "modelChecks": {
+        "valid": true,
+        "violations": [],
+        "totalCredits": 10,
+        "hierarchyCounts": {
+          "cross-year": 1,
+          "outside": 0
         }
       },
       "comparisonWithS0": {
@@ -394,13 +523,22 @@
         "statuses": [
           "optimal"
         ],
-        "p95Ms": 31.07,
+        "p95Ms": 26.05,
         "totalCredits": 25,
         "fillScore": -6274.71,
         "validator": {
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        },
+        "modelChecks": {
+          "valid": true,
+          "violations": [],
+          "totalCredits": 25,
+          "hierarchyCounts": {
+            "cross-year": 6,
+            "outside": 0
+          }
         },
         "codeDiffVsS0": {
           "removed": [
@@ -411,6 +549,126 @@
           "added": [
             "IECS3061",
             "IECS4943"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "fixed-courses-control",
+      "candidatePoolSize": 581,
+      "fixedCourses": 8,
+      "fixedCredits": 18,
+      "fixedCourseSources": {
+        "USER_SPECIFIED": 1,
+        "REQUIRED_COURSE": 6,
+        "RETAKE_REQUIRED": 1
+      },
+      "expected": {
+        "explicitSectionId": 1268,
+        "retryCourseCode": "IECS1008",
+        "className": "資訊二甲"
+      },
+      "creditBounds": [
+        12,
+        25
+      ],
+      "maxCoursesPerDay": 5,
+      "prefilter": {
+        "competitive": 562,
+        "blockedAgainstFixed": 273,
+        "missingCorequisite": 0
+      },
+      "modelStats": {
+        "sectionVars": 289,
+        "courseVars": 137,
+        "rows": 183,
+        "nonzeros": 1909,
+        "slotRows": 35,
+        "buildMs": 1.06,
+        "lpTextKb": 21.2
+      },
+      "statuses": [
+        "optimal"
+      ],
+      "allOptimal": true,
+      "mipGapMax": 0,
+      "warmSolveMs": {
+        "p50": 9.55,
+        "p95": 9.96,
+        "max": 10.42
+      },
+      "deterministic": true,
+      "memory": {
+        "maxHeapDeltaMb": 1.14,
+        "maxRssDeltaMb": 0.55
+      },
+      "validator": {
+        "milp": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "s0": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      },
+      "modelChecks": {
+        "valid": true,
+        "violations": [],
+        "totalCredits": 24,
+        "hierarchyCounts": {
+          "cross-year": 0,
+          "outside": 0
+        }
+      },
+      "comparisonWithS0": {
+        "s0": {
+          "fillCourses": 3,
+          "totalCredits": 25,
+          "fillScore": -2084
+        },
+        "milp": {
+          "fillCourses": 2,
+          "totalCredits": 24,
+          "fillScore": 1988,
+          "objective": 1988
+        },
+        "removedFromS0": [
+          "HSS2033"
+        ],
+        "addedVsS0": []
+      },
+      "creditParity": {
+        "statuses": [
+          "optimal"
+        ],
+        "p95Ms": 13.83,
+        "totalCredits": 25,
+        "fillScore": 374,
+        "validator": {
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        "modelChecks": {
+          "valid": true,
+          "violations": [],
+          "totalCredits": 25,
+          "hierarchyCounts": {
+            "cross-year": 1,
+            "outside": 0
+          }
+        },
+        "codeDiffVsS0": {
+          "removed": [
+            "IECS2011",
+            "HSS2033"
+          ],
+          "added": [
+            "IECS2006",
+            "IECS4071"
           ]
         }
       }

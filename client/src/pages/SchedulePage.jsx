@@ -39,6 +39,7 @@ export default function SchedulePage() {
     // roadmap #27
     plans,
     selectedPlanId,
+    recommendedPlanId,
     planDiversity,
     selectPlan,
   } = useSchedule();
@@ -321,12 +322,14 @@ export default function SchedulePage() {
             <PlanSwitcher
               plans={plans}
               selectedPlanId={selectedPlanId}
+              recommendedPlanId={recommendedPlanId}
               planDiversity={planDiversity}
               onSelectPlan={handleSelectPlan}
             />
 
             <PlanComparison
               plans={plans}
+              recommendedPlanId={recommendedPlanId}
               constraints={{}}
               courseIds={selectedCourses.map(c => c.id)}
               surface="schedule"

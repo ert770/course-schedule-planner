@@ -991,7 +991,7 @@ function assertMysqlAvailable(collection) {
   if (MYSQL_ONLY_COLLECTIONS.has(collection) && !isMysqlConfigured()) {
     throw new Error(
       `${collection} 只能來自 MySQL，但未設定資料庫連線。`
-      + '請在 `server/.env` 設定 DB_HOST、DB_USER 與 DB_NAME（見 `.env.example`）。'
+      + '請在 `server/.env` 設定 DB_HOST、DB_USER 與 DB_NAME（範本見專案根目錄的 `.env.example`）。'
     );
   }
 }

@@ -52,7 +52,9 @@ export function summarizeRun(result, {
   constraints = {},
 } = {}) {
   const plans = Array.isArray(result?.plans) ? result.plans : [];
-  const primary = plans[0] ?? null;
+  const primary = plans.find(plan => (
+    plan?.planId === result?.recommendedPlanId || plan?.id === result?.recommendedPlanId
+  )) ?? plans[0] ?? null;
   const primaryUtility = primary ? utilityUnderProfile(primary, evaluationConstraints) : {
     score: 0, breakdown: { interest: 0, compact: 0, easy: null }, profile: buildPreferenceProfile(evaluationConstraints),
   };

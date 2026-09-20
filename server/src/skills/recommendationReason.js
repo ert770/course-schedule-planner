@@ -51,6 +51,7 @@ export const COMPETITION_STATUS = Object.freeze({
   HAD_COMPETITORS: 'had-competitors',
   NO_COMPETITORS: 'no-competitors',
   NOT_APPLICABLE: 'not-applicable',
+  NOT_APPLICABLE_MILP: 'not-applicable-milp',
 });
 
 function resolveSelectionReason({ placementReason, course, requiredSelection, formallyRequired }) {

@@ -115,6 +115,41 @@ describe('S3-S4 必修與重補修優先', () => {
     assert.equal(result.schedule.length, 1);
     assert.equal(result.schedule[0].id, 1);
   });
+
+  test('S4 重修低年級必修不受開課年級限制（排課器與驗證器一致）', () => {
+    // 2026-09-19 回歸：二年級重修一年級必修曾被 COURSE_GRADE_MISMATCH 整批排除。
+    const retake = makeCourse(11, {
+      name: '程式設計(III)', catalogCourseCode: 'IECS1008',
+      category: '必修', gradeLevel: 1, dayOfWeek: 2, department: '資訊一甲',
+    });
+    const otherFirstYear = makeCourse(12, {
+      name: '一年級必修', catalogCourseCode: 'IECS1099',
+      category: '必修', gradeLevel: 1, dayOfWeek: 3, department: '資訊一乙',
+    });
+    const constraints = {
+      department: '資訊工程學系',
+      gradeLevel: 2,
+      courseHistory: [{
+        academicYear: 114, semester: 2, courseCode: 'IECS1008', courseName: '程式設計(III)',
+        passed: false, requirementType: '必修',
+      }],
+      minCredits: 0,
+      maxCredits: 25,
+    };
+    const result = generateSchedule([retake, otherFirstYear], constraints);
+    const ids = result.schedule.map(course => course.id);
+    assert.ok(ids.includes(11), '不及格必修應排入');
+    assert.ok(!ids.includes(12), '沒有不及格紀錄的低年級必修仍受年級限制');
+    assert.equal(
+      result.excludedCourses.some(item => item.course.id === 11 && item.constraintId === 'COURSE_GRADE_MISMATCH'),
+      false
+    );
+    const validation = validateScheduleAgainstConstraints([retake], constraints);
+    assert.equal(
+      validation.violations.some(item => item.constraintId === 'COURSE_GRADE_MISMATCH'),
+      false
+    );
+  });
 });
 
 describe('#13B 資格待確認課程', () => {
@@ -2454,10 +2489,10 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
   });
 
   describe('P10-2 候選池夠大時方案之間真的不同', () => {
-    test('P10-2 無顯式偏好只嘗試通用與學分策略，不擅自假設涼課方向', () => {
+    test('P10-2 無顯式偏好仍保留四個正式取向的嘗試紀錄', () => {
       const result = generateSchedule(widePool(), { minCredits: 0, maxCredits: 12 });
 
-      assert.equal(result.planDiversity.requestedVariants, 2);
+      assert.equal(result.planDiversity.requestedVariants, 4);
       assert.ok(result.plans.every(plan => Object.values(plan.generationPolicy.weights).every(w => w === 0)));
     });
 
@@ -2494,7 +2529,7 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
         { minCredits: 0, maxCredits: 25 }
       );
 
-      const warning = result.warnings.find(w => w.includes('已合併'));
+      const warning = result.warnings.find(w => w.includes('未能保留'));
       assert.ok(warning, '方案被合併時必須有說明');
       assert.match(warning, /可競爭的課程共 2 門/);
     });
@@ -2821,8 +2856,8 @@ describe('PM1-PM6 Roadmap #27：方案比較指標與塌縮結構化', () => {
       );
 
       assert.ok(result.planDiversity, '成功結果必須帶 planDiversity');
-      assert.equal(result.planDiversity.reason, 'same-course-combination');
-      const warning = result.warnings.find(w => w.includes('已合併'));
+      assert.equal(result.planDiversity.reason, 'milp-candidate-unavailable');
+      const warning = result.warnings.find(w => w.includes('未能保留'));
       assert.ok(warning, '方案被合併時必須有說明');
       assert.match(warning, new RegExp(`目前提供 ${result.planDiversity.distinctPlans} 種方案`));
       assert.match(warning, new RegExp(`可競爭的課程共 ${result.planDiversity.competablePoolSize} 門`));
@@ -2838,7 +2873,7 @@ describe('PM1-PM6 Roadmap #27：方案比較指標與塌縮結構化', () => {
       const result = generateSchedule([
         at(1, 1, 3, { category: '核心選修', credits: 1 }),
         at(2, 1, 3, { category: '一般選修', credits: 5 }),
-      ], { minCredits: 0, maxCredits: 5 });
+      ], { minCredits: 0, maxCredits: 5 }, { planSet: 'primary-only' });
       assert.equal(result.planDiversity.distinctPlans, result.plans.length);
       assert.equal(result.planDiversity.requestedVariants, result.planDiversity.distinctPlans);
       assert.deepEqual(result.planDiversity.collapsed, []);

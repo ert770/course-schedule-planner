@@ -99,6 +99,7 @@ export function ScheduleProvider({ children }) {
   // 推薦，沒有「其他方案」可以切換。
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState(null);
+  const [recommendedPlanId, setRecommendedPlanId] = useState(null);
   // 塌縮說明（原本幾個 variant、合併成幾個、可競爭池多大）。屬於整次排課
   // 結果，不屬於單一方案，切換方案不受影響。
   const [planDiversity, setPlanDiversity] = useState(null);
@@ -126,6 +127,7 @@ export function ScheduleProvider({ children }) {
     setSchedule(normalized);
     setPlans(normalizedPlans);
     setSelectedPlanId(recommendation?.variantId ?? normalizedPlans[0]?.id ?? null);
+    setRecommendedPlanId(recommendation?.planId ?? normalizedPlans[0]?.planId ?? null);
     setPlanDiversity(diversity);
   }, []);
 
@@ -402,6 +404,7 @@ export function ScheduleProvider({ children }) {
     // roadmap #27
     plans,
     selectedPlanId,
+    recommendedPlanId,
     activePlan,
     planDiversity,
     selectPlan,
@@ -409,7 +412,7 @@ export function ScheduleProvider({ children }) {
     acceptRecommendation, activePlan, addCourse, loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, planDiversity, plans,
     removeCourse, replaceSchedule, saveCurrentSchedule, saving, schedule,
-    selectedPlanId, selectPlan, toggleWatchlist, validating, watchlist,
+    recommendedPlanId, selectedPlanId, selectPlan, toggleWatchlist, validating, watchlist,
   ]);
 
   return <ScheduleContext.Provider value={value}>{children}</ScheduleContext.Provider>;

@@ -21,14 +21,10 @@ describe('Roadmap #10 方案塌縮診斷', () => {
     }, { includePlanDiagnostics: true });
 
     assert.equal(result.plans.length, 1);
-    assert.equal(result.generationDiagnostics.variants.length, 2);
+    assert.equal(result.generationDiagnostics.variants.length, 1);
     assert.deepEqual(
       result.generationDiagnostics.variants.map(item => item.variantId),
-      ['personalized', 'personalized_credits']
-    );
-    assert.equal(
-      result.generationDiagnostics.variants[1].duplicateOfVariantId,
-      'personalized'
+      ['personalized']
     );
     assert.equal(result.generationDiagnostics.variants[0].courseSet.all.length, 2);
   });

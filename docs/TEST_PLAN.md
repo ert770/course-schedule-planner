@@ -633,6 +633,31 @@ runner 使用目前 MySQL 與正式排課器，報告寫入
 同一命令另寫入 `server/test/reports/plan-diversity-diagnostics-latest.json`；此 sidecar 保存
 去重前課程集合、每次選課的前 4 名分數拆解，以及所有未入選候選的原因，供失敗時定位塌縮。
 
+### 多方案 MILP（Roadmap #10 任務 1，2026-09-19）
+
+純函式與合成案例（需要 HiGHS WASM，不需網路或資料庫）：
+
+| 檔案 | 覆蓋內容 |
+| --- | --- |
+| `scheduleMipModel.test.js` | 同時段取高分（精確 argmax）、同課一班、greedy 會選錯的組合、學分上下限、共同必修、同系列豁免、固定課衝突前置排除；空模型三種狀態（`no-competitive-candidates`／`infeasible`／`data-insufficient`）；學分對齊、雙向換課、興趣門檻、品質下限、評價數下限、集中日變數；`bindingConstraints` 相對容差 |
+| `diversePlanSolver.test.js` | 每步用選課結果重算 d 並收斂到窮舉最佳比值；`U(S₀) < 0` 的品質保留率；共用 deadline；x⁰ 起步與 λ₁；暖啟動傳遞；不可行時逐組放寬的原因診斷；線上預設（K=1、2.5 秒、單次 0.8 秒）與 benchmark 設定（只覆寫 K=3）互不影響 |
+| `milpPlanChecks.test.js` | 學分對齊與固定班次；固定班次、重複課號、系列、每日上限、共同必修、跨年級／系外階層配額逐項反例 |
+| `milpAxisSignal.test.js` | 興趣／難度訊號判定、校準後 `minGain=0.02`、評價覆蓋下限 `max(2, ⌈S₀÷2⌉)`、門檻可達範圍（含固定課分數）、固定課已占滿集中日數 |
+| `highsRuntime.test.js` | 限制停止時區分「已有可行解」與「沒有可行解」 |
+| `schedulerMilpIntegration.test.js` | S₀ 與 `primary-only` 相同；`recommendedPlanId` 與 `plans[0]` 一致；未注入 solver 時只回 S₀ 並揭露原因 |
+| `scheduler.test.js` S4 | 重修低年級必修不受開課年級限制，排課器與驗證器一致 |
+
+真實資料量測：
+
+```bash
+node scripts/highsSpike.js --markdown --soak 500
+```
+
+spike 報告（`server/test/reports/highs-spike-latest.json`）的 GO 判斷同時看 validator、
+`milpPlanChecks`、全部 optimal、warm p95 ≤ 200 ms、重跑一致，以及 `fixed-courses-control`
+必須同時出現本人必修、重補修與指定課三種固定來源。`--soak N` 記錄連續求解的 RSS 趨勢，
+只是觀測值，不證明長時間執行不會累積。
+
 `server/test/planComparison.test.js` 的 CF1-CF4（純函式，不需網路或資料庫）：
 
 | 編號 | 情境 | 預期結果 |

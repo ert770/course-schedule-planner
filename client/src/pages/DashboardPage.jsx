@@ -45,6 +45,7 @@ export default function DashboardPage() {
     // roadmap #27
     plans,
     selectedPlanId,
+    recommendedPlanId,
     planDiversity,
     selectPlan,
   } = useSchedule();
@@ -497,6 +498,7 @@ export default function DashboardPage() {
             <PlanSwitcher
               plans={plans}
               selectedPlanId={selectedPlanId}
+              recommendedPlanId={recommendedPlanId}
               planDiversity={planDiversity}
               onSelectPlan={handleSelectPlan}
             />
@@ -504,6 +506,7 @@ export default function DashboardPage() {
             {/* constraints 不送 minCredits：交給後端依年級判斷（2026-09-10 修正）。 */}
             <PlanComparison
               plans={plans}
+              recommendedPlanId={recommendedPlanId}
               constraints={{ maxCredits: 25 }}
               surface="dashboard"
             />

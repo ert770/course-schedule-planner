@@ -161,6 +161,29 @@ describe('Roadmap #29 InteractionEvent v1 schema', () => {
     })), /planPolicies 含無效/u);
   });
 
+  test('#10 新 MILP policy 可記錄 archetype 與 solver，舊 policy 仍相容', () => {
+    const planId = 'plan-interest';
+    const event = createInteractionEvent(IDENTITY, exposureInput({
+      plan: { planId, variantId: 'personalized_interest' },
+      exposureContext: {
+        surface: 'dashboard', trigger: 'initial_load',
+        candidateSet: [course(101)], displayedSet: [course(101)],
+        displayedPlanIds: [planId],
+        planPolicies: [{
+          planId, variantId: 'personalized_interest', version: 'personalized-scoring-v2',
+          weights: { interest: 1, compact: 0, easy: 0 },
+          categoryCoefficient: 0.35, creditCoefficient: 1,
+          stopWhen: 'milp-optimized', archetype: 'interest',
+          solver: { method: 'dinkelbach-milp', category: 'optimal', rawStatus: 'Optimal', approximate: false },
+          source: { learnedApplied: false, reason: 'absent', modelVersion: null },
+        }],
+      },
+    }), { randomUUID: () => EVENT_ID_1 });
+    assert.equal(event.exposureContext.planPolicies[0].archetype, 'interest');
+    assert.equal(event.exposureContext.planPolicies[0].solver.category, 'optimal');
+    assert.equal(validateInteractionEvent(event).valid, true);
+  });
+
   test('I29-3 displayedSet 不是 candidateSet 子集時拒絕', () => {
     assert.throws(
       () => createInteractionEvent(IDENTITY, exposureInput({

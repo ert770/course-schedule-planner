@@ -49,6 +49,10 @@ export function annotateScheduleIdentifiers(result, requestId) {
       plan.variantId = plan.id;
       plan.planId = `${requestId}:${plan.id}`;
     }
+    const recommendedVariantId = result.recommendedPlanId ?? result.plans[0]?.id ?? null;
+    const recommended = result.plans.find(plan => plan.id === recommendedVariantId) ?? result.plans[0];
+    result.recommendedPlanId = recommended?.planId ?? null;
+    result.displayOrder = result.plans.map(plan => plan.planId);
   }
   return result;
 }
@@ -102,7 +106,7 @@ export function buildExposureDraft(result, requestId, { surface, trigger } = {})
   // 沒有任何候選課可談，寫一筆空曝光沒有意義。
   if (candidateSet.length === 0) return null;
 
-  const primary = plans[0] ?? null;
+  const primary = plans.find(plan => plan.planId === result.recommendedPlanId) ?? plans[0] ?? null;
   const displayedPlanIds = plans.map(plan => plan.planId).filter(Boolean);
   return {
     eventType: INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED,

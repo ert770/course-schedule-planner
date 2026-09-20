@@ -117,7 +117,8 @@ export function courseSource(course, { systemRecommendedIds } = {}) {
 // 手動加入，對 #30 是完全不同的訊號。
 export function buildRecommendation(result) {
   if (!result?.requestId) return null;
-  const primary = Array.isArray(result.plans) ? result.plans[0] : null;
+  const plans = Array.isArray(result.plans) ? result.plans : [];
+  const primary = plans.find(plan => plan.planId === result.recommendedPlanId) ?? plans[0] ?? null;
   return {
     requestId: result.requestId,
     planId: primary?.planId ?? null,

@@ -21,9 +21,11 @@ import { buildScheduleConstraints } from '../src/services/constraintService.js';
 import { getUserPreferences } from '../src/services/memoryService.js';
 import { getHighsRuntime, solveLpText, SOLVE_STATUS } from '../src/skills/optimization/highsRuntime.js';
 import { buildScheduleMip, decodeSelection } from '../src/skills/optimization/scheduleMipModel.js';
+import { checkMilpPlan } from '../src/skills/optimization/milpPlanChecks.js';
 import {
   absentLearnedPreference,
   buildCandidates,
+  buildFixedCoursesControl,
   CASE_IDS,
   deriveLearnedPreferenceReadOnly,
   identityFor,
@@ -61,8 +63,8 @@ function validate(schedule, unscheduled, constraints, excludedCourses) {
   };
 }
 
-async function runCase({ caseId, prefs, learnedPreference, reviews, allCourses }) {
-  const constraints = buildScheduleConstraints({}, prefs, { reviews, courseReviews: reviews, learnedPreference });
+async function runCase({ caseId, input = {}, prefs, learnedPreference, reviews, allCourses, expected = null }) {
+  const constraints = buildScheduleConstraints(input, prefs, { reviews, courseReviews: reviews, learnedPreference });
   const candidates = await buildCandidates(constraints, allCourses);
   const result = generateSchedule(candidates, constraints, { includeMipInputs: true });
   const inputs = result.mipInputs;
@@ -109,12 +111,18 @@ async function runCase({ caseId, prefs, learnedPreference, reviews, allCourses }
       [...inputs.fixedSchedule, ...paritySelected.map(section => ({ ...section.course, scheduleState: 'selected' }))],
       inputs.fixedUnscheduled, constraints, s0.excludedCourses
     ),
+    modelChecks: checkMilpPlan([
+      ...inputs.fixedSchedule,
+      ...inputs.fixedUnscheduled,
+      ...paritySelected.map(section => ({ ...section.course, scheduleState: 'selected' })),
+    ], inputs, { creditTarget: s0.totalCredits }),
     codeDiffVsS0: null,
   };
 
   const first = solves[0];
   const selectedCourses = first.selected.map(section => ({ ...section.course, scheduleState: 'selected' }));
   const milpSchedule = [...inputs.fixedSchedule, ...selectedCourses];
+  const fullMilpSelection = [...milpSchedule, ...inputs.fixedUnscheduled];
   const milpCredits = milpSchedule.reduce((sum, course) => sum + (course.credits || 0), 0);
   const milpScore = first.selected
     .filter(section => section.kind === 'competitive')
@@ -132,9 +140,16 @@ async function runCase({ caseId, prefs, learnedPreference, reviews, allCourses }
 
   return {
     caseId,
+    soakModel: model,
     candidatePoolSize: candidates.length,
     fixedCourses: inputs.fixedSchedule.length,
     fixedCredits: inputs.fixedCredits,
+    fixedCourseSources: inputs.fixedSchedule.reduce((counts, course) => {
+      const source = course.recommendationReason?.selectedBecause ?? 'UNKNOWN';
+      counts[source] = (counts[source] || 0) + 1;
+      return counts;
+    }, {}),
+    expected,
     creditBounds: [inputs.minCredits, inputs.maxCredits],
     maxCoursesPerDay: Number.isFinite(inputs.maxCoursesPerDay) ? inputs.maxCoursesPerDay : null,
     prefilter: model.prefilter,
@@ -152,6 +167,7 @@ async function runCase({ caseId, prefs, learnedPreference, reviews, allCourses }
       milp: validate(milpSchedule, inputs.fixedUnscheduled, constraints, s0.excludedCourses),
       s0: validate(s0.schedule, s0.unscheduledCourses, constraints, s0.excludedCourses),
     },
+    modelChecks: checkMilpPlan(fullMilpSelection, inputs, { creditTarget: inputs.minCredits }),
     comparisonWithS0: {
       s0: { fillCourses: s0Fill.length, totalCredits: s0.totalCredits, fillScore: round(s0Score) },
       milp: { fillCourses: selectedCourses.length, totalCredits: milpCredits, fillScore: round(milpScore), objective: round(first.objective) },
@@ -216,16 +232,52 @@ async function main() {
     }
   }
 
+  const fixedControl = buildFixedCoursesControl(allCourses);
+  cases.push(await runCase({
+    caseId: 'fixed-courses-control',
+    input: fixedControl.input,
+    prefs: fixedControl.prefs,
+    learnedPreference: absentLearnedPreference('control-disabled'),
+    reviews,
+    allCourses,
+    expected: fixedControl.expected,
+  }));
+
   const goReasons = [];
   for (const row of cases) {
     if (row.error) { goReasons.push(`${row.caseId}: ${row.error}`); continue; }
     if (!row.allOptimal) goReasons.push(`${row.caseId} 非全部 optimal（${row.statuses.join('/')}）`);
     if (!row.validator.milp.valid) goReasons.push(`${row.caseId} validator 違規 ${row.validator.milp.constraintIds.join(',')}`);
+    if (!row.creditParity.modelChecks.valid) goReasons.push(`${row.caseId} milpPlanChecks 違規 ${row.creditParity.modelChecks.violations.map(item => item.constraintId).join(',')}`);
+    if (row.caseId === 'fixed-courses-control') {
+      for (const source of ['REQUIRED_COURSE', 'RETAKE_REQUIRED', 'USER_SPECIFIED']) {
+        if (!row.fixedCourseSources[source]) goReasons.push(`${row.caseId} 缺少固定來源 ${source}`);
+      }
+    }
     if (row.warmSolveMs.p95 > P95_BUDGET_MS) goReasons.push(`${row.caseId} p95 ${row.warmSolveMs.p95} ms > ${P95_BUDGET_MS}`);
     if (!row.deterministic) goReasons.push(`${row.caseId} 重跑結果不一致`);
   }
 
   const highsPackage = JSON.parse(fs.readFileSync(path.join(scriptDir, '..', 'node_modules', 'highs', 'package.json'), 'utf8'));
+  // --soak N：同一模型連續求解 N 次，每 50 次記一次 RSS。只是趨勢觀測，
+  // 不能證明長時間執行不會累積記憶體。
+  const soakIndex = process.argv.indexOf('--soak');
+  const soakRuns = soakIndex > 0 ? Number(process.argv[soakIndex + 1]) : 0;
+  let soak = null;
+  if (soakRuns > 0) {
+    const soakCase = cases.find(row => row.soakModel);
+    const samples = [];
+    if (global.gc) global.gc();
+    const startRss = process.memoryUsage().rss;
+    for (let run = 1; run <= soakRuns; run += 1) {
+      await solveLpText(soakCase.soakModel.lpText, soakCase.soakModel.columnNames);
+      if (run % 50 === 0) samples.push({ run, rssMb: mb(process.memoryUsage().rss), heapMb: mb(process.memoryUsage().heapUsed) });
+    }
+    soak = { caseId: soakCase.caseId, runs: soakRuns, startRssMb: mb(startRss), samples,
+      note: '連續求解的 RSS 趨勢觀測，不代表長時間執行不會累積' };
+  }
+  for (const row of cases) delete row.soakModel;
+
   const report = {
     schemaVersion: 1,
     generatedAt: evaluationTime.toISOString(),
@@ -233,6 +285,7 @@ async function main() {
     activeTerm: ACTIVE_TERM,
     highsVersion: highsPackage.version,
     coldStartMs,
+    soak,
     warmRuns: WARM_RUNS,
     p95BudgetMs: P95_BUDGET_MS,
     go: goReasons.length === 0,
