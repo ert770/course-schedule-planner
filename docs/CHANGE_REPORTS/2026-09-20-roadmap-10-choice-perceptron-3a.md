@@ -150,8 +150,9 @@ true／false 下逐位元相同）。3B 接上開關時那個測試會失敗，�
   test 結果平均——那等於報告了一個上線時不存在的模型，正式環境只會有一個固定的 η。
   改成單一 η 後平均 test accuracy 由 0.800 變成 **0.804**，結論沒有被推翻，但流程必須修正。
 - **`REQUIRED_CHOICE_COUNT` 無法只憑合成資料定案。** 穩定所需的 choice 次數
-  中位數為 36／26／20（各 seed），最大值 60／45／52，其中 seed 1 的 `null-easy` 到第 60 次
-  （training 上限）都還沒進入平台期。合成 persona 的偏好是固定不變的，真實使用者不是，
+  中位數為 36／9／20（各 seed），最大值 60／35／52，其中 seed 1 的 `null-easy` 到第 60 次
+  （training 上限）都還沒進入平台期。（這組數字是改用單一 η = 0.2 之後重跑的；
+  先前每個 seed 各自選 η 時為 36／26／20 與 60／45／52。）合成 persona 的偏好是固定不變的，真實使用者不是，
   所以這組數字只能當參考上限。程式碼裡的暫定值 10 **低於合成資料的中位數**，也就是
   偏寬鬆；要等真實 choice 累積後重算，`sufficiency.calibrated` 在那之前一律為 false。
 
@@ -254,7 +255,51 @@ requestId `befd7dc7-71ee-433f-b285-37cfb744e9ab`（三個方案：集中／興�
 | P2 | 報告的平均值混用了各 seed 各自選出的 η | 改成先跨全部 seed × persona 的 validation 平均選出**單一 η = 0.2**，再用它評估所有 test。平均 accuracy 0.800 → **0.804**，結論未變 |
 | P2 | `useLearnedPreference` 的布林限制可經 `preferencesJson` 繞過 | 公開 API **不再接受整包 `preferencesJson`**（回 400，指向專屬欄位）。整包覆寫除了繞過型別檢查，也會洗掉 `values` 裡的其他鍵。同時刪掉 `profileSchema.js` 裡重複的 `normalizePreferencesJson()`，canonical shape 只留 `interestPreferences.js` 一份 |
 
-新增測試：`choicePerceptron.test.js` 的未知版本案例、`profileRoutes.test.js`（4 項，涵蓋布林限制與 `preferencesJson` 兩條繞過路徑）。
+新增測試：`choicePerceptron.test.js` 的未知版本案例，以及 `POST /api/profile` 輸入驗證的測試（一開始寫成 route 測試，後來改成純函式測試，見第 7 節）。
 
-**已知副作用（誠實記錄）**：`profileRoutes.test.js` 需要 `app.js`，因此在 Windows 上會踩到與 `authRoutes`／`privacyRoutes`／`scheduleRoutes` 相同的既有 libuv 問題（`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`），全套的檔案層級失敗由 3 個變成 4 個。該檔單獨執行時 4/4 通過；這是既有缺陷的第四個實例，不是新的邏輯錯誤。
+（這裡原本記錄「新增的 route 測試讓檔案層級失敗由 3 個變成 4 個」——已於第 7 節處理掉。）
+
+
+## 7. 第三輪審查的三項收尾（2026-09-21）
+
+### 7.1 清除驗收在 demo 帳號留下的資料
+
+瀏覽器 A/B 的最後一步在 `User_Profiles.preferences_json.values` 寫入了
+`useLearnedPreference: true`。那等於預設值，但它是**驗收產生的資料、不是使用者的設定**，
+已用一次性腳本只刪除這一個鍵（腳本不進版控）。執行結果：
+
+| | 鍵 |
+| --- | --- |
+| 清除前 | `interests`、`preferredTrack`、`preferredKeywords`、`useLearnedPreference` |
+| 清除後 | `interests`、`preferredTrack`、`preferredKeywords` |
+
+`useLearnedPreference` 已不存在（讀取時回到預設 `true`）；9 筆興趣、`preferredTrack`
+（技術應用類）與 `preferredKeywords` 原封不動。
+
+### 7.2 兩個過期數字
+
+- roadmap 總覽的 `choice-perceptron 0.800` → **0.804**（改用單一 η 之後的值）。
+- 本報告的穩定所需 choice 次數 `36／26／20`、`60／45／52` → **`36／9／20`、`60／35／52`**，
+  並註明前者是「每個 seed 各自選 η」時的舊數字。
+
+### 7.3 新增測試不該永久多一個已知失敗
+
+`profileRoutes.test.js` 的四項斷言會通過，但程序不會結束（單獨執行超過 40 秒仍需中斷），
+並讓全套的檔案層級失敗由 3 個變成 4 個。
+
+先嘗試修 teardown：以 `process.getActiveResourcesInfo()` 觀察到 `server.close()` 之後仍殘留
+`TCPServerWrap` 與數個 `TCPSocketWrap`。試過 `server.closeAllConnections()`、關閉 Node 內建
+`fetch`（undici）的全域連線池，socket 數從 4 降到 1，**但程序依然不結束**——殘留的是
+`authRoutes`／`privacyRoutes`／`scheduleRoutes` 也有的同一個既有問題，不是這個檔案造成的。
+
+因此改採第二條路：**把輸入驗證抽成純函式** `data/profileUpdateValidation.js`，用一般單元
+測試 `profileUpdateValidation.test.js`（6 項）釘住規則，刪掉 `profileRoutes.test.js`。
+路由確實有接上這些規則，由真實帳號的瀏覽器實測證明（同一個 session 對真實後端送出：
+整包 `preferencesJson` → 400、頂層字串 → 400、合法布林 → 200 並讀得回來）。
+
+這麼做的附帶好處是驗證規則不再埋在路由 handler 裡；代價是「路由有沒有接上」這件事
+靠的是實測紀錄而不是自動化測試——這一點如實寫在這裡，不假裝兩者等價。
+
+**全套的檔案層級失敗回到 3 個**（`authRoutes`／`privacyRoutes`／`scheduleRoutes`），
+與本輪開始前相同。那三個是既有缺陷，另行處理。
 

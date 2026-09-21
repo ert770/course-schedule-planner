@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getUserPreferences, updateUserPreferences } from '../services/memoryService.js';
-import { isDepartmentInput } from '../utils/text.js';
+import { validateProfileUpdate } from '../data/profileUpdateValidation.js';
 import { buildCourseSearchScope } from '../skills/courseScope.js';
 import { PREFERENCE_TAG_GROUPS } from '../data/preferenceTags.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
@@ -39,45 +39,9 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
     const { userId, ...updates } = req.body;
 
-    // 型別錯誤的 department 必須在邊界擋下，不能靠正規化「救回來」。
-    // 物件、陣列、數字經字串轉換後會變成看起來正常的值寫進資料庫，
-    // 之後所有系所比對都會失敗且無從察覺。
-    if (updates.department !== undefined && !isDepartmentInput(updates.department)) {
-      return res.status(400).json({ error: 'department 必須是非空字串' });
-    }
-
-    for (const field of [
-      'enrolledPrograms', 'mustTakeCourses', 'avoidInstructors', 'interests', 'preferredKeywords',
-    ]) {
-      if (updates[field] !== undefined && !Array.isArray(updates[field])) {
-        return res.status(400).json({ error: `${field} 必須是陣列` });
-      }
-    }
-    if (
-      updates.preferredTrack !== undefined
-      && updates.preferredTrack !== null
-      && typeof updates.preferredTrack !== 'string'
-    ) {
-      return res.status(400).json({ error: 'preferredTrack 必須是字串或 null' });
-    }
-    // roadmap #10 任務 3A：學習開關只接受布林值。字串 'false' 之類的東西若被型別
-    // 轉換「救回來」，使用者會以為自己關掉了、系統卻還在用學到的權重。
-    if (updates.useLearnedPreference !== undefined
-      && typeof updates.useLearnedPreference !== 'boolean') {
-      return res.status(400).json({ error: 'useLearnedPreference 必須是布林值' });
-    }
-    // `preferences_json` 由專屬欄位（`interests`／`preferredTrack`／`preferredKeywords`／
-    // `useLearnedPreference`）各自更新，**公開 API 不接受整包覆寫**。
-    //
-    // 原因是具體的：頂層 `useLearnedPreference` 有布林檢查，但先前整包 `preferencesJson`
-    // 照收，送 `{ values: { useLearnedPreference: "false" } }` 就能把不合法的字串存進去，
-    // 讀取時再靜默退回 `true`——型別檢查等於白做，而且與文件寫的「字串回 400」不符。
-    // 整包覆寫也會順手洗掉 `values` 裡的其他鍵，那不是任何一個呼叫端真正想要的。
-    if (updates.preferencesJson !== undefined) {
-      return res.status(400).json({
-        error: 'preferencesJson 不可直接更新，請使用 interests／preferredTrack／preferredKeywords／useLearnedPreference 等專屬欄位',
-      });
-    }
+    // 輸入驗證抽在 `data/profileUpdateValidation.js`，可以不起 HTTP server 就測（見該檔說明）。
+    const validationError = validateProfileUpdate(updates);
+    if (validationError) return res.status(400).json({ error: validationError });
 
     // 避開時段接受第 1～14 節。先前這裡會在含第 1 節時回 400，要求改用
     // 「#不排早八」標籤（舊決策 C）——但那兩者不是同一件事：標籤是「每天的

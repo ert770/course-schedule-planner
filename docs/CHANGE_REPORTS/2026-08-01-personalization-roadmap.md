@@ -713,7 +713,7 @@ shadow 學習器**；第 13 篇（Viappiani/Faltings/Pu 2006 的評語式詢問�
 照 Algorithm 1 與式 (1) 實作純函式學習器；離線重播採 training／validation／test 三分。
 
 離線結果（合成資料）：test accuracy trivial 0.096、explicit-only 0.271、current-v2 0.650、
-**choice-perceptron 0.800**。CP 的優勢集中在「顯式勾選與實際行為相反」的 persona
+**choice-perceptron 0.804**。CP 的優勢集中在「顯式勾選與實際行為相反」的 persona
 （v2 在那裡連自己的門檻都跨不過去），但在「顯式本來就正確」的 persona 上可能較差——
 這正是 3B「未達門檻維持 v2 權重」冷啟動規則的實證理由。
 
