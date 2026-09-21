@@ -5,6 +5,7 @@ import {
   INTERACTION_EVENT_TYPES,
   INTERACTION_FEEDBACK_REASONS,
   INTERACTION_SOURCES,
+  PLAN_FEATURE_VERSION,
   createInteractionEvent,
   migrateInteractionEvent,
   resolveIdempotentAppend,
@@ -340,5 +341,105 @@ describe('Roadmap #29 InteractionEvent v1 schema', () => {
       )),
       /從 1 起算/u
     );
+  });
+});
+
+// roadmap #10 任務 3A：Choice Perceptron 的 φ。三態相容規則——舊事件可讀但不可學、
+// 新事件必須一對一覆蓋整個 query set、只覆蓋一部分一律拒絕。
+describe('#10 任務 3A planFeatures 的三態相容規則', () => {
+  const PLAN_A = 'plan-a';
+  const PLAN_B = 'plan-b';
+
+  function withFeatures(planFeatures, overrides = {}) {
+    return exposureInput({
+      plan: { planId: PLAN_A, variantId: 'personalized' },
+      exposureContext: {
+        surface: 'dashboard', trigger: 'initial_load',
+        candidateSet: [course(101)], displayedSet: [course(101)],
+        displayedPlanIds: [PLAN_A, PLAN_B],
+        planPolicies: [],
+        planFeatureVersion: PLAN_FEATURE_VERSION,
+        planFeatures,
+        ...overrides,
+      },
+    });
+  }
+
+  const featureA = { planId: PLAN_A, variantId: 'personalized', interest: 0.25, compact: 0.5, easy: 0.7 };
+  const featureB = { planId: PLAN_B, variantId: 'personalized_interest', interest: 0.9, compact: 0.25, easy: null };
+
+  test('一對一覆蓋整個 query set 時合法，easy 可以是 null', () => {
+    const event = createInteractionEvent(IDENTITY, withFeatures([featureA, featureB]),
+      { randomUUID: () => EVENT_ID_1 });
+    assert.equal(validateInteractionEvent(event).valid, true);
+    assert.equal(event.exposureContext.planFeatures[1].easy, null);
+    assert.equal(event.exposureContext.planFeatureVersion, PLAN_FEATURE_VERSION);
+  });
+
+  test('舊事件沒有版本也沒有特徵時仍然合法（可讀，但不可用於學習）', () => {
+    const event = createInteractionEvent(IDENTITY, exposureInput({
+      exposureContext: {
+        surface: 'dashboard', trigger: 'initial_load',
+        candidateSet: [course(101)], displayedSet: [course(101)],
+        displayedPlanIds: [PLAN_A],
+      },
+    }), { randomUUID: () => EVENT_ID_1 });
+    assert.equal(validateInteractionEvent(event).valid, true);
+    assert.deepEqual(event.exposureContext.planFeatures, []);
+    assert.equal(event.exposureContext.planFeatureVersion, null);
+  });
+
+  test('只覆蓋一部分展示方案時直接拒絕，不靜默略過', () => {
+    assert.throws(() => createInteractionEvent(IDENTITY, withFeatures([featureA]),
+      { randomUUID: () => EVENT_ID_1 }), /planFeatures 必須與 displayedPlanIds 一對一對應/u);
+  });
+
+  test('有特徵卻沒有版本時拒絕', () => {
+    assert.throws(() => createInteractionEvent(IDENTITY,
+      withFeatures([featureA, featureB], { planFeatureVersion: null }),
+      { randomUUID: () => EVENT_ID_1 }), /planFeatures 必須搭配 planFeatureVersion/u);
+  });
+
+  test('版本不在支援清單時拒絕', () => {
+    assert.throws(() => createInteractionEvent(IDENTITY,
+      withFeatures([featureA, featureB], { planFeatureVersion: 'plan-feature-v0' }),
+      { randomUUID: () => EVENT_ID_1 }), /planFeatureVersion 不在支援清單/u);
+  });
+
+  test('interest 為 null 時拒絕（空課表也回 0，真的缺值代表上游壞了）', () => {
+    assert.throws(() => createInteractionEvent(IDENTITY,
+      withFeatures([{ ...featureA, interest: null }, featureB]),
+      { randomUUID: () => EVENT_ID_1 }), /planFeatures 含無效方案或特徵值/u);
+  });
+
+  test('特徵值超出 [0,1] 時拒絕', () => {
+    assert.throws(() => createInteractionEvent(IDENTITY,
+      withFeatures([{ ...featureA, compact: 1.4 }, featureB]),
+      { randomUUID: () => EVENT_ID_1 }), /planFeatures 含無效方案或特徵值/u);
+  });
+
+  test('planId 不在 displayedPlanIds 內時拒絕', () => {
+    assert.throws(() => createInteractionEvent(IDENTITY,
+      withFeatures([featureA, { ...featureB, planId: 'plan-ghost' }]),
+      { randomUUID: () => EVENT_ID_1 }), /planFeatures/u);
+  });
+
+  test('有對應 policy 時 variantId 必須一致；沒有 policy 的方案則不比對', () => {
+    const policy = {
+      planId: PLAN_A, variantId: 'personalized', version: 'personalized-scoring-v2',
+      weights: { interest: 1, compact: 0, easy: 0 },
+      categoryCoefficient: 0.35, creditCoefficient: 1, stopWhen: 'milp-optimized',
+      source: { learnedApplied: false, reason: 'absent', modelVersion: null },
+    };
+    // PLAN_B 沒有 policy（放寬階梯／fallback 方案），仍然合法。
+    const ok = createInteractionEvent(IDENTITY,
+      withFeatures([featureA, featureB], { planPolicies: [policy] }),
+      { randomUUID: () => EVENT_ID_1 });
+    assert.equal(validateInteractionEvent(ok).valid, true);
+
+    assert.throws(() => createInteractionEvent(IDENTITY,
+      withFeatures([{ ...featureA, variantId: 'personalized_easy' }, featureB],
+        { planPolicies: [policy] }),
+      { randomUUID: () => EVENT_ID_1 }), /planFeatures 含無效方案或特徵值/u);
   });
 });

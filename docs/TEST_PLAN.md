@@ -647,6 +647,21 @@ runner 使用目前 MySQL 與正式排課器，報告寫入
 | `schedulerMilpIntegration.test.js` | S₀ 與 `primary-only` 相同；`recommendedPlanId` 與 `plans[0]` 一致；未注入 solver 時只回 S₀ 並揭露原因 |
 | `scheduler.test.js` S4 | 重修低年級必修不受開課年級限制，排課器與驗證器一致 |
 
+### Roadmap #10 任務 3A（Choice Perceptron，shadow）
+
+| 檔案 | 覆蓋內容 |
+| --- | --- |
+| `choicePerceptron.test.js` | CP1–CP12：手算 Δ（query size 2／3／4）、η 線性縮放、平移不變、方案排列不變、可重播與時鐘純度、缺值逐軸遮罩（選中或任一未選方案缺值即該軸不動）、舊事件與覆蓋不全的曝光整筆跳過並記原因、1000 次同向後 `\|w\| ≤ 2` 且寫得進 `DECIMAL(4,3)`、顯式 `compact=1` 持續選分散 → 權重轉負、零 choice 時等於初始值、`evidence` 每軸上限 20 筆 |
+| `choiceReplayFixture.test.js` | 重播素材本身：同 seed 逐位元可重現、φ 完整時系統分數與 `⟨w, φ⟩` 排序一致、`null-easy` persona 不更新 easy 軸、每回合成對產生 `plan_chosen` 與 `recommendation_accepted`、切分不重疊、accuracy 與名次的定義 |
+| `interactionEventSchema.test.js`（#10 3A 區塊） | `planFeatures` 三態相容：舊事件無版本 → 合法但不可學；新版本只覆蓋一部分 → 拒絕；一對一相符 → 通過；`easy: null` 合法、`interest: null` 與越界值被拒；`variantId` 與 policy 不一致被拒，但沒有 policy 的 fallback 方案仍可通過 |
+| `interactionEvents.test.js`（#10 3A 區塊） | `plan_chosen` 來源驗證五條；**同 requestId 同方案 → `duplicate`、改選另一方案 → `conflict`**；`actionId` 由伺服器依 `requestId` 推導；`recommendation_accepted` 照舊寫入 |
+| `personalizationPreferences.test.js` | `useLearnedPreference` 預設 true、非布林退回預設、與興趣互不覆蓋、`preferences_json.values` 其他鍵不受影響、攤到 profile 頂層 |
+| `preferenceLearningService.test.js`（3A 新增一項） | **3A 尚未消費開關**：排課權重在 `true`／`false` 下逐位元相同。3B 接上時這個測試會失敗，那是提醒該改它了 |
+| `scheduleService.test.js`（planFeatures 區塊） | 每個展示方案各一筆且形狀固定；`easy` 無證據時保留 `null` 不補 0；任一方案缺特徵時整組不寫；沒有 `generationPolicy` 的 fallback 方案仍要有特徵 |
+
+離線重播：`npm run bench:choice-perceptron --prefix server -- --markdown`（加 `--real-data` 會唯讀查詢真實可用的 `plan_chosen` 筆數）。
+training／validation／test 三分，η 與 choice 門檻只用 validation 選，test 只評估一次。
+
 真實資料量測：
 
 ```bash

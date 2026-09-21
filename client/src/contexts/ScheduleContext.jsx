@@ -370,16 +370,35 @@ export function ScheduleProvider({ children }) {
     // `comparePlans()` 排序，索引 + 1 就是使用者實際接受的排名——固定寫死
     // 1 會在使用者切到別的方案後說謊。
     const rank = plans.findIndex(plan => plan.id === recommendation.variantId);
-    return emit({
+    const term = firstTerm(scheduleRef.current) || { academicYear: 114, semester: '下學期' };
+    const accepted = {
       eventType: INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED,
       requestId: recommendation.requestId,
       actionId: newActionId(),
-      term: firstTerm(scheduleRef.current) || { academicYear: 114, semester: '下學期' },
+      term,
       plan: { planId: recommendation.planId, variantId: recommendation.variantId },
       position: { planRank: rank >= 0 ? rank + 1 : 1, courseRank: null },
       source: INTERACTION_SOURCES.SYSTEM_RECOMMENDATION,
       versionSnapshot: { recommendationReasonVersion: null },
-    });
+    };
+
+    // roadmap #10 任務 3A：只有「切換列上真的有兩個以上方案可選」時，這次接受才
+    // 構成 set-wise choice。`recommendationRef` 追的就是使用者當下切到的方案
+    // （見 selectPlan()），所以 accepted 與 chosen 指的是同一個方案。
+    // 只顯示單一方案、或從已存課表載回時不送——那只代表「接受推薦」，不是比較過。
+    // 後端會用伺服器自己寫的曝光紀錄重新驗證一次，前端送了不代表算數。
+    const chosen = plans.length >= 2 ? {
+      eventType: INTERACTION_EVENT_TYPES.PLAN_CHOSEN,
+      requestId: recommendation.requestId,
+      // actionId 由後端依 requestId 決定，這裡送的值會被覆寫。
+      actionId: newActionId(),
+      term,
+      plan: { planId: recommendation.planId, variantId: recommendation.variantId },
+      position: { planRank: rank >= 0 ? rank + 1 : 1, courseRank: null },
+      versionSnapshot: { recommendationReasonVersion: null },
+    } : null;
+
+    return emit([accepted, chosen].filter(Boolean));
   }, [emit, plans]);
 
   // 沒同意個人化學習的人不該被問移除原因——問了也不會記錄，只是白白多一步。

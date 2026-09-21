@@ -22,7 +22,8 @@
     "eval:golden-set": "node scripts/agentGoldenSetReport.js",
     "configure:privacy": "node scripts/configurePrivacyEnvironment.js",
     "cleanup:privacy": "node scripts/privacyCleanup.js",
-    "cleanup:legacy-chat": "node scripts/legacyChatCleanup.js"
+    "cleanup:legacy-chat": "node scripts/legacyChatCleanup.js",
+    "bench:choice-perceptron": "node scripts/choicePerceptronReplay.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

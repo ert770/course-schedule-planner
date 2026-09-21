@@ -333,7 +333,7 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 | --- | --- | --- |
 | `must_take_courses` | JSON NULL | `profile.mustTakeCourses`；Profile API 已接讀寫 |
 | `avoid_instructors` | JSON NULL | `profile.avoidInstructors`；持久化並接入排課限制 |
-| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位 |
+| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。只接受真正的布林值，其他型別一律退回預設；更新興趣與更新開關各自只動自己的鍵，互不覆蓋。**3A 只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
 | `password_hash` | varchar(255) NULL | 刻意不搬 `users.json.password` 明碼；雜湊方案另案處理 |
 | `watchlist` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
 | `skill_tree` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
@@ -733,6 +733,13 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
       { "catalogCourseCode": "IECS3002", "sectionId": 101 }
     ],
     "displayedPlanIds": ["plan-a", "plan-b"],
+    "planFeatureVersion": "plan-feature-v1",
+    "planFeatures": [
+      { "planId": "plan-a", "variantId": "personalized",
+        "interest": 0.25, "compact": 0.5, "easy": 0.72 },
+      { "planId": "plan-b", "variantId": "personalized_interest",
+        "interest": 0.9, "compact": 0.25, "easy": null }
+    ],
     "planPolicies": [
       {
         "planId": "plan-a",
@@ -771,12 +778,13 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `timestamp` | UTC ISO 8601 | server 認定的事件發生時間，不接受 client 覆寫 |
 | `requestId` | UUID | 一次搜尋／推薦／排課請求；同一 response 產生的事件共用 |
 | `actionId` | UUID | 一次 logical UI action；React 重送同一操作時沿用 |
-| `idempotencyKey` | `sha256:<hex>` | 由 request/action/event/plan/course subject 決定，不含 `eventId`／`timestamp` |
+| `idempotencyKey` | `sha256:<hex>` | 由 request/action/event/plan/course subject 決定，不含 `eventId`／`timestamp`。**`plan_chosen` 用專屬 payload**：唯一性只由 `requestId + eventType` 決定，**不含被選方案**，因此同一次詢問只能產生一次有效學習——同方案重送為 `duplicate`，改選另一方案為 `conflict`。其 `actionId` 也由伺服器依 `requestId` 推導（`sha256("plan-chosen:" + requestId)` 轉 UUID 形狀），不採用前端送來的隨機值 |
 | `course` | object \| null | `catalogCourseCode` 是穩定課號，`sectionId` 是實際班次；非單課事件可為 null |
 | `term` | object | `academicYear` + 正規化後的 `semester: first \| second` |
 | `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `personalized`／`personalized_easy` 等當次產生策略；方案不是固定五種 |
 | `position` | object | `planRank`／`courseRank` 一律從 1 起算；不適用者為 null |
 | `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單；`displayedPlanIds` 列出所有顯示方案；`planPolicies`（Roadmap #7）逐一保存方案使用的 `variantId`、policy 版本、三軸權重、類別／學分係數、停止條件與學習來源，供後續回放與來源驗證 |
+| `planFeatures` | array | **Roadmap #10 任務 3A**：每個展示方案的特徵向量 φ（Choice Perceptron 的輸入），見下方說明 |
 | `versionSnapshot` | object | 當時的 Profile schema、排課模型與推薦理由版本 |
 | `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
@@ -792,11 +800,31 @@ MILP 方案的 `stopWhen` 為 `milp-optimized`，policy 版本升為 `personaliz
 `1` 與 `3`、`stopWhen` 仍接受 `candidate-exhausted`，但新版產生器只會產生 `1`。歷史曝光缺少此欄位時正規化為空陣列，仍可重播；新曝光必須讓每個
 policy 的 `planId` 對得上 `displayedPlanIds`，接受方案時也會核對 `variantId`。
 
+**2026-09-21（Roadmap #10 任務 3A）**：`exposureContext` 新增與 `planPolicies` **並列**的
+`planFeatures` 與 `planFeatureVersion`。
+
+- `planPolicies` 是**輸入**（生成這個方案用了什麼權重），`planFeatures` 是**輸出**
+  （生成出來的方案量到什麼），兩者語意不同，且 `assertProvenance()` 拿 `planPolicies`
+  當契約用，因此不合併。
+- 每項為 `{ planId, variantId, interest, compact, easy }`。`interest`／`compact` 必為
+  `[0, 1]` 的有限數；**`easy` 可以是 `null`**（該方案排入的課全無評價證據，是合法值，
+  不是缺漏；補 0 等於把「查不到涼度」謊報成「完全不涼」）。
+- **`planFeatureVersion` 是獨立常數**（目前 `plan-feature-v1`），不沿用
+  `SCORING_POLICY_VERSION`：評分規則版本與 φ 的定義版本是兩件事。
+- 相容三態：**沒有版本也沒有特徵** → 合法（舊事件可讀），但不得用於學習；
+  **有支援的版本** → `displayedPlanIds` 與 `planFeatures[].planId` 必須一對一完全相符
+  （Choice Perceptron 的更新式需要「其餘方案的平均」，少一筆就不是同一個 query set）；
+  **有版本但只覆蓋一部分** → 直接拒絕寫入，不靜默略過。
+- 產生端採「**要嘛覆蓋全部展示方案、要嘛整組不寫**」：任一方案缺特徵時退回舊形狀，
+  曝光照常寫入，只是這一筆不能用於學習。
+- 同樣是 JSON envelope 的附加欄位，事件 `schemaVersion` 維持 1，**MySQL 不需要 migration**。
+
 ### Event types
 
 | `eventType` | 意義 |
 | --- | --- |
 | `recommendation_exposed` | 推薦清單或方案已實際顯示；必須帶 `exposureContext`。**只能由伺服器在 `services/scheduleService.js` 產生排課結果時自己寫入**（Roadmap #2 對抗式審查修正），任何呼叫端經 `POST /api/interactions` 提交一律拒絕，即使格式合法——client 自己說「系統顯示了什麼」等於自己發證明給自己驗證 |
+| `plan_chosen` | **Roadmap #10 任務 3A**：使用者在**看得到多個方案**的情況下挑了其中一個，是 Choice Perceptron 唯一的輸入。與 `recommendation_accepted` **刻意分成兩個型別而不是加旗標**——後者包含「Agent 只顯示主推方案、使用者說好」這種情況，那只代表接受推薦，不能證明使用者比較過整組方案；混在同一個型別裡日後就再也分不出哪些能餵給學習器。同一次操作會同時產生 `recommendation_accepted`（照舊）與 `plan_chosen`（新增），學習器只讀後者，不得把兩者算成兩次證據。伺服器端另外驗證：曝光存在、`planFeatureVersion` 受支援、`displayedPlanIds` 至少 2 個、被選方案有特徵且 `variantId` 相符、特徵覆蓋整組方案 |
 | `course_viewed` | 開啟課程詳情 |
 | `course_favorited`／`course_unfavorited` | 加入／移出收藏或關注 |
 | `course_selected`／`course_deselected` | 手動加入／移出排課輸入 |

@@ -580,6 +580,62 @@ B～F 適用對象（#13C）與學制／學程（#13D）已於 2026-09-18 依專
 也不得讓方案層 `preferenceBreakdown.easy` 冒出數字——那兩者只認真實評價
 （見上一段）。`server/test/scheduler.test.js` 的 P10-5 釘住這條界線。
 
+## Choice Perceptron（Roadmap #10 任務 3A，**目前只跑 shadow**）
+
+**現況先講清楚**：這個引擎已經寫好並有測試，但**完全不影響任何推薦結果**——
+它不接 `learnPreferenceWeights()` 的出口、不升 `PREFERENCE_LEARNING_MODEL_VERSION`、
+不寫 `Learned_Preference_Weights`。上一節（#5B）描述的「符號由顯式決定、學到的權重
+只能加強」**現在仍然是正式行為**。要等部署後蒐集到真實 `plan_chosen`、離線重播判定為
+go，才會進入 3B 改變合成規則。
+
+**依據**：Dragone, Teso, Passerini,《Constructive Preference Elicitation over Hybrid
+Combinatorial Spaces》, AAAI 2018（arXiv:1711.07875）的 Algorithm 1 與式 (1)：
+
+```
+Δ_t = φ(x_t, ȳ_t) − (1/(k−1))·Σ_{y∈Q_t, y≠ȳ_t} φ(x_t, y)
+w_{t+1} = w_t + η·Δ_t
+```
+
+是「選中方案減去**其餘**方案的平均」，不是減整個 query 的平均，也不是減目前模型的
+argmax。論文 `w₁ = 0`、`η` 為固定 step-size（實驗中另以 cross-validation 在
+`{0.1, 0.2, 0.5, 1, 2, 5, 10}` 上自適應）。
+
+| 論文 | 本系統 |
+| --- | --- |
+| context `x_t` | 一次排課請求 |
+| query set `Q_t` | 同一 `requestId` 曝光時實際顯示的方案集合 |
+| 使用者選擇 `ȳ_t` | `plan_chosen` 指向的方案 |
+| `φ(x_t, y)` | `plan.preferenceBreakdown = {interest, compact, easy}` |
+
+`interest` 量的是「符合**這一次輸入**的興趣關鍵字的程度」，是 request scoped——論文的
+`φ(x, y)` 本來就允許依 context，所以這不是偏離；但也因此 `deriveExplicitProfile()`
+沒有東西可以當它的初始值，`w₁.interest` 取 0。
+
+**四項偏離（不宣稱論文的 regret bound）**：
+
+1. `w₁` 取顯式偏好而非 0；
+2. 每筆更新乘上時間衰減（120 天半衰期、跨學期 ×0.5；論文沒有，移除等於撤回 #31 的承諾）；
+3. 全部累加完才把權重 clip 到 ±2 **一次**（論文沒有；逐步截斷是另一種演算法，
+   而「最後才投影」讓結果對事件順序不敏感，只對時間戳敏感）；
+4. 缺值逐軸遮罩：某軸只要 query set 中**任一**方案缺值，該軸本輪 `Δ = 0`
+   （論文假設 φ 完整）。只對剩下的方案取平均等於偷換 query set；補 0 則是把
+   「查不到涼度」謊報成「完全不涼」。
+
+不宣稱 bound 的理由不是「我們的 query 策略不是論文那個」——論文的 bound 對任何 query
+策略都成立，只透過 α-informativeness、β-affirmativeness 與 M 三個常數依賴它。真正的
+理由是：沒有證明本系統 query 策略的 α-informativeness；上述四項延伸都不在 Theorem 2 的
+前提內；本系統排序含缺值排除與 `comparePlans()` 的 tie-breaker；三維 φ 很可能無法線性
+表示真實偏好。
+
+**與現行排序函式的關係**（修正先前文件的說法）：`evaluatePreference()` 展開後是
+`score = (⟨w, φ⟩ + Σ_{w_a<0}|w_a|) / Σ_a|w_a|`，**φ 完整時是 `⟨w, φ⟩` 的正仿射變換，
+排序一致**，不是完全不同的效用函式。錯配只有三處：`easy = null` 讓不同方案排除不同的軸、
+`comparePlans()` 的 tie-breaker、query set 的產生不看學到的方向（後者 3B 才處理）。
+
+**資料來源**：只讀 `plan_chosen`（見 `docs/DATA_SCHEMA.md`），一次 `requestId` 只算一次；
+曝光必須帶覆蓋整組方案的 `planFeatures`，缺一即整筆跳過、不做回退推估。
+離線重播與校準見 `npm run bench:choice-perceptron --prefix server -- --markdown`。
+
 ## Per-user 加權方向（Roadmap #5B）
 
 **問題**：`preferenceProfile` 三軸原本恆為 0 或 1，同一個涼度分數對每個使用者

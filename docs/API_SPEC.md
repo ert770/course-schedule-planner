@@ -1135,6 +1135,20 @@ tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`err
 這三個 API 欄位持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
 更新時會保留 `values` 中其他個人化資料。
 
+**Roadmap #10 任務 3A** 另接受 `useLearnedPreference`（布林，預設 `true`）：
+
+```json
+{ "useLearnedPreference": false }
+```
+
+同樣存在 `preferences_json.values`。**只接受真正的布林值**，字串 `"false"`、`0`、`null`
+一律回 `400`——一個決定「要不要用學到的偏好」的旗標，不該靠型別轉換猜測使用者的意思。
+更新興趣不會洗掉這個開關，更新開關也不會洗掉興趣。
+
+**這一輪只做持久化，開關尚未生效**：`getSchedulingPreferenceWeights()` 還沒有讀它，
+排課結果在 `true`／`false` 下完全相同。真正讓它生效（回 `user-opted-out`）並補上前端
+介面是 3B 的範圍——提前生效會讓 3A 不再是「不改變正式推薦結果」的 shadow 階段。
+
 `department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
 
 ```json
@@ -1210,6 +1224,14 @@ Request：
   當時曝光的 `displayedSet` 裡。對不上（含 `requestId` 查無曝光紀錄）一律回 `rejected`。
   格式驗證只證明「像一個事件」，不證明「這件事真的發生過」——這個檢查固定在
   `recordInteractionEvents()` 本身，任何呼叫端都繞不過去，不只是 Agent tool 那條路徑。
+- **`eventType: "plan_chosen"`（Roadmap #10 任務 3A）** 的驗證比 `recommendation_accepted`
+  更嚴格，因為它是 Choice Perceptron 唯一的學習輸入：曝光必須存在、曝光的
+  `planFeatureVersion` 必須是目前支援的值、`displayedPlanIds` 至少 2 個（只顯示一個方案
+  不構成 set-wise choice）、被選方案必須有特徵且 `variantId` 相符、特徵必須覆蓋整組方案。
+  **一次詢問只能學一次**：它的 idempotency 只由 `requestId + eventType` 決定，不含被選方案，
+  所以同方案重送回 `duplicate`、同 `requestId` 改選另一方案回 `conflict`；`actionId` 由伺服器
+  依 `requestId` 推導，client 送的隨機值會被覆寫。
+  `recommendation_accepted` 照舊寫入，兩者是同一次操作的兩筆事件，學習器只讀 `plan_chosen`。
 - 其餘 event type（`course_viewed`／`course_favorited`／`course_selected` 等）沒有可對照的
   伺服器端事實可驗證，維持格式驗證即可寫入。
 

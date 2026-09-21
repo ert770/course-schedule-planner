@@ -23,7 +23,11 @@ import { buildStudentScope } from '../skills/courseScope.js';
 import { getAll } from '../db/database.js';
 import { getFailedRequiredCourseCodes } from '../data/courseHistory.js';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
-import { INTERACTION_EVENT_TYPES, INTERACTION_SOURCES } from '../data/interactionEventSchema.js';
+import {
+  PLAN_FEATURE_VERSION,
+  INTERACTION_EVENT_TYPES,
+  INTERACTION_SOURCES,
+} from '../data/interactionEventSchema.js';
 import { recordInteractionEvents } from './interactionEventService.js';
 import { getSchedulingPreferenceWeights } from './preferenceLearningService.js';
 import { RECOMMENDATION_REASON_VERSION } from '../skills/recommendationReason.js';
@@ -108,6 +112,28 @@ export function buildExposureDraft(result, requestId, { surface, trigger } = {})
 
   const primary = plans.find(plan => plan.planId === result.recommendedPlanId) ?? plans[0] ?? null;
   const displayedPlanIds = plans.map(plan => plan.planId).filter(Boolean);
+  // roadmap #10 任務 3A：Choice Perceptron 的特徵向量 φ。公式需要「其餘方案的平均」，
+  // 所以**要嘛覆蓋全部展示方案、要嘛整組不寫**——只覆蓋一部分的 query set 不是同一個
+  // query set，schema 也會直接拒絕。任一方案缺特徵時就退回舊形狀（事件仍合法，只是
+  // 不能用於學習），不要為了湊齊而補 0：那會把「查不到涼度」謊報成「完全不涼」。
+  const planFeatures = plans.map(plan => {
+    const breakdown = plan.preferenceBreakdown;
+    if (!plan.planId || !plan.variantId || !breakdown) return null;
+    const { interest, compact, easy } = breakdown;
+    if (!Number.isFinite(interest) || !Number.isFinite(compact)) return null;
+    if (easy !== null && easy !== undefined && !Number.isFinite(easy)) return null;
+    return {
+      planId: plan.planId,
+      variantId: plan.variantId,
+      interest,
+      compact,
+      // number|null；null = 該方案排入的課全無評價證據，是合法值，不是缺漏。
+      easy: easy ?? null,
+    };
+  });
+  const featuresComplete = displayedPlanIds.length > 0
+    && planFeatures.length === displayedPlanIds.length
+    && planFeatures.every(Boolean);
   return {
     eventType: INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED,
     requestId,
@@ -123,6 +149,9 @@ export function buildExposureDraft(result, requestId, { surface, trigger } = {})
         planId: plan.planId, variantId: plan.variantId,
         ...plan.generationPolicy, stopWhen: plan.stopWhen,
       })),
+      ...(featuresComplete
+        ? { planFeatureVersion: PLAN_FEATURE_VERSION, planFeatures }
+        : {}),
     },
     source: INTERACTION_SOURCES.SYSTEM_RECOMMENDATION,
     // roadmap #26：這個欄位從 #2／#29 建好之後就一直是 `null`，註記寫著「等 #26」。

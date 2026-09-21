@@ -60,6 +60,12 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
     ) {
       return res.status(400).json({ error: 'preferredTrack 必須是字串或 null' });
     }
+    // roadmap #10 任務 3A：學習開關只接受布林值。字串 'false' 之類的東西若被型別
+    // 轉換「救回來」，使用者會以為自己關掉了、系統卻還在用學到的權重。
+    if (updates.useLearnedPreference !== undefined
+      && typeof updates.useLearnedPreference !== 'boolean') {
+      return res.status(400).json({ error: 'useLearnedPreference 必須是布林值' });
+    }
     if (
       updates.preferencesJson !== undefined
       && (!updates.preferencesJson || typeof updates.preferencesJson !== 'object'

@@ -3,6 +3,7 @@ import { normalizeDepartment } from '../utils/text.js';
 import { extractTags, tagsToFlags } from './preferenceTags.js';
 import { normalizeAdmissionYear } from './graduationRuleVersions.js';
 import { readInterestPreferences } from './interestPreferences.js';
+import { readPersonalizationPreferences } from './personalizationPreferences.js';
 
 // Profile 的 canonical shape 永遠標記為這個版本。
 //
@@ -39,6 +40,8 @@ function normalizePreferencesJson(value) {
 export function normalizeProfile(profile = {}) {
   const tags = extractTags(profile) ?? [];
   const interestPreferences = readInterestPreferences(profile);
+  // roadmap #10 任務 3A：學習開關與興趣一樣存在 preferences_json，攤到頂層供呼叫端直接讀。
+  const personalizationPreferences = readPersonalizationPreferences(profile);
   const normalized = {
     ...profile,
     schemaVersion: PROFILE_SCHEMA_VERSION,
@@ -73,6 +76,7 @@ export function normalizeProfile(profile = {}) {
     avoidInstructors: normalizeStringList(profile.avoidInstructors),
     preferencesJson: normalizePreferencesJson(profile.preferencesJson),
     ...interestPreferences,
+    ...personalizationPreferences,
     ...tagsToFlags(tags),
   };
 

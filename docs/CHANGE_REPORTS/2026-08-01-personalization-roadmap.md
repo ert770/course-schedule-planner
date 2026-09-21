@@ -75,7 +75,7 @@
 | 7 | 以個人化權重向量取代 5 個固定 variant | ✅ **已完成（2026-09-05）**——連續帶號權重已接進單門課排序，動態有限策略取代固定 variant，曝光事件保存版本化 policy；見下方 #7 段落與[變更報告](./2026-09-05-roadmap-7-personalized-scoring.md) | #2、#5A、#30（均已完成） |
 | 8 | 先修關係與多學期路徑規劃 | ⛔ **等待先修資料**——多學期規劃未開始，`Courses.prerequisites` 目前 3,086/3,086 全為 NULL。2026-09-18 加了一條依課名推測的替代規則：同一系列的 (一)(二) 不排同學期（`SAME_SERIES_SAME_TERM`），不是先修檢查 | #19、#20、#21（已完成）；#23（部分完成）；外部條件為先修資料 |
 | 9 | 探索機制：小比例隨機與多樣性重排 | ⬜ 未開始（卡 #36） | #2、#21、#30（均已完成）；#36 |
-| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 **部分完成（2026-09-20）**——任務 1 已接上 HiGHS MILP＋Dinkelbach 候選池：S₀ 保留 greedy，三個替代主軸使用學分對齊、87% 同階層偏好品質、階層門數相等與雙向換課 2 門的硬限制；另完成狀態分類、固定課檢查、暫時挑選器、API／UI 說明。2026-09-20 修正主軸訊號判定（評價數下限恢復 `max(2, ⌈S₀÷2⌉)`、三個主軸恢復門檻可達範圍檢查並納入固定課分數），最新 5 case 真實資料驗收 4 case 通過；仍未通過的是挑戰 persona：難度與興趣主軸因資料本身沒有訊號而合併，集中主軸則在「少一天 ＋ 87% 品質 ＋ 階層門數相等」同時成立時無解（診斷 `resolvedBy` 為 axis／quality／hierarchy），實際只剩 1 種方案。通過案例的保留品質為 0.92～1.00，validator 與 MILP checks 全數通過。詳見[任務 1 變更報告](./2026-09-19-roadmap-10-milp-candidate-generation.md)與[訊號判定修正報告](./2026-09-20-roadmap-10-axis-signal-correction.md)。尚缺：挑戰 persona 的集中主軸可行性，以及任務 2～4 | #4、#21、#22、#7、#13C（均已完成）；任務 2 另需 Danna & Woodruff 2009 全文（外部，付費論文，待使用者提供） |
+| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 **部分完成（2026-09-21）**——任務 1 已接上 HiGHS MILP＋Dinkelbach 候選池：S₀ 保留 greedy，三個替代主軸使用學分對齊、87% 同階層偏好品質、階層門數相等與雙向換課 2 門的硬限制；另完成狀態分類、固定課檢查、暫時挑選器、API／UI 說明。2026-09-20 修正主軸訊號判定（評價數下限恢復 `max(2, ⌈S₀÷2⌉)`、三個主軸恢復門檻可達範圍檢查並納入固定課分數），最新 5 case 真實資料驗收 4 case 通過；仍未通過的是挑戰 persona：難度與興趣主軸因資料本身沒有訊號而合併，集中主軸則在「少一天 ＋ 87% 品質 ＋ 階層門數相等」同時成立時無解（診斷 `resolvedBy` 為 axis／quality／hierarchy），實際只剩 1 種方案。通過案例的保留品質為 0.92～1.00，validator 與 MILP checks 全數通過。詳見[任務 1 變更報告](./2026-09-19-roadmap-10-milp-candidate-generation.md)與[訊號判定修正報告](./2026-09-20-roadmap-10-axis-signal-correction.md)。2026-09-21 完成**任務 3A**（Choice Perceptron 的資料層與 shadow learner）：新增 `plan_chosen` 事件與方案特徵向量 `planFeatures`、純函式學習器、離線重播與校準；**完全不改變正式推薦結果**，真實可用 choice 目前為 0（事件型別要部署後才開始蒐集），結論為 **no-data（等待資料）而非 no-go**。尚缺：挑戰 persona 的集中主軸可行性、任務 2（需 Danna & Woodruff 全文）、任務 3B（正式啟用，要等真實資料判定為 go）、任務 3 的第 13 篇與任務 4 | #4、#21、#22、#7、#13C（均已完成）；任務 2 另需 Danna & Woodruff 2009 全文（外部，付費論文，待使用者提供） |
 | 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ✅ 已完成 | 無 |
 | 12 | 課程類別不完整：資料庫只有必修／選修，缺通識、核心選修、系外選修 | ✅ 已完成 | 無（歷史畢業認列另屬 #23） |
 | 13A | 資工系一般班級必修 scope | ✅ 已完成 | 無 |
@@ -127,7 +127,7 @@
 
 | 順位 | # | 任務 | 為什麼排在這裡 |
 | ---: | ---: | --- | --- |
-| 1 | 10 | 修復多方案塌縮 | 任務 1 的正式 MILP 候選池已完成並讓 3/5 case 通過；下一步要處理剩餘訊號／可行性邊界，再進入任務 2 的候選挑選。任務 2 仍需 Danna & Woodruff 全文 |
+| 1 | 10 | 修復多方案塌縮 | 任務 1 的正式 MILP 候選池已完成，主軸訊號判定修正後 5 個真實 case 有 4 個通過；任務 3A（Choice Perceptron 的資料層與 shadow learner）已於 2026-09-21 完成，**接下來要做的是部署後蒐集真實 `plan_chosen`，再重跑離線重播決定要不要進 3B**——在那之前 3B 不能動工。可平行進行的是挑戰 persona 的集中主軸可行性；任務 2 的候選挑選仍需 Danna & Woodruff 全文（目前是有順序偏差的暫時挑選器） |
 | 2 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 前置（#5B、#7、#30、#31）全數完成；離線 B0/B1/P 與五軸 runner 已可重播，五軸方向檢查已於 2026-09-08 全數修正通過。仍需真實去識別互動樣本，才能把 synthetic 結果提升為效果證據；完成後能連帶打開 #9、#32、#38，且是 #38 現在唯一剩下的阻塞，最終 Gate 仍要求證明「個人化優於非個人化 baseline」 |
 | 3 | 39 | 架設正式網站與 Production rollout | `#33`（隱私基礎）已完成，工程上可以開始；排最後是因為第一步是「選哪個部署平台」這個人的決定，不是可以立刻動手的程式工作 |
 
@@ -696,6 +696,31 @@ user-course interaction matrix——實測目前真實互動事件僅 92 筆，�
 - 重跑結果一致。
 
 同樣學分下，MILP 的靜態分數比 greedy 高約 4,000。另外發現 greedy 的分數只負責排順序，不代表值不值得選，所以正式模型把「學分不少於 S₀」列為硬限制（2026-09-19 修正用語，原寫「在上限內排滿」）。詳見[spike 報告](./2026-09-19-roadmap-10-highs-spike.md)。
+
+### 2026-09-21 任務 3A：Choice Perceptron（資料層與 shadow learner）
+
+任務 3 有兩篇論文，本輪只做第 14 篇（Dragone et al. 2018 的 Choice Perceptron）的**資料蒐集與
+shadow 學習器**；第 13 篇（Viappiani/Faltings/Pu 2006 的評語式詢問）與正式啟用（3B）都不在範圍。
+
+**3A 完全不改變正式推薦結果**：學習器不接出口、不升 `PREFERENCE_LEARNING_MODEL_VERSION`、
+不寫 `Learned_Preference_Weights`；`useLearnedPreference` 開關只做持久化，尚未被消費
+（有測試直接釘住「排課權重在開關 true／false 下逐位元相同」）。#5B 的承諾這一輪仍然成立，
+因此**不標 superseded**——3A 不改變行為，現在就標是不誠實的。
+
+做了什麼：曝光事件新增覆蓋整組方案的 `planFeatures` 與獨立的 `planFeatureVersion`；
+新增 `plan_chosen` 事件型別（與 `recommendation_accepted` 分開，Agent 只顯示主推方案那條
+路徑不算 set-wise choice），並用專屬 idempotency payload 確保一次詢問只學一次；
+照 Algorithm 1 與式 (1) 實作純函式學習器；離線重播採 training／validation／test 三分。
+
+離線結果（合成資料）：test accuracy trivial 0.096、explicit-only 0.271、current-v2 0.650、
+**choice-perceptron 0.800**。CP 的優勢集中在「顯式勾選與實際行為相反」的 persona
+（v2 在那裡連自己的門檻都跨不過去），但在「顯式本來就正確」的 persona 上可能較差——
+這正是 3B「未達門檻維持 v2 權重」冷啟動規則的實證理由。
+
+**真實資料：可用 `plan_chosen` = 0**，因為這個事件型別要等 3A 部署後才開始蒐集。
+結論是 **no-data（尚無法判定）**，不是 no-go。流程：3A 上線蒐集 → 重跑
+`bench:choice-perceptron --real-data` → 用真實數字才決定要不要進 3B。
+詳見[任務 3A 變更報告](./2026-09-20-roadmap-10-choice-perceptron-3a.md)。
 
 ### 2026-09-20 任務 1 修正：主軸訊號判定
 

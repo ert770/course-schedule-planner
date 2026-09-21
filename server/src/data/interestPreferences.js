@@ -11,7 +11,9 @@ export function normalizeInterestList(value) {
   return [...new Set(value.map(normalizeString).filter(Boolean))];
 }
 
-function normalizePreferencesJson(value) {
+// 匯出供 personalizationPreferences.js 共用——preferences_json 的 canonical shape
+// 只該有一份定義，兩個模組各自維護一份遲早會不一致。
+export function normalizePreferencesJson(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { schemaVersion: 1, values: {} };
   }

@@ -28,8 +28,10 @@ import {
   INTERACTION_EVENT_TYPES,
   INTERACTION_SOURCES,
   resolveIdempotentAppend,
+  isSupportedPlanFeatureVersion,
 } from '../data/interactionEventSchema.js';
 import { logger } from '../utils/logger.js';
+import { sha256Hex } from '../utils/hash.js';
 import { SCORING_POLICY_VERSION } from '../skills/scoringPolicy.js';
 
 // 產生這批推薦的模型版本。#7 用連續權重向量取代固定 variant 時要一併改這個值，
@@ -259,7 +261,19 @@ export async function hasPersonalizationConsent(identity) {
 // 再捏一組`recommendation_accepted`／`course_withdrawn`對上它——等於自己發
 // 證明、自己拿證明驗證自己。#2 的資料會直接餵給 #30 的偏好學習，這種資料
 // 不誠實比沒有資料更糟。
+// roadmap #10 任務 3A：由 requestId 推出穩定的 actionId，沿用 scheduleFeedbackService 的
+// 做法（sha256 → UUID 形狀）。同一次詢問重送時識別碼一致，方便對帳與除錯。
+function planChoiceActionId(requestId) {
+  const hex = sha256Hex(`plan-chosen:${requestId}`);
+  return [
+    hex.slice(0, 8), hex.slice(8, 12), `4${hex.slice(13, 16)}`,
+    `8${hex.slice(17, 20)}`, hex.slice(20, 32),
+  ].join('-');
+}
+
 function requiresExposureProof(event) {
+  // roadmap #10 任務 3A：plan_chosen 是要餵給學習器的證據，來源驗證比 accepted 更嚴格。
+  if (event.eventType === INTERACTION_EVENT_TYPES.PLAN_CHOSEN) return true;
   if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED) return true;
   return event.eventType === INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN
     && event.source === INTERACTION_SOURCES.SYSTEM_RECOMMENDATION;
@@ -285,6 +299,38 @@ async function assertProvenance(identity, event, exposureCache) {
     throw new Error(
       `requestId ${event.requestId} 沒有對應的推薦曝光紀錄，無法確認這是系統實際顯示過的推薦。`
     );
+  }
+
+  if (event.eventType === INTERACTION_EVENT_TYPES.PLAN_CHOSEN) {
+    // 前端負責「至少顯示兩個方案才送」，但那是使用者的瀏覽器說了算。這裡用伺服器自己
+    // 寫下的曝光紀錄重新驗證一次：query set 必須真的有得選、特徵必須完整，否則這筆
+    // choice 餵進 Choice Perceptron 只會是雜訊。
+    if (!exposure.planFeatureVersion || !isSupportedPlanFeatureVersion(exposure.planFeatureVersion)) {
+      throw new Error(
+        `requestId ${event.requestId} 的曝光沒有目前支援的方案特徵版本，無法作為 set-wise choice。`
+      );
+    }
+    if (exposure.displayedPlanIds.length < 2) {
+      throw new Error('這次曝光只顯示一個方案，不構成 set-wise choice。');
+    }
+    if (!event.plan?.planId || !exposure.displayedPlanIds.includes(event.plan.planId)) {
+      throw new Error(
+        `planId 不是該次推薦實際顯示過的方案之一`
+        + `（應為 ${exposure.displayedPlanIds.join('、')}）。`
+      );
+    }
+    const chosenFeature = exposure.planFeatures.find(item => item.planId === event.plan.planId);
+    if (!chosenFeature) {
+      throw new Error('被選方案沒有對應的特徵向量，無法計算更新量。');
+    }
+    if (chosenFeature.variantId !== event.plan.variantId) {
+      throw new Error('variantId 與伺服器記錄的方案不符');
+    }
+    // 公式需要「其餘方案的平均」，所以整個 query set 都必須可比較，不是只有被選的那個。
+    if (exposure.planFeatures.length !== exposure.displayedPlanIds.length) {
+      throw new Error('曝光的方案特徵沒有涵蓋整組方案，無法計算其餘方案的平均。');
+    }
+    return;
   }
 
   if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED) {
@@ -340,6 +386,12 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
     try {
       event = createInteractionEvent(identity, {
         ...draft,
+        // roadmap #10 任務 3A：plan_chosen 的 actionId 由伺服器依 requestId 決定，
+        // 不採用前端送來的隨機 UUID——一次詢問只對應一次選擇，識別碼就不該由
+        // 呼叫端自由指定。冪等性另由專屬 payload 保證（見 schema）。
+        ...(draft?.eventType === INTERACTION_EVENT_TYPES.PLAN_CHOSEN && draft?.requestId
+          ? { actionId: planChoiceActionId(draft.requestId) }
+          : {}),
         exposureContext: draft?.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED
           ? draft?.exposureContext : null,
         // 版本快照是**系統當下的事實**，不是呼叫端可以宣告的東西。
@@ -510,6 +562,10 @@ export async function findExposure(identity, requestId) {
     variantId: event.plan?.variantId ?? null,
     displayedPlanIds,
     planPolicies: event.exposureContext?.planPolicies ?? [],
+    // roadmap #10 任務 3A：Choice Perceptron 的 query set 特徵。舊曝光沒有這兩個欄位，
+    // 維持 null／空陣列，`assertProvenance()` 會據此拒絕該次 plan_chosen。
+    planFeatureVersion: event.exposureContext?.planFeatureVersion ?? null,
+    planFeatures: event.exposureContext?.planFeatures ?? [],
     // 學期取自曝光事件本身，而不是回饋當下的 ACTIVE_TERM——回饋可能跨到
     // 下一個學期才送出，那時的系統常數已經不是當初推薦的那個學期。
     term: event.term,

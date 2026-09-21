@@ -25,6 +25,7 @@ import { recordScheduleFeedback } from '../src/services/scheduleFeedbackService.
 import { annotateScheduleIdentifiers } from '../src/services/scheduleService.js';
 import { deriveSubjectId } from '../src/services/privacyService.js';
 import { SCORING_POLICY_VERSION } from '../src/skills/scoringPolicy.js';
+import { PLAN_FEATURE_VERSION } from '../src/data/interactionEventSchema.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const demo = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'data', 'users.json'), 'utf8'))[0];
@@ -670,5 +671,158 @@ describe('#2 /api/interactions rate limiting and daily quota', () => {
 
     assert.equal(await wouldExceedDailyQuota(identityA, 2, 5), false, '3+2=5，剛好等於上限不算超過');
     assert.equal(await wouldExceedDailyQuota(identityA, 3, 5), true, '3+3=6，超過上限 5');
+  });
+});
+
+// roadmap #10 任務 3A：plan_chosen 是唯一會餵給 Choice Perceptron 的事件，來源驗證
+// 比 recommendation_accepted 更嚴格，而且一次詢問只能學一次。
+describe('#10 任務 3A plan_chosen 的來源驗證與一次詢問只學一次', () => {
+  const PLAN_A = `${REQUEST_ID}:personalized`;
+  const PLAN_B = `${REQUEST_ID}:personalized_interest`;
+
+  function feature(planId, variantId, easy) {
+    return { planId, variantId, interest: 0.4, compact: 0.6, easy };
+  }
+
+  async function recordExposureWithFeatures(overrides = {}) {
+    return recordInteractionEvents(identityA, [baseDraft({
+      eventType: 'recommendation_exposed',
+      course: null,
+      feedbackReason: null,
+      actionId: 'fffffffd-ffff-4fff-8fff-ffffffffffff',
+      plan: { planId: PLAN_A, variantId: 'personalized' },
+      position: { planRank: 1, courseRank: null },
+      source: 'system_recommendation',
+      exposureContext: {
+        surface: 'dashboard',
+        trigger: 'initial_load',
+        candidateSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
+        displayedSet: [{ catalogCourseCode: 'IECS3002', sectionId: 101 }],
+        displayedPlanIds: [PLAN_A, PLAN_B],
+        planFeatureVersion: PLAN_FEATURE_VERSION,
+        planFeatures: [
+          feature(PLAN_A, 'personalized', 0.72),
+          feature(PLAN_B, 'personalized_interest', null),
+        ],
+        ...overrides,
+      },
+    })], { allowExposureWrite: true });
+  }
+
+  function chosenDraft(planId = PLAN_B, variantId = 'personalized_interest') {
+    return baseDraft({
+      eventType: 'plan_chosen',
+      course: null,
+      feedbackReason: null,
+      source: null,
+      plan: { planId, variantId },
+      position: { planRank: 2, courseRank: null },
+    });
+  }
+
+  test('曝光有完整特徵、使用者選了非主推方案 → 寫入成功', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures();
+    const result = await recordInteractionEvents(identityA, [chosenDraft()]);
+    assert.equal(result.results[0].status, 'append');
+  });
+
+  test('actionId 由伺服器依 requestId 決定，前端送的隨機值會被覆寫', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures();
+    const draft = chosenDraft();
+    draft.actionId = '99999999-9999-4999-8999-999999999999';
+    const result = await recordInteractionEvents(identityA, [draft]);
+    assert.equal(result.results[0].status, 'append');
+    assert.notEqual(result.results[0].actionId, draft.actionId);
+
+    // 同一個 requestId 再送一次，actionId 必須相同（穩定、可對帳）。
+    const again = await recordInteractionEvents(identityA, [chosenDraft()]);
+    assert.equal(again.results[0].actionId, result.results[0].actionId);
+  });
+
+  test('同一 requestId 重送同一方案 → duplicate，不會學第二次', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures();
+    assert.equal((await recordInteractionEvents(identityA, [chosenDraft()])).results[0].status, 'append');
+    assert.equal((await recordInteractionEvents(identityA, [chosenDraft()])).results[0].status, 'duplicate');
+    const stored = (await getInteractionEventsForExport(identityA))
+      .filter(event => event.eventType === 'plan_chosen');
+    assert.equal(stored.length, 1);
+  });
+
+  test('同一 requestId 改選另一個方案 → conflict，仍然只有第一筆算數', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures();
+    assert.equal((await recordInteractionEvents(identityA, [chosenDraft()])).results[0].status, 'append');
+    const switched = await recordInteractionEvents(identityA, [chosenDraft(PLAN_A, 'personalized')]);
+    assert.equal(switched.results[0].status, 'conflict');
+    const stored = (await getInteractionEventsForExport(identityA))
+      .filter(event => event.eventType === 'plan_chosen');
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].plan.planId, PLAN_B);
+  });
+
+  test('曝光沒有方案特徵（舊事件）→ 拒絕', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures({ planFeatureVersion: undefined, planFeatures: undefined });
+    const result = await recordInteractionEvents(identityA, [chosenDraft()]);
+    assert.equal(result.results[0].status, 'rejected');
+    assert.match(result.results[0].errors[0], /方案特徵版本/u);
+  });
+
+  test('曝光只顯示一個方案 → 拒絕（不構成 set-wise choice）', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures({
+      displayedPlanIds: [PLAN_A],
+      planFeatures: [feature(PLAN_A, 'personalized', 0.72)],
+    });
+    const result = await recordInteractionEvents(identityA, [chosenDraft(PLAN_A, 'personalized')]);
+    assert.equal(result.results[0].status, 'rejected');
+    assert.match(result.results[0].errors[0], /只顯示一個方案/u);
+  });
+
+  test('選了沒顯示過的方案 → 拒絕', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures();
+    const result = await recordInteractionEvents(identityA,
+      [chosenDraft(`${REQUEST_ID}:ghost`, 'ghost')]);
+    assert.equal(result.results[0].status, 'rejected');
+    assert.match(result.results[0].errors[0], /實際顯示過的方案/u);
+  });
+
+  test('variantId 與伺服器紀錄不符 → 拒絕', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures();
+    const result = await recordInteractionEvents(identityA, [chosenDraft(PLAN_B, 'personalized_easy')]);
+    assert.equal(result.results[0].status, 'rejected');
+    assert.match(result.results[0].errors[0], /variantId/u);
+  });
+
+  test('沒有曝光紀錄 → 拒絕', async () => {
+    await grantPersonalization(identityA);
+    const result = await recordInteractionEvents(identityA, [chosenDraft()]);
+    assert.equal(result.results[0].status, 'rejected');
+    assert.match(result.results[0].errors[0], /沒有對應的推薦曝光紀錄/u);
+  });
+
+  test('recommendation_accepted 仍照舊寫入，兩者互不影響', async () => {
+    await grantPersonalization(identityA);
+    await recordExposureWithFeatures();
+    const result = await recordInteractionEvents(identityA, [
+      baseDraft({
+        eventType: 'recommendation_accepted',
+        course: null,
+        feedbackReason: null,
+        source: 'system_recommendation',
+        plan: { planId: PLAN_B, variantId: 'personalized_interest' },
+        position: { planRank: 2, courseRank: null },
+      }),
+      chosenDraft(),
+    ]);
+    assert.deepEqual(result.results.map(item => item.status), ['append', 'append']);
+    const stored = await getInteractionEventsForExport(identityA);
+    assert.equal(stored.filter(event => event.eventType === 'recommendation_accepted').length, 1);
+    assert.equal(stored.filter(event => event.eventType === 'plan_chosen').length, 1);
   });
 });

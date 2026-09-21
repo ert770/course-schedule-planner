@@ -519,3 +519,226 @@ export default {
   learnPreferenceWeights,
   computeLearnedBoosts,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Roadmap #10 任務 3A：Choice Perceptron（Dragone, Teso, Passerini, AAAI 2018）
+//
+// **這個引擎目前只跑 shadow：不接 `learnPreferenceWeights()` 的出口、不升
+// `PREFERENCE_LEARNING_MODEL_VERSION`、不寫 `Learned_Preference_Weights`。**
+// 正式啟用（3B）要等部署後蒐集到真實 `plan_chosen`、重跑離線重播判定為 go 才做。
+//
+// 論文 Algorithm 1 與式 (1)：
+//   Δ_t = φ(x_t, ȳ_t) − (1/(k−1))·Σ_{y∈Q_t, y≠ȳ_t} φ(x_t, y)
+//   w_{t+1} = w_t + η·Δ_t
+// 是「選中方案減去**其餘**方案的平均」，不是減整個 query 的平均，也不是減目前
+// 模型的 argmax。論文 `w₁ = 0`、`η` 為固定 step-size（實驗中另以 CV 自適應調整）。
+//
+// 本系統對論文的四項偏離，全部在這裡發生，變更報告逐項標註：
+//   1. `w₁` 取顯式偏好而非 0（`initialChoiceWeights()`）；
+//   2. 每筆更新乘上時間衰減 `decay_t`（論文沒有；移除等於撤回 #31 對使用者的承諾）；
+//   3. 全部累加完才把權重 clip 到 ±2 **一次**（論文沒有；逐步截斷是另一種演算法）；
+//   4. 缺值逐軸遮罩（論文假設 φ 完整）。
+// 因此本系統**不宣稱** Theorem 2 的 regret bound。
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const CHOICE_PERCEPTRON_VERSION = 'choice-perceptron-v1';
+
+// 權重投影上界。取 2 是因為現行 `scoringPolicy.js` 的權重絕對上界就是 2——沿用它，
+// `PREFERENCE_SCALE`、#10 任務 1 剛校準的 `minGain` 與 87% 品質門檻都不必跟著動，
+// `Learned_Preference_Weights` 的 `DECIMAL(4,3)`（±9.999）也永遠寫得進去。
+export const CHOICE_WEIGHT_LIMIT = 2;
+
+// `evidence[axis]` 只留最近這麼多筆更新軌跡。軌跡會經 #33 的匯出路徑出去，而 Δ
+// 幾乎能反推使用者看過哪些方案的特徵，所以長度必須有界，不能讓一列 JSON 無限長。
+export const EVIDENCE_TRAIL_LIMIT = 20;
+
+// 論文實驗用的 η 候選集合（`t ≥ 3` 起每輪以 cross-validation 挑選）。這裡只當
+// 3A-6 離線校準的掃描格點，執行期用單一固定值。
+export const CHOICE_LEARNING_RATE_GRID = Object.freeze([0.1, 0.2, 0.5, 1, 2, 5, 10]);
+export const DEFAULT_CHOICE_LEARNING_RATE = 1;
+
+// **這個數字還沒有被校準，是暫定值。** 一次排課請求最多產生一筆 choice，所以它的
+// 單位是「使用者排課並選擇過幾次」，與 v2 的 `REQUIRED_USABLE_EVENT_COUNT = 50`
+// 不是同一種東西，刻意分開命名、也刻意不沿用那個數字。真正的值要由 3A-6 的離線
+// 重播（「第幾次 choice 之後主推方案穩定」）決定；在那之前 `sufficiency.calibrated`
+// 一律為 false，3B 不得拿未校準的門檻上線。
+export const REQUIRED_CHOICE_COUNT = 10;
+
+// 一筆 `plan_chosen` 不能用於學習的原因。全部都是「資料本身有缺口」，一律跳過
+// 整筆、不做任何回退推估——沿用 `collectVotes()` 對缺 policy 的既有立場。
+export const CHOICE_SKIP_REASONS = Object.freeze({
+  NO_EXPOSURE: 'no-exposure',
+  UNSUPPORTED_FEATURE_VERSION: 'unsupported-feature-version',
+  SINGLE_PLAN: 'single-plan',
+  INCOMPLETE_FEATURES: 'incomplete-features',
+  CHOSEN_NOT_DISPLAYED: 'chosen-not-displayed',
+});
+
+// `w₁`。`interest` 恆為 0：它量的是「方案符合**這一次輸入**的興趣關鍵字的程度」
+// （request scoped），`deriveExplicitProfile()` 沒有對應的長期欄位可以當起點；
+// 把長期興趣方向持久化到 profile 是另一個題目。`compact`／`easy` 取顯式基準，
+// 但一樣夾在 ±2 內，避免呼叫端傳進離譜的值。
+function initialChoiceWeights(explicitProfile = {}) {
+  return Object.fromEntries(PREFERENCE_AXES.map(axis => [
+    axis,
+    axis === 'interest' ? 0 : clipChoiceWeight(Number(explicitProfile?.[axis]) || 0),
+  ]));
+}
+
+// `round3()` 會在「兩個相等的浮點數相減」時產生 -0（例如 0.4 − 0.4000000000000001）。
+// -0 在 JSON 與 DECIMAL(4,3) 都等於 0，但 deepStrictEqual 分得出來，留著只會讓比對
+// 與快照測試莫名其妙地失敗。統一正規化成 0。
+function roundChoiceValue(value) {
+  const rounded = round3(value);
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+function clipChoiceWeight(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(CHOICE_WEIGHT_LIMIT, Math.max(-CHOICE_WEIGHT_LIMIT, value));
+}
+
+// 把一筆 `plan_chosen` 還原成論文的 (Q_t, ȳ_t)，或說出為什麼還原不了。
+// 檢查順序與 `interactionEventService.assertProvenance()` 一致——那一層擋的是
+// 「寫不寫得進去」，這一層擋的是「能不能拿來學」，兩者都必須成立。
+function resolveChoiceQuery(event, exposure) {
+  if (!exposure) return { reason: CHOICE_SKIP_REASONS.NO_EXPOSURE };
+  const context = exposure.exposureContext || {};
+  if (!context.planFeatureVersion) {
+    return { reason: CHOICE_SKIP_REASONS.UNSUPPORTED_FEATURE_VERSION };
+  }
+  const displayedPlanIds = context.displayedPlanIds || [];
+  if (displayedPlanIds.length < 2) return { reason: CHOICE_SKIP_REASONS.SINGLE_PLAN };
+
+  const features = context.planFeatures || [];
+  const byPlanId = new Map(features.map(item => [item.planId, item]));
+  // 公式需要「其餘方案的平均」，所以整組方案都要有特徵，不是只有被選的那個。
+  if (byPlanId.size !== displayedPlanIds.length
+    || !displayedPlanIds.every(planId => byPlanId.has(planId))) {
+    return { reason: CHOICE_SKIP_REASONS.INCOMPLETE_FEATURES };
+  }
+
+  const chosen = byPlanId.get(event.plan?.planId);
+  if (!chosen) return { reason: CHOICE_SKIP_REASONS.CHOSEN_NOT_DISPLAYED };
+  return {
+    reason: null,
+    chosen,
+    others: features.filter(item => item.planId !== chosen.planId),
+    querySize: features.length,
+  };
+}
+
+// 單一軸的 Δ。**遮罩規則**：選中方案與**所有**未選方案在這一軸都要有值才更新；
+// 任一方案該軸為 null 就回 null（本輪這一軸不動）。只對剩下的方案取平均等於
+// 偷換 query set；補 0 則是把「查不到涼度」謊報成「完全不涼」。
+function choiceAxisDelta(query, axis) {
+  const chosenValue = query.chosen[axis];
+  if (!Number.isFinite(chosenValue)) return null;
+  const otherValues = query.others.map(item => item[axis]);
+  if (otherValues.length === 0 || !otherValues.every(Number.isFinite)) return null;
+  const mean = otherValues.reduce((sum, value) => sum + value, 0) / otherValues.length;
+  return chosenValue - mean;
+}
+
+/**
+ * Roadmap #10 任務 3A：從 `plan_chosen` 事件重播 Choice Perceptron。
+ *
+ * 與 `learnPreferenceWeights()` 相同的純函式紀律：不讀 DB、不呼叫排課、
+ * 不取現在時間（`now` 只能由呼叫端傳入），同一批事件 ＋ 同一個 `now` ＋ 同一個
+ * `activeTerm` 必須逐位元重現同一個結果。
+ *
+ * @param events   `getInteractionEventsForExport()` 的事件陣列（含曝光事件）。
+ * @param options  `{ explicitProfile, now, activeTerm, learningRate }`。
+ * @returns `{ modelVersion, learningRate, initialWeights, rawWeights, weights,
+ *            sufficiency, evidence, decay, skipped }`。
+ *          `rawWeights` 是未投影的累加值，`weights` 是最後 clip 一次的結果——
+ *          兩者必須分開，否則讀 evidence 的人分不出哪個數字是哪一種。
+ */
+export function learnChoicePerceptronWeights(events = [], options = {}) {
+  const {
+    explicitProfile = {},
+    now = null,
+    activeTerm = null,
+    learningRate = DEFAULT_CHOICE_LEARNING_RATE,
+  } = options;
+
+  const sorted = sortEvents(events);
+  const exposures = indexExposuresByRequestId(sorted);
+  const initialWeights = initialChoiceWeights(explicitProfile);
+  const raw = { ...initialWeights };
+  const evidence = Object.fromEntries(PREFERENCE_AXES.map(axis => [axis, []]));
+  const updateCountByAxis = Object.fromEntries(PREFERENCE_AXES.map(axis => [axis, 0]));
+  const skipped = [];
+  let choiceCount = 0;
+
+  for (const event of sorted) {
+    if (event.eventType !== 'plan_chosen') continue;
+    const query = resolveChoiceQuery(event, exposures.get(event.requestId));
+    if (query.reason) {
+      skipped.push({
+        eventId: event.eventId ?? null,
+        requestId: event.requestId ?? null,
+        reason: query.reason,
+      });
+      continue;
+    }
+
+    choiceCount += 1;
+    const { factor } = decayFactorFor(event, { now, activeTerm });
+    for (const axis of PREFERENCE_AXES) {
+      const delta = choiceAxisDelta(query, axis);
+      if (delta === null) continue;
+      raw[axis] += learningRate * factor * delta;
+      updateCountByAxis[axis] += 1;
+      evidence[axis].push({
+        eventId: event.eventId ?? null,
+        occurredAt: event.timestamp ?? null,
+        requestId: event.requestId ?? null,
+        chosenPlanId: event.plan?.planId ?? null,
+        querySize: query.querySize,
+        delta: roundChoiceValue(delta),
+        decay: roundChoiceValue(factor),
+        // 這一步之後的**未投影**累加值。最終存下來的值是全部累加完才 clip 的
+        // `storedWeightAfterProjection`，兩者不可混用。
+        rawWeightAfter: roundChoiceValue(raw[axis]),
+      });
+      if (evidence[axis].length > EVIDENCE_TRAIL_LIMIT) evidence[axis].shift();
+    }
+  }
+
+  const rawWeights = Object.fromEntries(
+    PREFERENCE_AXES.map(axis => [axis, roundChoiceValue(raw[axis])])
+  );
+  const weights = Object.fromEntries(
+    PREFERENCE_AXES.map(axis => [axis, roundChoiceValue(clipChoiceWeight(raw[axis]))])
+  );
+
+  return {
+    modelVersion: CHOICE_PERCEPTRON_VERSION,
+    learningRate,
+    initialWeights,
+    rawWeights,
+    weights,
+    sufficiency: {
+      status: choiceCount >= REQUIRED_CHOICE_COUNT
+        ? SUFFICIENCY_STATUS.SUFFICIENT
+        : SUFFICIENCY_STATUS.INSUFFICIENT,
+      // 門檻尚未由真實資料校準，3B 不得據此上線。見 REQUIRED_CHOICE_COUNT。
+      calibrated: false,
+      choiceCount,
+      requiredChoiceCount: REQUIRED_CHOICE_COUNT,
+      // 逐軸更新次數。`easy` 常因缺評價被遮罩，只看 choiceCount 會把
+      // 「這一軸其實一次都沒學過」誤報成資料充分。
+      choiceCountByAxis: updateCountByAxis,
+    },
+    evidence,
+    storedWeightAfterProjection: weights,
+    decay: {
+      halfLifeDays: PREFERENCE_DECAY_HALF_LIFE_DAYS,
+      staleTermFactor: STALE_TERM_DECAY_FACTOR,
+      appliedAt: now == null ? null : new Date(now).toISOString(),
+      activeTerm,
+    },
+    skipped,
+  };
+}

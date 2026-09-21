@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-21
+
+1. [Roadmap #10 任務 3A：Choice Perceptron 的資料層與 shadow learner](./2026-09-20-roadmap-10-choice-perceptron-3a.md)
+
 ## 2026-09-20
 
 1. [Roadmap #10 任務 1 修正：主軸訊號判定（評價下限、可達範圍、no-signal 與不可行的界線）](./2026-09-20-roadmap-10-axis-signal-correction.md)
