@@ -105,6 +105,10 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // 放進 `context`；`null` 代表沒有可用的學習結果，排課退回顯式 0/1 行為。
     learnedPreference: context.learnedPreference ?? null,
 
+    // 畢業缺口與每學期配額只由後端依正式規則、歷史修課與 profile 計算。
+    // 不接受 request 覆寫，否則 REST 或 Agent 都能偽造一份較寬鬆的類別配額。
+    graduationPlanning: context.graduationPlanning ?? null,
+
     // 本次規劃的避開清單（移除課程後立即生效），**純 request、不從 prefs 回填**。
     //
     // 形狀是 `[{ sectionId, reason, scope, catalogCourseCode, instructor, courseName }]`，

@@ -6,6 +6,10 @@ import { isMysqlConfigured, queryRows } from '../db/mysql.js';
 import { DEFAULT_MIN_CREDITS } from '../data/creditPolicy.js';
 import { mergeInterestPreferences } from '../data/interestPreferences.js';
 import {
+  mergeSemesterPlanningPreferences,
+  SEMESTER_PLANNING_PREFERENCE_FIELDS,
+} from '../data/semesterPlanningPreferences.js';
+import {
   mergePersonalizationPreferences,
   PERSONALIZATION_PREFERENCE_FIELDS,
 } from '../data/personalizationPreferences.js';
@@ -107,6 +111,7 @@ export async function updateUserPreferences(identity, updates) {
   const jsonFields = [
     'preferredTrack', 'interests', 'preferredKeywords',
     ...PERSONALIZATION_PREFERENCE_FIELDS,
+    ...SEMESTER_PLANNING_PREFERENCE_FIELDS,
   ];
   const hasJsonUpdate = jsonFields.some(field => Object.hasOwn(updates, field));
   let writeUpdates = updates;
@@ -116,8 +121,11 @@ export async function updateUserPreferences(identity, updates) {
     // 「只改開關」也不會洗掉興趣。
     writeUpdates = {
       ...updates,
-      preferencesJson: mergePersonalizationPreferences(
-        mergeInterestPreferences(current.preferencesJson, updates),
+      preferencesJson: mergeSemesterPlanningPreferences(
+        mergePersonalizationPreferences(
+          mergeInterestPreferences(current.preferencesJson, updates),
+          updates
+        ),
         updates
       ),
     };

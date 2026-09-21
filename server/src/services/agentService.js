@@ -186,6 +186,7 @@ export function summarizeScheduleForModel(result) {
     message: result.message,
     totalCredits: result.totalCredits,
     graduationCredits: result.graduationCredits,
+    graduationPlanning: result.graduationPlanning ?? null,
     nonGraduationCredits: result.nonGraduationCredits,
     courseCount: result.courseCount,
     hasExpressedPreference: result.hasExpressedPreference,
@@ -207,6 +208,7 @@ export function summarizeScheduleForModel(result) {
       preferenceScore: plan.preferenceScore,
       preferenceBreakdown: plan.preferenceBreakdown,
       reviewCoverage: plan.reviewCoverage,
+      graduationPlanning: plan.graduationPlanning ?? null,
       warnings: plan.warnings,
     })),
     // 被排除的課動輒 200+ 門，全送沒有意義；給總數與少量樣本讓模型能說明原因。

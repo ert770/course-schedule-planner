@@ -24,6 +24,7 @@ import { getAll } from '../db/database.js';
 import { getFailedRequiredCourseCodes } from '../data/courseHistory.js';
 import { deriveAvoidanceScope, derivePendingReason } from '../data/planningContextSchema.js';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
+import { buildGraduationPlanning } from '../data/graduationPlanning.js';
 import {
   PLAN_FEATURE_VERSION,
   INTERACTION_EVENT_TYPES,
@@ -348,6 +349,7 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
   );
 
   const sessionAvoidances = await resolveSessionAvoidances(constraints.sessionAvoidances);
+  const graduationPlanning = buildGraduationPlanning(prefs, ACTIVE_TERM);
 
   const mergedConstraints = buildScheduleConstraints(
     {
@@ -359,7 +361,7 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
       explicitCourseIds: [...(constraints.explicitCourseIds || []), ...courseIds],
     },
     prefs,
-    { courseReviews, learnedPreference }
+    { courseReviews, learnedPreference, graduationPlanning }
   );
 
   const studentScope = buildStudentScope(mergedConstraints);

@@ -5,6 +5,10 @@ import {
   normalizeProfile,
   validateProfile,
 } from '../src/data/profileSchema.js';
+import {
+  mergeSemesterPlanningPreferences,
+  readSemesterPlanningPreferences,
+} from '../src/data/semesterPlanningPreferences.js';
 
 describe('P3 versioned Profile schema', () => {
   test('任意來源的 Profile 正規化為 v1 固定形狀', () => {
@@ -48,6 +52,26 @@ describe('P3 versioned Profile schema', () => {
     assert.equal(profile.preferredTrack, '網路與安全類');
     assert.deepEqual(profile.interests, ['資安', '網路']);
     assert.deepEqual(profile.preferredKeywords, []);
+    assert.equal(validateProfile(profile).valid, true);
+  });
+
+  test('從 preferencesJson 還原剩餘學期，更新時保留其他 values', () => {
+    const stored = {
+      schemaVersion: 1,
+      values: { interests: ['資安'], useLearnedPreference: false, remainingSemesters: 4 },
+    };
+    assert.deepEqual(
+      readSemesterPlanningPreferences({ preferencesJson: stored }),
+      { remainingSemesters: 4 }
+    );
+
+    const updated = mergeSemesterPlanningPreferences(stored, { remainingSemesters: 2 });
+    assert.equal(updated.values.remainingSemesters, 2);
+    assert.deepEqual(updated.values.interests, ['資安']);
+    assert.equal(updated.values.useLearnedPreference, false);
+
+    const profile = normalizeProfile({ preferencesJson: updated });
+    assert.equal(profile.remainingSemesters, 2);
     assert.equal(validateProfile(profile).valid, true);
   });
 });

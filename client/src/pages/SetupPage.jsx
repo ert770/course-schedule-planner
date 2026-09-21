@@ -29,6 +29,7 @@ export default function SetupPage() {
   // 這裡若固定送出預設大一，三年級學生的設定會被存成大一，拿到的是大一必修。
   // 因此在 profile 載入完成前不開放送出（見 `profileLoaded`）。
   const [gradeLevel, setGradeLevel] = useState('1');
+  const [remainingSemesters, setRemainingSemesters] = useState('');
   const [programType, setProgramType] = useState('');
   const [college, setCollege] = useState('');
   const [enrolledPrograms, setEnrolledPrograms] = useState('');
@@ -83,6 +84,7 @@ export default function SetupPage() {
         if (profile.department) setDepartment(profile.department);
         const savedGrade = profile.gradeLevel;
         if (savedGrade) setGradeLevel(String(savedGrade));
+        setRemainingSemesters(profile.remainingSemesters ? String(profile.remainingSemesters) : '');
         if (profile.className) setClassName(profile.className);
         setProgramType(profile.programType || '');
         setCollege(profile.college || '');
@@ -187,6 +189,7 @@ export default function SetupPage() {
       const prefData = {
         department,
         gradeLevel: Number(gradeLevel),
+        remainingSemesters: remainingSemesters ? Number(remainingSemesters) : null,
         className,
         programType: programType || null,
         college: college || null,
@@ -271,6 +274,17 @@ export default function SetupPage() {
                   <option value="3">大三</option>
                   <option value="4">大四</option>
                   <option value="5">研究所</option>
+                </select>
+                <select
+                  value={remainingSemesters}
+                  onChange={e => setRemainingSemesters(e.target.value)}
+                  aria-label="剩餘學期數"
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                >
+                  <option value="">剩餘學期：依年級推算</option>
+                  {Array.from({ length: 8 }, (_, index) => index + 1).map(value => (
+                    <option key={value} value={value}>剩餘 {value} 學期</option>
+                  ))}
                 </select>
                 {/* 系上不接受必修換班，必修範圍必須收斂到班別。 */}
                 <select

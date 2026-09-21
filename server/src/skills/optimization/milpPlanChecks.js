@@ -95,6 +95,33 @@ export function checkMilpPlan(courses = [], inputs = {}, {
     }
   }
 
+  const graduationCategoryCounts = { elective: 0, general: 0, external: 0 };
+  const countedGraduationKeys = new Set();
+  for (const entry of [...(inputs.competitive || []), ...(inputs.internships || [])]) {
+    const bucket = entry.graduationBucket;
+    if (!Object.hasOwn(graduationCategoryCounts, bucket) || !ids.has(idOf(entry.course))) continue;
+    const key = entry.courseKey || codeOf(entry.course);
+    if (countedGraduationKeys.has(key)) continue;
+    countedGraduationKeys.add(key);
+    graduationCategoryCounts[bucket] += 1;
+  }
+  if (inputs.graduationPlanning?.enabled) {
+    for (const bucket of Object.keys(graduationCategoryCounts)) {
+      const expected = Math.max(
+        0,
+        Number(inputs.graduationPlanning.selected?.[bucket]?.courses || 0)
+          - Number(inputs.fixedGraduationBuckets?.[bucket]?.courses || 0)
+      );
+      if (graduationCategoryCounts[bucket] !== expected) {
+        add(
+          'GRADUATION_CATEGORY_PARITY',
+          `${bucket} 課程數 ${graduationCategoryCounts[bucket]} 與 S₀ 競爭課程的 ${expected} 不同`,
+          { bucket, actual: graduationCategoryCounts[bucket], expected }
+        );
+      }
+    }
+  }
+
   if (Number.isFinite(inputs.maxCoursesPerDay)) {
     const dayCounts = new Map();
     for (const course of selected) {
@@ -109,7 +136,13 @@ export function checkMilpPlan(courses = [], inputs = {}, {
     }
   }
 
-  return { valid: violations.length === 0, violations, totalCredits, hierarchyCounts };
+  return {
+    valid: violations.length === 0,
+    violations,
+    totalCredits,
+    hierarchyCounts,
+    graduationCategoryCounts,
+  };
 }
 
 export default { checkMilpPlan };

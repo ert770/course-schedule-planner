@@ -182,6 +182,127 @@ function getEffectiveCategoryPriority(course, scope) {
   return getCategoryPriority(course);
 }
 
+export const GRADUATION_BUCKET = Object.freeze({
+  REQUIRED: 'required',
+  ELECTIVE: 'elective',
+  GENERAL: 'general',
+  EXTERNAL: 'external',
+  OTHER: 'other',
+});
+
+// 畢業配額用的類別。這和畫面上的「核心選修／一般選修」不同：兩者在畢業規則裡
+// 都屬於本系選修。本人必修仍由既有 isRequiredForStudent() 判定，不能只看資料庫 type。
+export function getGraduationBucket(course, scope) {
+  if (isRequiredForStudent(course, scope)) return GRADUATION_BUCKET.REQUIRED;
+  if (course?.category === '通識') return GRADUATION_BUCKET.GENERAL;
+  if (course?.category === '系外選修') return GRADUATION_BUCKET.EXTERNAL;
+  if (isOwnDepartmentElective(course, scope)) return GRADUATION_BUCKET.ELECTIVE;
+  return GRADUATION_BUCKET.OTHER;
+}
+
+function scheduledCourses(plan) {
+  return [...plan.schedule, ...plan.unscheduledCourses];
+}
+
+function graduationBucketSummary(plan, scope) {
+  const summary = Object.fromEntries(
+    Object.values(GRADUATION_BUCKET).map(key => [key, { courses: 0, credits: 0 }])
+  );
+  for (const course of scheduledCourses(plan)) {
+    const bucket = getGraduationBucket(course, scope);
+    summary[bucket].courses += 1;
+    summary[bucket].credits += Number(course.credits) || 0;
+  }
+  return summary;
+}
+
+// 通識／系外最多兩門。每次把一個名額分給「本學期尚未覆蓋的需求」較大者，
+// 因而只會得到 1+1、2+0、0+2；若一門就已覆蓋本學期目標，保留一門而不硬塞第二門。
+export function buildBreadthSequence(graduationPlanning) {
+  if (!graduationPlanning?.enabled) return [];
+  const remaining = {
+    general: Math.max(0, Number(graduationPlanning.semesterTargets?.general) || 0),
+    external: Math.max(0, Number(graduationPlanning.semesterTargets?.external) || 0),
+  };
+  const gaps = graduationPlanning.gaps || {};
+  const sequence = [];
+  for (let slot = 0; slot < 2; slot += 1) {
+    const available = ['general', 'external'].filter(key => (
+      Number(gaps[key] || 0) > 0 && remaining[key] > 0
+    ));
+    if (available.length === 0) break;
+    available.sort((a, b) => remaining[b] - remaining[a] || a.localeCompare(b));
+    const chosen = available[0];
+    sequence.push(chosen);
+    // 通識常見 2 學分；這裡只負責分配門數，實際學分會在選中課程後計算。
+    remaining[chosen] = Math.max(0, remaining[chosen] - 2);
+  }
+  return sequence;
+}
+
+function createGraduationAllocationState(plan, constraints, scope) {
+  const planning = constraints.graduationPlanning;
+  if (!planning?.enabled) return null;
+  const state = {
+    planning,
+    scope,
+    breadthSequence: buildBreadthSequence(planning),
+    unavailable: new Set(),
+  };
+  plan.graduationPlanning = {
+    enabled: true,
+    ruleVersion: planning.ruleVersion,
+    appliedFallbackVersion: planning.appliedFallbackVersion,
+    remainingSemesters: planning.remainingSemesters,
+    remainingSemestersSource: planning.remainingSemestersSource,
+    gapsBefore: { ...planning.gaps },
+    semesterTargets: { ...planning.semesterTargets },
+    breadthSequence: [...state.breadthSequence],
+    selected: graduationBucketSummary(plan, scope),
+  };
+  for (const warning of planning.warnings || []) {
+    if (!plan.warnings.includes(warning)) plan.warnings.push(warning);
+  }
+  const initial = plan.graduationPlanning.selected;
+  if (initial.elective.courses > 3
+    || initial.elective.credits > Number(planning.semesterTargets?.elective || 0)) {
+    plan.warnings.push(
+      '你明確指定的本系選修已超過本學期自動配額；系統保留指定課程，但不再自動增加本系選修。'
+    );
+  }
+  return state;
+}
+
+function nextGraduationPhase(plan, state) {
+  const selected = graduationBucketSummary(plan, state.scope);
+  const electiveTarget = Math.max(0, Number(state.planning.semesterTargets?.elective) || 0);
+  if (!state.unavailable.has(GRADUATION_BUCKET.ELECTIVE)
+    && electiveTarget > 0
+    && selected.elective.courses < 3
+    && selected.elective.credits < electiveTarget) {
+    return GRADUATION_BUCKET.ELECTIVE;
+  }
+
+  const selectedBreadth = {
+    general: selected.general.courses,
+    external: selected.external.courses,
+  };
+  for (const bucket of state.breadthSequence) {
+    if (selectedBreadth[bucket] > 0) {
+      selectedBreadth[bucket] -= 1;
+      continue;
+    }
+    if (!state.unavailable.has(bucket)) return bucket;
+  }
+  return null;
+}
+
+function refreshGraduationPlanningResult(plan, state) {
+  if (!state || !plan.graduationPlanning) return;
+  plan.graduationPlanning.selected = graduationBucketSummary(plan, state.scope);
+  plan.graduationPlanning.unavailableBuckets = [...state.unavailable];
+}
+
 function getCourseStatus(course, constraints) {
   const courseStates = constraints.courseStates || {};
   const explicit = courseStates[course.id] || course.status || course.state;
@@ -2063,6 +2184,10 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     }
   }
 
+  // 正式必修、重補修與使用者明確指定的課排完後，才開始消耗本學期的自動選課配額。
+  // 明確指定的選修／通識／系外課也會計入已用配額，避免系統在它們之外又補一整份。
+  const graduationAllocation = createGraduationAllocationState(plan, constraints, scope);
+
   const placedIds = new Set([
     ...plan.schedule.map(c => Number(c.id)),
     ...plan.unscheduledCourses.map(c => Number(c.id)),
@@ -2115,6 +2240,7 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
       course,
       courseKey: getCourseKey(course),
       seriesKey: getCourseSeriesKey(course),
+      graduationBucket: getGraduationBucket(course, scope),
       placement: evaluateCoursePlacement(plan, course, constraints),
       interestScore: normalizedInterest(course),
       easyScore: getEasyCourseScore(course) === null
@@ -2134,6 +2260,8 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         maxCredits: plan.maxCredits,
         maxCoursesPerDay: plan.maxCoursesPerDay,
         explicitIds: [...collectExplicitCourseIds(constraints)],
+        graduationPlanning: plan.graduationPlanning ?? null,
+        fixedGraduationBuckets: graduationBucketSummary(plan, scope),
         competitive: remaining.map(course => ({
           ...describe(course),
           scoreComponents: computeScoreComponents(
@@ -2171,14 +2299,41 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
   }
 
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
-    remaining.sort((a, b) => (
+    const phase = graduationAllocation
+      ? nextGraduationPhase(plan, graduationAllocation)
+      : null;
+    if (graduationAllocation && phase === null) break;
+
+    const selectedBuckets = graduationAllocation ? graduationBucketSummary(plan, scope) : null;
+    const phaseCandidates = graduationAllocation
+      ? remaining.filter(course => {
+        if (getGraduationBucket(course, scope) !== phase) return false;
+        if (phase !== GRADUATION_BUCKET.ELECTIVE) return true;
+        const slots = course.corequisiteRole === 'regular'
+          && eligible.some(item => item.catalogCourseCode === course.corequisiteCode)
+          ? 2
+          : 1;
+        return selectedBuckets.elective.courses + slots <= 3;
+      })
+      : remaining;
+    if (graduationAllocation && phaseCandidates.length === 0) {
+      graduationAllocation.unavailable.add(phase);
+      plan.warnings.push(
+        phase === GRADUATION_BUCKET.ELECTIVE
+          ? '本學期沒有更多可排入的本系選修，選修配額未完全補足。'
+          : `${phase === GRADUATION_BUCKET.GENERAL ? '通識' : '系外選修'}缺少可排入課程，已保留未補足狀態。`
+      );
+      continue;
+    }
+
+    phaseCandidates.sort((a, b) => (
       scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
       - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
       || Number(a.id) - Number(b.id)
     ));
 
     const rankedCandidates = plan._generationDiagnostics
-      ? remaining.slice(0, DIAGNOSTIC_TOP_CANDIDATES).map((candidate, index) => {
+      ? phaseCandidates.slice(0, DIAGNOSTIC_TOP_CANDIDATES).map((candidate, index) => {
         const components = computeScoreComponents(
           candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
         );
@@ -2190,7 +2345,9 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         };
       })
       : null;
-    const course = remaining.shift();
+    const course = phaseCandidates[0];
+    const runnerUpCourses = phaseCandidates.slice(1, GREEDY_RUNNERS_UP_RECORDED + 1);
+    remaining.splice(remaining.indexOf(course), 1);
     const creditsBefore = plan.totalCredits;
     const excludedBefore = plan.excludedCourses.length;
 
@@ -2205,7 +2362,7 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     );
     const alternatives = buildAlternatives(
       score(course),
-      remaining.slice(0, GREEDY_RUNNERS_UP_RECORDED).map(c => ({ course: c, score: score(c) }))
+      runnerUpCourses.map(c => ({ course: c, score: score(c) }))
     );
     const scoreComponents = computeScoreComponents(
       course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
@@ -2273,7 +2430,20 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     }
   }
 
-  if (remaining.length > 0 && plan.totalCredits >= plan.maxCredits) {
+  refreshGraduationPlanningResult(plan, graduationAllocation);
+
+  if (graduationAllocation && remaining.length > 0) {
+    for (const next of remaining) {
+      recordDiagnosticSkip(
+        plan,
+        next,
+        'GRADUATION_CATEGORY_QUOTA',
+        '本學期的選修／通識／系外配額已完成，未再用其他課程填滿學分上限'
+      );
+    }
+  }
+
+  if (!graduationAllocation && remaining.length > 0 && plan.totalCredits >= plan.maxCredits) {
     for (const next of remaining) {
       recordDiagnosticSkip(
         plan,
@@ -3038,6 +3208,7 @@ const COLLAPSE_REASON_TEXT = {
   'credit-parity-infeasible': '無法維持綜合方案的學分',
   'axis-threshold-infeasible': '無法達到主軸改善門檻',
   'hierarchy-parity-infeasible': '無法維持與綜合方案相同的本系／跨年級／系外課程結構',
+  'graduation-category-infeasible': '無法維持綜合方案的選修／通識／系外門數',
   'rating-coverage-infeasible': '有評價的課不足，無法在維持評價涵蓋下提高主軸表現',
   'quality-floor': '換課後品質會低於綜合方案的 87%',
   'combined-constraints': '學分、品質、換課與主軸門檻無法同時滿足',
@@ -3247,6 +3418,12 @@ function materializeMilpPlan(candidate, definition, inputs, constraints, prepare
     (sum, course) => sum + (countsTowardGraduation(course) ? (Number(course.credits) || 0) : 0), 0
   );
   plan.nonGraduationCredits = plan.totalCredits - plan.graduationCredits;
+  if (inputs.graduationPlanning?.enabled) {
+    plan.graduationPlanning = {
+      ...inputs.graduationPlanning,
+      selected: graduationBucketSummary(plan, prepared.scope),
+    };
+  }
   plan.courseCount = selected.length;
   plan.success = true;
   plan.watchOnly = false;
@@ -3617,7 +3794,14 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   } : null;
 
   let repair = null;
-  if (shouldAttemptRepair(baselinePrimary, baselineCheck, runtimeOptions)) {
+  // 畢業配額啟用時，學分不足代表該類別沒有可排候選；不能再讓通用 repair 用額外
+  // 本系選修把最低學分補滿，否則會直接推翻本次功能的核心限制。硬限制失敗仍可 repair。
+  const quotaLimitedButValid = Boolean(
+    constraints.graduationPlanning?.enabled
+    && baselinePrimary?.success
+    && baselineCheck.valid
+  );
+  if (!quotaLimitedButValid && shouldAttemptRepair(baselinePrimary, baselineCheck, runtimeOptions)) {
     repair = runRepair(prepared, constraints, preferenceProfile, plans, runtimeOptions);
     repair.solver.baseline = baseline;
     if (repair.plan) {
@@ -3892,6 +4076,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     planDiversity,
     totalCredits: primary.totalCredits,
     graduationCredits: primary.graduationCredits,
+    graduationPlanning: primary.graduationPlanning ?? null,
     nonGraduationCredits: primary.nonGraduationCredits,
     courseCount: primary.courseCount,
     excludedCourses: primary.excludedCourses,

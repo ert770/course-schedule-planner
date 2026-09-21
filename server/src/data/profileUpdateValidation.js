@@ -45,6 +45,14 @@ export function validateProfileUpdate(updates = {}) {
     return 'useLearnedPreference 必須是布林值';
   }
 
+  if (updates.remainingSemesters !== undefined
+    && updates.remainingSemesters !== null
+    && (!Number.isInteger(updates.remainingSemesters)
+      || updates.remainingSemesters < 1
+      || updates.remainingSemesters > 8)) {
+    return 'remainingSemesters 必須是 1～8 的整數或 null';
+  }
+
   // `preferences_json` 由專屬欄位（`interests`／`preferredTrack`／`preferredKeywords`／
   // `useLearnedPreference`）各自更新，**公開 API 不接受整包覆寫**。
   //
@@ -54,7 +62,7 @@ export function validateProfileUpdate(updates = {}) {
   // 整包覆寫也會順手洗掉 `values` 裡的其他鍵，那不是任何一個呼叫端真正想要的。
   if (updates.preferencesJson !== undefined) {
     return 'preferencesJson 不可直接更新，請使用 interests／preferredTrack／'
-      + 'preferredKeywords／useLearnedPreference 等專屬欄位';
+      + 'preferredKeywords／useLearnedPreference／remainingSemesters 等專屬欄位';
   }
 
   return null;

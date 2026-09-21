@@ -13,6 +13,18 @@ describe('#10 任務 3A POST /api/profile 的輸入驗證', () => {
     assert.equal(validateProfileUpdate({ useLearnedPreference: false }), null);
     assert.equal(validateProfileUpdate({ preferredTrack: null }), null);
     assert.equal(validateProfileUpdate({ interests: [] }), null);
+    assert.equal(validateProfileUpdate({ remainingSemesters: 1 }), null);
+    assert.equal(validateProfileUpdate({ remainingSemesters: 8 }), null);
+    assert.equal(validateProfileUpdate({ remainingSemesters: null }), null);
+  });
+
+  test('remainingSemesters 只接受 1～8 的整數或 null', () => {
+    for (const value of [0, 9, 1.5, '2', {}, []]) {
+      assert.match(
+        validateProfileUpdate({ remainingSemesters: value }) ?? '',
+        /remainingSemesters 必須是 1～8 的整數或 null/u
+      );
+    }
   });
 
   test('useLearnedPreference 只接受布林值', () => {

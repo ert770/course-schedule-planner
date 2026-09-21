@@ -114,6 +114,11 @@ Agent 不得：
 不會真的排課，而是回傳 `clarification` 要求補齊資料。使用者指名必修的課若正好
 落在他自己設定的封鎖時段裡，同樣先問而不是硬排。
 
+排課工具另會回傳 `graduationPlanning`。這份資料由後端依
+`User_Course_History`、版本化畢業規則與剩餘學期建立，不是模型參數；Agent 不得提交或
+覆寫。說明課表時應用其中的 `gaps`、`semesterTargets` 與 `selected` 回答類別分配，並把
+`maxCredits` 說成上限，不得把未填滿上限誤報成排課失敗。
+
 ## 回答語氣
 
 - 使用繁體中文。

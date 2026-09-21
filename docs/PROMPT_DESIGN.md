@@ -473,6 +473,7 @@ parameter`）。
 （約 9.7 KB）：
 
 - 保留：`requestId`、`solver`、`clarification`、`unmetRequirements`、`warnings`、
+  `graduationPlanning`、
   `hasExpressedPreference`、`reviewDataLoaded`、各方案的 `preferenceScore`／
   `preferenceBreakdown`／`reviewCoverage`。
 - 課程只留 `sectionId`、`catalogCourseCode`、`name`、`teacher`、`credits`、
@@ -482,6 +483,10 @@ parameter`）。
 - 各方案不再重複攜帶自己那份完整課表。
 
 **完整結果仍原封不動回傳給前端**渲染課表；被裁掉的只有送進模型的那一份。
+
+`graduationPlanning` 是伺服器依正式規則與歷史修課算出的可信事實。Agent 可用它說明
+「為什麼本學期只排兩門本系選修、為什麼改補通識」，但不得自行改算缺口，也不得因總學分
+未填到 `maxCredits` 就宣稱排課不完整。`enabled:false` 時只能轉述 `warnings`，不可臆測配額。
 
 ### 工具結果信封（Roadmap #25）
 

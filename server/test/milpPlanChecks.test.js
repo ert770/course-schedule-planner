@@ -70,3 +70,28 @@ test('milpPlanChecks：跨年級與系外門數必須和 S₀ 的階層配額一
   );
   assert.ok(fail.violations.some(item => item.constraintId === 'HIERARCHY_PARITY'));
 });
+
+test('milpPlanChecks：替代方案必須維持 S₀ 的選修／通識／系外門數', () => {
+  const elective = course(2, 'E');
+  const general = course(3, 'G');
+  const scopedInputs = inputs({
+    competitive: [
+      { course: elective, courseKey: 'code:E', graduationBucket: 'elective' },
+      { course: general, courseKey: 'code:G', graduationBucket: 'general' },
+    ],
+    fixedGraduationBuckets: {
+      elective: { courses: 0 }, general: { courses: 0 }, external: { courses: 0 },
+    },
+    graduationPlanning: {
+      enabled: true,
+      selected: {
+        elective: { courses: 1 }, general: { courses: 1 }, external: { courses: 0 },
+      },
+    },
+    basePlan: { totalCredits: 9 },
+  });
+  assert.equal(checkMilpPlan([course(1, 'FIX'), elective, general], scopedInputs).valid, true);
+
+  const fail = checkMilpPlan([course(1, 'FIX'), elective], scopedInputs, { creditTarget: 6 });
+  assert.ok(fail.violations.some(item => item.constraintId === 'GRADUATION_CATEGORY_PARITY'));
+});

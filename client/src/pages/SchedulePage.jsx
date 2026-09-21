@@ -42,6 +42,7 @@ export default function SchedulePage() {
     selectedPlanId,
     recommendedPlanId,
     planDiversity,
+    activePlan,
     selectPlan,
     // 本次規劃的避開清單
     sessionAvoidances,
@@ -328,6 +329,25 @@ export default function SchedulePage() {
               onDismiss={() => setNotice(null)}
               domId="schedule-page-notice"
             />
+
+            {activePlan?.graduationPlanning?.enabled && (
+              <div
+                id="graduation-semester-plan"
+                style={{
+                  marginBottom: '12px', padding: '10px 12px', borderRadius: '8px',
+                  border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
+                  fontSize: '0.88rem',
+                }}
+              >
+                <strong style={{ color: 'var(--text-primary)' }}>本學期畢業缺口分配</strong>
+                {' '}（剩餘 {activePlan.graduationPlanning.remainingSemesters} 學期）：
+                本系選修 {activePlan.graduationPlanning.selected?.elective?.courses || 0} 門／
+                {activePlan.graduationPlanning.selected?.elective?.credits || 0} 學分
+                （目標 {Number(activePlan.graduationPlanning.semesterTargets?.elective || 0).toFixed(1)}）；
+                通識 {activePlan.graduationPlanning.selected?.general?.courses || 0} 門；
+                系外 {activePlan.graduationPlanning.selected?.external?.courses || 0} 門。
+              </div>
+            )}
 
             <SessionAvoidanceBar
               avoidances={sessionAvoidances}

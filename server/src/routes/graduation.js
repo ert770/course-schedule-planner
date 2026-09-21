@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { getAll } from '../db/database.js';
-import { resolveGraduationRule } from '../data/graduationRuleVersions.js';
+import {
+  buildGraduationPlanning,
+  resolveRequiredCredits,
+} from '../data/graduationPlanning.js';
 import { normalizeDepartment } from '../utils/text.js';
 import { parseClassName, buildStudentScope } from '../skills/courseScope.js';
 import {
@@ -16,10 +19,10 @@ import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
 import {
   getPassedCourseCodes,
-  getEarnedCredits,
   getEarnedCreditsAttribution,
-  getTotalEarnedCredits,
 } from '../data/courseHistory.js';
+
+export { resolveRequiredCredits };
 
 const router = Router();
 
@@ -28,16 +31,6 @@ const router = Router();
 // 本系必修 63／本系選修 28／外系選修 9／通識基礎 16／通識選修 12。
 // 各系畢業總學分也不一致（128／130／131／134／156）。
 // 見 `docs/COURSE_SELECTION_RULES.md` 與 `server/src/data/graduationRequirements.js`。
-function toCreditBreakdown(requirement) {
-  return {
-    required: requirement.deptRequired,
-    elective: requirement.deptElective,
-    general: requirement.generalBasic + requirement.generalElective,
-    external: requirement.outsideElective,
-    unspecified: requirement.unspecified,
-  };
-}
-
 // 畢業學分規定**只信官方對照表**（`graduationRequirements.js`）。
 //
 // 先前這裡查不到系所時會退回 `user.requiredCredits`——那個欄位早在 2026-08-04
@@ -45,25 +38,6 @@ function toCreditBreakdown(requirement) {
 // 沒有出處的捏造數字，而且優先度比官方值還高，蓋掉官方值毫無跡象，這批數字
 // 才能存活到那時候）。欄位刪了但退回它的程式碼還留著，變成一段打不到、
 // 也沒有意義的防禦。查不到就是查不到，明確回報，不再猜。
-export function resolveRequiredCredits(requirement) {
-  if (!requirement) {
-    return { required: null, totalRequired: null, warning: '此系所不存在，請檢查是否輸入錯誤' };
-  }
-  return { required: toCreditBreakdown(requirement), totalRequired: requirement.total ?? null, warning: null };
-}
-
-// 有沒有史料可以派生。
-//
-// 先前這裡驗證的是 `user.earnedCredits` 的物件形狀與 `user.completedCredits`
-// 是不是有限數字——那套防禦存在的理由，是當時學分被獨立存成兩個欄位，
-// 必須確認它們沒有壞掉。2026-08-11 起學分改由 `courseHistory` 當場算
-// （見 `data/courseHistory.js`），`getEarnedCredits()` 對任何陣列都會回傳
-// 合法形狀的結果（空陣列得到全 0），沒有「派生值壞掉」這種狀態需要防。
-// 因此只需判斷有沒有可以派生的來源。
-function hasCourseHistory(profile) {
-  return Array.isArray(profile.courseHistory) && profile.courseHistory.length > 0;
-}
-
 // 課程類別 → 畢業學分缺口分類。
 //
 // `annotateCourseCategory()` 回傳的是**修課視角**的類別（核心選修／一般選修分開，
@@ -280,14 +254,15 @@ async function handleGraduation(req, res) {
     // 依 `program + degree + admissionYear` 解析適用的規則版本（Roadmap #23）。
     // 入學年度未知，或該學年度的科目表尚未取得時，`appliedFallbackVersion` 為 true，
     // 並附上說明——不假裝套用的就是該學生入學年度的規則。
-    const rule = resolveGraduationRule({
-      program: department,
-      admissionYear: profile?.admissionYear ?? null,
-    });
+    const graduationPlanning = buildGraduationPlanning({ ...profile, department });
+    const rule = graduationPlanning.rule;
     const requirement = rule.requirement;
     const warnings = [];
 
-    const { required, totalRequired, warning: requirementWarning } = resolveRequiredCredits(requirement);
+    const {
+      required, totalRequired, earned, totalEarned, gaps, courseHistoryAvailable,
+    } = graduationPlanning;
+    const { warning: requirementWarning } = resolveRequiredCredits(requirement);
     if (requirementWarning) {
       warnings.push(requirementWarning);
     } else if (requirement.needsVerification) {
@@ -302,7 +277,6 @@ async function handleGraduation(req, res) {
       warnings.push(rule.fallbackReason);
     }
 
-    const courseHistoryAvailable = hasCourseHistory(profile);
     const courseHistoryMessage = courseHistoryAvailable
       ? null
       : '缺少歷史修課資料，請至 MyFCU 擷取歷史修課資料並匯入。';
@@ -310,21 +284,9 @@ async function handleGraduation(req, res) {
     // `completedCredits`（2026-08-11 已從 `users.json` 移除）。
     // 兩支函式與排課共用同一份 `data/courseHistory.js`，因此畢業進度與
     // 排課的已修判定必然一致。
-    const earned = courseHistoryAvailable ? getEarnedCredits(profile.courseHistory) : null;
-    const totalEarned = courseHistoryAvailable
-      ? getTotalEarnedCredits(profile.courseHistory)
-      : null;
     // `required` 查不到系所時是 `null`（見 resolveRequiredCredits）；
     // 只看 courseHistoryAvailable 的話，「有修課歷史但系所查不到」會讓
     // Object.entries(null) 直接丟例外，把整支 route 打成 500。
-    const gaps = courseHistoryAvailable && required
-      ? Object.fromEntries(
-        Object.entries(required).map(([key, value]) => [
-          key,
-          Math.max(0, Number(value || 0) - Number(earned[key] || 0)),
-        ])
-      )
-      : null;
     // 已修排除改用跨學期穩定的課號，與排課引擎同一套判定。
     //
     // 先前這裡是 `new Set(user.completedCourseIds)` 比對 `course.id`：

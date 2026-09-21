@@ -15,6 +15,7 @@ function describeCollapse(diversity) {
     'credit-parity-infeasible': '無法維持綜合方案的學分',
     'axis-threshold-infeasible': '無法達到主軸改善門檻',
     'hierarchy-parity-infeasible': '無法維持與綜合方案相同的本系／跨年級／系外課程結構',
+    'graduation-category-infeasible': '無法維持綜合方案的選修／通識／系外門數',
     'rating-coverage-infeasible': '有評價的課不足，無法在維持評價涵蓋下提高主軸表現',
     'quality-floor': '換課後品質會低於綜合方案的 87%',
     'combined-constraints': '學分、品質、換課與主軸門檻無法同時滿足',

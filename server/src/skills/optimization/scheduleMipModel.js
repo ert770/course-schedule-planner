@@ -271,6 +271,7 @@ export function buildDiverseScheduleMip(inputs, options = {}) {
         seriesKey: section.seriesKey,
         competitive: section.kind === 'competitive',
         hierarchyTier: hierarchyTier(section),
+        graduationBucket: section.graduationBucket ?? 'other',
         explicit: false,
         sections: [],
       });
@@ -365,6 +366,31 @@ export function buildDiverseScheduleMip(inputs, options = {}) {
   for (const [key, names] of series) {
     if (names.length > 1) addRow(`series_${rows.length}`, names.map(name => ({ coef: 1, name })), '<=', 1,
       { type: 'series', key });
+  }
+
+  // S₀ 已依畢業缺口決定「本系選修幾門、通識幾門、系外幾門」。替代方案只在
+  // 各類別內換課，不得為了個人化分數把通識再次換成本系選修。
+  const graduationPlanning = inputs.graduationPlanning;
+  if (graduationPlanning?.enabled && !relax.has('graduation-category')) {
+    const fixed = inputs.fixedGraduationBuckets || {};
+    const selected = graduationPlanning.selected || {};
+    for (const bucket of ['elective', 'general', 'external']) {
+      const target = Math.max(
+        0,
+        Number(selected[bucket]?.courses || 0) - Number(fixed[bucket]?.courses || 0)
+      );
+      const terms = [...courseVars.values()]
+        .filter(item => item.graduationBucket === bucket)
+        .map(item => ({ coef: 1, name: item.name }));
+      const failure = addRow(`graduation_${bucket}`, terms, '=', target, {
+        type: 'graduation-category-parity', bucket, bound: target,
+      });
+      if (failure) {
+        return {
+          status: 'infeasible', reason: 'graduation-category-infeasible', detail: failure.reason,
+        };
+      }
+    }
   }
 
   for (const [index, rawReference] of (relax.has('replacement') ? [] : (options.referenceSelections || [])).entries()) {

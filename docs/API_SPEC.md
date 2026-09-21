@@ -486,6 +486,12 @@ Request:
 schedule request 重複傳班級；route 會先依 session identity 讀取 profile，再呼叫
 `searchCoursesForSchedule()`。
 
+畢業缺口配額不接受 request 指定。伺服器會用 Profile、MySQL
+`User_Course_History`、入學年度適用的畢業規則與 `remainingSemesters` 建立
+`graduationPlanning`，再透過 trusted context 交給排課器；request body 即使送入同名欄位
+也會被忽略。配額計算與選課順序見 `docs/SCHEDULING_LOGIC.md` 的
+「畢業缺口的當學期配額」。
+
 `courseIds`、`selectedCourseIds`、`watchingCourseIds` 與 `mustTakeCourseIds` 使用 section id。
 
 `sessionAvoidances` 是**本次規劃**的避開清單：使用者剛在畫面上移除的課，這一次重排
@@ -645,6 +651,20 @@ Response:
   "graduationCredits": 17,
   "nonGraduationCredits": 1,
   "courseCount": 6,
+  "graduationPlanning": {
+    "enabled": true,
+    "remainingSemesters": 1,
+    "remainingSemestersSource": "grade-and-active-term",
+    "gaps": { "required": 2, "elective": 6, "general": 4, "external": 0 },
+    "semesterTargets": { "elective": 6, "general": 4, "external": 0 },
+    "selected": {
+      "required": { "courses": 0, "credits": 0 },
+      "elective": { "courses": 2, "credits": 6 },
+      "general": { "courses": 2, "credits": 4 },
+      "external": { "courses": 0, "credits": 0 }
+    },
+    "unavailableBuckets": []
+  },
   "message": "...",
   "plans": [],
   "excludedCourses": [],
@@ -703,6 +723,10 @@ Response:
 `reviewDataLoaded`（Roadmap #4）表示這次排課是否取得了任何 `Course_Reviews` 資料。為 `false`
 代表接線異常（呼叫端沒帶 `courseReviews` 或資料庫回空），不是「沒有評價可用所以正常忽略」——
 此時所有課程的涼度一律以中性值計算，`warnings` 會明確告知。與成功與否無關，成功與失敗回應都會帶上。
+
+`graduationPlanning`（Roadmap #23）說明這次排課採用的畢業缺口、剩餘學期、每學期目標與
+實際排入的類別門數／學分。`enabled:false` 代表歷史修課、畢業規則或剩餘學期不足，系統
+不會假裝有配額。它也會出現在每個方案中；多方案的類別門數必須與 S₀ 一致。
 
 `watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
 
@@ -1208,6 +1232,15 @@ tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`err
 一律回 `400`——一個決定「要不要用學到的偏好」的旗標，不該靠型別轉換猜測使用者的意思。
 
 更新興趣不會洗掉這個開關，更新開關也不會洗掉興趣。
+
+Profile 另接受 `remainingSemesters`（1～8 的整數或 `null`）：
+
+```json
+{ "remainingSemesters": 3 }
+```
+
+它保存在 `preferences_json.values.remainingSemesters`。`null` 會刪除明確設定，排課回到
+依年級與 active term 推算；字串 `"3"`、小數、0 與 9 一律回 `400`。
 
 **`preferencesJson` 本身不可直接更新**（送了回 `400`）：`preferences_json.values` 的每個
 受管理欄位都有專屬 API 欄位。開放整包覆寫會讓上面的型別檢查可以被繞過

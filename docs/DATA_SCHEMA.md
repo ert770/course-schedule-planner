@@ -333,7 +333,7 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 | --- | --- | --- |
 | `must_take_courses` | JSON NULL | `profile.mustTakeCourses`；Profile API 已接讀寫 |
 | `avoid_instructors` | JSON NULL | `profile.avoidInstructors`；持久化並接入排課限制 |
-| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。只接受真正的布林值，其他型別一律退回預設；更新興趣與更新開關各自只動自己的鍵，互不覆蓋。**3A 只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
+| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。**Roadmap #23** 另加 `values.remainingSemesters`（1～8 的整數）：使用者明確設定的剩餘學期數；缺少時依年級與 active term 推算。各欄位只接受正式型別，更新時各自只動自己的鍵，互不覆蓋。**3A 的開關只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
 | `password_hash` | varchar(255) NULL | 刻意不搬 `users.json.password` 明碼；雜湊方案另案處理 |
 | `watchlist` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
 | `skill_tree` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
@@ -353,13 +353,14 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
   "values": {
     "preferredTrack": "技術應用類",
     "interests": ["人工智慧", "資料科學"],
-    "preferredKeywords": ["深度學習"]
+    "preferredKeywords": ["深度學習"],
+    "remainingSemesters": 3
   }
 }
 ```
 
-`memoryService.updateUserPreferences()` 只合併本次有提供的興趣鍵，既有的學習結果或其他
-`values` 成員保持不變。`profileSchema.normalizeProfile()` 再把三個值展開到 Profile 頂層，
+`memoryService.updateUserPreferences()` 只合併本次有提供的受管理鍵，既有的學習結果或其他
+`values` 成員保持不變。`profileSchema.normalizeProfile()` 再把興趣與剩餘學期展開到 Profile 頂層，
 讓 REST 與 Agent 排課共用 `constraintService.js` 的既有合併邏輯。
 
 ### `Courses.target_grade` 與 `Courses.prerequisites`

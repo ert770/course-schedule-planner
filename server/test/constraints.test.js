@@ -170,6 +170,38 @@ describe('roadmap #5B：preferChallengingCourses 與 learnedPreference', () => {
   });
 });
 
+describe('畢業配額只接受後端計算結果', () => {
+  test('request 與 profile 不能覆寫 graduationPlanning', () => {
+    const trustedPlanning = {
+      enabled: true,
+      gaps: { required: 2, elective: 6, general: 4, external: 0 },
+      remainingSemesters: 1,
+    };
+    const forgedPlanning = {
+      enabled: true,
+      gaps: { required: 0, elective: 99, general: 0, external: 0 },
+      remainingSemesters: 8,
+    };
+
+    const merged = buildScheduleConstraints(
+      { graduationPlanning: forgedPlanning },
+      { graduationPlanning: forgedPlanning },
+      { graduationPlanning: trustedPlanning }
+    );
+
+    assert.strictEqual(merged.graduationPlanning, trustedPlanning);
+    assert.notStrictEqual(merged.graduationPlanning, forgedPlanning);
+  });
+
+  test('context 沒有資料時維持 null', () => {
+    const merged = buildScheduleConstraints(
+      { graduationPlanning: { enabled: true } },
+      { graduationPlanning: { enabled: true } }
+    );
+    assert.equal(merged.graduationPlanning, null);
+  });
+});
+
 // 2026-09-10：`minCredits` 的合併語意本身沒有 bug（`input.minCredits ?? prefs.targetCreditsMin`
 // 一直都是對的），真正的 bug 在上游——`database.js` 曾經把 `prefs.targetCreditsMin` 寫死成
 // 12，這裡收到的因此永遠是 12，不是 undefined。這組測試釘住「這一層的合併邏輯本身正確」，
