@@ -818,6 +818,8 @@ policy 的 `planId` 對得上 `displayedPlanIds`，接受方案時也會核對 `
 - 產生端採「**要嘛覆蓋全部展示方案、要嘛整組不寫**」：任一方案缺特徵時退回舊形狀，
   曝光照常寫入，只是這一筆不能用於學習。
 - 同樣是 JSON envelope 的附加欄位，事件 `schemaVersion` 維持 1，**MySQL 不需要 migration**。
+- 寫入端與學習端**共用同一份版本判定**（`isSupportedPlanFeatureVersion()`）：未知版本的曝光
+  既寫不進去、也不會被學習器採用。兩邊各自維護清單的話，未知的 φ 定義會混進同一個模型。
 
 ### Event types
 

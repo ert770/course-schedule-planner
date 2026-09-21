@@ -113,7 +113,7 @@ true／false 下逐位元相同）。3B 接上開關時那個測試會失敗，�
 | trivial（永遠選主推） | 0.096 |
 | explicit-only（只用勾選的偏好） | 0.271 |
 | current-v2（現行正式引擎） | 0.650 |
-| **choice-perceptron** | **0.800** |
+| **choice-perceptron** | **0.804** |
 
 逐 persona 看比平均更有意義：
 
@@ -145,9 +145,10 @@ true／false 下逐位元相同）。3B 接上開關時那個測試會失敗，�
 
 ### η 與 choice 門檻
 
-- **η**：validation 上 0.2 在兩個 seed 勝出、0.5 在一個 seed 勝出，彼此差距很小
-  （0.76～0.88）。建議取 **0.2**——同分時取較小值比較保守，推翻顯式設定需要更多次選擇。
-  這個網格就是論文實驗用的 `{0.1, 0.2, 0.5, 1, 2, 5, 10}`。
+- **η = 0.2**，由**跨全部 seed × persona 的 validation 平均**一次選出（網格就是論文實驗用的
+  `{0.1, 0.2, 0.5, 1, 2, 5, 10}`）。第一版是每個 seed 各自選一個 η（0.2／0.5／0.2）再把
+  test 結果平均——那等於報告了一個上線時不存在的模型，正式環境只會有一個固定的 η。
+  改成單一 η 後平均 test accuracy 由 0.800 變成 **0.804**，結論沒有被推翻，但流程必須修正。
 - **`REQUIRED_CHOICE_COUNT` 無法只憑合成資料定案。** 穩定所需的 choice 次數
   中位數為 36／26／20（各 seed），最大值 60／45／52，其中 seed 1 的 `null-easy` 到第 60 次
   （training 上限）都還沒進入平台期。合成 persona 的偏好是固定不變的，真實使用者不是，
@@ -165,7 +166,13 @@ true／false 下逐位元相同）。3B 接上開關時那個測試會失敗，�
 
 ### 真實資料 dry-run（唯讀，`--real-data`）
 
-對 demo 帳號 D1249697：**事件總數 166、可用的 `plan_chosen` 0 筆、帶方案特徵的曝光 1 筆**。
+對 demo 帳號 D1249697（2026-09-21 重跑）：事件總數 169、`plan_chosen` 原始筆數 0、
+**可用於學習的 choice 0 筆**、被跳過的原因無（沒有可跳過的）、帶方案特徵的曝光 4 筆。
+
+「可用數量」由**正式 learner** 判定（`sufficiency.choiceCount`），不是數 `eventType`——
+曝光遺失、版本不支援、只顯示一個方案、特徵不完整的 `plan_chosen` 都寫得進事件表卻一筆都
+學不了，拿原始筆數當門檻會把不可學的資料算進 3B 的 go/no-go。腳本同時輸出 `skipped` 的
+原因統計與逐軸更新次數。
 
 `plan_chosen` 這個事件型別是 3A 才新增的，要等 3A 部署之後才開始蒐集，所以這個 0 是
 **結構上必然**的結果，不是模型表現不好。
@@ -234,4 +241,20 @@ requestId `befd7dc7-71ee-433f-b285-37cfb744e9ab`（三個方案：集中／興�
 
 「切換到非主推方案再按符合」這條路徑**確實會產生合格的 set-wise choice 資料**。
 這是 3A 能不能成立的前提——若這條路徑產不出資料，後面的學習器再正確也沒有輸入。
+
+
+## 6. 第二輪審查的四項修正（2026-09-21）
+
+使用者覆核 commit `5abd86b` 後指出四項問題，全部屬實，已修正：
+
+| # | 問題 | 修正 |
+| --- | --- | --- |
+| P1 | 真實資料報告數的是原始 `plan_chosen` 筆數，沒有排除不可學習的事件 | 改呼叫正式 learner，以 `sufficiency.choiceCount` 為可用數量，並輸出 `skipped` 原因統計與逐軸更新次數 |
+| P1 | shadow learner 只檢查 `planFeatureVersion` 存在與否 | 改用 schema 匯出的 `isSupportedPlanFeatureVersion()`；實測 `plan-feature-v999` 原本會被算成一筆 choice 並更新三軸，現在整筆跳過。重播 fixture 也改成直接引用正式常數，避免版本漂移 |
+| P2 | 報告的平均值混用了各 seed 各自選出的 η | 改成先跨全部 seed × persona 的 validation 平均選出**單一 η = 0.2**，再用它評估所有 test。平均 accuracy 0.800 → **0.804**，結論未變 |
+| P2 | `useLearnedPreference` 的布林限制可經 `preferencesJson` 繞過 | 公開 API **不再接受整包 `preferencesJson`**（回 400，指向專屬欄位）。整包覆寫除了繞過型別檢查，也會洗掉 `values` 裡的其他鍵。同時刪掉 `profileSchema.js` 裡重複的 `normalizePreferencesJson()`，canonical shape 只留 `interestPreferences.js` 一份 |
+
+新增測試：`choicePerceptron.test.js` 的未知版本案例、`profileRoutes.test.js`（4 項，涵蓋布林限制與 `preferencesJson` 兩條繞過路徑）。
+
+**已知副作用（誠實記錄）**：`profileRoutes.test.js` 需要 `app.js`，因此在 Windows 上會踩到與 `authRoutes`／`privacyRoutes`／`scheduleRoutes` 相同的既有 libuv 問題（`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`），全套的檔案層級失敗由 3 個變成 4 個。該檔單獨執行時 4/4 通過；這是既有缺陷的第四個實例，不是新的邏輯錯誤。
 

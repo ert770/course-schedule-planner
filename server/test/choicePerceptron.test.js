@@ -211,6 +211,16 @@ describe('CP6-CP7 缺值遮罩與不可用資料', () => {
     assert.equal(result.skipped[0].reason, CHOICE_SKIP_REASONS.UNSUPPORTED_FEATURE_VERSION);
   });
 
+  test('CP7 未知的 planFeatureVersion 整筆跳過（不同 φ 定義不得混進同一個模型）', () => {
+    const features = [feature('a', { interest: 1 }), feature('b', { interest: 0 })];
+    const result = learnChoicePerceptronWeights([
+      exposure('r1', features, { version: 'plan-feature-v999' }), chosen('r1', 'a'),
+    ]);
+    assert.equal(result.sufficiency.choiceCount, 0);
+    assert.deepEqual(result.weights, { interest: 0, compact: 0, easy: 0 });
+    assert.equal(result.skipped[0].reason, CHOICE_SKIP_REASONS.UNSUPPORTED_FEATURE_VERSION);
+  });
+
   test('CP7 特徵沒有覆蓋整組方案時跳過（公式需要其餘方案的平均）', () => {
     const features = [feature('a', { interest: 1 }), feature('b', { interest: 0 })];
     const partial = exposure('r1', features);

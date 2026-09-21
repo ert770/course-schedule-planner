@@ -655,6 +655,7 @@ runner 使用目前 MySQL 與正式排課器，報告寫入
 | `choiceReplayFixture.test.js` | 重播素材本身：同 seed 逐位元可重現、φ 完整時系統分數與 `⟨w, φ⟩` 排序一致、`null-easy` persona 不更新 easy 軸、每回合成對產生 `plan_chosen` 與 `recommendation_accepted`、切分不重疊、accuracy 與名次的定義 |
 | `interactionEventSchema.test.js`（#10 3A 區塊） | `planFeatures` 三態相容：舊事件無版本 → 合法但不可學；新版本只覆蓋一部分 → 拒絕；一對一相符 → 通過；`easy: null` 合法、`interest: null` 與越界值被拒；`variantId` 與 policy 不一致被拒，但沒有 policy 的 fallback 方案仍可通過 |
 | `interactionEvents.test.js`（#10 3A 區塊） | `plan_chosen` 來源驗證五條；**同 requestId 同方案 → `duplicate`、改選另一方案 → `conflict`**；`actionId` 由伺服器依 `requestId` 推導；`recommendation_accepted` 照舊寫入 |
+| `profileRoutes.test.js` | `POST /api/profile` 的輸入驗證：`useLearnedPreference` 只收布林；**`preferencesJson` 一律拒絕**（否則字串可經這條路徑繞過布林檢查、整包覆寫還會洗掉其他鍵）；既有的陣列與字串欄位驗證不變 |
 | `personalizationPreferences.test.js` | `useLearnedPreference` 預設 true、非布林退回預設、與興趣互不覆蓋、`preferences_json.values` 其他鍵不受影響、攤到 profile 頂層 |
 | `preferenceLearningService.test.js`（3A 新增一項） | **3A 尚未消費開關**：排課權重在 `true`／`false` 下逐位元相同。3B 接上時這個測試會失敗，那是提醒該改它了 |
 | `scheduleService.test.js`（planFeatures 區塊） | 每個展示方案各一筆且形狀固定；`easy` 無證據時保留 `null` 不補 0；任一方案缺特徵時整組不寫；沒有 `generationPolicy` 的 fallback 方案仍要有特徵 |

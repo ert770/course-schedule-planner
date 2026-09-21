@@ -9,8 +9,11 @@
 // 而且讀者可以直接看到「資料是怎麼造出來的」這件更重要的事。
 
 import { PREFERENCE_AXES } from '../../src/skills/preferenceLearning.js';
+// 直接引用正式常數：重播素材若自己寫死版本字串，正式版本升級時這裡會靜默漂移，
+// 產生一批「看起來能學、實際上被跳過」的假資料。
+import { PLAN_FEATURE_VERSION } from '../../src/data/interactionEventSchema.js';
 
-export const PLAN_FEATURE_VERSION_FOR_REPLAY = 'plan-feature-v1';
+export const PLAN_FEATURE_VERSION_FOR_REPLAY = PLAN_FEATURE_VERSION;
 
 // mulberry32：小而確定的 PRNG。不用 Math.random()，否則重播不可重現。
 function makeRandom(seed) {

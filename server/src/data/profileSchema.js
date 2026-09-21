@@ -2,7 +2,7 @@ import { normalizeBlockedPeriods } from '../utils/periods.js';
 import { normalizeDepartment } from '../utils/text.js';
 import { extractTags, tagsToFlags } from './preferenceTags.js';
 import { normalizeAdmissionYear } from './graduationRuleVersions.js';
-import { readInterestPreferences } from './interestPreferences.js';
+import { readInterestPreferences, normalizePreferencesJson } from './interestPreferences.js';
 import { readPersonalizationPreferences } from './personalizationPreferences.js';
 
 // Profile 的 canonical shape 永遠標記為這個版本。
@@ -23,18 +23,6 @@ function toFiniteNumber(value, fallback) {
 function normalizeStringList(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map(item => String(item ?? '').trim()).filter(Boolean))];
-}
-
-function normalizePreferencesJson(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { schemaVersion: 1, values: {} };
-  }
-  return {
-    schemaVersion: Number.isInteger(Number(value.schemaVersion)) ? Number(value.schemaVersion) : 1,
-    values: value.values && typeof value.values === 'object' && !Array.isArray(value.values)
-      ? value.values
-      : {},
-  };
 }
 
 export function normalizeProfile(profile = {}) {

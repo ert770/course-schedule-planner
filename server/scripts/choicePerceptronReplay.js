@@ -56,14 +56,17 @@ function learnCP(rounds, persona, learningRate) {
   return { weights: result.weights, choiceCount: result.sufficiency.choiceCount };
 }
 
-// 校準 η：只看 validation。平手時取較小的 η（更保守、推翻顯式設定需要更多次選擇）。
-function calibrateLearningRate(datasets) {
+// 校準 η：只看 validation，而且**跨所有 seed × persona 一起平均選出單一 η**。
+// 先前是每個 seed 各自選一個 η、再把 test 結果平均，那等於報告了一個上線時
+// 不存在的模型——正式環境只會有一個固定的 η。平手時取較小的 η（更保守，
+// 推翻顯式設定需要更多次選擇）。
+function calibrateLearningRate(datasetsBySeed) {
   const rows = CHOICE_LEARNING_RATE_GRID.map(learningRate => {
-    const scores = datasets.map(({ persona, split }) => (
+    const scores = datasetsBySeed.flatMap(datasets => datasets.map(({ persona, split }) => (
       evaluateWeights(learnCP(split.training, persona, learningRate).weights, split.validation).accuracy
-    ));
+    )));
     const mean = scores.reduce((sum, value) => sum + value, 0) / scores.length;
-    return { learningRate, validationAccuracy: round3(mean) };
+    return { learningRate, validationAccuracy: round3(mean), samples: scores.length };
   });
   const best = rows.reduce((winner, row) => (
     row.validationAccuracy > winner.validationAccuracy ? row : winner
@@ -139,29 +142,45 @@ async function countRealChoiceEvents() {
   try {
     const identity = { canonicalId: 'D1249697', numericId: '1', studentId: 'D1249697' };
     const events = await getInteractionEventsForExport(identity);
-    const chosen = events.filter(event => event.eventType === 'plan_chosen');
-    const exposures = events.filter(event => (
-      event.eventType === 'recommendation_exposed'
-      && event.exposureContext?.planFeatureVersion
-    ));
-    return { total: events.length, planChosen: chosen.length, exposuresWithFeatures: exposures.length };
+    // **可用數量要由正式 learner 判定，不能只數 eventType。** 曝光遺失、版本不支援、
+    // 只顯示一個方案、特徵不完整的 plan_chosen 都寫得進事件表，但一筆都學不了；
+    // 拿原始筆數當門檻會把不可學的資料算進 3B 的 go/no-go。
+    const learned = learnChoicePerceptronWeights(events, {});
+    const skippedByReason = {};
+    for (const item of learned.skipped) {
+      skippedByReason[item.reason] = (skippedByReason[item.reason] || 0) + 1;
+    }
+    return {
+      total: events.length,
+      planChosenRows: events.filter(event => event.eventType === 'plan_chosen').length,
+      eligibleChoices: learned.sufficiency.choiceCount,
+      choiceCountByAxis: learned.sufficiency.choiceCountByAxis,
+      skippedByReason,
+      exposuresWithFeatures: events.filter(event => (
+        event.eventType === 'recommendation_exposed'
+        && event.exposureContext?.planFeatureVersion
+      )).length,
+    };
   } finally {
     await closePool();
   }
 }
 
-const seedReports = SEEDS.map(seed => {
-  const datasets = buildDatasets(seed);
-  const learningRateSweep = calibrateLearningRate(datasets);
-  const choiceCount = calibrateChoiceCount(datasets, learningRateSweep.learningRate);
+const datasetsBySeed = SEEDS.map(seed => buildDatasets(seed));
+// 單一 η：先跨所有 seed × persona 的 validation 選定，再用它評估每個 seed 的 test。
+const learningRateSweep = calibrateLearningRate(datasetsBySeed);
+const LEARNING_RATE = learningRateSweep.learningRate;
+
+const seedReports = SEEDS.map((seed, index) => {
+  const datasets = datasetsBySeed[index];
+  const choiceCount = calibrateChoiceCount(datasets, LEARNING_RATE);
   return {
     seed,
-    learningRate: learningRateSweep.learningRate,
-    learningRateSweep: learningRateSweep.rows,
+    learningRate: LEARNING_RATE,
     choiceCountMedian: choiceCount.median,
     choiceCountMax: choiceCount.max,
     stability: choiceCount.perPersona,
-    test: compareOnTest(datasets, learningRateSweep.learningRate),
+    test: compareOnTest(datasets, LEARNING_RATE),
   };
 });
 
@@ -178,7 +197,8 @@ const summary = {
   split: SPLIT,
   seeds: SEEDS,
   personas: REPLAY_PERSONAS.map(persona => persona.id),
-  chosenLearningRates: seedReports.map(report => report.learningRate),
+  learningRate: LEARNING_RATE,
+  learningRateSweep: learningRateSweep.rows,
   choiceCountStability: {
     median: seedReports.map(report => report.choiceCountMedian),
     max: seedReports.map(report => report.choiceCountMax),
@@ -197,7 +217,7 @@ if (process.argv.includes('--markdown')) {
   console.log('');
   console.log(`- 合成資料：${REPLAY_PERSONAS.length} 個 persona × ${ROUNDS} 回合 × seed ${SEEDS.join('／')}`);
   console.log(`- 切分：training ${SPLIT.training}／validation ${SPLIT.validation}／test ${SPLIT.test}；η 與 choice 門檻只用 validation 選，test 只評估一次`);
-  console.log(`- 選出的 η：${summary.chosenLearningRates.join('、')}；穩定所需 choice 次數（各 seed 的中位數／最大值）：${summary.choiceCountStability.median.join('、')} ／ ${summary.choiceCountStability.max.join('、')}`);
+  console.log(`- 選出的 η（跨全部 seed × persona 的 validation 平均，單一值）：${LEARNING_RATE}；穩定所需 choice 次數（各 seed 的中位數／最大值）：${summary.choiceCountStability.median.join('、')} ／ ${summary.choiceCountStability.max.join('、')}`);
   console.log('');
   console.log('## test set 上的四方對照（accuracy = 猜中使用者所選方案的比例）');
   console.log('');
@@ -224,7 +244,10 @@ if (process.argv.includes('--markdown')) {
     console.log('## 真實資料 dry-run（唯讀）');
     console.log('');
     console.log(`- 事件總數：${realData.total}`);
-    console.log(`- 可用的 \`plan_chosen\`：**${realData.planChosen}**`);
+    console.log(`- \`plan_chosen\` 原始筆數：${realData.planChosenRows}`);
+    console.log(`- **可用於學習的 choice（正式 learner 判定）：${realData.eligibleChoices}**`);
+    console.log(`- 逐軸更新次數：${JSON.stringify(realData.choiceCountByAxis)}`);
+    console.log(`- 被跳過的原因：${JSON.stringify(realData.skippedByReason)}`);
     console.log(`- 帶方案特徵的曝光：${realData.exposuresWithFeatures}`);
   }
 } else {

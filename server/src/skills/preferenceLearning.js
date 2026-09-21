@@ -1,5 +1,8 @@
 import { shrinkEasiness, SHRINKAGE_PRIOR_WEIGHT } from './reviewStats.js';
 import { normalizeSemesterLabel } from '../data/activeTerm.js';
+// Choice Perceptron 的可用性判定要與寫入端用同一份版本清單，否則未知的 φ 定義
+// 會混進同一個模型——實測 `plan-feature-v999` 曾被當成合法輸入照樣更新三軸。
+import { isSupportedPlanFeatureVersion } from '../data/interactionEventSchema.js';
 import { INTERACTION_SOURCES } from '../data/interactionEventSchema.js';
 
 // Roadmap #30：把互動事件折成 per-user 偏好權重。
@@ -604,7 +607,9 @@ function clipChoiceWeight(value) {
 function resolveChoiceQuery(event, exposure) {
   if (!exposure) return { reason: CHOICE_SKIP_REASONS.NO_EXPOSURE };
   const context = exposure.exposureContext || {};
-  if (!context.planFeatureVersion) {
+  // 只檢查「有沒有版本」不夠：未知版本代表 φ 的定義可能完全不同，混進同一個
+  // 模型就是拿兩套尺規量同一件事。用 schema 的共用判定，不在這裡自己維護清單。
+  if (!isSupportedPlanFeatureVersion(context.planFeatureVersion)) {
     return { reason: CHOICE_SKIP_REASONS.UNSUPPORTED_FEATURE_VERSION };
   }
   const displayedPlanIds = context.displayedPlanIds || [];

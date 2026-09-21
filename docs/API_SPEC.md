@@ -1143,7 +1143,13 @@ tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`err
 
 同樣存在 `preferences_json.values`。**只接受真正的布林值**，字串 `"false"`、`0`、`null`
 一律回 `400`——一個決定「要不要用學到的偏好」的旗標，不該靠型別轉換猜測使用者的意思。
+
 更新興趣不會洗掉這個開關，更新開關也不會洗掉興趣。
+
+**`preferencesJson` 本身不可直接更新**（送了回 `400`）：`preferences_json.values` 的每個
+受管理欄位都有專屬 API 欄位。開放整包覆寫會讓上面的型別檢查可以被繞過
+（送 `{ values: { useLearnedPreference: "false" } }` 就能存進不合法的字串，讀取時再靜默
+退回預設），也會順手洗掉 `values` 裡的其他鍵。
 
 **這一輪只做持久化，開關尚未生效**：`getSchedulingPreferenceWeights()` 還沒有讀它，
 排課結果在 `true`／`false` 下完全相同。真正讓它生效（回 `user-opted-out`）並補上前端

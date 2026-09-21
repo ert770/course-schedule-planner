@@ -66,12 +66,17 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
       && typeof updates.useLearnedPreference !== 'boolean') {
       return res.status(400).json({ error: 'useLearnedPreference 必須是布林值' });
     }
-    if (
-      updates.preferencesJson !== undefined
-      && (!updates.preferencesJson || typeof updates.preferencesJson !== 'object'
-        || Array.isArray(updates.preferencesJson))
-    ) {
-      return res.status(400).json({ error: 'preferencesJson 必須是物件' });
+    // `preferences_json` 由專屬欄位（`interests`／`preferredTrack`／`preferredKeywords`／
+    // `useLearnedPreference`）各自更新，**公開 API 不接受整包覆寫**。
+    //
+    // 原因是具體的：頂層 `useLearnedPreference` 有布林檢查，但先前整包 `preferencesJson`
+    // 照收，送 `{ values: { useLearnedPreference: "false" } }` 就能把不合法的字串存進去，
+    // 讀取時再靜默退回 `true`——型別檢查等於白做，而且與文件寫的「字串回 400」不符。
+    // 整包覆寫也會順手洗掉 `values` 裡的其他鍵，那不是任何一個呼叫端真正想要的。
+    if (updates.preferencesJson !== undefined) {
+      return res.status(400).json({
+        error: 'preferencesJson 不可直接更新，請使用 interests／preferredTrack／preferredKeywords／useLearnedPreference 等專屬欄位',
+      });
     }
 
     // 避開時段接受第 1～14 節。先前這裡會在含第 1 節時回 400，要求改用
