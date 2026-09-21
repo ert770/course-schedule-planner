@@ -194,11 +194,63 @@ describe('#2 idempotency', () => {
     assert.equal(stored[0].feedbackReason, 'time');
   });
 
+  // `course_withdrawn` **刻意不在這裡測**：它的 actionId 由伺服器決定（見 IL-3c），
+  // 呼叫端換一個 UUID 不會變成另一個操作。這裡改用 `course_selected`，
+  // 「不同 actionId ＝不同操作」這條通則仍然有測試守著。
   test('IL-3b 不同 actionId 是不同的操作，兩筆都寫入', async () => {
     await grantPersonalization(identityA);
-    await recordInteractionEvents(identityA, [baseDraft()]);
-    await recordInteractionEvents(identityA, [baseDraft({ actionId: OTHER_ACTION_ID })]);
+    const selected = { eventType: 'course_selected', feedbackReason: null };
+    await recordInteractionEvents(identityA, [baseDraft(selected)]);
+    await recordInteractionEvents(identityA, [baseDraft({ ...selected, actionId: OTHER_ACTION_ID })]);
     assert.equal((await getInteractionEventsForExport(identityA)).length, 2);
+  });
+
+  // 同一次移除會被記兩次：使用者在畫面上按移除（前端用隨機 UUID），接著在 Chat
+  // 講同一件事（Agent 路徑用確定性 UUID）。`canonicalIdempotencyPayload()` 把
+  // actionId 算進 key，兩邊因此永遠撞不到同一個鍵。改由伺服器依
+  // `(requestId, sectionId)` 決定 actionId 之後，兩條路徑才會收斂成一筆。
+  test('IL-3c course_withdrawn 的 actionId 由伺服器決定，呼叫端換 UUID 不會變成第二筆', async () => {
+    await grantPersonalization(identityA);
+    const first = await recordInteractionEvents(identityA, [baseDraft()]);
+    const second = await recordInteractionEvents(identityA, [baseDraft({ actionId: OTHER_ACTION_ID })]);
+
+    assert.equal(first.results[0].status, 'append');
+    assert.equal(second.results[0].status, 'duplicate');
+    assert.equal(first.results[0].actionId, second.results[0].actionId);
+    assert.equal((await getInteractionEventsForExport(identityA)).length, 1);
+  });
+
+  // 前端的 `courseSource()` 對正式必修會寫 `required`，Agent 路徑固定寫
+  // `system_recommendation`。`comparableEvent()` 原本把 source 也算進比較，
+  // 因此即使 actionId 與原因都一樣，移除一門必修仍會被判成 conflict——
+  // 那不是衝突，是同一件事的兩種記法。
+  test('IL-3d 同一次移除、原因相同但 source 不同，仍判為 duplicate', async () => {
+    await grantPersonalization(identityA);
+    await recordExposure();
+    const fromUi = await recordInteractionEvents(identityA, [baseDraft({ source: 'required' })]);
+    const fromAgent = await recordInteractionEvents(identityA, [baseDraft({
+      source: 'system_recommendation',
+      actionId: OTHER_ACTION_ID,
+    })]);
+
+    assert.equal(fromUi.results[0].status, 'append');
+    assert.equal(fromAgent.results[0].status, 'duplicate');
+    const stored = await getInteractionEventsForExport(identityA);
+    assert.equal(stored.filter(event => event.eventType === 'course_withdrawn').length, 1);
+  });
+
+  // 改了說法才是真的衝突，不該靜默覆蓋。
+  test('IL-3e 同一次移除但原因不同 → conflict', async () => {
+    await grantPersonalization(identityA);
+    await recordInteractionEvents(identityA, [baseDraft()]);
+    const changed = await recordInteractionEvents(identityA, [baseDraft({
+      feedbackReason: 'workload',
+      actionId: OTHER_ACTION_ID,
+    })]);
+    assert.equal(changed.results[0].status, 'conflict');
+    const stored = await getInteractionEventsForExport(identityA);
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].feedbackReason, 'time');
   });
 });
 

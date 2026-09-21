@@ -458,7 +458,8 @@ Request:
     "timePreferencePriority": [],
     "department": "資訊工程學系",
     "gradeLevel": 3,
-    "className": "資訊三甲"
+    "className": "資訊三甲",
+    "sessionAvoidances": [{ "sectionId": 102, "reason": "workload" }]
   },
   "surface": "dashboard",
   "trigger": "manual_generate"
@@ -486,6 +487,30 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 `searchCoursesForSchedule()`。
 
 `courseIds`、`selectedCourseIds`、`watchingCourseIds` 與 `mustTakeCourseIds` 使用 section id。
+
+`sessionAvoidances` 是**本次規劃**的避開清單：使用者剛在畫面上移除的課，這一次重排
+就不要再出現。每一筆只有 `sectionId` 與 `reason`（值域同 `feedbackReason`）；
+課號與教師由伺服器從 `Courses` 重查，避開範圍由伺服器依 `reason` 推導，
+呼叫端送 `scope` 也會被忽略。範圍對照表見 `docs/SCHEDULING_LOGIC.md`。
+
+它是 **request-scoped**：不從已儲存偏好回填，也不會寫回偏好——「這次不想要」不該
+靜默沉澱成永久設定（立場同 `nonNegotiablePreferenceIds`）。特別注意它**不是**
+`avoidInstructors`：後者是持久化的 profile 欄位，把本次避開寫進去會整包蓋掉
+使用者存好的清單。
+
+它**不需要個人化同意也會生效**：避開條件是使用者本次的排課限制，不是訓練資料。
+
+回應新增 `appliedSessionAvoidances`，每一筆是
+`{ sectionId, reason, scope, pendingReason, status, message }`：
+
+| `status` | 意義 |
+| --- | --- |
+| `applied` | 真的避開了 |
+| `protected-conflict` | 那門課是必修、重補修或使用者指定必排，**仍在課表中**；`message` 說明衝突 |
+| `not-found` | 這次的候選課程裡找不到對應的課 |
+
+只有 `applied` 才可以在畫面上說「已避開」。`protected-conflict` 顯示成已避開，
+畫面就會和旁邊的課表自相矛盾。
 
 `avoidInstructors` 是教師完整姓名陣列。比對時只去除前後空白並忽略英文大小寫，
 不做模糊搜尋，也不自行拆分或猜測姓名。命中的一般候選課會以
@@ -1062,9 +1087,32 @@ Request:
 
 ```json
 {
-  "message": "幫我排課"
+  "message": "幫我排課",
+  "planningContext": {
+    "requestId": "…",
+    "activePlanId": "…",
+    "activeVariantId": "…",
+    "currentCourses": [{ "sectionId": 101 }],
+    "removedCourses": [{ "sectionId": 102, "reason": "workload" }]
+  }
 }
 ```
+
+`planningContext` 是選用的：使用者畫面上目前留著哪些課、本次移除了哪些課、原因是什麼。
+少了它，Agent 只能反問它其實問得到的資料。
+
+**只收 ID 與原因代號。** 課名、課號、教師一律由伺服器從 `Courses` 重查
+（`services/planningContextService.js`）——那些字串會進 system prompt，
+由呼叫端提供等於讓它決定「避開的到底是哪門課」，也能把任意文字塞進 prompt。
+`reason` 的值域與 `POST /api/interactions` 的 `feedbackReason` 完全相同。
+
+`scope`（避開範圍）與 `pendingReason`（原因是否還沒問到）**不接受呼叫端指定**，
+由伺服器依 `reason` 推導；送了也會被忽略。對照表見
+`docs/SCHEDULING_LOGIC.md` 的「本次規劃的避開清單」。
+
+這份資料只能變成兩種東西：本次排課的 request-scoped 限制，以及 prompt 裡的事實敘述。
+它**不會**寫入 `Interaction_Events`、不構成曝光證明，也不會放寬
+`record_schedule_feedback` 的來源驗證。
 
 Response:
 
@@ -1072,7 +1120,8 @@ Response:
 {
   "reply": "...",
   "intent": "run_csp_scheduler",
-  "data": {}
+  "data": {},
+  "planningContextStatus": "accepted"
 }
 ```
 
@@ -1081,6 +1130,20 @@ Response:
 | `reply` | 要顯示給使用者的文字。 |
 | `intent` | 這次請求中**最後一個成功**的工具名稱；沒有任何工具成功時為 `general_chat`，呼叫模型本身失敗時為 `error`。 |
 | `data` | 最後一個成功的**可渲染**工具結果（`query_course_db`、`search_dcard_reviews`、`run_csp_scheduler`、`get_easy_courses`），否則為 `null`。 |
+| `planningContextStatus` | `accepted`／`rejected-invalid`／`temporarily-unavailable`，見下表。 |
+
+**`planningContext` 不合法不會讓整次對話失敗。** 它住在瀏覽器的 `sessionStorage`，
+會因為部署升版、開著沒關的舊分頁、瀏覽器資料損壞而變成舊格式；回 400 的話使用者的
+**每一則訊息**都會失敗，直到他自己想到要清 storage。只有 `message` 不合法才回 400。
+
+| `planningContextStatus` | 意義 | 前端應有的行為 |
+| --- | --- | --- |
+| `accepted` | 正常採用（沒送 `planningContext` 時也是這個值） | 照常 |
+| `rejected-invalid` | 格式不合法：舊版本殘留或資料損壞 | **清除**本地的避開清單 |
+| `temporarily-unavailable` | 後端暫時查不到課程資料等暫時性問題 | **保留**避開清單，本次不採用，之後可重試 |
+
+未通過驗證的內容一律不會用來組 prompt 或當成排課限制——丟棄就是整包丟棄，不做部分採用。
+
 
 **工具被拒絕時不會出現在 `intent` 或 `data` 裡。** Agent 的工具有伺服器端驗證
 （例如 `record_schedule_feedback` 會對照推薦曝光紀錄），被拒時只回一個 `{ error }`
@@ -1238,6 +1301,12 @@ Request：
   所以同方案重送回 `duplicate`、同 `requestId` 改選另一方案回 `conflict`；`actionId` 由伺服器
   依 `requestId` 推導，client 送的隨機值會被覆寫。
   `recommendation_accepted` 照舊寫入，兩者是同一次操作的兩筆事件，學習器只讀 `plan_chosen`。
+- **`eventType: "course_withdrawn"`** 的 `actionId` 由伺服器依 `(requestId, sectionId)` 推導，
+  client 送的隨機 UUID 會被覆寫。理由是同一次移除會經過兩條路徑（畫面上按移除、
+  接著在 Chat 講同一件事），不統一識別碼就會寫成兩筆。冪等比較也只看
+  `requestId + sectionId + feedbackReason`，**不比 `source` 與 `versionSnapshot`**——
+  移除一門必修時前端寫 `source: "required"`、Agent 寫 `"system_recommendation"`，
+  那不是衝突，是同一件事的兩種記法。改了原因才回 `conflict`。詳見 `docs/DATA_SCHEMA.md`。
 - 其餘 event type（`course_viewed`／`course_favorited`／`course_selected` 等）沒有可對照的
   伺服器端事實可驗證，維持格式驗證即可寫入。
 

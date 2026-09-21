@@ -4,7 +4,8 @@
 
 ## 2026-09-21
 
-1. [Roadmap #10 任務 3A：Choice Perceptron 的資料層與 shadow learner](./2026-09-20-roadmap-10-choice-perceptron-3a.md)
+1. [移除課程後的「本次避開清單」＋ Chat Agent 取得規劃狀態](./2026-09-21-session-avoidance-and-planning-context.md)
+2. [Roadmap #10 任務 3A：Choice Perceptron 的資料層與 shadow learner](./2026-09-20-roadmap-10-choice-perceptron-3a.md)
 
 ## 2026-09-20
 

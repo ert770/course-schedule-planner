@@ -95,6 +95,34 @@ System prompt 必須讓 Agent：
 | 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
 | 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferChallengingCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
 | 畢業門檻 | `digitalCreditsNeeded` |
+| 移除原因追問 | `removalReasonResolutions`（2026-09-21） |
+
+`removalReasonResolutions` 是 Agent 追問「還沒說明原因的移除課程」之後的答覆：
+
+```json
+[
+  { "sectionId": 1210, "outcome": "resolved", "reason": "workload" },
+  { "sectionId": 1255, "outcome": "declined", "reason": null }
+]
+```
+
+**沒有 `scope` 欄位是刻意的**：避開範圍由後端依 `reason` 推導。開給模型填，
+它就能把「這個時段不方便」寫成「排除整門課」，而那是使用者沒有說過的話。
+
+**`outcome` 由模型判斷，後端無從核實。** 使用者到底有沒有說「不想講，直接排」，
+後端收到的只是一組 ID。這是已知限制，不是保證。後端只驗證它驗證得了的三件事：
+
+1. 這個 `sectionId` 確實是本次規劃狀態裡「還沒問到原因」的項目；
+2. `outcome === "resolved"` 時 `reason` 在既有值域內；
+3. `scope` 由 `reason` 推導。
+
+不合規的項目**丟棄**（維持待補，下一輪再問），不讓整次排課失敗——模型偶爾拼錯一個
+ID 不該害使用者排不了課。
+
+**本次避開清單本身不必由模型帶入參數**：伺服器會在 `run_csp_scheduler` 執行時強制合併
+（與同一個分支既有的 `watchingCourseIds` 過濾同一個位置、同一個理由）。凡是「系統已經
+知道的事實」，就不該讓模型的記性決定它會不會生效——使用者剛移除的課如果因為模型忘了
+帶條件而被排回來，症狀跟完全沒做這個功能一模一樣。
 
 `avoidInstructors` 只接受使用者明確說出的教師完整姓名。Agent 不得補姓氏、改寫姓名或
 根據課程評價自行猜測要避開誰。理解回講使用 `AVOID_INSTRUCTOR` 代號；若語氣為
@@ -582,6 +610,42 @@ solver 狀態，以及課程、評價與 `recommendationReason` 欄位。這避�
 
 這**不會**鬆動來源驗證——`scheduleFeedbackService` 仍然對照曝光紀錄檢查
 `requestId` 與 `sectionId`；這裡只是把資料庫裡本來就有的事實放回模型的視野。
+
+## 目前規劃狀態（2026-09-21）
+
+`POST /api/chat` 的 `planningContext` 讓伺服器再補一段「使用者畫面上現在是什麼狀況」：
+
+```text
+目前規劃狀態（由伺服器提供，可直接當成事實使用）：
+- 使用者目前看到的課表（來自系統推薦）：
+  - sectionId 1303：資訊安全管理
+- 使用者本次已移除（下一次排課會自動避開，你不必重複帶入參數）：
+  - sectionId 1210：資料結構（原因：課業負擔太重；目前避開範圍：避開這個課號的所有班次）
+  - sectionId 1255：作業系統（原因未知，**需要你追問**；目前避開範圍：只避開這個班次）
+- 上面有 1 門課還沒有移除原因。使用者要求重排時，先問原因再排課；
+  他明確表示不想說明時才照舊重排。把答覆整理成 run_csp_scheduler 的
+  removalReasonResolutions 參數。
+```
+
+課名、課號、教師都是**伺服器從 `Courses` 重查**的結果（`planningContextService.js`），
+不是瀏覽器送來的字串——那些值會直接進 prompt。
+
+### 與「最近一次推薦」的優先順序
+
+`resolveLatestRecommendation()` 只認 `surface === "chat"` 的曝光，但使用者現在看的
+很可能是 Dashboard 或 Schedule 剛排出來的課表。兩份都說成「目前課表」，模型會分不出
+哪一份是現在的，`record_schedule_feedback` 也可能用到錯的 `requestId`。因此：
+
+1. `planningContext` 通過驗證 → **它就是「目前課表」**；
+2. 此時舊的那一次改標成「較早的一次聊天推薦（**不是**使用者目前看到的課表）」；
+3. 沒有 `planningContext` → 維持原狀，退回最近一次 chat 曝光；
+4. **學習事件的驗證完全不變**，仍以真實曝光紀錄為準。
+
+### 沒有曝光紀錄時的措辭
+
+未同意個人化的使用者沒有任何曝光紀錄（`recordInteractionEvents()` 先擋 consent）。
+此時規劃狀態仍然可用，但 prompt 只會說「使用者畫面目前的課程（沒有對應的推薦紀錄，
+不要說這是系統推薦給他的）」——避開條件與「能不能宣稱是系統推薦」是兩件事。
 
 ## Few-shot 情境
 

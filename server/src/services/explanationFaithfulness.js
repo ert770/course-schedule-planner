@@ -317,6 +317,33 @@ export function recordToolEvidence(ledger, {
   return target;
 }
 
+
+/**
+ * 把「伺服器主動放進 prompt 的課程事實」登記為證據。
+ *
+ * 忠實度閘門的本意是「沒有依據就不要講」，而**不是**「沒呼叫工具就不要講」。
+ * 規劃狀態裡的課名、課號與教師是伺服器自己從 `Courses` 解析出來的
+ * （`planningContextService.js`），可信度不低於一次工具呼叫的結果——但它不經過
+ * `recordToolEvidence()`，因此原本不在帳本裡。結果是 Agent 被要求「追問使用者為什麼
+ * 移除『軟體框架設計』」，卻一提到課名就被判成幻覺，只能回一句沒有資料的安全答案。
+ *
+ * 刻意**只寫 `courses`／`courseIndex`，不碰 `tools`／`operations`**：這不是一次工具
+ * 呼叫，不該出現在「這回合做了哪些操作」的歷史裡，也不該影響
+ * `buildSafeFaithfulnessFallback()` 對「最近一次未完成操作」的判斷。
+ */
+export function recordContextCourseEvidence(ledger, courses = []) {
+  const target = ledger ?? createEvidenceLedger();
+  for (const raw of asArray(courses)) {
+    const course = normalizeCourse(raw, DEFAULT_ROLE);
+    if (!course) continue;
+    if (!course.dataSources.includes('Course_Sections')) course.dataSources.push('Course_Sections');
+    const key = course.sectionId ? `section:${course.sectionId}` : `name:${course.name}`;
+    target.courseIndex.set(key, mergeCourse(target.courseIndex.get(key), course));
+  }
+  target.courses = [...target.courseIndex.values()];
+  return target;
+}
+
 function splitSentences(reply) {
   return normalizeText(reply).split(/(?<=[。！？!?；;\n])/u).map(x => x.trim()).filter(Boolean);
 }

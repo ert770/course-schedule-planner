@@ -24,6 +24,7 @@ import {
   useMemoryStore,
 } from './privacyService.js';
 import {
+  courseWithdrawalActionId,
   createInteractionEvent,
   INTERACTION_EVENT_TYPES,
   INTERACTION_SOURCES,
@@ -391,6 +392,14 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
         // 呼叫端自由指定。冪等性另由專屬 payload 保證（見 schema）。
         ...(draft?.eventType === INTERACTION_EVENT_TYPES.PLAN_CHOSEN && draft?.requestId
           ? { actionId: planChoiceActionId(draft.requestId) }
+          : {}),
+        // 同理，`course_withdrawn` 的 actionId 也由伺服器依 `(requestId, sectionId)`
+        // 決定。使用者在畫面上移除一門課、接著在 Chat 講同一件事時，前端的隨機 UUID
+        // 與 Agent 路徑的確定性 UUID 會算出兩個不同的 idempotency key，同一個動作因此
+        // 被寫成兩筆。由伺服器決定識別碼，兩條路徑才會撞在一起（見 schema 的說明）。
+        ...(draft?.eventType === INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN
+          && draft?.requestId && draft?.course?.sectionId
+          ? { actionId: courseWithdrawalActionId(draft.requestId, draft.course.sectionId) }
           : {}),
         exposureContext: draft?.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED
           ? draft?.exposureContext : null,

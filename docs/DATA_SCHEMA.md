@@ -777,8 +777,28 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `userId` | string | #29 純 schema 建立時是 authenticated canonical ID；#2 持久化前必須經 #33 boundary 換成 HMAC `subject_id`，持久層不得同時保存 canonical ID |
 | `timestamp` | UTC ISO 8601 | server 認定的事件發生時間，不接受 client 覆寫 |
 | `requestId` | UUID | 一次搜尋／推薦／排課請求；同一 response 產生的事件共用 |
-| `actionId` | UUID | 一次 logical UI action；React 重送同一操作時沿用 |
+| `actionId` | UUID | 一次 logical UI action；React 重送同一操作時沿用。`plan_chosen` 與 `course_withdrawn` 例外：由**伺服器**推導，見下一列 |
 | `idempotencyKey` | `sha256:<hex>` | 由 request/action/event/plan/course subject 決定，不含 `eventId`／`timestamp`。**`plan_chosen` 用專屬 payload**：唯一性只由 `requestId + eventType` 決定，**不含被選方案**，因此同一次詢問只能產生一次有效學習——同方案重送為 `duplicate`，改選另一方案為 `conflict`。其 `actionId` 也由伺服器依 `requestId` 推導（`sha256("plan-chosen:" + requestId)` 轉 UUID 形狀），不採用前端送來的隨機值 |
+
+**`course_withdrawn` 的 `actionId` 與冪等比較**（2026-09-21）
+
+同一次移除會經過兩條路徑：使用者在畫面上按移除（`POST /api/interactions`，前端用隨機
+UUID），以及他接著在 Chat 講同一件事（Agent 的 `record_schedule_feedback`，用確定性 UUID）。
+`actionId` 算進 idempotency key，兩邊因此永遠撞不到同一個鍵，**同一個動作被寫成兩筆**。
+
+修法與 `plan_chosen` 同一個模式：`actionId` 由伺服器依 `(requestId, sectionId)` 推導
+（`courseWithdrawalActionId()`，`sha256("course-withdrawn:<requestId>|<sectionId>")` 轉 UUID
+形狀），兩個 service 共用同一份，呼叫端送什麼都覆寫。
+
+光是統一 `actionId` 還不夠：冪等比較原本也比 `source` 與 `versionSnapshot`，而兩條路徑的
+`source` 本來就不同——前端依課程動態決定（`required`／`system_recommendation`／
+`explicit_selection`），Agent 固定寫 `system_recommendation`。因此 `course_withdrawn`
+另有專屬比較，只看 `requestId + sectionId + feedbackReason`：
+
+| 情況 | 結果 |
+| --- | --- |
+| 同一次移除、同原因（即使 `source` 不同） | `duplicate` |
+| 同一次移除、**改了原因** | `conflict`（使用者改了說法，不該靜默覆蓋） |
 | `course` | object \| null | `catalogCourseCode` 是穩定課號，`sectionId` 是實際班次；非單課事件可為 null |
 | `term` | object | `academicYear` + 正規化後的 `semester: first \| second` |
 | `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `personalized`／`personalized_easy` 等當次產生策略；方案不是固定五種 |

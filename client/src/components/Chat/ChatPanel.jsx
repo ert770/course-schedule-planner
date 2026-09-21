@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Send } from 'lucide-react';
 import { chatAPI } from '../../services/api';
 import { useAuth } from '../../contexts/useAuth';
+import { useSchedule } from '../../contexts/useSchedule';
 import { getUserIdentity } from '../../utils/userIdentity';
 
 export default function ChatPanel({ onScheduleGenerated }) {
@@ -10,6 +11,9 @@ export default function ChatPanel({ onScheduleGenerated }) {
   // 所有從 `/schedule` 發出的對話都寫到同一份共用資料上。
   const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
+  // 這是第二個 Chat 送出點（另一個在 DashboardPage）。兩處都要帶規劃狀態，
+  // 否則同一句話在不同頁面會得到不同的行為。
+  const { buildPlanningContext, applyResolvedAvoidances, clearSessionAvoidances } = useSchedule();
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -42,11 +46,18 @@ export default function ChatPanel({ onScheduleGenerated }) {
     setLoading(true);
 
     try {
-      const res = await chatAPI.send(msg);
+      const res = await chatAPI.send(msg, buildPlanningContext());
       setMessages(prev => [...prev, { role: 'assistant', content: res.reply }]);
+
+      // 只有「格式不合法」才清掉避開清單；後端暫時異常時要保留，
+      // 否則使用者仍然有效的避開條件會無聲消失（見 planningContextService.js）。
+      if (res.planningContextStatus === 'rejected-invalid') clearSessionAvoidances();
 
       // intent 為後端 agentService 的 tool 名稱，須與 run_csp_scheduler 完全一致
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
+        // 伺服器算出來的最終避開範圍寫回 sessionStorage——Agent 追問原因之後，
+        // 之後按一般「重新排課」才會沿用同一個範圍。
+        applyResolvedAvoidances(res.data.appliedSessionAvoidances);
         // 一併帶回完整結果，呼叫端才拿得到 requestId／planId 記錄曝光（roadmap #2）。
         onScheduleGenerated?.(res.data.schedule, res.data);
       }

@@ -44,6 +44,39 @@ const COURSE_ID_ARRAY = {
   items: { type: 'integer' },
 };
 
+
+// 追問移除原因的結果。
+//
+// **沒有 `scope` 這個欄位是刻意的**：避開範圍由後端依 `reason` 推導。開給模型填，
+// 它就能把「這個時段不方便」寫成「排除整門課」，而那是使用者沒有說過的話。
+//
+// `outcome` 由模型依使用者的自然語言判斷，後端無從核實（它只收得到一組 ID）；
+// 後端只驗證 section 確實在待補原因清單裡、`reason` 在值域內。
+const REMOVAL_REASON_RESOLUTION_SCHEMA = Object.freeze({
+  type: 'array',
+  description:
+    '使用者這一輪針對「還沒說明原因的移除課程」所給的答覆。只填系統已經告訴你、'
+    + '而且標示為「待補原因」的 sectionId；使用者明確表示不想說明時用 outcome="declined"。',
+  items: {
+    type: 'object',
+    properties: {
+      sectionId: { type: 'integer', description: '待補原因的課程班次 id。' },
+      outcome: {
+        type: 'string',
+        enum: ['resolved', 'declined'],
+        description: 'resolved＝使用者說明了原因；declined＝使用者明確表示不想說明。',
+      },
+      reason: {
+        type: ['string', 'null'],
+        enum: ['time', 'content', 'instructor', 'workload', 'full', 'eligibility', 'other', null],
+        description: 'outcome="resolved" 時必填，對應使用者說的原因；declined 時填 null。',
+      },
+    },
+    required: ['sectionId', 'outcome', 'reason'],
+    additionalProperties: false,
+  },
+});
+
 // `run_csp_scheduler` 的參數表。
 //
 // 這裡**沒有**修課歷史、已修課號、重補修課號或課程評價，而且不是漏寫：
@@ -390,7 +423,11 @@ export function getAgentTools() {
         + '伺服器會檢查它與實際參數是否一致，對不上會被退回。',
       parameters: {
         type: 'object',
-        properties: { ...SCHEDULER_PARAMETERS, interpretation: INTERPRETATION_SCHEMA },
+        properties: {
+          ...SCHEDULER_PARAMETERS,
+          interpretation: INTERPRETATION_SCHEMA,
+          removalReasonResolutions: REMOVAL_REASON_RESOLUTION_SCHEMA,
+        },
         required: ['interpretation'],
         additionalProperties: false,
       },
@@ -444,6 +481,76 @@ export function getAgentTools() {
   ];
 }
 
+
+// 退課原因的中文說明。模型看到的是穩定代號的中文對照，不是模型自己猜的措辭。
+const REMOVAL_REASON_LABELS = Object.freeze({
+  time: '時間衝突或時段不合',
+  content: '課程內容不感興趣',
+  instructor: '授課教師因素',
+  workload: '課業負擔太重',
+  full: '人數已滿',
+  eligibility: '不符修課資格',
+  other: '其他原因',
+});
+
+const AVOIDANCE_SCOPE_LABELS = Object.freeze({
+  section: '只避開這個班次',
+  catalog_course: '避開這個課號的所有班次',
+  instructor: '避開這位教師開的班次',
+});
+
+// 「目前規劃狀態」：使用者畫面上留著哪些課、剛移除了哪些課、原因是什麼。
+//
+// 這一段存在的理由與「最近一次推薦」完全相同——模型看不到前端狀態，少了它，
+// 使用者說「我已經移除不喜歡的課了，幫我重排」時，Agent 只能反問它其實問得到
+// 的資料。系統已經知道的事，不該讓使用者再講一次。
+//
+// 課名、課號、教師都是**伺服器從 `Courses` 重查**的結果（見
+// `planningContextService.js`），不是瀏覽器送來的字串。
+function buildPlanningStateBlock(planning) {
+  if (!planning) return '';
+
+  // 前面接的是偏好清單（`- 修課路徑：…`），少了空行這一段會被讀成偏好的延續。
+  const lines = ['', '', '目前規劃狀態（由伺服器提供，可直接當成事實使用）：'];
+
+  if (planning.currentCourses.length > 0) {
+    // 有曝光佐證才能說「這是系統推薦給你的課表」。沒有同意個人化的使用者
+    // 沒有曝光紀錄，那時只能說「畫面目前的課程」——這個差別不可含糊帶過。
+    lines.push(planning.exposureBacked
+      ? '- 使用者目前看到的課表（來自系統推薦）：'
+      : '- 使用者畫面目前的課程（沒有對應的推薦紀錄，不要說這是系統推薦給他的）：');
+    for (const course of planning.currentCourses) {
+      lines.push(`  - sectionId ${course.sectionId}：${course.name ?? course.catalogCourseCode}`);
+    }
+  } else {
+    lines.push('- 使用者目前的課表是空的。');
+  }
+
+  if (planning.removedCourses.length > 0) {
+    lines.push('- 使用者本次已移除（下一次排課會自動避開，你不必重複帶入參數）：');
+    for (const course of planning.removedCourses) {
+      const reason = course.pendingReason
+        ? '原因未知，**需要你追問**'
+        : `原因：${REMOVAL_REASON_LABELS[course.reason] ?? course.reason}`;
+      lines.push(
+        `  - sectionId ${course.sectionId}：${course.name ?? course.catalogCourseCode}`
+        + `（${reason}；目前避開範圍：${AVOIDANCE_SCOPE_LABELS[course.scope] ?? course.scope}）`
+      );
+    }
+  }
+
+  const pending = planning.removedCourses.filter(course => course.pendingReason);
+  if (pending.length > 0) {
+    lines.push(
+      `- 上面有 ${pending.length} 門課還沒有移除原因。使用者要求重排時，`
+      + '先問原因再排課；他明確表示不想說明時才照舊重排。'
+      + '把答覆整理成 run_csp_scheduler 的 removalReasonResolutions 參數。'
+    );
+  }
+
+  return lines.join('\n');
+}
+
 export function buildSystemPrompt(userPrefs = {}, context = {}) {
   // 最近一次推薦的 requestId 與課程 sectionId 由伺服器提供。
   //
@@ -466,12 +573,23 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
     ].join('\n')
     : '';
 
+  // 規劃狀態優先於「最近一次推薦」。
+  //
+  // `resolveLatestRecommendation()` 只認 `surface === 'chat'` 的曝光，而使用者現在
+  // 看的很可能是 Dashboard 或 Schedule 剛排出來的課表。兩份都說成「目前課表」，
+  // 模型會分不出哪一份是現在的，`record_schedule_feedback` 也可能用到錯的 requestId。
+  // 因此有規劃狀態時，把舊的那一次降級成「較早的一次聊天推薦」。
+  const planningBlock = buildPlanningStateBlock(context.planningContext);
+  const latestIsCurrent = context.latestExposureIsCurrent !== false;
+
   const latest = context.latestExposure;
   const displayed = latest?.displayedSet ?? [];
   const latestRecommendation = latest?.requestId
     ? [
       '',
-      '最近一次推薦（使用者目前看到的那一份課表）：',
+      latestIsCurrent
+        ? '最近一次推薦（使用者目前看到的那一份課表）：'
+        : '較早的一次聊天推薦（**不是**使用者目前看到的課表，目前課表以上面的規劃狀態為準）：',
       `- requestId：${latest.requestId}`,
       `- planId：${latest.planId ?? '（未指定，可省略）'}`,
       ...(displayed.length > 0
@@ -566,6 +684,16 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
   依此類推，不要因為「還要再問細節」而跳過記錄。
 - 使用者沒有回答時，不得自行假設他接受了這份課表。
 
+移除課程與本次避開（只問缺的那一項）：
+- 「目前規劃狀態」裡的課表與移除清單是伺服器提供的事實。**不得**再要求使用者提供課名、班次 id、目前課表或移除清單——他已經在畫面上做完了，再問一次只是在重複他已經完成的動作。
+- 使用者在訊息裡已經說了原因（例如「我把資料結構移掉了，因為作業太多」），就直接使用，不得重複追問。
+- 只有標示「原因未知，需要你追問」的課才需要問原因，而且一次把它們一起問完，不要逐門來回。原因會決定本次避開的是整門課、單一班次還是某位教師。
+- 使用者回答後，把答覆整理進 run_csp_scheduler 的 removalReasonResolutions；他明確表示不想說明時用 outcome="declined"，然後照常重排。
+- 移除清單**不需要**你手動轉成排課參數：伺服器會自動套用本次避開條件。
+- 重排完成後，說明哪些課因為本次避開條件沒有再出現。
+- 結果的 appliedSessionAvoidances 每一筆都有 status：只有 "applied" 才是真的避開了。status 為 "protected-conflict" 代表那門課是必修而仍然留在課表裡，必須照實說明並請使用者決定要保留必修還是取消避開，**不得**說成已經避開。
+- 本次避開只在這次規劃有效，**不得**因此呼叫 update_preferences 把它存成永久偏好。使用者明確要求永久避開某位教師時才那樣做。
+
 排課修復與澄清（Roadmap #22）：
 - 排課結果的 solver.status 只可解讀為 solved、infeasible、timeout、data-insufficient；timeout 不等於無解。
 - 若 clarification.required 為 true，必須優先依 clarification.questions 詢問使用者具體條件，包含一定要修的課程或班次、期望學分、不能上課的日期與節次，以及衝突課程要保留哪一門。
@@ -613,5 +741,5 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 偏好涼課：${(userPrefs.preferEasyCourses ?? userPrefs.preferEasy) ? '是' : '否'}
 - 偏好挑戰難課：${userPrefs.preferChallengingCourses ? '是' : '否'}
 - 興趣關鍵字：${formatList(userPrefs.preferredKeywords, userPrefs.interests, userPrefs.preferenceTags)}
-- 修課路徑：${userPrefs.preferredTrack || '未設定'}${latestRecommendation}${pendingBlock}`;
+- 修課路徑：${userPrefs.preferredTrack || '未設定'}${planningBlock}${latestRecommendation}${pendingBlock}`;
 }

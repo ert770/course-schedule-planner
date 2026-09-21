@@ -20,6 +20,81 @@ function courseId(course) {
   return String(course?.id ?? course?.sectionId ?? '');
 }
 
+
+// ---------------------------------------------------------------------------
+// 本次規劃的避開清單
+// ---------------------------------------------------------------------------
+// 使用者移除一門課之後按「重新排課」，同一門課常常又被排回來，畫面上沒有任何解釋。
+// 原因是移除只做了兩件事：從畫面陣列拿掉，以及（在已同意個人化時）送一筆
+// `course_withdrawn`。後者走的是**長期**偏好學習，要累積到門檻才會影響權重，
+// 對「下一次重排」完全沒有作用——候選池與限制條件跟上一次一模一樣。
+//
+// 所以再開一條路：本次避開清單。它是 request-scoped 的排課限制，不是訓練資料，
+// 因此**不需要**個人化同意也能生效。兩條路互不取代。
+//
+// 存在 `sessionStorage` 而不是記憶體：使用者移除了幾門課之後不小心重新整理，
+// 避開清單若跟著消失，下一次重排會把課排回來而畫面上沒有任何說明——那正是這次
+// 要修掉的症狀。存後端則是另一回事：「這次不想要」不該沉澱成永久設定。
+const AVOIDANCE_STORAGE_PREFIX = 'avoidances:';
+
+// 避開範圍由退課原因決定，**保守優先**。
+//
+// 這份對照要與後端的 `data/planningContextSchema.js` 一致；送去後端的只有
+// `sectionId` 與 `reason`，範圍由伺服器重算，這裡算一份純粹是為了畫面顯示。
+function avoidanceScopeFor(reason) {
+  if (reason === 'content' || reason === 'workload') return 'catalog_course';
+  if (reason === 'instructor') return 'instructor';
+  return 'section';
+}
+
+function avoidanceStorageKey(identity) {
+  return `${AVOIDANCE_STORAGE_PREFIX}${identity ?? 'anonymous'}`;
+}
+
+// `sessionStorage` 在隱私模式或封鎖 site data 時可能直接丟例外，讀寫都要能失敗。
+// 失敗時退回純記憶體狀態——避開條件少了持久性，但不會擋住排課。
+function readStoredAvoidances(identity) {
+  try {
+    const raw = sessionStorage.getItem(avoidanceStorageKey(identity));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredAvoidances(identity, list) {
+  try {
+    sessionStorage.setItem(avoidanceStorageKey(identity), JSON.stringify(list));
+  } catch {
+    // 忽略：狀態仍在記憶體裡，這一次規劃照樣生效。
+  }
+}
+
+function clearStoredAvoidances(identity) {
+  try {
+    sessionStorage.removeItem(avoidanceStorageKey(identity));
+  } catch {
+    // 同上。
+  }
+}
+
+function buildAvoidanceEntry(course, reason) {
+  return {
+    sectionId: Number(courseId(course)),
+    reason: reason ?? null,
+    scope: avoidanceScopeFor(reason),
+    // 原因為 null 代表「還沒問到」，不是「使用者說沒有原因」——未同意個人化的人
+    // 移除課程時不會被問（見 DashboardPage 的說明），由 Chat Agent 補問。
+    pendingReason: reason === null || reason === undefined,
+    // 以下三個只供畫面顯示。送去後端的 payload 不含它們：後端會自己從 Courses
+    // 重查，那是唯一能保證「避開的是真的那門課」的做法。
+    courseName: course?.name ?? null,
+    catalogCourseCode: course?.catalogCourseCode ?? null,
+    instructor: course?.instructor ?? course?.teacher ?? null,
+  };
+}
+
 function normalizeWatchlist(watchlist) {
   if (!Array.isArray(watchlist)) return [];
   return [...new Set(watchlist.map(item => (
@@ -104,6 +179,23 @@ export function ScheduleProvider({ children }) {
   // 結果，不屬於單一方案，切換方案不受影響。
   const [planDiversity, setPlanDiversity] = useState(null);
 
+  // 本次規劃的避開清單。初始值直接從 sessionStorage 讀回來，使用者重新整理之後
+  // 不會發現自己剛做的移除靜默失效。
+  const [sessionAvoidances, setSessionAvoidances] = useState(() => readStoredAvoidances(userIdentity));
+  const avoidancesRef = useRef(sessionAvoidances);
+
+  // 一律經由這個函式更新，狀態與 sessionStorage 才不會有一邊忘了寫。
+  const commitAvoidances = useCallback((next) => {
+    avoidancesRef.current = next;
+    setSessionAvoidances(next);
+    if (next.length > 0) writeStoredAvoidances(userIdentity, next);
+    else clearStoredAvoidances(userIdentity);
+  }, [userIdentity]);
+
+  const clearSessionAvoidances = useCallback(() => {
+    commitAvoidances([]);
+  }, [commitAvoidances]);
+
   // 回傳 promise 供需要知道結果的呼叫端使用（目前只有確認列）。
   // 其餘埋點一律忽略回傳值，維持 fire-and-forget。
   const emit = useCallback((events) => (
@@ -171,6 +263,11 @@ export function ScheduleProvider({ children }) {
     const generation = accountGenerationRef.current;
     replaceSchedule([]);
     setWatchlist(normalizeWatchlist(user?.watchlist));
+    // 避開清單是「這個人這一次規劃」的狀態。換帳號時換成那個帳號自己的那一份，
+    // 不能讓上一位使用者移除的課繼續影響下一位。
+    const storedAvoidances = readStoredAvoidances(userIdentity);
+    avoidancesRef.current = storedAvoidances;
+    setSessionAvoidances(storedAvoidances);
 
     if (userIdentity === null) {
       setLoading(false);
@@ -261,6 +358,20 @@ export function ScheduleProvider({ children }) {
     scheduleRef.current = next;
     setSchedule(next);
 
+    // 三件事**彼此獨立**：畫面移除、加入本次避開清單、送出長期學習事件。
+    // 先前只有第一與第三件，而第三件要累積到門檻才會影響權重——所以下一次重排
+    // 的條件跟上一次完全相同，同一門課被排回來是必然。事件寫入失敗（或使用者
+    // 根本沒同意個人化）都不該影響前兩件。
+    if (removed) {
+      const entry = buildAvoidanceEntry(removed, feedbackReason);
+      if (Number.isInteger(entry.sectionId) && entry.sectionId > 0) {
+        commitAvoidances([
+          ...avoidancesRef.current.filter(item => item.sectionId !== entry.sectionId),
+          entry,
+        ]);
+      }
+    }
+
     if (removed) {
       emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN, removed, {
         requestId: requestIdForAction(),
@@ -270,7 +381,64 @@ export function ScheduleProvider({ children }) {
         feedbackReason,
       }));
     }
-  }, [emit, requestIdForAction]);
+  }, [commitAvoidances, emit, requestIdForAction]);
+
+  // 這次排課實際套用了哪些避開條件——由**伺服器**回報，不是前端自己推的。
+  //
+  // 這條回路是 Agent 追問原因之後的收尾：使用者在 Chat 回答「作業太多」，伺服器
+  // 把該筆的範圍從「單一班次」重算成「整個課號」，前端必須把新範圍寫回
+  // sessionStorage。少了這一步，使用者之後按一般「重新排課」時，同課號的其他班次
+  // 又會冒出來——原因問了等於沒問。
+  //
+  // `status` 不是 `applied` 的項目**不得**當成已避開：必修衝突時那門課其實還在
+  // 課表裡，畫面若顯示「已避開」就是系統自己說謊。
+  const applyResolvedAvoidances = useCallback((applied) => {
+    if (!Array.isArray(applied) || applied.length === 0) return;
+    const byId = new Map(applied.map(item => [Number(item?.sectionId), item]));
+    let changed = false;
+
+    const next = avoidancesRef.current.map(entry => {
+      const resolved = byId.get(entry.sectionId);
+      if (!resolved) return entry;
+      const merged = {
+        ...entry,
+        reason: resolved.reason ?? entry.reason,
+        scope: resolved.scope ?? entry.scope,
+        // `pendingReason` 由**伺服器**回報，不能從 `reason` 推。
+        // 使用者說「不想說明」時 reason 仍是 null，但那件事已經問過了——
+        // 照 reason 推會讓 Agent 每一輪都重新問一次同樣的問題。
+        pendingReason: resolved.pendingReason ?? entry.pendingReason,
+        status: resolved.status ?? 'applied',
+        statusMessage: resolved.message ?? null,
+      };
+      if (
+        merged.reason !== entry.reason || merged.scope !== entry.scope
+        || merged.pendingReason !== entry.pendingReason || merged.status !== entry.status
+        || merged.statusMessage !== entry.statusMessage
+      ) changed = true;
+      return merged;
+    });
+
+    if (changed) commitAvoidances(next);
+  }, [commitAvoidances]);
+
+  // 送給後端的形狀：**只有 sectionId 與 reason**。
+  // 課名、課號、教師由伺服器從 Courses 重查；`scope` 由伺服器依 reason 推導。
+  const buildAvoidanceConstraints = useCallback(() => (
+    avoidancesRef.current.map(entry => ({ sectionId: entry.sectionId, reason: entry.reason }))
+  ), []);
+
+  // Chat 要用的「目前規劃狀態」。同樣只送 ID。
+  const buildPlanningContext = useCallback(() => ({
+    requestId: recommendationRef.current?.requestId ?? null,
+    activePlanId: recommendationRef.current?.planId ?? null,
+    activeVariantId: recommendationRef.current?.variantId ?? null,
+    currentCourses: scheduleRef.current
+      .map(course => ({ sectionId: Number(courseId(course)) }))
+      .filter(entry => Number.isInteger(entry.sectionId) && entry.sectionId > 0),
+    removedCourses: avoidancesRef.current
+      .map(entry => ({ sectionId: entry.sectionId, reason: entry.reason })),
+  }), []);
 
   const toggleWatchlist = useCallback(async (course) => {
     const requestedGeneration = accountGenerationRef.current;
@@ -412,6 +580,12 @@ export function ScheduleProvider({ children }) {
     validating,
     personalizationEnabled,
     replaceSchedule,
+    // 本次規劃的避開清單
+    sessionAvoidances,
+    clearSessionAvoidances,
+    applyResolvedAvoidances,
+    buildAvoidanceConstraints,
+    buildPlanningContext,
     addCourse,
     removeCourse,
     toggleWatchlist,
@@ -428,9 +602,11 @@ export function ScheduleProvider({ children }) {
     planDiversity,
     selectPlan,
   }), [
-    acceptRecommendation, activePlan, addCourse, loading, logCourseViewed,
+    acceptRecommendation, activePlan, addCourse, applyResolvedAvoidances,
+    buildAvoidanceConstraints, buildPlanningContext, clearSessionAvoidances,
+    loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, planDiversity, plans,
-    removeCourse, replaceSchedule, saveCurrentSchedule, saving, schedule,
+    removeCourse, replaceSchedule, saveCurrentSchedule, saving, schedule, sessionAvoidances,
     recommendedPlanId, selectedPlanId, selectPlan, toggleWatchlist, validating, watchlist,
   ]);
 

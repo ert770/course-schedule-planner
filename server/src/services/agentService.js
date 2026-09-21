@@ -24,6 +24,12 @@ import {
   stagePendingChange, consumePendingChange, peekPendingChange,
 } from './pendingChangeService.js';
 import { checkPreflightContradictions } from './requirementPreflight.js';
+import {
+  PLANNING_CONTEXT_STATUS,
+  resolvePlanningContext,
+  toSessionAvoidances,
+} from './planningContextService.js';
+import { INTERACTION_FEEDBACK_REASONS } from '../data/interactionEventSchema.js';
 import { getAll } from '../db/database.js';
 import { isMysqlConfigured } from '../db/mysql.js';
 import { logger } from '../utils/logger.js';
@@ -34,7 +40,7 @@ import {
   getConfirmationChangeType, isRenderableTool, listConfirmationChangeTypes,
 } from './agentToolRegistry.js';
 import {
-  createEvidenceLedger, recordToolEvidence, enforceFaithfulReply,
+  createEvidenceLedger, recordToolEvidence, recordContextCourseEvidence, enforceFaithfulReply,
 } from './explanationFaithfulness.js';
 import { sha256Hex } from '../utils/hash.js';
 
@@ -374,6 +380,67 @@ async function runConfirmedWrite({
  *             `scheduleService.loadCourseReviewsSafely()` 與
  *             `scheduleFeedbackService` 的 `loadExposure`）。
  */
+
+const FEEDBACK_REASON_SET = new Set(Object.values(INTERACTION_FEEDBACK_REASONS));
+
+/**
+ * 把 Agent 對「移除原因」的追問結果，套回這次的避開清單。
+ *
+ * ---------------------------------------------------------------------------
+ * 職責分界（不要在文件或註解裡宣稱後端做得到它做不到的事）
+ * ---------------------------------------------------------------------------
+ * `outcome` 是 **Agent 依使用者的自然語言判斷**出來的：使用者到底有沒有說
+ * 「不想講，直接排」，後端收到的只是一組 section ID，**無從核實**。
+ *
+ * 後端能驗證的只有三件事，其餘照模型說的採用：
+ *   1. 這個 section 確實是本次規劃狀態裡「還沒問到原因」的項目；
+ *   2. `outcome === 'resolved'` 時 `reason` 在既有的值域內；
+ *   3. `scope` 由 `reason` 推導——所以工具 schema 根本不開 `scope` 這個欄位，
+ *      模型沒有機會把「這個時段不方便」放大成排除整門課。
+ *
+ * 不合規的項目**丟棄**（維持 pending，下一輪再問），不讓整次排課失敗——
+ * 模型偶爾拼錯一個 ID 不該害使用者排不了課。
+ *
+ * @returns `[{ sectionId, reason }]`，直接當成 `run_csp_scheduler` 的避開清單。
+ */
+export function applyRemovalReasonResolutions(planningContext, rawResolutions) {
+  const removed = planningContext?.removedCourses ?? [];
+  if (removed.length === 0) return [];
+
+  const pendingIds = new Set(
+    removed.filter(entry => entry.pendingReason).map(entry => Number(entry.sectionId))
+  );
+  const resolvedReasons = new Map();
+
+  for (const entry of Array.isArray(rawResolutions) ? rawResolutions : []) {
+    const sectionId = Number(entry?.sectionId);
+    if (!pendingIds.has(sectionId)) continue;
+
+    if (entry?.outcome === 'declined') {
+      // 使用者不願意說明：保守地只排除該班次（`reason` 維持 null，
+      // 因此 `deriveAvoidanceScope()` 會給 `section`），且**不產生學習事件**——
+      // 這條路徑本來就不寫 `Interaction_Events`。
+      resolvedReasons.set(sectionId, null);
+      continue;
+    }
+    if (entry?.outcome !== 'resolved') continue;
+    if (!FEEDBACK_REASON_SET.has(entry?.reason)) continue;
+    resolvedReasons.set(sectionId, entry.reason);
+  }
+
+  return removed.map(entry => {
+    const sectionId = Number(entry.sectionId);
+    const answered = resolvedReasons.has(sectionId);
+    return {
+      sectionId,
+      reason: answered ? resolvedReasons.get(sectionId) : entry.reason,
+      // 問過就不再 pending，包含使用者說「不想說」的那些——否則 Agent 下一輪
+      // 會把同一個問題再問一次。
+      pendingReason: answered ? false : entry.pendingReason === true,
+    };
+  });
+}
+
 export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
   const { identity, prefs, studentScope } = ctx;
   const {
@@ -417,20 +484,36 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // 照排），或使用者指名必修的課正好落在他自己設的封鎖時段裡。
         // `interpretation` 是給使用者看的理解回講，不是排課條件——要從送進排課
         // 引擎的 constraints 裡拆出來，否則會被當成一個不認得的限制欄位。
-        const { interpretation = null, ...schedulingArgs } = args;
+        const { interpretation = null, removalReasonResolutions = null, ...schedulingArgs } = args;
         const watchingIds = args.watchingCourseIds ?? [];
+
+        // 本次避開清單由**伺服器**合併，不依賴模型把它重送一次。
+        //
+        // 這與下面的 `watchingCourseIds` 過濾同一個位置、同一個理由：凡是
+        // 「系統已經知道的事實」，就不該讓模型的記性決定它會不會生效。
+        // 使用者剛移除的課如果因為模型忘了帶條件而被排回來，症狀跟完全沒做
+        // 這個功能一模一樣。
+        const sessionAvoidances = applyRemovalReasonResolutions(
+          ctx.planningContext, removalReasonResolutions
+        );
+        if (sessionAvoidances.length > 0) {
+          schedulingArgs.sessionAvoidances = sessionAvoidances;
+        }
 
         // 關注課程也要查——不是為了跟 mustTake／selected 一樣擋下整次排課
         // （那兩者已由 #22 的 Z5 在排課層處理，這裡刻意不重複），而是為了下面
         // 濾掉查無對應課程的 id，見 Roadmap #25。
+        // 避開的班次也要載入，否則 preflight 的「避開課與必修衝突」檢查在
+        // `courseById` 裡查不到課程、永遠不會觸發。
         const courseById = await lookupCourses([
           ...(args.mustTakeCourseIds ?? []),
           ...(args.selectedCourseIds ?? []),
           ...watchingIds,
+          ...sessionAvoidances.map(entry => entry.sectionId),
         ]);
 
         const contradiction = preflight({
-          constraints: args,
+          constraints: { ...args, sessionAvoidances },
           studentScope,
           // chat 這條路一定要有理解回講——schema 的巢狀 required 在非 strict
           // 模式下不被 API 強制，實測模型會送空物件過來。
@@ -571,7 +654,7 @@ async function resolveLatestRecommendation(identity) {
 // `identity` 為 `resolveIdentity()` 的結果，不是原始 userId。
 // 聊天記憶與偏好更新都以 canonical ID（學號）為鍵，避免同一位學生的對話
 // 依前端送的是學號還是 numeric id 而分裂成兩份。
-export async function handleChat(identity, message) {
+export async function handleChat(identity, message, planningContext = null) {
   logger.info('收到已驗證的聊天請求', { label: 'AgentCore', messageLength: message.length });
 
   const client = getAIClient();
@@ -601,6 +684,21 @@ export async function handleChat(identity, message) {
     logger.warn(`查詢最近一次推薦失敗，本回合不提供 requestId：${err.message}`, { label: 'AgentCore' });
   }
 
+  // 規劃狀態的來源驗證：班次 ID 解析成可信的課程事實，課名／課號／教師一律
+  // 由伺服器重查（見 `planningContextService.js`）。
+  let planningContextStatus = PLANNING_CONTEXT_STATUS.ACCEPTED;
+  let resolvedPlanning = null;
+  try {
+    const outcome = await resolvePlanningContext(identity, planningContext);
+    planningContextStatus = outcome.status;
+    resolvedPlanning = outcome.value;
+  } catch (err) {
+    // 解析本身出錯屬於暫時性問題，不是這份資料壞掉——回 `rejected-invalid`
+    // 會讓前端把仍然有效的避開清單一起清掉。
+    logger.warn(`規劃狀態解析失敗，本回合不採用：${err.message}`, { label: 'AgentCore' });
+    planningContextStatus = PLANNING_CONTEXT_STATUS.TEMPORARILY_UNAVAILABLE;
+  }
+
   // 待確認的變更也必須由伺服器補進 prompt，理由與 latestExposure 完全相同：
   // 工具結果不跨回合保存，模型下一回合不會記得上一回合拿到的 confirmationToken
   // ——實測時它因此又重新暫存一次，永遠走不到寫入那一步。
@@ -611,7 +709,26 @@ export async function handleChat(identity, message) {
     })
     .filter(Boolean);
 
-  const systemInstruction = buildSystemPrompt(prefs, { latestExposure, pendingChanges });
+  // 優先順序：有通過驗證的規劃狀態時，**它**就是「目前課表」。
+  //
+  // `resolveLatestRecommendation()` 只認 `surface === 'chat'` 的曝光，而使用者現在
+  // 看的很可能是 Dashboard 或 Schedule 剛排出來的課表。兩份同時當成「目前課表」
+  // 放進 prompt，模型會分不出哪一份是現在的，`record_schedule_feedback` 也可能
+  // 用到錯的 requestId。因此把舊的那一次降級成「較早的一次聊天推薦」，由
+  // `promptService` 分開陳述。
+  //
+  // **學習事件的驗證不受影響**：仍由 `scheduleFeedbackService` 對照真實曝光紀錄，
+  // 不因為 prompt 裡有規劃狀態就放寬。
+  const hasPlanningState = Boolean(
+    resolvedPlanning
+    && (resolvedPlanning.currentCourses.length > 0 || resolvedPlanning.removedCourses.length > 0)
+  );
+  const systemInstruction = buildSystemPrompt(prefs, {
+    latestExposure,
+    pendingChanges,
+    planningContext: hasPlanningState ? resolvedPlanning : null,
+    latestExposureIsCurrent: !hasPlanningState,
+  });
   logger.info(`組合 Prompt 中。System prompt 長度：${systemInstruction.length} 字元。`, { label: 'Context' });
 
   // `getChatHistory()` 已經是時序排好的 user／assistant 交替陣列，可以直接
@@ -630,13 +747,27 @@ export async function handleChat(identity, message) {
   // 每一次 HTTP 回合一個 id。`pendingChangeService` 用它擋掉「同一回合內自己
   // 暫存又自己確認」——使用者在那中間根本沒機會說話。
   const turnId = crypto.randomUUID();
-  const ctx = { identity, prefs, studentScope, turnId };
+  // 規劃狀態放進 ctx，`run_csp_scheduler` 才能由**伺服器**強制合併避開條件，
+  // 不依賴模型記得重送（與同一個分支既有的 `watchingCourseIds` 過濾同一個理由）。
+  const ctx = {
+    identity, prefs, studentScope, turnId,
+    planningContext: hasPlanningState ? resolvedPlanning : null,
+  };
   let responseData = null;
   let detectedIntent = 'general_chat';
   let finalReply = '';
   // #37：只記錄本回合模型實際看過的 tool result。最後回答若引用不到這份帳本，
   // 會先修正一次，再退回後端產生的保守回答。
   const evidenceLedger = createEvidenceLedger();
+  // 規劃狀態的課程是伺服器從 `Courses` 解析出來的事實，登記成證據，
+  // 否則 Agent 一提到課名就會被忠實度閘門判成幻覺——連「你為什麼移除 X？」
+  // 這種它被要求要問的問題都問不出口（見 explanationFaithfulness 的說明）。
+  if (ctx.planningContext) {
+    recordContextCourseEvidence(evidenceLedger, [
+      ...ctx.planningContext.currentCourses,
+      ...ctx.planningContext.removedCourses,
+    ]);
+  }
 
   // 耗盡步數時，模型沿途寫出來的內容不該被丟掉換成罐頭訊息。
   let lastAssistantText = '';
@@ -758,11 +889,13 @@ export async function handleChat(identity, message) {
     // 只有整次處理成功才原子保存 user/assistant 一對加密訊息。
     await saveChatExchange(identity, message, finalReply);
 
-    return { reply: finalReply, intent: detectedIntent, data: responseData };
+    return { reply: finalReply, intent: detectedIntent, data: responseData, planningContextStatus };
   } catch (error) {
     logger.error(`Agent 聊天發生錯誤：${error.message}`, { label: 'AgentCore' });
     const errReply = '很抱歉，處理您的請求時發生錯誤。請確認後端金鑰是否設定正確，或稍後再試。';
-    return { reply: errReply, intent: 'error', data: null };
+    // 這裡刻意不回 `rejected-invalid`：對話失敗與「規劃狀態壞掉」是兩件事，
+    // 前端不該因為一次錯誤就清掉使用者的避開清單。
+    return { reply: errReply, intent: 'error', data: null, planningContextStatus };
   }
 }
 

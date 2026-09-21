@@ -660,6 +660,23 @@ runner 使用目前 MySQL 與正式排課器，報告寫入
 | `preferenceLearningService.test.js`（3A 新增一項） | **3A 尚未消費開關**：排課權重在 `true`／`false` 下逐位元相同。3B 接上時這個測試會失敗，那是提醒該改它了 |
 | `scheduleService.test.js`（planFeatures 區塊） | 每個展示方案各一筆且形狀固定；`easy` 無證據時保留 `null` 不補 0；任一方案缺特徵時整組不寫；沒有 `generationPolicy` 的 fallback 方案仍要有特徵 |
 
+## 本次規劃的避開清單（2026-09-21）
+
+| 測試檔 | 涵蓋內容 |
+| --- | --- |
+| `sessionAvoidance.test.js` | SA1–SA7：三種避開範圍（內容／負擔→整個課號、教師→該教師、時段等→只該班次）；**`explicitCourseIds` 指名的課仍會被避開**（若讓位給它，`SchedulePage` 移除後重排會原地復活，正是要修的症狀）；`selectedCourseIds`／必修改為保留並回 `protected-conflict`；`appliedSessionAvoidances` 的三種 `status`；`pendingReason` 由呼叫端決定而不從 `reason` 推；**空清單時排課結果與改動前完全相同**；課號與教師由伺服器解析，呼叫端送錯也不影響 |
+| `planningContextSchema.test.js` | 純 shape：`reason` 值域沿用 `INTERACTION_FEEDBACK_REASONS`；**client 送的 `scope`／`pendingReason` 一律忽略**（否則送 `{reason:'time', scope:'catalog_course'}` 就能把「時段不合」放大成排除整門課）；課程數上限；重覆 ID 去重而非報錯 |
+| `planningContextService.test.js` | **沒有曝光紀錄時避開條件仍成立**（未同意個人化的使用者根本沒有曝光列，把它當前提功能會對他們完全失效）；課名／教師由後端重查、client 送的值丟棄；查不到的 sectionId 只丟那一筆；`activePlanId` 對不上時忽略該欄位；**查課失敗回 `temporarily-unavailable` 而不是 `rejected-invalid`**（後者會讓前端清掉仍然有效的避開清單） |
+| `removalReasonResolutions.test.js` | RR1–RR6：只接受待補項目的答覆、`reason` 值域檢查、未知 `outcome` 忽略、`declined` 之後不再追問、沒有答覆時原狀帶出、答覆不是陣列時不讓排課失敗 |
+| `requirementPreflight.test.js`（RP14 新增） | 避開必修 → 產生 `confirm-avoidance-required-conflict`；避開選修不誤報；`courseById` 沒載入那門課時不誤報（提醒呼叫端要把避開的班次一併載入） |
+| `constraints.test.js`（新增三項） | `sessionAvoidances` 只取 request、不從偏好回填；**不得影響持久化的 `avoidInstructors`** |
+| `interactionEvents.test.js`（IL-3b～IL-3e） | `course_withdrawn` 的 `actionId` 由伺服器決定，呼叫端換 UUID 不會變成第二筆；**UI 寫 `source:"required"`、Agent 寫 `"system_recommendation"` 時仍判 `duplicate`**；改了原因才 `conflict`；「不同 actionId ＝不同操作」這條通則改由 `course_selected` 守著 |
+
+`POST /api/chat` 的三態 `planningContextStatus`、以及路由確實接上這些規則，
+由真實帳號的瀏覽器實測作證（見 2026-09-21 變更報告）——在 Windows 上起 `app.js`
+的測試檔會留下殘留 handle 而不結束（`interactionEvents.test.js` 就是現存的例子）。
+
+
 離線重播：`npm run bench:choice-perceptron --prefix server -- --markdown`（加 `--real-data` 會唯讀查詢真實可用的 `plan_chosen` 筆數）。
 training／validation／test 三分，η 與 choice 門檻只用 validation 選，test 只評估一次。
 

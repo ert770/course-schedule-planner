@@ -9,6 +9,7 @@ import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
+import SessionAvoidanceBar from '../components/Schedule/SessionAvoidanceBar';
 import { formatCourseTime } from '../utils/courseTime';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
@@ -48,6 +49,12 @@ export default function DashboardPage() {
     recommendedPlanId,
     planDiversity,
     selectPlan,
+    // 本次規劃的避開清單
+    sessionAvoidances,
+    clearSessionAvoidances,
+    applyResolvedAvoidances,
+    buildAvoidanceConstraints,
+    buildPlanningContext,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
@@ -116,6 +123,9 @@ export default function DashboardPage() {
         // 寫死在這裡會蓋掉後端從 Profile 算出來的正確值
         // （2026-09-10 修正的 bug：四年級下限從未生效過就是這樣造成的）。
         maxCredits: 25,
+        // 本次規劃的避開清單：使用者剛移除的課，這一次重排就不要再出現。
+        // 只送 sectionId 與原因代號，課號與教師由後端從 Courses 重查。
+        sessionAvoidances: buildAvoidanceConstraints(),
       };
 
       // 排課讀的是這位學生的偏好與修課歷史，未登入就不該產生課表。
@@ -165,7 +175,7 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [buildRecommendation, logScheduleRegenerated, replaceSchedule, userIdentity]);
+  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userIdentity]);
 
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;
@@ -259,8 +269,21 @@ export default function DashboardPage() {
     setChatLoading(true);
 
     try {
-      const res = await chatAPI.send(msg);
+      // 把畫面目前的狀態一起送過去：Agent 才不會反問它其實問得到的資料
+      // （目前課表、剛移除了哪些課、原因是什麼）。
+      const res = await chatAPI.send(msg, buildPlanningContext());
+
+      // 規劃狀態的三態回覆。
+      //
+      // 只有 `rejected-invalid`（格式不合法，通常是舊版本留在 sessionStorage 的資料）
+      // 才清掉避開清單。`temporarily-unavailable` 是後端這次查不動，清掉會讓使用者
+      // 仍然有效的避開條件無聲消失。
+      if (res.planningContextStatus === 'rejected-invalid') clearSessionAvoidances();
+
       if (res.intent === 'run_csp_scheduler' && res.data?.success) {
+        // 伺服器回報這次實際套用了哪些避開條件（含 Agent 追問原因後重算的範圍），
+        // 寫回 sessionStorage，之後按一般「重新排課」才會沿用同樣的範圍。
+        applyResolvedAvoidances(res.data.appliedSessionAvoidances);
         // Chat 路徑同樣不再由前端回報曝光——`agentService.js` 呼叫
         // `generateForUser()` 時已經固定帶 `surface:'chat', trigger:'chat_tool'`，
         // 伺服器在算出結果時就直接寫入了。
@@ -493,6 +516,13 @@ export default function DashboardPage() {
               notice={scheduleNotice}
               onDismiss={() => setScheduleNotice(null)}
               domId="schedule-notice"
+            />
+
+            {/* 本次避開條件必須看得見。系統默默套用使用者看不到的排課限制，
+                跟「移除後又被排回來、畫面沒有解釋」是同一種毛病的反面。 */}
+            <SessionAvoidanceBar
+              avoidances={sessionAvoidances}
+              onClear={clearSessionAvoidances}
             />
 
             <PlanSwitcher

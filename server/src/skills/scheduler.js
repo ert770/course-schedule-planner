@@ -341,6 +341,88 @@ function isAvoidedInstructor(course, constraints) {
     .some(value => normalizedInstructorName(value) === instructor);
 }
 
+// ---------------------------------------------------------------------------
+// 本次規劃的避開清單：使用者剛在畫面上移除的課，下一次重排要立即避開。
+//
+// 與上面的 `avoidInstructors` 差在「這次」與「永久」：那是 `User_Profiles` 的
+// 持久化欄位，這是 request-scoped 狀態，這次排完就沒有（見 `constraintService.js`）。
+//
+// 每一筆的 `scope` 由**後端**依退課原因推導（`data/planningContextSchema.js`），
+// 不接受呼叫端指定——否則送 `{ reason: 'time', scope: 'catalog_course' }`
+// 就能把「這個時段不方便」放大成排除整門課。
+// ---------------------------------------------------------------------------
+
+function buildSessionAvoidanceRules(constraints) {
+  const rules = [];
+  for (const entry of toArray(constraints.sessionAvoidances)) {
+    const sectionId = Number(entry?.sectionId);
+    if (!Number.isInteger(sectionId) || sectionId <= 0) continue;
+
+    const catalogCourseCode = String(entry?.catalogCourseCode ?? '').trim();
+    const instructor = normalizedInstructorName(entry?.instructor);
+    let scope = entry?.scope ?? 'section';
+    // 放大範圍需要對應的識別資料。課號或教師解析不出來時**退回只排除該班次**，
+    // 而不是整筆放棄——使用者按了移除，最起碼那個班次不該再出現。
+    if (scope === 'catalog_course' && !catalogCourseCode) scope = 'section';
+    if (scope === 'instructor' && !instructor) scope = 'section';
+
+    rules.push({
+      sectionId,
+      reason: entry?.reason ?? null,
+      // 「還沒問到原因」與「使用者說不想講」都是 `reason === null`，但前者要再問、
+      // 後者不該再問。因此這個旗標由呼叫端決定，不從 `reason` 推。
+      pendingReason: entry?.pendingReason !== false && (entry?.reason ?? null) === null,
+      scope,
+      catalogCourseCode,
+      instructor,
+      // 執行過程中填寫，最後由 `generateSchedule()` 回報給前端。
+      status: 'not-found',
+      matchedSectionIds: [],
+      protectedCourses: [],
+    });
+  }
+  return rules;
+}
+
+function matchSessionAvoidance(course, rules) {
+  for (const rule of rules) {
+    if (rule.scope === 'catalog_course') {
+      if (String(course.catalogCourseCode || '').trim() === rule.catalogCourseCode) return rule;
+      continue;
+    }
+    if (rule.scope === 'instructor') {
+      if (normalizedInstructorName(course.instructor ?? course.teacher) === rule.instructor) return rule;
+      continue;
+    }
+    if (Number(course.id) === rule.sectionId) return rule;
+  }
+  return null;
+}
+
+// 避開清單**不能**靜默排除的課。
+//
+// 刻意不用 `collectExplicitCourseIds()`：那個集合還含 `explicitCourseIds`
+// （`POST /api/schedule/generate` 的 `courseIds`——使用者在課程瀏覽器勾選的課，
+// 而 `SchedulePage` 每次排課都把目前課表整批重送）。它的用途只是讓這些課**繞過
+// 資格與學期過濾**、不要被靜默剔除，並不代表「一定要排進課表」。若避開清單讓位
+// 給它，使用者在那一頁移除課程後重排，那門課會原封不動被保留——正是這次要修的症狀。
+function collectProtectedCourseIds(constraints) {
+  return toIdSet([
+    ...toArray(constraints.selectedCourseIds),
+    ...toArray(constraints.mustTakeCourseIds),
+    ...toArray(constraints.mustTakeCourses),
+  ]);
+}
+
+// 回傳「為什麼不能排除」的人話，沒有理由時回 null。
+function protectedAvoidanceReason(course, scope, protectedIds, failedRequiredCodes) {
+  if (isRequiredForStudent(course, scope)) return '是你本學期的必修';
+  if (failedRequiredCodes.has(course.catalogCourseCode)) return '是你需要重補修的必修';
+  if (protectedIds.has(Number(course.id))) return '同時被你指定為一定要修的課';
+  return null;
+}
+
+
 // roadmap #21：`options.skipTimePreferences` 讓呼叫端（`addCourseToPlan()`）
 // 對正式必修課無條件豁免 3 個時段類「舒適偏好」——`不排早八`／`不排晚課`／
 // `午休保留`是使用者比較希望的事，不是外部事實；必修課本學期一定要修，
@@ -1326,6 +1408,11 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   const offTermExplicit = [];
   const gradeMismatchNames = new Set();
   const failedRequiredCodes = new Set(getFailedRequiredCourseCodes(constraints.courseHistory));
+  // 本次規劃的避開清單。`rules` 會在迴圈裡被就地更新（`status`／`matchedSectionIds`／
+  // `protectedCourses`），最後隨 `prepared` 一起回傳給 `generateSchedule()` 回報前端。
+  const sessionAvoidanceRules = buildSessionAvoidanceRules(constraints);
+  const protectedCourseIds = collectProtectedCourseIds(constraints);
+  const avoidanceProtectedNames = new Set();
   let outsideExclusionCount = 0;
   // 有評價卻因資格待確認（#13C）而被排除的課程要單獨統計。使用者看到
   // 「涼課方案沒有通識」時，必須分得出來是「沒抓到評價」還是「抓到了但規則擋住」。
@@ -1361,6 +1448,38 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     annotateCorequisite(course, allCandidateCodes);
     if (deriveBaseCourseCode(course.catalogCourseCode) && course.corequisiteRole === null) {
       orphanedInternshipNames.add(`${course.name}（${course.catalogCourseCode}）`);
+    }
+
+    // 本次規劃的避開清單：使用者剛移除的課，這一次重排就不該再出現。
+    //
+    // 刻意放在年級／學期／資格閘門**之前**——使用者明確的操作是最清楚的解釋，
+    // 讓它被「非本學期」這類系統原因蓋掉，畫面上的說明會答非所問。
+    const avoidRule = sessionAvoidanceRules.length > 0
+      ? matchSessionAvoidance(course, sessionAvoidanceRules)
+      : null;
+    if (avoidRule) {
+      avoidRule.matchedSectionIds.push(Number(course.id));
+      const protectedReason = protectedAvoidanceReason(
+        course, scope, protectedCourseIds, failedRequiredCodes
+      );
+      if (protectedReason) {
+        // 必修不得靜默移除：保留課程並明講衝突，讓使用者自己決定要放棄哪一邊。
+        // 回報時這一筆的狀態是 `protected-conflict`，**不是**「已避開」——
+        // 前端若照樣顯示成已避開，畫面說的跟課表做的就對不上。
+        avoidRule.status = 'protected-conflict';
+        avoidRule.protectedCourses.push({ sectionId: Number(course.id), name: course.name, reason: protectedReason });
+        avoidanceProtectedNames.add(`${course.name}（${protectedReason}）`);
+      } else {
+        // 一筆規則可能同時命中保留與可排除的班次（例如整個課號裡有一班是必修）。
+        // 只要有任何一班被保留，整筆就維持 `protected-conflict`。
+        if (avoidRule.status !== 'protected-conflict') avoidRule.status = 'applied';
+        exclusions.push({
+          course,
+          reason: '本次已由使用者移除',
+          constraintId: 'USER_REMOVED_THIS_SESSION',
+        });
+        continue;
+      }
     }
 
     // 同系選修的 target_grade 是開課年級，不是限修年級（#13C-5）：放行，
@@ -1591,6 +1710,14 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   // 方案選出來才算，也不必逐一方案重算五次）。
   warnings.push(...buildContentPreferenceWarnings(computeContentPreferenceSignal(courses, constraints)));
 
+  if (avoidanceProtectedNames.size > 0) {
+    warnings.push(
+      `你要求本次避開的課程中有 ${avoidanceProtectedNames.size} 門仍保留在課表裡`
+      + `（${summarizeNames([...avoidanceProtectedNames])}）。`
+      + '請決定要保留必修，還是取消這項避開條件。'
+    );
+  }
+
   if (orphanedInternshipNames.size > 0) {
     warnings.push(
       `${orphanedInternshipNames.size} 門課程符合實習／實驗代碼慣例（課號以 P 結尾）`
@@ -1599,7 +1726,9 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     );
   }
 
-  return { courses, exclusions, warnings, scope, explicitIds, neutralEasyScore };
+  return {
+    courses, exclusions, warnings, scope, explicitIds, neutralEasyScore, sessionAvoidanceRules,
+  };
 }
 
 // roadmap #26：把「其實也排進來了」的課從落選清單裡剔除。
@@ -3305,6 +3434,31 @@ function tryRelaxationLadder(prepared, constraints, variant) {
   return null;
 }
 
+
+// 把避開規則的執行結果整理成前端要的形狀。
+//
+// **每一筆一定要帶 `status`**：必修衝突時課程其實還在課表裡，若照樣列成「已避開」，
+// 畫面會說「本次重排會避開 X」而 X 就在旁邊的課表上——那是系統自己說謊。
+function reportSessionAvoidances(rules = []) {
+  return rules.map(rule => {
+    let message = null;
+    if (rule.status === 'protected-conflict') {
+      const detail = rule.protectedCourses.map(item => `「${item.name}」${item.reason}`).join('、');
+      message = `未套用：${detail}，仍保留在課表中。請決定要保留必修，還是取消這項避開條件。`;
+    } else if (rule.status === 'not-found') {
+      message = '未套用：這次的候選課程裡找不到對應的課。';
+    }
+    return {
+      sectionId: rule.sectionId,
+      reason: rule.reason,
+      scope: rule.scope,
+      pendingReason: rule.pendingReason,
+      status: rule.status,
+      message,
+    };
+  });
+}
+
 export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeOptions = {}) {
   // 封鎖時段在此統一正規化，而不是要求每個呼叫端各自處理。
   // 使用者偏好可能存成時間字串（例如 ["08:00"]），未轉換時 bp.day 為 undefined，
@@ -3335,6 +3489,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       nonGraduationCredits: 0,
       courseCount: 0,
       excludedCourses: [],
+      // 連候選課程都沒有，避開規則根本沒有機會執行，因此不回報任何結果——
+      // 回 `not-found` 會讓使用者以為是他移除的課消失了，其實是資料源掛了。
+      appliedSessionAvoidances: [],
       watchedCourses: [],
       unscheduledCourses: [],
       draftSchedule: [],
@@ -3581,6 +3738,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       nonGraduationCredits: 0,
       courseCount: 0,
       excludedCourses: primary?.excludedCourses || [],
+      appliedSessionAvoidances: reportSessionAvoidances(prepared.sessionAvoidanceRules),
       // 失敗時仍要帶回關注課程，否則使用者標記的關注會從畫面上消失。
       watchedCourses: primary?.watchedCourses || [],
       unscheduledCourses: primary?.unscheduledCourses || [],
@@ -3625,6 +3783,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       nonGraduationCredits: 0,
       courseCount: 0,
       excludedCourses: primary.excludedCourses,
+      appliedSessionAvoidances: reportSessionAvoidances(prepared.sessionAvoidanceRules),
       watchedCourses: primary.watchedCourses,
       unscheduledCourses: primary.unscheduledCourses,
       draftSchedule: primary.schedule,
@@ -3736,6 +3895,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     nonGraduationCredits: primary.nonGraduationCredits,
     courseCount: primary.courseCount,
     excludedCourses: primary.excludedCourses,
+    appliedSessionAvoidances: reportSessionAvoidances(prepared.sessionAvoidanceRules),
     watchedCourses: primary.watchedCourses,
     unscheduledCourses: primary.unscheduledCourses,
     draftSchedule: [],

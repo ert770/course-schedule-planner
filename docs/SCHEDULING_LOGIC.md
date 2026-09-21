@@ -707,6 +707,72 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 `confidence` 欄位，也沒有逐級放寬機制。#21 的正式 schema 見下方「Hard/Soft
 Constraint Schema（Roadmap #21）」一節。
 
+## 本次規劃的避開清單（2026-09-21）
+
+使用者移除一門課、按「重新排課」，同一門課常常又被排回來，畫面上沒有任何解釋。
+
+成因不是 bug 而是設計缺口：移除只做兩件事——從畫面拿掉，以及（在已同意個人化時）
+送一筆 `course_withdrawn`。後者走的是**長期**偏好學習（`WITHDRAW_REASON_RULES` 把
+`time`／`workload`／`content` 轉成 `compact`／`easy`／`interest` 的投票，
+且現行 v2 要累積 50 筆可用事件才會正式套用權重），對「下一次重排」完全沒有作用。
+候選池與限制條件與上一次完全相同，排回來是必然結果。
+
+因此把「立即重排」與「長期學習」分成兩條**互不取代**的路徑：
+
+| 路徑 | 需要什麼 | 作用 |
+| --- | --- | --- |
+| 本次避開清單（`constraints.sessionAvoidances`） | section id 在 `Courses` 裡查得到 | 下一次重排立即生效 |
+| `course_withdrawn` 互動事件 | 個人化同意 | 長期偏好權重，規則不變 |
+
+**避開條件不需要個人化同意。** 它是使用者本次的排課限制，不是訓練資料。
+（這一點在實作上很容易寫錯：`recordInteractionEvents()` 在寫入任何事件之前先擋
+consent，`recommendation_exposed` 也走那個函式——未同意個人化的使用者根本沒有
+曝光紀錄。把「requestId 對得上曝光」當成前提，功能對他們會完全失效。）
+
+### 避開範圍由退課原因推導
+
+**保守優先**：只有明確指向「這門課本身」或「這位教師」的原因才放大範圍。
+
+| `reason` | 範圍 | 下一次重排 |
+| --- | --- | --- |
+| `content`、`workload` | `catalog_course` | 排除整個課號的所有班次（不滿意的是課程本身，換班次沒有意義） |
+| `instructor` | `instructor` | 排除該教師的班次，其他教師的同課程仍可排 |
+| `time`、`full`、`eligibility` | `section` | 只排除該班次——這三個原因對「課程內容偏好」是中性的 |
+| `other`、未填 | `section` | 沒有可據以放大的資訊 |
+
+範圍由**伺服器**依 `reason` 推導，呼叫端送 `scope` 一律忽略；課號與教師也由伺服器從
+`Courses` 重查。課號或教師解析不出來時範圍退回 `section`，而不是整筆放棄——
+使用者按了移除，最起碼那個班次不該再出現。
+
+排除結果以 `constraintId: "USER_REMOVED_THIS_SESSION"` 進入 `plan.excludedCourses`，
+沿用既有的診斷通道。
+
+### 避開清單**不能**靜默移除的課
+
+| 類別 | 命中避開時 |
+| --- | --- |
+| 本學期正式必修（`isRequiredForStudent()`） | 保留並警告／澄清 |
+| 重補修（`getFailedRequiredCourseCodes()`） | 同上 |
+| `mustTakeCourseIds`、`selectedCourseIds` | 同上 |
+| **`explicitCourseIds`／`courseIds`** | **避開清單優先，可以排除** |
+
+最後一列是關鍵。`collectExplicitCourseIds()` 把四個來源合併成同一個 `explicitIds`
+集合，用途只有一個：讓這些課**繞過資格、學期與系外選修過濾**，不要被靜默剔除。
+它**不代表「一定要排進課表」**。而 `SchedulePage` 每次排課都把目前課表當 `courseIds`
+重送、後端再併進 `explicitCourseIds`——若避開清單讓位給它，使用者在那一頁移除課程
+後重排，那門課會原封不動被保留，正是這次要修的症狀。因此另有一個更窄的
+`collectProtectedCourseIds()`，只含上表前三類。
+
+### 必修衝突的兩條路徑處理方式**不同**
+
+| 路徑 | 行為 |
+| --- | --- |
+| Chat | `requirementPreflight.js` 的第 (14) 項產生澄清問題，排課前先問 |
+| REST | `scheduler.js` 保留課程並在 `warnings` 說明；`appliedSessionAvoidances` 該筆回 `protected-conflict` |
+
+REST 路徑沒有 preflight（該檔第 (13) 項的註解已說明這道防線只涵蓋 chat），
+兩者不一致是事實，不假裝一致。兩條路徑共同的保證是：**不靜默違反任何一方**。
+
 ## 硬性限制
 
 硬性限制違反時，課表方案不得成立：

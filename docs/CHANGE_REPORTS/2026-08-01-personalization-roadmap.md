@@ -95,7 +95,7 @@
 | 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ✅ 已完成（2026-08-31，兩輪）——四條驗收標準全數達成（第 4 條前提為「無歧義的需求」） | #18、#21（均已完成） |
 | 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ✅ 已完成（2026-08-31）——四條驗收標準全數達成：OpenAI 原生 tool calling／JSON Schema、誠實 intent/data、同回合 scope 重建、矛盾參數排課前擋下、正式 tool allowlist（`agentToolRegistry.js`）、非法 course ID 過濾（`watchingCourseIds`）與統一結果信封均已完成 | #20、#21、#24（均已完成） |
 | 26 | 建立每門課的 evidence-based recommendation reason | ✅ 已完成（2026-08-31）——8 個欄位全數交付並接到前端與 Agent；`recommendationReasonVersion` 已填。當時內容量受 #13C 的候選池限制（demo 帳號 8 門課有 7 門「沒有競爭者」）；#13C 已於 2026-09-18 完成，候選池放大，落選者內容需重新觀察。2026-09-18 起 `scoreBreakdown` 另有 `crossYearElective`／`outsideOwnDepartment` 兩個階層分數項 | #4、#5A、#21、#22、#13C（均已完成） |
-| 27 | 完成多方案比較 UI 與 counterfactual explanation | ✅ **已完成（2026-09-03）**——見下方 #27 段落與[變更報告](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)。方案切換、比較表、counterfactual 端點皆已上線；「保留部分課程再重排」未做，明確記錄未完成 | #26 已完成；#10 已提供多方案介面與塌縮資訊，足供本任務使用，但完整多樣性驗收仍為部分完成 |
+| 27 | 完成多方案比較 UI 與 counterfactual explanation | ✅ **已完成（2026-09-03）**——見下方 #27 段落與[變更報告](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)。方案切換、比較表、counterfactual 端點皆已上線；**「保留部分課程再重排」仍未做**。2026-09-21 的 #42 讓後端拿得到「畫面目前留著哪些課」（`planningContext.currentCourses`），那是這項功能原本缺的那塊資料，但「保留這幾門、其餘重排」本身尚未實作 | #26 已完成；#10 已提供多方案介面與塌縮資訊，足供本任務使用；#42 已補上目前課表的傳遞 |
 | 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | ✅ **已完成（2026-09-03）**——見下方 #28 段落與[變更報告](./2026-09-03-roadmap-28-account-isolation.md)。兩帳號實機驗收全數通過；過程中發現並修復共用 MySQL 的日期時區 bug（刪除功能原本一律失敗） | 無（#18、#2 均已完成） |
 | 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ✅ **已完成（2026-09-04）**——見下方 #30 段落與[變更報告](./2026-09-04-roadmap-30-preference-learning-pipeline.md)。四條驗收標準全數達成；學習結果先由 #5B 接進方案比較，再由 #7 接進單門課排序 | #2、#5A、#29（均已完成） |
@@ -110,6 +110,8 @@
 | 39 | 架設正式網站與 Production rollout | ⬜ **工程可開始**（#33 已完成；需先由人決定部署平台與網域） | #33（已完成）；另需選定部署平台、網域與 secret store |
 | 40 | 補齊個人化學習訊號缺口 | ✅ **已完成（2026-09-07）**——`recommendation_accepted` 改用曝光紀錄裡真實的 per-plan 權重做對照歸因取代整批不投票；已在流動但先前被忽略的 `course_favorited`／`explicit_selection` 來源的 `course_selected` 接為 interest 強訊號；新增 `axisSignal` 診斷欄位區分「沒有偏好」與「顯式已頂到上限但持續有證據」。對照歸因只能在使用者已表態的軸之間分高下（延續既有「行為只能放大已表態方向」安全原則，非新限制），`axisSignal` 尚未落地存表或接進排課排序。見下方 #40 段落與[變更報告](./2026-09-07-roadmap-40-preference-signal-gaps.md) | #7、#29、#30、#31（均已完成） |
 | 41 | 修補 #37 回答忠實度閘門的三個實證缺口（Codex adversarial review） | ✅ **已完成（2026-09-07，兩段皆完成）**——第一段：tool retry terminal outcome，operationKey（工具＋參數雜湊）讓同一操作重試成功不再誤判失敗，不同操作的失敗也不會被另一個的成功蓋過（F16-F18）。第二段：課程指涉解析到 section 實體（同名不同班次逐 candidate 一致性，F19-F20）、捏造偵測改抽課名形狀片段（F21-F21b）、evidenceRole 讓被排除的課不能講成推薦（F23-F24b）；瀏覽器 A/B 對真實排課回合誘導捏造課程，audit 攔截並退回安全回答，畫面沒有出現任何捏造內容 | #37（已完成，發現缺口的對象） |
+
+| 42 | 移除課程後的「本次避開清單」＋ Chat Agent 取得規劃狀態 | ✅ **已完成（2026-09-21）**——移除課程原本只寫長期學習事件（要 50 筆才生效），對下一次重排沒有任何作用，同一門課被排回來是必然。新增 request-scoped 的 `constraints.sessionAvoidances`：範圍依退課原因推導（內容／負擔→整個課號、教師→該教師、其餘→該班次），**不需要個人化同意也生效**（未同意的人根本沒有曝光紀錄）；必修、重補修與`selectedCourseIds`／`mustTakeCourseIds` 不得靜默移除，回報 `protected-conflict`；`explicitCourseIds` 則不再被誤當必排。`POST /api/chat` 新增 `planningContext`（目前課表、本次移除、原因），課名／教師一律由後端重查，三態 `planningContextStatus` 讓暫時性錯誤不會清掉使用者仍然有效的避開清單。順手修掉兩個既有缺口：同一次移除會被寫成兩筆 `course_withdrawn`、以及忠實度閘門讓 Agent 問不出它被要求要問的問題。見[變更報告](./2026-09-21-session-avoidance-and-planning-context.md)。**未做**：「其他」原因的自然語言分析（第二段，開工前要先決定 `weak`／`strong` 存在哪裡） | #2、#29、#30、#37（均已完成） |
 
 ## 現在可以動工的任務（2026-09-19 第八次盤點，依建議順序排列）
 

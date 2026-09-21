@@ -319,6 +319,34 @@
   padding-right: 2px; /* 捲軸不擋住內容 */
 }
 
+/* 本次規劃的避開清單。沿用 .schedule-notice 的版面尺寸，讓它在同一個
+   .schedule-top-stack 裡看起來屬於同一組提示，而不是外掛上去的東西。 */
+.session-avoidance-bar {
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.session-avoidance-main { display: flex; flex-wrap: wrap; gap: 6px; }
+.session-avoidance-pending {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+}
+/* 必修衝突：那門課其實還在課表上，用警示色講清楚它「沒有」被避開。 */
+.session-avoidance-conflict {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #d97706;
+}
+[data-theme="dark"] .session-avoidance-conflict { color: #fbbf24; }
+.session-avoidance-bar .action-btn { margin-top: 10px; }
+
 /* 排課結果提示：失敗原因、警告與被排除課程 */
 .schedule-notice {
   margin: 12px 20px 0;

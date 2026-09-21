@@ -549,6 +549,29 @@ function canonicalIdempotencyPayload(event) {
   };
 }
 
+
+/**
+ * `course_withdrawn` 的確定性 actionId。
+ *
+ * 同一次移除可能由兩條路徑各記一次：使用者在畫面上按移除（`POST /api/interactions`），
+ * 以及他接著在 Chat 講同一件事（Agent 的 `record_schedule_feedback`）。前端用的是隨機
+ * UUID，而 `canonicalIdempotencyPayload()` 把 `actionId` 算進 key，兩邊因此永遠撞不到
+ * 同一個鍵，同一個動作會被寫成兩筆。
+ *
+ * 解法與 `plan_chosen` 相同：識別碼由**伺服器**依 `(requestId, sectionId)` 決定，
+ * 呼叫端送什麼都覆寫。兩個 service 共用這一份，不各自複製種子字串——複製的那天
+ * 起，兩邊只要有一邊改了格式就會靜默地又變成兩筆。
+ */
+export function courseWithdrawalActionId(requestId, sectionId) {
+  const hex = crypto.createHash('sha256')
+    .update(`course-withdrawn:${requestId}|${sectionId}`)
+    .digest('hex');
+  return [
+    hex.slice(0, 8), hex.slice(8, 12), `4${hex.slice(13, 16)}`,
+    `8${hex.slice(17, 20)}`, hex.slice(20, 32),
+  ].join('-');
+}
+
 export function buildInteractionIdempotencyKey(input) {
   const event = normalizeInteractionEvent(input);
   const digest = crypto.createHash('sha256')
@@ -590,6 +613,28 @@ export function createInteractionEvent(identity, input = {}, options = {}) {
 
 function comparableEvent(event) {
   const normalized = normalizeInteractionEvent(event);
+
+  // `course_withdrawn` 用專屬比較，只看「誰、哪一次、哪門課、什麼原因」。
+  //
+  // 理由是兩條路徑的 `source` 本來就不同：UI 依課程動態決定（`courseSource()` 會回
+  // `required`／`system_recommendation`／`explicit_selection`），Agent 固定寫
+  // `system_recommendation`。把 `source` 納入比較的話，移除一門正式必修時即使
+  // `actionId` 與原因都一樣，也會被判成 `conflict`——那不是衝突，是同一件事的兩種記法。
+  // `versionSnapshot` 同理：它是伺服器當下的版本，跨部署重送不該變成衝突。
+  //
+  // **`feedbackReason` 仍然比較**：使用者改了說法是真的衝突，不該靜默覆蓋。
+  if (normalized.eventType === INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN) {
+    return {
+      schemaVersion: normalized.schemaVersion,
+      eventType: normalized.eventType,
+      userId: normalized.userId,
+      requestId: normalized.requestId,
+      actionId: normalized.actionId,
+      course: normalized.course ? { sectionId: normalized.course.sectionId } : null,
+      feedbackReason: normalized.feedbackReason,
+    };
+  }
+
   // eventId 與 timestamp 是每次 server 嘗試建立時產生的 envelope 欄位；重送
   // 同一 logical action 時可以不同，不得因此繞過 idempotency。
   return {
@@ -652,6 +697,7 @@ export default {
   migrateInteractionEvent,
   validateInteractionEvent,
   buildInteractionIdempotencyKey,
+  courseWithdrawalActionId,
   createInteractionEvent,
   resolveIdempotentAppend,
 };

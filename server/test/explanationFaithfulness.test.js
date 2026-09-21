@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createEvidenceLedger,
+  recordContextCourseEvidence,
   recordToolEvidence,
   validateFaithfulnessReply,
   enforceFaithfulReply,
@@ -607,5 +608,58 @@ describe('#41 課程指涉解析到 section 實體', () => {
     const ledger = scheduleLedger();
     const audit = validateFaithfulnessReply('推薦你加選「演算法」。', ledger);
     assert.ok(!audit.violations.some(item => item.code === 'EXCLUDED_COURSE_PRESENTED_AS_RECOMMENDED'));
+  });
+});
+
+
+// 忠實度閘門的本意是「沒有依據就不要講」，不是「沒呼叫工具就不要講」。
+// 規劃狀態的課程是伺服器自己從 `Courses` 解析出來的，可信度不低於一次工具結果——
+// 少了這一段，Agent 被要求「追問使用者為什麼移除某門課」時，一提到課名就被判成
+// 幻覺，只能回一句沒有資料的安全答案（實測就是這樣，這個測試把它釘住）。
+describe('F25 伺服器補進 prompt 的課程事實也算證據', () => {
+  const contextCourses = [
+    { sectionId: 1300, name: '程式語言', instructor: '吳育倫' },
+    { sectionId: 1299, name: '軟體框架設計', instructor: '薛念林' },
+  ];
+
+  test('F25 追問移除原因時可以指名那門課，不算幻覺', () => {
+    const ledger = recordContextCourseEvidence(createEvidenceLedger(), contextCourses);
+    const audit = validateFaithfulnessReply(
+      '你移除「軟體框架設計」的主要原因是什麼？例如內容不感興趣、作業負擔或時段。',
+      ledger,
+      { userMessage: '幫我重排' }
+    );
+
+    assert.equal(audit.passed, true);
+    assert.equal(audit.hallucinationCount, 0);
+  });
+
+  test('F25b 沒有登記的課仍然算幻覺', () => {
+    const ledger = recordContextCourseEvidence(createEvidenceLedger(), contextCourses);
+    const audit = validateFaithfulnessReply('推薦你加選「量子計算導論」。', ledger);
+
+    assert.equal(audit.passed, false);
+  });
+
+  // 這不是一次工具呼叫，不該出現在「這回合做了哪些操作」的歷史裡，
+  // 也不該影響 `buildSafeFaithfulnessFallback()` 對「最近一次未完成操作」的判斷。
+  test('F25c 只寫 courses，不碰 tools 與 operations', () => {
+    const ledger = recordContextCourseEvidence(createEvidenceLedger(), contextCourses);
+
+    assert.equal(ledger.tools.length, 0);
+    assert.equal(ledger.operations.length, 0);
+    assert.equal(ledger.courses.length, 2);
+  });
+
+  test('F25d 與工具證據合併，不互相覆蓋', () => {
+    const ledger = recordContextCourseEvidence(createEvidenceLedger(), contextCourses);
+    recordToolEvidence(ledger, {
+      toolName: 'query_course_db',
+      result: [{ sectionId: 999, name: '演算法', instructor: '某教師' }],
+    });
+
+    // `sectionId` 在帳本裡是字串（`normalizeCourse()` 的既有行為）。
+    const ids = ledger.courses.map(item => Number(item.sectionId)).sort((a, b) => a - b);
+    assert.deepEqual(ids, [999, 1299, 1300]);
   });
 });

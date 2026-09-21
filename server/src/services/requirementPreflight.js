@@ -18,6 +18,7 @@
 
 import { normalizeBlockedPeriods, PERIODS_PER_DAY } from '../utils/periods.js';
 import { isActiveTermCourse } from '../data/activeTerm.js';
+import { isRequiredForStudent } from '../skills/courseScope.js';
 
 // 取出一門課的所有上課時段。
 //
@@ -199,6 +200,32 @@ export function checkPreflightContradictions({
       courseIds: [],
       constraintIds: ['PREFER_EASY_DIRECTION'],
     });
+  }
+
+  // (14) 本次避開的課同時是這位學生的必修。
+  //
+  // 使用者按了「移除」，但那門課這學期一定要修——兩個條件沒辦法同時成立，
+  // 直接問比排完課再回報誠實。必修判定用正式的 `isRequiredForStudent()`，
+  // 不從課名或類別欄位猜。
+  //
+  // **這道防線只涵蓋 chat 路徑**（與上面 (13) 相同）。REST 路徑由
+  // `scheduler.js` 的 `protectedAvoidanceReason()` 保留課程並發警告，
+  // 兩條路徑的處理方式不同，這一點在 `docs/SCHEDULING_LOGIC.md` 寫明。
+  if (studentScope?.resolved) {
+    for (const entry of constraints.sessionAvoidances ?? []) {
+      const sectionId = Number(entry?.sectionId);
+      const course = courseById.get(sectionId);
+      if (!course || !isRequiredForStudent(course, studentScope)) continue;
+
+      questions.push({
+        id: 'confirm-avoidance-required-conflict',
+        type: 'course-priority',
+        prompt: `你要求本次避開「${course.name}」，但它是你這學期的必修。`
+          + '請確認要保留這門必修，還是取消這項避開條件。',
+        courseIds: [sectionId],
+        constraintIds: ['REQUIRED_COURSE_COVERAGE'],
+      });
+    }
   }
 
   // (5) 指定必修彼此衝堂——使用者自己指名的兩門課本來就撞在一起。

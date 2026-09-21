@@ -105,6 +105,19 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // 放進 `context`；`null` 代表沒有可用的學習結果，排課退回顯式 0/1 行為。
     learnedPreference: context.learnedPreference ?? null,
 
+    // 本次規劃的避開清單（移除課程後立即生效），**純 request、不從 prefs 回填**。
+    //
+    // 形狀是 `[{ sectionId, reason, scope, catalogCourseCode, instructor, courseName }]`，
+    // 由 `scheduleService.resolveSessionAvoidances()` 從 `Courses` 解析後放進來——
+    // 呼叫端只送得出 `sectionId` 與 `reason`，課號與教師一律由伺服器重查。
+    //
+    // **為什麼不併進上面的 `avoidInstructors`**：那是**持久化**的 profile 欄位
+    // （`database.js` 的 `avoid_instructors`），而 `pickList()` 的語意是「request
+    // 非空就覆蓋已儲存偏好」——把本次避開的教師塞進去，會把使用者存好的避開教師
+    // 清單整包蓋掉。立場與 `nonNegotiablePreferenceIds` 相同：「這次不想要」不該
+    // 靜默沉澱成永久設定，要永久固定應該走 update_preferences。
+    sessionAvoidances: pickRequestList(input.sessionAvoidances),
+
     selectedCourseIds: pickRequestList(input.selectedCourseIds),
     watchingCourseIds: pickRequestList(input.watchingCourseIds),
     // 使用者在課程瀏覽器手動勾選的課（`POST /api/schedule/generate` 的 `courseIds`）。

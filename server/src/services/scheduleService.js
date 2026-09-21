@@ -22,6 +22,7 @@ import { buildScheduleConstraints } from './constraintService.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 import { getAll } from '../db/database.js';
 import { getFailedRequiredCourseCodes } from '../data/courseHistory.js';
+import { deriveAvoidanceScope, derivePendingReason } from '../data/planningContextSchema.js';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
 import {
   PLAN_FEATURE_VERSION,
@@ -194,6 +195,8 @@ export function buildNoCandidatesResult(reviewDataLoaded) {
     nonGraduationCredits: 0,
     courseCount: 0,
     excludedCourses: [],
+    // 連候選課程都沒有，避開規則沒有機會執行（理由同 `scheduler.js` 的對應路徑）。
+    appliedSessionAvoidances: [],
     watchedCourses: [],
     unscheduledCourses: [],
     draftSchedule: [],
@@ -274,6 +277,58 @@ export async function loadLearnedPreferenceSafely(loadWeights) {
 // 錯誤——兩條路徑看似相同，其中一條加了前置條件另一條靜默落後，而
 // counterfactual 的答案會因此變成「取消偏好會換掉這些課」的假因果。
 // 抽成共用函式，兩邊只能有同一份。
+
+// 本次規劃的避開清單：把 `sectionId` 解析成排課引擎需要的課號與教師。
+//
+// **一律由伺服器解析，不收呼叫端送的課名／課號／教師。** 這些值會決定排課限制，
+// 在 Chat 路徑還會進 system prompt；讓 client 自己填，等於讓它決定「避開的到底是
+// 哪門課」，也能把任意文字塞進 prompt。查 `Courses` 是唯一能保證對上的做法。
+//
+// 查課號**不限於這次的候選池**：候選池會先被學期、資格、搜尋條件過濾，
+// 被移除的那個班次可能根本不在裡面。若只查候選池，`content`（不感興趣）這種
+// 「要排除整個課號」的避開就會因為查不到課號而悄悄退化成只排除單一班次。
+// `loadCourses` 可注入，比照 `loadCourseReviewsSafely(loader)`：`generateForUser()`
+// 本身是重度 I/O 的整合函式，把這一段抽成可獨立測試的形狀，不必連真實資料庫
+// 就能釘住三種避開範圍與查不到課程時的降級行為。
+export async function resolveSessionAvoidances(rawAvoidances, loadCourses = () => getAll('courses')) {
+  const entries = Array.isArray(rawAvoidances) ? rawAvoidances : [];
+  if (entries.length === 0) return [];
+
+  let byId = new Map();
+  try {
+    const allCourses = await loadCourses();
+    byId = new Map(allCourses.map(course => [String(course.id), course]));
+  } catch (err) {
+    // 查不到課程資料時**不要**把避開條件整包丟掉：只排除班次仍然做得到，
+    // 那是使用者按下移除後最低限度應該發生的事。
+    logger.warn(`避開清單無法解析課程資料，本次只依班次排除：${err.message}`, { label: 'Schedule' });
+  }
+
+  const resolved = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    const sectionId = Number(entry?.sectionId);
+    if (!Number.isInteger(sectionId) || sectionId <= 0 || seen.has(sectionId)) continue;
+    seen.add(sectionId);
+
+    const reason = entry?.reason ?? null;
+    const course = byId.get(String(sectionId)) ?? null;
+    resolved.push({
+      sectionId,
+      reason,
+      // `scope` 由 `reason` 推導，不讀呼叫端送的值（見 planningContextSchema.js）。
+      scope: deriveAvoidanceScope(reason),
+      // 「使用者明確表示不想說明」由呼叫端（Agent 路徑）傳 false 進來；
+      // 其餘情況照 `reason` 推導。
+      pendingReason: entry?.pendingReason === false ? false : derivePendingReason(reason),
+      catalogCourseCode: course?.catalogCourseCode ?? null,
+      instructor: course?.instructor ?? course?.teacher ?? null,
+      courseName: course?.name ?? null,
+    });
+  }
+  return resolved;
+}
+
 async function prepareGenerationInputs(identity, input = {}, options = {}) {
   const { courseIds = [], filters = {}, constraints = {} } = input;
 
@@ -292,9 +347,12 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
     () => getSchedulingPreferenceWeights(identity, { prefs })
   );
 
+  const sessionAvoidances = await resolveSessionAvoidances(constraints.sessionAvoidances);
+
   const mergedConstraints = buildScheduleConstraints(
     {
       ...constraints,
+      sessionAvoidances,
       // `courseIds` 是使用者手動勾選的課。它決定候選池，但不會進入
       // `selectedCourseIds`，因此必須另外告訴排課引擎「這些是使用者指定的」，
       // 否則不符合系外選修認列條件的課會被當成系統自撿的候選而靜默剔除。
@@ -392,6 +450,7 @@ export default {
   generateForUser,
   counterfactualForUser,
   loadCourseReviewsSafely,
+  resolveSessionAvoidances,
   buildNoCandidatesResult,
   annotateScheduleIdentifiers,
 };

@@ -8,8 +8,63 @@ import {
   courseIntersectsBlockedPeriods,
 } from '../src/services/requirementPreflight.js';
 import { buildClarification } from '../src/skills/scheduler.js';
+import { buildStudentScope } from '../src/skills/courseScope.js';
 
 const resolvedScope = { department: '資訊工程學系', gradeLevel: 3, resolved: true };
+describe('RP14 本次避開的課同時是必修', () => {
+  // 使用者按了「移除」，但那門課這學期一定要修——兩個條件沒辦法同時成立。
+  // 這道防線只涵蓋 chat 路徑；REST 路徑由 scheduler.js 保留課程並發警告。
+  const requiredScope = buildStudentScope({
+    department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲',
+  });
+  const requiredCourse = { id: 103, name: '計算機結構', category: '必修', department: '資訊三甲' };
+  const electiveCourse = { id: 104, name: '網路程式設計', category: '選修', department: '資訊三甲' };
+  const courseById = new Map([[103, requiredCourse], [104, electiveCourse]]);
+
+  test('避開必修時產生澄清問題', () => {
+    const result = checkPreflightContradictions({
+      studentScope: requiredScope,
+      courseById,
+      constraints: { sessionAvoidances: [{ sectionId: 103, reason: 'workload' }] },
+    });
+
+    assert.equal(result.required, true);
+    const question = result.questions.find(item => item.id === 'confirm-avoidance-required-conflict');
+    assert.ok(question, '應該要有避開與必修衝突的問題');
+    assert.match(question.prompt, /計算機結構/u);
+    assert.deepEqual(question.courseIds, [103]);
+  });
+
+  test('避開選修不產生問題', () => {
+    const result = checkPreflightContradictions({
+      studentScope: requiredScope,
+      courseById,
+      constraints: { sessionAvoidances: [{ sectionId: 104, reason: 'workload' }] },
+    });
+
+    assert.equal(result.required, false);
+  });
+
+  // 這是實作上最容易漏的一步：`agentService` 的 `lookupCourses()` 原本只載入
+  // mustTake／selected／watching，避開的班次查不到課程，這道檢查就永遠不會觸發。
+  test('courseById 裡沒有那門課時不誤報（也提醒呼叫端要載入避開的班次）', () => {
+    const result = checkPreflightContradictions({
+      studentScope: requiredScope,
+      courseById: new Map(),
+      constraints: { sessionAvoidances: [{ sectionId: 103, reason: 'workload' }] },
+    });
+
+    assert.equal(result.required, false);
+  });
+
+  test('沒有避開清單時行為完全不變', () => {
+    assert.equal(
+      checkPreflightContradictions({ studentScope: requiredScope, courseById, constraints: {} }).required,
+      false
+    );
+  });
+});
+
 
 describe('RP1 系所／年級無法解析時先問', () => {
   test('resolved 為 false 時產生 confirm-student-scope', () => {
