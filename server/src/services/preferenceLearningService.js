@@ -20,6 +20,7 @@ import {
   deleteInteractionEvents,
 } from './interactionEventService.js';
 import { getUserPreferences } from './memoryService.js';
+import { logger } from '../utils/logger.js';
 import {
   PREFERENCE_AXES,
   SUFFICIENCY_STATUS,
@@ -125,12 +126,48 @@ function toRow(subjectId, result, computedAt) {
   };
 }
 
+
+// roadmap #10 任務 3B-0：Choice Perceptron 的 sufficiency metadata codec（**只讀，不寫**）。
+//
+// `rowToWeights()` 原本只還原 `status`／`usableEventCount`／`requiredEventCount`，
+// `calibrated` 與 `choiceCountByAxis` 都掉了。漏掉的後果是靜默的：CP 會**永遠**被
+// `calibrated !== true` 擋住，而現象看起來像「gate 還沒過」而不是 bug。
+//
+// **只作用在 CP 列**。`getPersonalizationSource()` 會把 `sufficiency` 直接回給 API，
+// 舊的 v2 列若多出 `calibrated: false`，API 回應就不再 deep-equal——所以 v2 的形狀
+// 一個欄位都不能動。本輪 CP 不寫任何列，這條路徑只有合成測試列會走到，
+// 因此這是**向後相容的 codec，不是「CP persistence 已接通」**。
+function isChoicePerceptronModelVersion(modelVersion) {
+  return String(modelVersion ?? '').startsWith('choice-perceptron');
+}
+
+// 未來 CP 列的 evidence envelope：
+//   { schemaVersion, trails: { interest, compact, easy }, sufficiency: { ... } }
+function readChoiceSufficiency(evidence) {
+  const meta = evidence && typeof evidence === 'object' ? evidence.sufficiency : null;
+  const byAxis = meta?.choiceCountByAxis;
+  return {
+    // 缺 metadata 時保守地當成未校準——寧可擋住 CP，也不要讓沒校準的權重上線。
+    calibrated: meta?.calibrated === true,
+    choiceCount: Number.isFinite(Number(meta?.choiceCount)) ? Number(meta.choiceCount) : 0,
+    requiredChoiceCount: Number.isFinite(Number(meta?.requiredChoiceCount))
+      ? Number(meta.requiredChoiceCount) : null,
+    choiceCountByAxis: {
+      interest: Number(byAxis?.interest ?? 0),
+      compact: Number(byAxis?.compact ?? 0),
+      easy: Number(byAxis?.easy ?? 0),
+    },
+  };
+}
+
 function rowToWeights(row) {
   if (!row) return null;
-  const evidence = row.evidence ?? row.evidence_json;
+  const rawEvidence = row.evidence ?? row.evidence_json;
+  const evidence = typeof rawEvidence === 'string' ? JSON.parse(rawEvidence) : rawEvidence;
   const computedAt = row.computedAt ?? row.computed_at;
+  const modelVersion = row.modelVersion ?? row.model_version;
   return {
-    modelVersion: row.modelVersion ?? row.model_version,
+    modelVersion,
     weights: {
       interest: Number(row.interestWeight ?? row.interest_weight),
       compact: Number(row.compactWeight ?? row.compact_weight),
@@ -140,10 +177,20 @@ function rowToWeights(row) {
       status: row.sufficiencyStatus ?? row.sufficiency_status,
       usableEventCount: Number(row.usableEventCount ?? row.usable_event_count),
       requiredEventCount: Number(row.requiredEventCount ?? row.required_event_count),
+      // **只有 CP 列會多出這些欄位**，v2 的形狀一個字都不改（見 codec 上方的說明）。
+      ...(isChoicePerceptronModelVersion(modelVersion) ? readChoiceSufficiency(evidence) : {}),
     },
-    evidence: typeof evidence === 'string' ? JSON.parse(evidence) : evidence,
+    evidence,
     computedAt: computedAt instanceof Date ? computedAt.toISOString() : computedAt,
   };
+}
+
+/**
+ * 測試用：直接驗證資料列 → 權重物件的映射，不必連資料庫。
+ * 與 `resetLearnedWeightsStoreForTests()`／`seedStaleModelVersionForTests()` 同一個模式。
+ */
+export function rowToWeightsForTests(row) {
+  return rowToWeights(row);
 }
 
 async function upsertRow(row) {
@@ -248,6 +295,76 @@ export async function getStoredLearnedWeights(identity) {
  * 沒過期時只有一次讀取；過期時多一次全量事件掃描加一次寫入，不論呼叫端是
  * 排課請求還是隱私頁，這個代價都一樣真實，只是現在排課請求也可能付。
  */
+
+// ---------------------------------------------------------------------------
+// roadmap #10 任務 3B-0：per-user 的模型解析（**本輪只有 v2 是 active**）
+// ---------------------------------------------------------------------------
+// 現況：stale 判定與 `getSchedulingPreferenceWeights()` 都拿**一個常數**
+// `PREFERENCE_LEARNING_MODEL_VERSION` 比。未來 Choice Perceptron 成為某些人的 active
+// engine 時，那個常數會變成 CP 版本，於是**每位非 pilot 使用者的 v2 列都被判 stale**，
+// 掉回顯式偏好——與「其他人維持 v2」的承諾正好相反。
+//
+// 因此把語意從「和唯一常數相同嗎」改成「這一列的引擎，是不是**這位使用者**的
+// `activeEngine`」。本輪 `activeEngine` 恆為 v2，所以實際結果與改動前逐位元相同；
+// 差別只在留下一個未來可以安全擴充的接縫。
+//
+// **本輪不實作 CP active 分支**：`Learned_Preference_Weights` 每人只有一列
+// （`subject_id` 是 PRIMARY KEY），而 `getSchedulingPreferenceWeights()` 會把該列的權重
+// 當成 v2 的原始權重轉成 boosts 再 clamp 到 [0,1]。CP 的 signed weight 一旦寫進去，
+// **即使完全不動 `scheduler.js`** 也會讓負值變 0、+2 變 1，正式排課靜默改變。
+// 所以 CP 這一輪只能是 `shadowEngine`，結果只出現在 readiness runner，不落任何資料表。
+export const PREFERENCE_ENGINES = Object.freeze({
+  V2: 'v2',
+  CHOICE_PERCEPTRON: 'choice-perceptron',
+});
+
+// shadow 名單只收 HMAC 後的 `subject_id`（`deriveSubjectId()` 的輸出），設定檔不放學號。
+function readShadowSubjectIds() {
+  return new Set(
+    String(process.env.PREFERENCE_SHADOW_SUBJECT_IDS ?? '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean)
+  );
+}
+
+/**
+ * 這位使用者現在該用哪個引擎。
+ *
+ * @param subjectId 已由呼叫端算好的 HMAC subject id；`null` 代表不查 shadow 名單。
+ * @returns `{ activeEngine, activeModelVersion, shadowEngine }`。
+ *          `shadowEngine` 只供離線評估使用，**不得**影響 `Learned_Preference_Weights`
+ *          的任何讀寫，也不得回傳給 scheduler。
+ */
+export function resolveExpectedPreferenceModel({ subjectId = null } = {}) {
+  // 本輪唯一合法值就是 v2。留下這個讀取是為了讓「設定值不是 v2」能被明確發現，
+  // 而不是靜默套用一個還沒實作的分支。
+  const mode = String(process.env.PREFERENCE_LEARNER_MODE ?? PREFERENCE_ENGINES.V2).trim()
+    || PREFERENCE_ENGINES.V2;
+  if (mode !== PREFERENCE_ENGINES.V2) {
+    logger.warn(
+      `PREFERENCE_LEARNER_MODE='${mode}' 尚未實作，本輪一律以 v2 為 active engine。`,
+      { label: 'PreferenceLearning' }
+    );
+  }
+
+  const shadowEngine = subjectId && readShadowSubjectIds().has(subjectId)
+    ? PREFERENCE_ENGINES.CHOICE_PERCEPTRON
+    : null;
+
+  return {
+    activeEngine: PREFERENCE_ENGINES.V2,
+    activeModelVersion: PREFERENCE_LEARNING_MODEL_VERSION,
+    shadowEngine,
+  };
+}
+
+// 這一列是不是這位使用者的 active engine 算出來的。
+// 取代原本散在兩處的 `stored.modelVersion !== PREFERENCE_LEARNING_MODEL_VERSION`。
+function matchesActiveModel(stored, expected) {
+  return stored?.modelVersion === expected.activeModelVersion;
+}
+
 async function ensureFreshLearnedWeights(identity, options = {}) {
   const prefs = options.prefs ?? await getUserPreferences(identity);
   const now = options.now ?? nowDate();
@@ -260,7 +377,10 @@ async function ensureFreshLearnedWeights(identity, options = {}) {
   const staleByNewEvent = Boolean(
     stored?.computedAt && latestEventAt && new Date(latestEventAt) > new Date(stored.computedAt)
   );
-  const stale = !stored || stored.modelVersion !== PREFERENCE_LEARNING_MODEL_VERSION || staleByNewEvent || staleByAge;
+  // 走 resolver：語意是「這一列是不是這位使用者的 active engine 算的」。
+  // 本輪 activeEngine 恆為 v2，結果與改動前相同。
+  const expected = resolveExpectedPreferenceModel();
+  const stale = !stored || !matchesActiveModel(stored, expected) || staleByNewEvent || staleByAge;
 
   if (stale) {
     await recomputeLearnedWeights(identity, { prefs, now: options.now, activeTerm: options.activeTerm });
@@ -301,7 +421,7 @@ export async function getSchedulingPreferenceWeights(identity, options = {}) {
   // `ensureFreshLearnedWeights()` 已經在版本不符時重算過一次；這裡留著是防
   // 重算後仍然拿不到現行版本的極端情況（例如重算過程中 consent 被撤回），
   // 不能假設它一定成功。
-  if (stored.modelVersion !== PREFERENCE_LEARNING_MODEL_VERSION) return absent('stale-model-version');
+  if (!matchesActiveModel(stored, resolveExpectedPreferenceModel())) return absent('stale-model-version');
   if (stored.sufficiency?.status !== SUFFICIENCY_STATUS.SUFFICIENT) return absent('insufficient');
 
   const explicitProfile = deriveExplicitProfile(options.prefs ?? await getUserPreferences(identity));

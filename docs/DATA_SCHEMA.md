@@ -821,6 +821,31 @@ MILP 方案的 `stopWhen` 為 `milp-optimized`，policy 版本升為 `personaliz
 `1` 與 `3`、`stopWhen` 仍接受 `candidate-exhausted`，但新版產生器只會產生 `1`。歷史曝光缺少此欄位時正規化為空陣列，仍可重播；新曝光必須讓每個
 policy 的 `planId` 對得上 `displayedPlanIds`，接受方案時也會核對 `variantId`。
 
+**2026-09-22（Roadmap #10 任務 3B-0）**：`planPolicies` 每項新增**選填**的 `weightMode`，
+為 Choice Perceptron 的 signed 權重預留契約。**目前是休眠的，沒有任何正式路徑會產生它。**
+
+存在的理由：CP 產生的是**三軸都帶號**的權重，而下方的值域只允許 `easy` 為負
+（`interest`／`compact` 必須 ≥ 0）。CP 一旦套用，曝光事件就會驗證失敗被拒，而
+`plan_chosen` 需要真實曝光佐證——等於 CP 啟用的那一刻切斷自己的訓練資料來源。
+
+| `weightMode` | 值域 |
+| --- | --- |
+| **缺席**（v2，今天唯一的情況） | `easy ∈ [-3, 3]`、`interest`／`compact ∈ [0, 3]` |
+| `signed` | 三軸皆 `[-2, 2]`（`CHOICE_WEIGHT_LIMIT` 的投影界線） |
+
+- **v2 不輸出這個 key**，連 `weightMode: null` 都不行：`resolveScoringPolicy()` 的回傳同時
+  出現在課表 API 的 `generationPolicy` 與曝光事件的 `planPolicies`，多一個 key 兩邊都不再與
+  改動前 deep-equal。正規化因此用**條件展開**，不是固定建欄位。
+- `signed` 需要三項條件**同時**成立：`weightMode === 'signed'`、
+  `version === 'personalized-scoring-v3-signed'`、`source.modelVersion === 'choice-perceptron-v1'`。
+  三個版本軸互不相干（policy 版本管權重契約、`modelVersion` 管 learner、`planFeatureVersion`
+  管特徵格式），不可互相代用。
+- 明確寫 `weightMode: 'boost'` 也**拒絕**——這樣「v2 不得出現這個 key」才是可強制的不變式。
+- 呼叫端無法自稱是 CP：曝光事件只有伺服器寫得進來（`allowExposureWrite`），`weightMode`
+  由 `buildExposureDraft()` 依它實際用的 scoring policy 推導。
+
+同樣是既有 JSON envelope 的選填欄位，事件 `schemaVersion` 維持 1，不需要 migration。
+
 **2026-09-21（Roadmap #10 任務 3A）**：`exposureContext` 新增與 `planPolicies` **並列**的
 `planFeatures` 與 `planFeatureVersion`。
 

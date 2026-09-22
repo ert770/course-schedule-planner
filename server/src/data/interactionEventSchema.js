@@ -165,12 +165,57 @@ function normalizeTerm(term) {
 }
 
 // #7 對 v1 增加的附加欄位：歷史事件可缺席；新事件依 scoring policy 版本回放。
+
+// ---------------------------------------------------------------------------
+// roadmap #10 任務 3B-0：signed weight 的休眠契約
+// ---------------------------------------------------------------------------
+// Choice Perceptron 產生的是**三軸都帶號**的權重，而現行 `planPolicies[].weights`
+// 的值域只允許 `easy` 為負（見下方 validate）。CP 一旦套用，曝光事件就會驗證失敗被拒，
+// 而 `plan_chosen` 需要真實曝光佐證——等於 CP 啟用的那一刻切斷自己的訓練資料來源。
+//
+// 因此先把契約準備好，但**維持 v2 的形狀完全不變**：
+//
+//   - `weightMode` 缺席 ＝ `boost`，套用今天的值域。v2 **不輸出這個欄位**。
+//     （`resolveScoringPolicy()` 的回傳同時出現在課表 API 的 `generationPolicy` 與曝光事件的
+//     `planPolicies`，多一個 key 兩邊都不可能與改動前 deep-equal，所以連 `weightMode: null`
+//     都不行——正規化時用條件展開，不是固定建欄位。）
+//   - `signed` 三軸皆 `[-2, 2]`（`CHOICE_WEIGHT_LIMIT` 的投影界線）。
+//
+// **三個版本軸互不相干，不可互相代用**：`planPolicies[].version` 管評分／權重契約、
+// `source.modelVersion` 管偏好學習模型、`planFeatureVersion` 管特徵格式（φ）。
+// 所以這裡**不**用 `isSupportedPlanFeatureVersion()` 判 signed。
+export const PLAN_POLICY_WEIGHT_MODES = Object.freeze({ BOOST: 'boost', SIGNED: 'signed' });
+
+// 目前沒有任何正式路徑會產生這個 scoring policy 版本——它是休眠的，
+// 只讓 schema 認得。`resolveScoringPolicy()` 不得產生它。
+const SIGNED_SCORING_POLICY_VERSIONS = new Set(['personalized-scoring-v3-signed']);
+const SIGNED_LEARNER_VERSIONS = new Set(['choice-perceptron-v1']);
+const SIGNED_WEIGHT_LIMIT = 2;
+
+// `signed` 必須三項條件同時成立，缺一不可。呼叫端光是送 `weightMode: 'signed'`
+// 不會生效：曝光事件只有伺服器寫得進來（`allowExposureWrite`），而 `weightMode`
+// 由 `buildExposureDraft()` 依它剛才實際用的 scoring policy 推導。
+function planPolicyWeightRange(policy) {
+  if (policy.weightMode === undefined) {
+    return { ok: true, min: axis => (axis === 'easy' ? -3 : 0), max: 3 };
+  }
+  if (policy.weightMode !== PLAN_POLICY_WEIGHT_MODES.SIGNED) return { ok: false };
+  if (!SIGNED_SCORING_POLICY_VERSIONS.has(policy.version)) return { ok: false };
+  if (!SIGNED_LEARNER_VERSIONS.has(policy.source?.modelVersion)) return { ok: false };
+  return { ok: true, min: () => -SIGNED_WEIGHT_LIMIT, max: SIGNED_WEIGHT_LIMIT };
+}
+
 function normalizePlanPolicies(value) {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return value;
-  return value.map(item => ({
+  return value.map(item => {
+    // **條件展開，不是固定建欄位。** 寫成 `weightMode: asTrimmedString(...)` 會讓 v2 得到
+    // `weightMode: null`，曝光 JSON 與課表 API 就都多一個 key，不可能 deep-equal。
+    const weightMode = asTrimmedString(item?.weightMode);
+    return {
     planId: asTrimmedString(item?.planId), variantId: asTrimmedString(item?.variantId),
     version: asTrimmedString(item?.version),
+    ...(weightMode === null ? {} : { weightMode }),
     weights: Object.fromEntries(['interest', 'compact', 'easy'].map(axis => [axis, item?.weights?.[axis]])),
     categoryCoefficient: item?.categoryCoefficient,
     creditCoefficient: item?.creditCoefficient,
@@ -184,7 +229,8 @@ function normalizePlanPolicies(value) {
     } : null,
     source: { learnedApplied: item?.source?.learnedApplied,
       reason: asTrimmedString(item?.source?.reason), modelVersion: asTrimmedString(item?.source?.modelVersion) },
-  }));
+    };
+  });
 }
 
 // roadmap #10 任務 3A：Choice Perceptron 的特徵向量 φ(x, y)。與 `planPolicies` **並列**而不是
@@ -438,10 +484,14 @@ export function validateInteractionEvent(input) {
     } else {
       const seenPlans = new Set();
       for (const policy of policies) {
+        // `weightMode` 缺席＝`boost`（今天唯一的情況）；`signed` 另需版本相符，見上方說明。
+        // `Number.isFinite()` 本身就擋掉 NaN、Infinity 與字串。
+        const range = planPolicyWeightRange(policy);
         if (!policy.planId || !event.exposureContext.displayedPlanIds.includes(policy.planId)
           || seenPlans.has(policy.planId) || !policy.variantId || !policy.version
+          || !range.ok
           || !Object.entries(policy.weights).every(([axis, value]) => Number.isFinite(value)
-            && value >= (axis === 'easy' ? -3 : 0) && value <= 3)
+            && value >= range.min(axis) && value <= range.max)
           || ![0.35, 1].includes(policy.categoryCoefficient)
           || ![1, 3].includes(policy.creditCoefficient)
           || !['no-credit-progress', 'candidate-exhausted', 'milp-optimized'].includes(policy.stopWhen)
