@@ -144,3 +144,24 @@ describe('roadmap #5B：preferChallengingCourses 與 learnedPreference', () => {
     assert.equal(merged.learnedPreference, null);
   });
 });
+
+// 2026-09-10：`minCredits` 的合併語意本身沒有 bug（`input.minCredits ?? prefs.targetCreditsMin`
+// 一直都是對的），真正的 bug 在上游——`database.js` 曾經把 `prefs.targetCreditsMin` 寫死成
+// 12，這裡收到的因此永遠是 12，不是 undefined。這組測試釘住「這一層的合併邏輯本身正確」，
+// 讓迴歸只可能出現在 `database.js`（見 `databaseProfileContract.test.js` 的對應測試）。
+describe('minCredits 合併：request 覆蓋已存值，缺席時原樣傳遞年級判斷的結果', () => {
+  test('四年級 Profile 算出的 9 沒有被 request 蓋掉時，原樣傳遞', () => {
+    const merged = buildScheduleConstraints({}, { gradeLevel: 4, targetCreditsMin: 9 });
+    assert.equal(merged.minCredits, 9);
+  });
+
+  test('request 明確指定 minCredits 時覆蓋已存值（例如使用者這次要求超修門檻）', () => {
+    const merged = buildScheduleConstraints({ minCredits: 15 }, { gradeLevel: 4, targetCreditsMin: 9 });
+    assert.equal(merged.minCredits, 15);
+  });
+
+  test('兩邊都沒有時是 undefined，交由 scheduler.js 的 resolveMinCredits() 依年級決定，而不是這一層自己補一個數字', () => {
+    const merged = buildScheduleConstraints({}, {});
+    assert.equal(merged.minCredits, undefined);
+  });
+});

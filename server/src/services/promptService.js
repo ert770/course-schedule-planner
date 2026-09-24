@@ -30,9 +30,14 @@ const COURSE_CATEGORIES = ['必修', '核心選修', '一般選修', '通識', '
 // #30 會把「排不進去」學成「不喜歡」。
 const FEEDBACK_REASONS = ['time', 'content', 'instructor', 'workload', 'full', 'eligibility', 'other'];
 
-// `constraintSchema.js` 中僅有的三個 `relaxable: true` 項目。寫成常數是為了讓
+// `constraintSchema.js` 中的 `relaxable: true` 項目。寫成常數是為了讓
 // prompt 契約測試可以直接比對，避免這裡與 constraint schema 日後漂移。
-const RELAXABLE_PREFERENCE_IDS = ['NO_MORNING_CLASSES', 'LUNCH_BREAK_FREE', 'NO_EVENING_CLASSES'];
+const RELAXABLE_PREFERENCE_IDS = [
+  'NO_MORNING_CLASSES',
+  'LUNCH_BREAK_FREE',
+  'AVOID_INSTRUCTOR',
+  'NO_EVENING_CLASSES',
+];
 
 const COURSE_ID_ARRAY = {
   type: 'array',
@@ -70,6 +75,11 @@ const SCHEDULER_PARAMETERS = {
   lunchBreakFree: { type: 'boolean', description: '午休時段不排課。' },
 
   mustTakeCourseIds: { ...COURSE_ID_ARRAY, description: '使用者指名一定要修的課程 id。' },
+  avoidInstructors: {
+    type: 'array',
+    items: { type: 'string' },
+    description: '使用者這次要避開的教師完整姓名。只有使用者明確提及時才填。',
+  },
   selectedCourseIds: { ...COURSE_ID_ARRAY, description: '使用者目前「已選」的課程 id，會佔用時段並計入學分。' },
   watchingCourseIds: {
     ...COURSE_ID_ARRAY,
@@ -122,7 +132,7 @@ const SCHEDULER_PARAMETERS = {
   // 「絕對不上早八 vs 必要時可早八」至今無從實作的真正原因。
   allowRelaxation: {
     type: 'boolean',
-    description: '排課排不出來時，是否允許引擎自動放寬早八／午休／晚課這類舒適偏好。'
+    description: '排課排不出來時，是否允許引擎自動放寬早八／午休／避開教師／晚課這類舒適偏好。'
       + '只有使用者表達了彈性（「盡量」「可以的話」「必要時可以」）才設為 true；'
       + '使用者說「絕對不」「無論如何都不要」時不要設或設為 false。',
   },
@@ -157,6 +167,7 @@ export const INTERPRETATION_TOPICS = Object.freeze({
   LUNCH_BREAK_FREE: { label: '午休不排課', flag: 'lunchBreakFree' },
   MONDAY_FREE: { label: '週一整天空堂', flag: 'mondayFree' },
   BLOCKED_PERIODS: { label: '指定的不能上課時段', flag: null },
+  AVOID_INSTRUCTOR: { label: '避開指定教師', flag: null },
   CREDIT_RANGE: { label: '學分範圍', flag: null },
   DAILY_COURSE_CAP: { label: '每天課程數上限', flag: null },
   MUST_TAKE_COURSES: { label: '指定一定要修的課', flag: null },
@@ -495,6 +506,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 
 排課偏好使用說明：
 - preferredKeywords、interests、preferCompact、preferEasyCourses、preferChallengingCourses 會影響單門課挑選及多個方案的主推排序。
+- 使用者明確說要避開某位教師時，把教師完整姓名放進 avoidInstructors；不得自行猜測、補姓氏或改寫姓名。
 - preferEasyCourses 與 preferChallengingCourses 方向相反，不得同時設為 true；使用者若兩者都提到，要先確認實際想要哪一個。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
@@ -526,7 +538,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 
 偏好強度的判讀：
 - 使用者語氣有彈性（「盡量不要」「可以的話」「必要時可以」）時，把
-  allowRelaxation 設為 true，排不出來時引擎才可以自動放寬早八／午休／晚課。
+  allowRelaxation 設為 true，排不出來時引擎才可以自動放寬早八／午休／避開教師／晚課。
 - 使用者語氣強硬（「絕對不要」「無論如何都不行」）時，**整個省略 allowRelaxation
   這個參數，不要送 allowRelaxation: false**——false 本來就是預設值，多送一次不會改變
   任何行為，只會讓同一句話每次產生不同的參數（與上面 minCredits／maxCredits 同理）。

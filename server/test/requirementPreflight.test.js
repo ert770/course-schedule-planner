@@ -9,7 +9,7 @@ import {
 } from '../src/services/requirementPreflight.js';
 import { buildClarification } from '../src/skills/scheduler.js';
 
-const resolvedScope = { department: '資訊工程學系', grade: 3, resolved: true };
+const resolvedScope = { department: '資訊工程學系', gradeLevel: 3, resolved: true };
 
 describe('RP1 系所／年級無法解析時先問', () => {
   test('resolved 為 false 時產生 confirm-student-scope', () => {
@@ -361,6 +361,23 @@ describe('RP12 指名不可放寬但該偏好沒開', () => {
 
     assert.equal(r.required, false);
   });
+
+  test('AVOID_INSTRUCTOR 必須有非空教師清單才算已開啟', () => {
+    const missing = checkPreflightContradictions({
+      ...ok,
+      constraints: { nonNegotiablePreferenceIds: ['AVOID_INSTRUCTOR'], avoidInstructors: [] },
+    });
+    const enabled = checkPreflightContradictions({
+      ...ok,
+      constraints: {
+        nonNegotiablePreferenceIds: ['AVOID_INSTRUCTOR'],
+        avoidInstructors: ['王小明'],
+      },
+    });
+
+    assert.ok(ids(missing).includes('confirm-preference-strength'));
+    assert.equal(enabled.required, false);
+  });
 });
 
 // 回講改用代號之後是代號直接比對，不再靠關鍵字猜。
@@ -407,6 +424,19 @@ describe('RP13 理解回講與實際參數必須一致', () => {
     const r = checkPreflightContradictions({
       ...ok,
       constraints: { interpretation: { nonNegotiable: [], flexible: ['NO_MORNING_CLASSES'] } },
+    });
+
+    assert.equal(r.required, false);
+  });
+
+  test('避開教師的回講與實際清單、不可放寬宣告一致時不誤報', () => {
+    const r = checkPreflightContradictions({
+      ...ok,
+      constraints: {
+        interpretation: { nonNegotiable: ['AVOID_INSTRUCTOR'] },
+        avoidInstructors: ['王小明'],
+        nonNegotiablePreferenceIds: ['AVOID_INSTRUCTOR'],
+      },
     });
 
     assert.equal(r.required, false);

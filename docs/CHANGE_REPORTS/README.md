@@ -2,6 +2,35 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-09-18
+
+1. [更新 DEPARTMENT_MAPPING.md：記錄 #13C 待確認問題的答案](./2026-09-18-department-mapping-13c-answers.md)
+2. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
+
+## 2026-09-17
+
+1. [修復 K3／P0-3：學習權重在排課路徑生效](./2026-09-17-fix-k3-p0-3-learned-weights-on-scheduling-path.md)
+2. [修復 K2／P0-2：Dashboard 用固定字串覆寫忠實度檢查過的 Agent 回覆](./2026-09-17-fix-k2-dashboard-reply-override.md)
+3. [修復 K25／P0-0：`getMysqlCourses()` 欄位名稱與共用資料庫不符](./2026-09-17-fix-k25-course-sections-columns.md)
+4. [修正 D3／D4／D6／D26–D29（過時文件與註解）](./2026-09-17-resolve-d3-d4-d6-d26-d29.md)
+5. [修正 D24／D25／D30，刪除 D5（過時文件）](./2026-09-17-resolve-d5-d24-d25-d30.md)
+6. [刪除 project-guide 專案說明文件集（與 application-portfolio 功能重複）](./2026-09-17-remove-project-guide.md)
+
+## 2026-09-13
+
+1. [新增 project-guide 專案說明文件集（12 檔）](./2026-09-13-project-guide-documentation-set.md)
+2. [退役 Profile v0 相容層](./2026-09-13-retire-profile-v0-compatibility.md)
+3. [Profile 欄位去重、課程評量欄位接線與 v0 相容層修復](./2026-09-13-profile-field-dedup-and-evaluation-columns.md)
+
+## 2026-09-11
+
+1. [專案外部資料需求 PDF](./2026-09-11-project-external-data-requirements-pdf.md)
+2. [課程年級、Profile 擴充與已存課表接線](./2026-09-11-course-grade-profile-saved-schedules.md)
+
+## 2026-09-10
+
+1. [Saved_Schedules／Profile 擴充 migration 與避開教師限制](./2026-09-10-saved-schedules-profile-extras-avoid-instructors.md)
+
 ## 2026-09-08
 
 1. [Roadmap #36（二輪）：修正 preference sensitivity sweep 的量測方法](./2026-09-08-roadmap-36-sensitivity-sweep-fix.md)

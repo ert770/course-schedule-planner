@@ -46,6 +46,19 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
       return res.status(400).json({ error: 'department 必須是非空字串' });
     }
 
+    for (const field of ['enrolledPrograms', 'mustTakeCourses', 'avoidInstructors']) {
+      if (updates[field] !== undefined && !Array.isArray(updates[field])) {
+        return res.status(400).json({ error: `${field} 必須是陣列` });
+      }
+    }
+    if (
+      updates.preferencesJson !== undefined
+      && (!updates.preferencesJson || typeof updates.preferencesJson !== 'object'
+        || Array.isArray(updates.preferencesJson))
+    ) {
+      return res.status(400).json({ error: 'preferencesJson 必須是物件' });
+    }
+
     // 避開時段接受第 1～14 節。先前這裡會在含第 1 節時回 400，要求改用
     // 「#不排早八」標籤（舊決策 C）——但那兩者不是同一件事：標籤是「每天的
     // 第一節都不要」，避開時段是「這個星期幾的這一節不要」。擋掉第 1 節等於

@@ -254,7 +254,7 @@ describe('PL21 modelVersion 過期', () => {
   });
 });
 
-describe('PL25-27 getSchedulingPreferenceWeights()（roadmap #5B）', () => {
+describe('PL25-27 getSchedulingPreferenceWeights()（roadmap #5B／P0-3）', () => {
   test('PL25 未同意 → no-consent，不觸發任何讀取或重算', async () => {
     const id = identity('PL25-NO-CONSENT');
     const result = await getSchedulingPreferenceWeights(id, { prefs: {} });
@@ -263,12 +263,39 @@ describe('PL25-27 getSchedulingPreferenceWeights()（roadmap #5B）', () => {
     });
   });
 
-  test('PL25 已同意但從未算過 → absent', async () => {
-    const id = identity('PL25-ABSENT');
+  // P0-3（2026-09-18）之前，「已同意但從未算過」回 absent 且不重算——排課路徑
+  // 只讀已存的列，不會主動觸發計算。P0-3 讓排課路徑改用
+  // ensureFreshLearnedWeights()，「從沒算過」本身就是過期條件之一，所以現在
+  // 會當場算一次；0 筆事件必然不足，因此變成 insufficient，而且會真的寫入
+  // 一列（不再是 absent 那種「從來沒有任何紀錄」的狀態）。
+  test('PL25 已同意但從未算過 → 當場重算一次，0 筆事件故 insufficient，且寫入新列', async () => {
+    const id = identity('PL25-NEVER-COMPUTED');
     await grantPersonalizationConsent(id);
+    assert.equal(await getStoredLearnedWeights(id), null, '重算前不應該有任何已存列');
+
     const result = await getSchedulingPreferenceWeights(id, { prefs: {} });
     assert.equal(result.applied, false);
-    assert.equal(result.reason, 'absent');
+    assert.equal(result.reason, 'insufficient');
+
+    const after = await getStoredLearnedWeights(id);
+    assert.notEqual(after, null, '過期（從沒算過）應該觸發重算並寫入一列，不再是 absent');
+    assert.equal(after.sufficiency.status, 'insufficient');
+  });
+
+  // P0-3 的核心驗收：不開隱私頁、不先呼叫 getPersonalizationSource()，
+  // 直接呼叫排課要用的 getSchedulingPreferenceWeights()，只要事件數已達門檻，
+  // 就應該自己觸發重算並回傳 applied:true——這正是 roadmap 要補的缺口
+  // 「互動紀錄要影響排序，不能只在使用者主動開過隱私頁之後才生效」。
+  test('P0-3 已同意且事件數已達門檻，直接呼叫排課權重（不先開隱私頁）→ applied:true', async () => {
+    const id = identity('P0-3-DIRECT-SCHEDULING');
+    await grantPersonalizationConsent(id);
+    await recordInteractionEvents(id, paddingDrafts(50, 'time')); // 50 筆強訊號，全在 compact 軸
+    assert.equal(await getStoredLearnedWeights(id), null, '確認一路上沒有人呼叫過重算或隱私頁');
+
+    const result = await getSchedulingPreferenceWeights(id, { prefs: {} });
+    assert.equal(result.applied, true);
+    assert.equal(result.reason, 'applied');
+    assert.equal(result.sufficiency.status, 'sufficient');
   });
 
   test('PL25 已同意但資料不足 → insufficient，且不重算', async () => {
@@ -300,18 +327,24 @@ describe('PL25-27 getSchedulingPreferenceWeights()（roadmap #5B）', () => {
     assert.equal(result.boosts.compact, 0);
   });
 
-  test('PL27 modelVersion 過期 → stale-model-version，且不重算、不覆寫已存列', async () => {
+  // P0-3 之前，「modelVersion 是舊版」在排課路徑會直接回 stale-model-version
+  // 且不重算——只有隱私頁的 getPersonalizationSource() 才會順手重算。P0-3
+  // 讓排課路徑也套用同一套過期判定，「modelVersion 不是現行版」本身就是過期
+  // 條件之一，所以現在會當場重算一次並覆寫成現行版本；這個合成身分沒有真實
+  // 事件，重算結果必然 insufficient。
+  test('PL27 modelVersion 過期 → 當場重算並覆寫成現行版本，0 筆事件故 insufficient', async () => {
     const id = identity('PL27-STALE');
     await grantPersonalizationConsent(id);
     const subjectId = deriveSubjectId(id.canonicalId);
     await seedStaleModelVersionForTests(subjectId, { modelVersion: 'preference-learning-v1' });
     const before = await getStoredLearnedWeights(id);
+    assert.equal(before.modelVersion, 'preference-learning-v1');
 
     const result = await getSchedulingPreferenceWeights(id, { prefs: {} });
     assert.equal(result.applied, false);
-    assert.equal(result.reason, 'stale-model-version');
+    assert.equal(result.reason, 'insufficient');
 
     const after = await getStoredLearnedWeights(id);
-    assert.deepEqual(after, before, '排課路徑讀到舊版本時不得順手重算或覆寫');
+    assert.notEqual(after.modelVersion, 'preference-learning-v1', '過期的 modelVersion 應該被當場重算覆寫成現行版本');
   });
 });

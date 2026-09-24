@@ -11,6 +11,7 @@ import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, Ro
 import '../App.css'; 
 import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
+import { formatCourseGradeLevel } from '../utils/courseGradeLevel';
 
 const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
 
@@ -42,7 +43,11 @@ export default function SearchPage() {
   useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   const [deptForm, setDeptForm] = useState({
-    department: '', grade: '', className: '', category: '', keyword: ''
+    department: '',
+    gradeLevel: '',
+    className: '',
+    category: '',
+    keyword: ''
   });
 
   const [condForm, setCondForm] = useState({
@@ -65,7 +70,7 @@ export default function SearchPage() {
         setDeptForm(prev => ({
           ...prev,
           department: scope?.department || '',
-          grade: scope?.grade ? String(scope.grade) : '',
+          gradeLevel: scope?.gradeLevel ? String(scope.gradeLevel) : '',
           className: scope?.className || '',
         }));
         setSearchError(scope?.className ? '' : CLASS_REQUIRED_MESSAGE);
@@ -240,7 +245,12 @@ export default function SearchPage() {
             
             {showUserMenu && (
               <div className="user-dropdown-menu">
-                <button className="user-dropdown-item" onClick={() => navigate('/graduation')}><Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度</button>
+                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 個人資料設定
+                </button>
+                <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
+                  <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
+                </button>
                 <button className="user-dropdown-item" onClick={toggleTheme}>
                   {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 切換主題
                 </button>
@@ -274,12 +284,13 @@ export default function SearchPage() {
               </div>
               <div className="form-group">
                 <label>年級 (Grade)</label>
-                <select value={deptForm.grade} disabled>
+                <select value={deptForm.gradeLevel} disabled>
                   <option value="">全部 (All)</option>
                   <option value="1">大一</option>
                   <option value="2">大二</option>
                   <option value="3">大三</option>
                   <option value="4">大四</option>
+                  <option value="5">研究所</option>
                 </select>
               </div>
               <div className="form-group">
@@ -398,8 +409,17 @@ export default function SearchPage() {
                   <div className="course-card-footer">
                     <span className="tag">{course.category}</span>
                     <span className="tag">{course.credits} 學分</span>
-                    {course.category === '通識' && <span className="tag">{course.generalEducationDomain || '不分領域'}</span>}
-                    {course.eligibility === 'unknown' && <span className="tag error-text">資格待確認：{course.eligibilityReason}</span>}
+                    <span className="tag">{formatCourseGradeLevel(course.gradeLevel)}</span>
+                    {course.category === '通識' && (
+                      <span className="tag">
+                        {course.generalEducationDomain || '不分領域'}
+                      </span>
+                    )}
+                    {course.eligibility === 'unknown' && (
+                      <span className="tag error-text">
+                        資格待確認：{course.eligibilityReason}
+                      </span>
+                    )}
                     {course.category === '系外選修' && course.outsideElective && (
                       <span className={`tag ${course.outsideElective.eligible ? '' : 'error-text'}`}>
                         {course.outsideElective.eligible ? '須向系辦確認' : `不可認列：${course.outsideElective.reasons.join('；')}`}

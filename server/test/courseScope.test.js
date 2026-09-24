@@ -20,7 +20,6 @@ import {
   NON_DEPARTMENT_CLASS_CATALOG,
   SPECIAL_DEPARTMENT_CLASS_CATALOG,
 } from '../src/data/classKindCatalog.js';
-import { pickClassNameTarget } from '../src/db/database.js';
 import { generateSchedule } from '../src/skills/scheduler.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
 import { makeCourse } from './fixtures.js';
@@ -29,13 +28,15 @@ describe('課程搜尋範圍', () => {
   test('完整班級由後端解析成系所、年級與班別尾碼', () => {
     assert.deepEqual(buildCourseSearchScope({ className: '資訊三甲' }), {
       department: '資訊工程學系',
-      grade: 3,
+      gradeLevel: 3,
+      classYear: 3,
+      degree: 'bachelor',
       className: '甲',
     });
   });
 
   test('缺少或無法解析的班級不得產生廣泛搜尋範圍', () => {
-    const emptyScope = { department: null, grade: null, className: null };
+    const emptyScope = { department: null, gradeLevel: null, classYear: null, degree: null, className: null };
     assert.deepEqual(buildCourseSearchScope({}), emptyScope);
     assert.deepEqual(buildCourseSearchScope({ className: '資電學院綜合班' }), emptyScope);
   });
@@ -43,12 +44,13 @@ describe('課程搜尋範圍', () => {
   test('API 拆分欄位可建立分類與搜尋共用的學生 scope', () => {
     const scope = buildCourseQueryScope({
       department: '資訊工程學系',
-      grade: '3',
+      gradeLevel: '3',
       className: '乙',
     });
 
     assert.equal(scope.department, '資訊工程學系');
-    assert.equal(scope.grade, 3);
+    assert.equal(scope.gradeLevel, 3);
+    assert.equal(scope.classYear, 3);
     assert.equal(scope.classSuffix, '乙');
     assert.equal(scope.resolved, true);
   });
@@ -213,7 +215,7 @@ describe('#13B 班級種類與修課資格', () => {
     for (const name of ['國文綜合班', '資電學院綜合班', '建設英班', '資通安全學程']) {
       const result = resolveCourseEligibility(
         { department: name, category: '選修' },
-        buildCourseQueryScope({ department: '資訊工程學系', grade: 3, className: '乙' })
+        buildCourseQueryScope({ department: '資訊工程學系', gradeLevel: 3, className: '乙' })
       );
       assert.equal(result.eligibility, 'unknown', name);
       assert.match(result.eligibilityReason, /正式適用對象規則尚未確認/, name);
@@ -234,7 +236,7 @@ describe('#13B 班級種類與修課資格', () => {
 describe('#20 eligibilitySource：eligibility 結論的可追溯來源', () => {
   const resolvedScope = buildCourseQueryScope({
     department: '資訊工程學系',
-    grade: 3,
+    gradeLevel: 3,
     className: '乙',
   });
 
@@ -308,7 +310,7 @@ describe('學生範圍', () => {
   });
 
   test('grade 為字串時仍可判定', () => {
-    assert.equal(buildStudentScope({ department: '資訊工程學系', grade: '1' }).resolved, true);
+    assert.equal(buildStudentScope({ department: '資訊工程學系', gradeLevel: '1' }).resolved, true);
   });
 });
 
@@ -412,7 +414,7 @@ describe('必修不得換班：班別收斂', () => {
 
     assert.equal(mismatch.classMismatch, true);
     assert.equal(mismatch.classSuffix, null);
-    assert.equal(mismatch.grade, 3, '年級沿用 profile');
+    assert.equal(mismatch.gradeLevel, 3, '年級沿用 profile');
     assert.equal(isRequiredForStudent(required('資訊三甲'), mismatch), true);
   });
 
@@ -426,7 +428,7 @@ describe('必修不得換班：班別收斂', () => {
     });
 
     assert.equal(scope.classMismatch, false);
-    assert.equal(scope.grade, 2, '年級應改依班別');
+    assert.equal(scope.gradeLevel, 2, '年級應改依班別');
     assert.equal(scope.profileGrade, 3);
     assert.equal(scope.gradeOverriddenByClass, true);
     assert.equal(scope.classSuffix, '乙');
@@ -444,7 +446,7 @@ describe('必修不得換班：班別收斂', () => {
     });
 
     assert.equal(scope.gradeOverriddenByClass, false);
-    assert.equal(scope.grade, 3);
+    assert.equal(scope.gradeLevel, 3);
   });
 
   test('F16-b 端到端：只改班別，課表隨之改變並附上不一致警告', () => {
@@ -501,53 +503,11 @@ describe('必修不得換班：班別收斂', () => {
   });
 });
 
-describe('班別的儲存位置優先順序', () => {
-  // 目標狀態是 `User_Profiles.class_name`；欄位還沒新增前退回 `users.json`。
-  test('欄位存在時一律寫進 User_Profiles', () => {
-    assert.equal(
-      pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: true, hasUsersJsonRow: true }),
-      'column'
-    );
-    assert.equal(
-      pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: true, hasUsersJsonRow: false }),
-      'column'
-    );
-  });
-
-  test('欄位不存在但有 users.json 對應列時寫進 users.json', () => {
-    assert.equal(
-      pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: false, hasUsersJsonRow: true }),
-      'usersJson'
-    );
-  });
-
-  test('MySQL 使用者、無欄位、也沒有 users.json 對應列時回傳 null（無處可存）', () => {
-    // 這是關鍵情境。先前的答案是 `localProfile`，把班別寫進
-    // `server/data/user_preferences.json`；該檔已於 2026-08-11 刪除
-    // （同一份 profile 存兩處必然漂移），因此現在真的無處可存。
-    //
-    // 回 `null` 是為了讓 `upsertByField()` 拋錯。**不得回報儲存成功**——
-    // 最早的 bug 正是班別「儲存成功」地消失，下一次排課直接退回系所 + 年級。
-    assert.equal(
-      pickClassNameTarget({ isMysqlProfileWrite: true, hasColumn: false, hasUsersJsonRow: false }),
-      null
-    );
-  });
-
-  test('非 MySQL 寫入路徑且沒有 users.json 對應列時同樣無處可存', () => {
-    assert.equal(
-      pickClassNameTarget({ isMysqlProfileWrite: false, hasColumn: true, hasUsersJsonRow: false }),
-      null
-    );
-  });
-
-  test('非 MySQL 寫入路徑但有 users.json 對應列時仍寫進 users.json', () => {
-    assert.equal(
-      pickClassNameTarget({ isMysqlProfileWrite: false, hasColumn: true, hasUsersJsonRow: true }),
-      'usersJson'
-    );
-  });
-});
+// 「班別的儲存位置優先順序」（`pickClassNameTarget()` 的單元測試）已於
+// 2026-09-09 隨 `users.json.className` 後備路徑一併移除：第二輪欄位盤點直接
+// 連線共用 MySQL 確認 `User_Profiles.class_name` 欄位已存在、且現有值與
+// `users.json` 完全一致，`User_Profiles.class_name` 現在是唯一儲存體，
+// 不再有「欄位不存在時退回 users.json」的分支需要測試。
 
 describe('#13 端到端：課表不得出現他系或他年級的必修', () => {
   const candidates = [

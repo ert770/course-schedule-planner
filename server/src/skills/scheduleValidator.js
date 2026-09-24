@@ -25,6 +25,7 @@ import {
 } from './scheduler.js';
 import { getPassedCourseCodes } from '../data/courseHistory.js';
 import { CONSTRAINTS } from '../data/constraintSchema.js';
+import { courseGradeLevelLabel, isCourseGradeEligible } from '../data/courseGradeLevel.js';
 
 function courseRef(course) {
   return { id: course.id, name: course.name };
@@ -112,6 +113,14 @@ function checkCourseMetadata(schedule, constraints) {
 
   for (const course of schedule) {
     const isExplicit = explicitIds.has(Number(course.id));
+
+    if (isCourseGradeEligible(course, constraints.gradeLevel) === false) {
+      violations.push(buildViolation(
+        'COURSE_GRADE_MISMATCH',
+        [courseRef(course)],
+        `「${course.name}」限 ${courseGradeLevelLabel(course.gradeLevel)}，不符合學生年級`
+      ));
+    }
 
     if (!isExplicit && course.eligibility === 'unknown') {
       violations.push(buildViolation(
@@ -209,19 +218,40 @@ function checkTimePreferences(schedule, constraints) {
 
 // 必修／必排課程涵蓋率只在 `constraints` 真的帶有這項資料時才檢查；
 // 沒帶時不當成「已通過」，回傳 checked:false 讓呼叫端列進 unchecked。
-function checkRequiredCoverage(schedule, constraints) {
+//
+// **P0-4／K5：已修過並通過的指定課程不算涵蓋率缺漏。** 那門課受
+// `ALREADY_TAKEN_PASSED` 這個沒有 `overridableBy` 的硬性限制擋著，永遠排不進來，
+// 當成缺漏會讓整份請求 infeasible，連其他排得出來的課都拿不到。
+//
+// 這裡**不直接相信呼叫端**：要跳過一個 id，必須同時滿足
+// (a) 呼叫端在 `excludedCourses` 裡對它給出 `ALREADY_TAKEN_PASSED`，以及
+// (b) 這門課的課號確實出現在 `courseHistory` 的已通過清單裡。
+// 只有 (a) 就放行等於讓被驗證的一方自己決定驗證結果。
+function checkRequiredCoverage(schedule, constraints, excludedCourses = []) {
   const hasRequiredIdsInfo = Array.isArray(constraints.mustTakeCourseIds)
     || Array.isArray(constraints.selectedCourseIds);
   if (!hasRequiredIdsInfo) {
     return { violations: [], checked: false };
   }
 
+  const completedCodes = new Set(getPassedCourseCodes(constraints.courseHistory));
+  const justifiedAlreadyTaken = new Set(
+    excludedCourses
+      .filter(item => (
+        item?.constraintId === 'ALREADY_TAKEN_PASSED'
+        && completedCodes.has(item.course?.catalogCourseCode)
+      ))
+      .map(item => Number(item.course?.id))
+  );
+
   const requiredIds = new Set([
     ...(constraints.mustTakeCourseIds || []),
     ...(constraints.selectedCourseIds || []),
   ].map(Number));
   const scheduledIds = new Set(schedule.map(course => Number(course.id)));
-  const missing = [...requiredIds].filter(id => !scheduledIds.has(id));
+  const missing = [...requiredIds].filter(
+    id => !scheduledIds.has(id) && !justifiedAlreadyTaken.has(id)
+  );
 
   if (missing.length === 0) return { violations: [], checked: true };
 
@@ -285,9 +315,9 @@ function checkCorequisitePairs(schedule) {
 // 需要 `constraints` 才有意義；checks 1（衝堂／重複班次）與 3（資格／學期／
 // 系外選修／已修過的 metadata 複查）只讀課程物件本身，即使 `constraints`
 // 為 `{}` 也能運作。
-export function validateScheduleAgainstConstraints(schedule = [], constraints = {}) {
+export function validateScheduleAgainstConstraints(schedule = [], constraints = {}, options = {}) {
   const { violations: coverageViolations, checked: coverageChecked } = checkRequiredCoverage(
-    schedule, constraints
+    schedule, constraints, options.excludedCourses ?? []
   );
   const { violations: corequisiteViolations, checked: corequisiteChecked } = checkCorequisitePairs(
     schedule

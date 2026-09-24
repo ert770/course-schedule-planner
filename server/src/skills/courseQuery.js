@@ -1,4 +1,5 @@
 import { getAll, getById } from '../db/database.js';
+import { isCourseGradeEligible } from '../data/courseGradeLevel.js';
 import { summarizeReviews } from './reviewStats.js';
 import { classSuffixCovers, parseClassName } from './courseScope.js';
 import {
@@ -114,7 +115,7 @@ function isInStudentClass(course, scope) {
   return parsed.isDepartmentClass
     && parsed.department === scope.department
     && parsed.degree === scope.degree
-    && parsed.grade === scope.grade
+    && parsed.grade === scope.classYear
     && classSuffixCovers(parsed.classSuffix, scope.classSuffix);
 }
 
@@ -161,6 +162,9 @@ export function filterCategorizedCourses(
   // 的例外只在排課階段（scheduler.js 的 prepareCandidates）適用，因為只有
   // 那裡才知道哪些課是使用者明確指定的。單純搜尋沒有這個概念，一律過濾掉。
   courses = courses.filter(course => course.term.isActiveTerm);
+  // Courses.target_grade 已在資料層映射為 gradeLevel。0 表示全年級可修；
+  // 1～5 必須與學生 gradeLevel 相同。未知值保留並交由 UI 標示，不假裝不符合。
+  courses = courses.filter(course => isCourseGradeEligible(course, scope.gradeLevel) !== false);
   if (filters.category === CATEGORY_OUTSIDE_ELECTIVE) {
     courses = courses.filter(course => {
       if (course.category !== CATEGORY_OUTSIDE_ELECTIVE) return false;
@@ -187,15 +191,15 @@ export function filterCategorizedCourses(
 export function filterCourses(courseList = [], filters = {}) {
   let courses = courseList;
 
-  if (filters.department && filters.grade && filters.className) {
+  if (filters.department && filters.gradeLevel && filters.className) {
     const department = normalizeDepartment(filters.department);
-    const grade = Number(filters.grade);
+    const gradeLevel = Number(filters.gradeLevel);
     const className = String(filters.className || '').trim();
     courses = courses.filter(course => {
       const parsed = parseClassName(course.department);
       return parsed.isDepartmentClass
         && parsed.department === department
-        && parsed.grade === grade
+        && parsed.grade === gradeLevel
         && classSuffixCovers(parsed.classSuffix, className);
     });
   } else if (filters.department) {
@@ -251,12 +255,17 @@ export async function getInstructors() {
 // 供前端讓學生選班別使用。班別清單從課程資料現場推導，而不是寫死在前端——
 // 系所簡稱與班級命名的對照只有 `server/src/data/departmentMapping.js` 一份，
 // 複製到前端就會有兩份各自漂移。
-export async function getClassNames(department, grade) {
+export async function getClassNames(department, gradeLevel, programType = null) {
   const normalized = normalizeDepartment(department);
   const abbreviations = normalized ? getAbbreviations(normalized) : [];
   if (abbreviations.length === 0) return [];
 
-  const gradeValue = Number(grade);
+  const gradeValue = Number(gradeLevel);
+  const requestedDegree = programType === 'master'
+    ? 'master'
+    : programType === 'doctoral'
+      ? 'doctor'
+      : null;
   const courses = await getAll('courses');
   const names = new Set();
 
@@ -264,8 +273,13 @@ export async function getClassNames(department, grade) {
     const parsed = parseClassName(course.department);
     if (!parsed.isDepartmentClass) continue;
     if (!abbreviations.includes(parsed.abbreviation)) continue;
-    if (parsed.degree !== 'bachelor') continue;
-    if (Number.isFinite(gradeValue) && gradeValue > 0 && parsed.grade !== gradeValue) continue;
+    if (gradeValue === 5) {
+      if (requestedDegree && parsed.degree !== requestedDegree) continue;
+      if (!requestedDegree && !['master', 'masterInService', 'doctor'].includes(parsed.degree)) continue;
+    } else {
+      if (parsed.degree !== 'bachelor') continue;
+      if (Number.isFinite(gradeValue) && gradeValue > 0 && parsed.grade !== gradeValue) continue;
+    }
 
     names.add(parsed.className);
   }

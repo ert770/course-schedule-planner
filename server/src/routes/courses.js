@@ -12,8 +12,8 @@ const router = Router();
 
 router.get('/', async (req, res) => {
   try {
-    const { department, grade, className } = req.query;
-    const gradeNumber = Number(grade);
+    const { department, gradeLevel, className } = req.query;
+    const gradeNumber = Number(gradeLevel);
     if (
       typeof department !== 'string'
       || !department.trim()
@@ -31,8 +31,10 @@ router.get('/', async (req, res) => {
     const filters = {};
     if (req.query.keyword) filters.keyword = req.query.keyword;
     filters.department = department.trim();
-    filters.grade = gradeNumber;
+    filters.gradeLevel = gradeNumber;
     filters.className = className.trim();
+    if (req.query.classYear) filters.classYear = Number(req.query.classYear);
+    if (req.query.degree) filters.degree = req.query.degree;
     if (req.query.category) filters.category = req.query.category;
     if (req.query.dayOfWeek) filters.dayOfWeek = Number(req.query.dayOfWeek);
     if (req.query.credits) filters.credits = Number(req.query.credits);
@@ -46,7 +48,9 @@ router.get('/', async (req, res) => {
     res.json({
       scope: {
         department: scope.department,
-        grade: scope.grade,
+        gradeLevel: scope.gradeLevel,
+        classYear: scope.classYear,
+        degree: scope.degree,
         className: scope.classSuffix,
       },
       appliedFilters: filters,
@@ -71,11 +75,11 @@ router.get('/departments', async (req, res) => {
 // 必須放在 `/:id` 之前，否則會被當成課程 id。
 router.get('/classes', async (req, res) => {
   try {
-    const { department, grade } = req.query;
+    const { department, gradeLevel, programType } = req.query;
     if (!department) {
       return res.status(400).json({ error: 'department 為必填' });
     }
-    res.json({ classes: await getClassNames(department, grade) });
+    res.json({ classes: await getClassNames(department, gradeLevel, programType) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -251,10 +251,10 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
   const courseReviews = await loadCourseReviewsSafely(() => getAll('reviews'));
   const reviewDataLoaded = Array.isArray(courseReviews) && courseReviews.length > 0;
 
-  // roadmap #5B：`options.prefs` 已經在手上，傳給 `getSchedulingPreferenceWeights()`
+  // roadmap #5B／P0-3：`options.prefs` 已經在手上，傳給 `getSchedulingPreferenceWeights()`
   // 避免它再查一次 Profile——與 `#30` 的 `recomputeLearnedWeights()` 同一個
-  // `options.prefs` 注入模式。這裡讀的是**已存**的權重，不重算、不寫入
-  // （見該函式的說明），排課因此不會把一次讀取變成一次全量事件掃描。
+  // `options.prefs` 注入模式。這裡讀的權重**過期才重算**（見該函式的說明），
+  // 多數請求只有一次讀取，只有真的過期時才會多付一次全量事件掃描加一次寫入。
   const learnedPreference = await loadLearnedPreferenceSafely(
     () => getSchedulingPreferenceWeights(identity, { prefs })
   );

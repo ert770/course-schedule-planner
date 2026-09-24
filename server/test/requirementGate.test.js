@@ -82,7 +82,7 @@ describe('AG10 update_student_profile 確認後同回合就改變查詢範圍', 
 
     assert.equal(result.success, true);
     assert.equal(turnCtx.studentScope.department, '資訊工程學系');
-    assert.equal(turnCtx.studentScope.grade, 3);
+    assert.equal(turnCtx.studentScope.gradeLevel, 3);
     assert.equal(turnCtx.studentScope.resolved, true);
     assert.equal(result.scopeResolved, true);
   });

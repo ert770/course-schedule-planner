@@ -199,8 +199,11 @@ function classSuffixCovers(courseSuffix, studentSuffix) {
 // 改成從 `User_Profiles` 讀即可，本模組不需更動。
 export function buildStudentScope(profile = {}) {
   const department = normalizeDepartment(profile.department) || null;
-  const gradeValue = Number(profile.gradeLevel ?? profile.grade);
-  const profileGrade = Number.isInteger(gradeValue) && gradeValue > 0 ? gradeValue : null;
+  const gradeValue = Number(profile.gradeLevel);
+  const graduateProgram = profile.programType === 'master' || profile.programType === 'doctoral';
+  const profileGrade = graduateProgram
+    ? 5
+    : (Number.isInteger(gradeValue) && gradeValue > 0 ? gradeValue : null);
 
   const className = String(profile.className || '').trim() || null;
   const parsedClass = className ? parseClassName(className) : null;
@@ -215,18 +218,26 @@ export function buildStudentScope(profile = {}) {
   // **年級以班別為準。** 班別名稱本身就編碼了年級（`資訊二乙` → 二年級），
   // 而且它是使用者最後明確選的值。先前的做法是「年級與班別不一致就忽略班別」，
   // 結果是使用者改了班別、課表卻毫無變化（見稽核報告 F16）。
-  const grade = classUsable ? parsedClass.grade : profileGrade;
-  const gradeOverridden = Boolean(classUsable && profileGrade && parsedClass.grade !== profileGrade);
+  const classYear = classUsable ? parsedClass.grade : profileGrade;
+  const gradeLevel = graduateProgram ? 5 : classYear;
+  const gradeOverridden = Boolean(
+    classUsable && !graduateProgram && profileGrade && parsedClass.grade !== profileGrade
+  );
 
   const abbreviations = department ? getAbbreviations(department) : [];
 
   return {
     department,
-    grade,
-    degree: profile.degree || DEFAULT_DEGREE,
+    gradeLevel,
+    degree: profile.programType === 'master'
+      ? 'master'
+      : profile.programType === 'doctoral'
+        ? 'doctor'
+      : (profile.degree || DEFAULT_DEGREE),
     abbreviations,
     className,
     classSuffix: classUsable ? parsedClass.classSuffix || null : null,
+    classYear,
     // 系所對不上的班別：忽略並回報，不得靜默處理。
     classMismatch: Boolean(className && !classUsable),
     // 班別覆寫了 profile 的年級：仍要講出來，否則資料哪裡不一致無從追查。
@@ -238,10 +249,10 @@ export function buildStudentScope(profile = {}) {
     // 「未設定系所或年級」會讓後者永遠查不出來。
     departmentMissing: !department,
     departmentUnmapped: Boolean(department && abbreviations.length === 0),
-    gradeMissing: !grade,
+    gradeMissing: !gradeLevel,
     // 系所或年級任一缺漏都無法判定必修範圍。此時不得退回「全校必修都算」，
     // 那正是 #13 的缺陷本身。
-    resolved: Boolean(department && grade && abbreviations.length > 0),
+    resolved: Boolean(department && gradeLevel && abbreviations.length > 0),
   };
 }
 
@@ -254,14 +265,18 @@ export function buildCourseSearchScope(profile = {}) {
   if (!parsed.isDepartmentClass || !parsed.department || !parsed.grade || !parsed.classSuffix) {
     return {
       department: null,
-      grade: null,
+      gradeLevel: null,
+      classYear: null,
+      degree: null,
       className: null,
     };
   }
 
   return {
     department: parsed.department,
-    grade: parsed.grade,
+    gradeLevel: ['master', 'masterInService', 'doctor'].includes(parsed.degree) ? 5 : parsed.grade,
+    classYear: parsed.grade,
+    degree: parsed.degree,
     className: parsed.classSuffix,
   };
 }
@@ -270,22 +285,27 @@ export function buildCourseSearchScope(profile = {}) {
 // `資訊三乙` 後重跑字串解析。這個 helper 直接建立分類與搜尋共用的學生 scope。
 export function buildCourseQueryScope(input = {}) {
   const department = normalizeDepartment(input.department) || null;
-  const gradeValue = Number(input.grade);
-  const grade = Number.isInteger(gradeValue) && gradeValue > 0 ? gradeValue : null;
+  const gradeValue = Number(input.gradeLevel);
+  const gradeLevel = Number.isInteger(gradeValue) && gradeValue > 0 ? gradeValue : null;
   const classSuffix = String(input.className || '').trim() || null;
+  const classYearValue = Number(input.classYear);
+  const classYear = Number.isInteger(classYearValue) && classYearValue > 0
+    ? classYearValue
+    : (gradeLevel === 5 ? null : gradeLevel);
   const abbreviations = department ? getAbbreviations(department) : [];
 
   return {
     department,
-    grade,
+    gradeLevel,
+    classYear,
     degree: input.degree || DEFAULT_DEGREE,
     abbreviations,
     className: null,
     classSuffix,
     departmentMissing: !department,
     departmentUnmapped: Boolean(department && abbreviations.length === 0),
-    gradeMissing: !grade,
-    resolved: Boolean(department && grade && classSuffix && abbreviations.length > 0),
+    gradeMissing: !gradeLevel,
+    resolved: Boolean(department && gradeLevel && classSuffix && abbreviations.length > 0),
   };
 }
 
@@ -299,7 +319,7 @@ export function isRequiredForStudent(course, scope) {
 
   return scope.abbreviations.includes(parsed.abbreviation)
     && parsed.degree === scope.degree
-    && parsed.grade === scope.grade
+    && parsed.grade === scope.classYear
     // 必修不得換班：同系所同年級但別班的必修，這位學生選不到。
     && classSuffixCovers(parsed.classSuffix, scope.classSuffix);
 }

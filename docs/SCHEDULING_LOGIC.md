@@ -202,6 +202,13 @@
 的 `RECOGNIZED_GENERAL_EDUCATION_COURSES_114_2`——兩處目前都寫死 114 學年下學期，
 沒有互相引用，忘記其中一處會讓通識認列與排課候選各自套用不同學期。
 
+### 開課年級（Courses.target_grade）
+
+資料層把 `Courses.target_grade` 唯一映射為 `course.gradeLevel`：0 代表沒有年級限制，
+1～4 對應大一至大四，5 同時代表碩士與博士／研究所。搜尋與排課前處理共用同一判定：
+0 一律可進候選，其他值必須與學生 `gradeLevel` 相同；年級不符屬不可放寬的結構性排除。
+班名中的碩一／碩二另存為 scope 的 `classYear`，不得與研究所層級 5 混用。
+
 ### 候選課程的可追溯 metadata（Roadmap #20）
 
 每門候選課除了既有的 `eligibility`／`eligibilityReason`，另外附加三個欄位：
@@ -595,15 +602,19 @@ Constraint Schema（Roadmap #21）」一節。
 - 被封鎖時段不得排入正式加選課程（含週一空堂 `mondayFree` 展開後的封鎖時段）。
 - 不上早八（`noMorningClasses`）。
 - 不上晚課（`noEveningClasses`）。
+- 避開指定教師（`avoidInstructors`）：以課程 `instructor`／`teacher` 完整姓名比對，
+  去除前後空白並忽略英文大小寫；不做模糊比對。真實資料 1,248 個相異教師值未出現
+  多教師分隔格式，因此目前不拆字串。
 - 午休保留（`lunchBreakFree`）。
 
 封鎖時段一律以 `{ day, period }` 表示（`day` 為 1~7、`period` 為 1~14）。使用者偏好可能以時間字串儲存（例如 `["08:00"]`），必須先經 `server/src/utils/periods.js` 的 `normalizeBlockedPeriods()` 轉換；時間字串沒有星期資訊，視為每天的該節次都要避開。未轉換直接送入排課引擎時，`bp.day` 為 `undefined`，比對會靜默跳過而使設定完全失效。
 
 上述時段類的 4 項限制是對課程時段的結構化事實判定（`block.startPeriod` 等），不是對自由文字做關鍵字猜測，因此不像上方「內容偏好」有訊號可靠度的問題，維持硬性排除（roadmap #3）。
 
-**Roadmap #21 補充**：`noMorningClasses`／`noEveningClasses`／`lunchBreakFree` 這 3 項
+**Roadmap #21 補充**：`noMorningClasses`／`noEveningClasses`／`lunchBreakFree`／
+`avoidInstructors` 這 4 項
 對正式必修課（`isRequiredForStudent(course, scope) === true`）**無條件豁免**——必修課本學期
-一定要修，這 3 項是使用者比較希望的事，不是外部事實，不該讓它們把必修課排除掉；`blockedPeriods`
+一定要修，這 4 項是使用者比較希望的事，不是外部事實，不該讓它們把必修課排除掉；`blockedPeriods`
 **永遠不豁免**，包含對必修課，因為它代表真實的外部不可用時段（例如學生有工作），連必修課都
 無法違反。豁免發生時會在 `warnings` 附上「必修課「X」不符合「Y」偏好，但必修優先，已排入課表」
 的揭露訊息，不做靜默改動。此豁免範圍**僅限**正式必修，不含 `mustTakeCourseIds`／`selectedCourseIds`
@@ -633,7 +644,7 @@ Constraint Schema（Roadmap #21）」一節。
   機制行為完全一致，本次不會讓任何限制改變類別。
 - **`relaxable`**：只對 hard 條目有意義。`true` = 可被 opt-in 放寬階梯
   （見下方）納入放寬；`false` = 永遠不進入階梯。目前只有 `NO_MORNING_CLASSES`／
-  `LUNCH_BREAK_FREE`／`NO_EVENING_CLASSES` 為 `true`；`BLOCKED_PERIODS`（代表真實
+  `LUNCH_BREAK_FREE`／`AVOID_INSTRUCTOR`／`NO_EVENING_CLASSES` 為 `true`；`BLOCKED_PERIODS`（代表真實
   外部不可用時段）明確為 `false`——這正是驗收標準舉的例子：「盡量不排早八」可放寬、
   「週一絕對不能上課」不可被放寬。
 - **`weight`**：可放寬條目的預設放寬順序（數字小的先放寬），可被
@@ -651,14 +662,14 @@ Constraint Schema（Roadmap #21）」一節。
   資料模型真正的負責項目）。validator 會誠實回報 `unchecked: ['PREREQUISITE',
   'COREQUISITE']`，不會假裝檢查過或悄悄放行。
 
-**正式必修的無條件豁免**（`exemptForRequiredCourses`）：另一個獨立欄位，只有 3 個
-時段類舒適偏好為 `true`。排入 `isRequiredForStudent()===true` 的課程時，這 3 項
+**正式必修的無條件豁免**（`exemptForRequiredCourses`）：另一個獨立欄位，3 個
+時段舒適偏好與 `AVOID_INSTRUCTOR` 為 `true`。排入 `isRequiredForStudent()===true` 的課程時，這 4 項
 無條件跳過，跟 `allowRelaxation` 無關、永遠生效；`BLOCKED_PERIODS` 明確為 `false`，
 必修課也不豁免。詳見上方「硬性限制」一節與 `docs/DECISIONS.md` ADR-013。
 
 **與方案產生器分離的獨立 validator**：`server/src/skills/scheduleValidator.js` 的
 `validateScheduleAgainstConstraints(schedule, constraints)`，檢查衝堂、重複班次、
-學分上限、資格／學期／系外選修／已修過的 metadata 複查、4 個時段類硬性限制、必修
+學分上限、資格／學期／系外選修／已修過的 metadata 複查、4 個時段限制與教師排除、必修
 涵蓋率，回傳 `{ valid, violations, unchecked }`。`generateSchedule()` 每次成功回應
 前都會對自己的主推方案呼叫一次作為內部自我檢查（落實「所有成功方案經 validator
 驗證 hard constraint violation 為 0」這條驗收標準）；理論上不該觸發，若真的觸發會
@@ -667,8 +678,10 @@ Constraint Schema（Roadmap #21）」一節。
 物件上由 `addCourseToPlan()` 寫入的 `formallyRequired` 標記；外部提供的課表（例如
 `/api/schedule/validate` 帶 `constraints` 時）沒有這個標記，一律照嚴格規則檢查。
 
-**opt-in 放寬階梯**：`constraints.allowRelaxation`（預設 `false`，沒有任何呼叫端
-會設定，行為與改動前完全相同）。啟用後，若方案的選修側因時段偏好排掉太多候選、
+**opt-in 放寬階梯**：`constraints.allowRelaxation`（預設 `false`）。目前唯一會設定它的
+呼叫端是 AI Agent：`promptService.js` 把 `allowRelaxation` 列為 `run_csp_scheduler` 的
+工具參數，系統提示指示模型在使用者語氣有彈性（例如沒有明確排除某類時段）時才設為
+`true`；一般表單路徑仍維持預設 `false`，行為與加入這個旗標前相同。啟用後，若方案的選修側因時段或教師舒適偏好排掉太多候選、
 導致湊不到學分下限，`generateSchedule()` 會依 `constraints.timePreferencePriority`
 （使用者自訂的 constraintId 陣列，未提供時退回 schema 的預設順序）逐一清除
 `relaxable:true` 的旗標並重試，一旦成功就停止，並在回應附上 `relaxedConstraints`
@@ -684,7 +697,9 @@ Constraint Schema（Roadmap #21）」一節。
 
 ### Bounded backtracking repair（Roadmap #22）
 
-系統保留五個既有 greedy variant 作為 baseline。主推 baseline 未通過獨立 validator，或
+系統把 `buildPlanStrategies()` 產生的每個 greedy variant 都保留作為 baseline——數量不是固定
+五個，而是依使用者已表態、非零權重的偏好軸數量動態決定（1 到 5 個：`personalized` 固定 1 個，
+之後每個非零軸各加 1 個，再加 1 個 `personalized_credits`）。主推 baseline 未通過獨立 validator，或
 所有通過 validator 的 baseline 都低於 `minCredits` 時，才啟動 repair；已合法且達最低學分
 的 baseline 不額外搜尋。
 

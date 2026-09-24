@@ -49,7 +49,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // #13：必修範圍必須依學生的系所與年級收斂，否則全校 2094 筆必修都會被
     // 當成這位學生的必修。這兩個值先前沒有帶進排課限制，排課引擎無從判定。
     department: input.department || prefs.department || null,
-    gradeLevel: pickNumber(input.gradeLevel ?? input.grade, prefs.gradeLevel ?? prefs.grade, null),
+    gradeLevel: pickNumber(input.gradeLevel, prefs.gradeLevel, null),
     degree: input.degree || prefs.degree || undefined,
     // 必修不得換班（資工系明文），因此必修範圍要再收斂到班別。
     // 見 `docs/COURSE_SELECTION_RULES.md` 第八節。
@@ -79,6 +79,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     englishTaught: pickFlag(input.englishTaught, prefs.englishTaught),
 
     mustTakeCourseIds: pickList(input.mustTakeCourseIds, prefs.mustTakeCourses),
+    avoidInstructors: pickList(input.avoidInstructors, prefs.avoidInstructors),
     // 修課歷史直通，**不做 request／偏好合併**。
     //
     // `pickList()` 的用途是「request 可以覆蓋已儲存偏好」，但修課歷史沒有任何
