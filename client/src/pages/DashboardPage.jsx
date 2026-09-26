@@ -12,7 +12,7 @@ import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmation
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import SkillTreeModal from '../components/Profile/SkillTreeModal';
-import { makeNotice, buildScheduleNotice } from '../utils/scheduleNotice';
+import { buildScheduleNotice } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, Sparkles, Award } from 'lucide-react';
 
