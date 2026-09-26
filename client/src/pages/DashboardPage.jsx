@@ -31,11 +31,8 @@ export default function DashboardPage() {
     logScheduleRegenerated,
     acceptRecommendation,
     personalizationEnabled,
-    plans,
-    selectPlan,
   } = useSchedule();
   
-  const [scheduleNotice, setScheduleNotice] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
   const [selectedTags, setSelectedTags] = useState(new Set());
   const [tagGroups, setTagGroups] = useState([]);
@@ -72,12 +69,9 @@ export default function DashboardPage() {
     setIsScheduling(true);
     try {
       const constraints = { maxCredits: 25 };
-      if (userIdentity === null) {
-        setScheduleNotice(makeNotice({ level: 'error', message: '尚未登入，無法產生個人化課表。' }));
-        return;
-      }
+      if (userIdentity === null) return;
       const data = await scheduleAPI.generate({ constraints, surface: 'dashboard', trigger });
-      setScheduleNotice(buildScheduleNotice(data));
+      buildScheduleNotice(data);
       if (trigger !== 'initial_load') {
         logScheduleRegenerated(data.requestId, { surface: 'dashboard', trigger });
       }
@@ -86,7 +80,7 @@ export default function DashboardPage() {
         setConfirmation(data.requestId ? { state: 'pending' } : null);
       }
     } catch {
-      // 略過未使用的錯誤變數
+      // 略過錯誤
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
