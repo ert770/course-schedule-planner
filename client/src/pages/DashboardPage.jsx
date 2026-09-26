@@ -177,7 +177,14 @@ export default function DashboardPage() {
   };
 
   const handleRemoveClick = (course) => {
-    setDetailCourse(null);
+    setDetailCourse(null); // (我們加的：立刻關閉殘影)
+
+    // (吳心樂要求的：補回隱私權限判斷！)
+    if (!personalizationEnabled) {
+      removeCourse(course.id);
+      return;
+    }
+    
     setRemovalCandidate(course);
   };
 
