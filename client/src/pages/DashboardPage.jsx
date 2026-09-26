@@ -9,16 +9,12 @@ import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
-import { formatCourseTime } from '../utils/courseTime';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import ScheduleNotice from '../components/Schedule/ScheduleNotice';
-import PlanSwitcher from '../components/Schedule/PlanSwitcher';
-import PlanComparison from '../components/Schedule/PlanComparison';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import SkillTreeModal from '../components/Profile/SkillTreeModal';
-import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
+import { makeNotice, buildScheduleNotice } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
-import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award } from 'lucide-react';
+import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, Sparkles, Award } from 'lucide-react';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -28,18 +24,14 @@ export default function DashboardPage() {
   const {
     schedule,
     loading: scheduleLoading,
-    saving,
     replaceSchedule,
     removeCourse,
-    saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
     logScheduleRegenerated,
     acceptRecommendation,
     personalizationEnabled,
     plans,
-    selectedPlanId,
-    planDiversity,
     selectPlan,
   } = useSchedule();
   
@@ -74,11 +66,6 @@ export default function DashboardPage() {
   }, [chatHistory]);
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
-  const graduationCredits = schedule.reduce(
-    (sum, course) => (course.countsTowardGraduation === false ? sum : sum + (course.credits || 0)),
-    0
-  );
-  const hasNonGraduationCredits = graduationCredits !== totalCredits;
   const minCredits = user?.gradeLevel === 4 ? 9 : 12;
 
   const generateInitialSchedule = useCallback(async (trigger = 'initial_load') => {
@@ -98,8 +85,8 @@ export default function DashboardPage() {
         replaceSchedule(data.schedule, buildRecommendation(data), data.plans, data.planDiversity);
         setConfirmation(data.requestId ? { state: 'pending' } : null);
       }
-    } catch (err) {
-      console.error('Schedule generation failed:', err);
+    } catch {
+      // 略過未使用的錯誤變數
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
@@ -146,7 +133,7 @@ export default function DashboardPage() {
     setSelectedTags(next);
     try {
       await profileAPI.update({ selectedTags: [...next] });
-    } catch (err) {
+    } catch {
       setSelectedTags(previous);
     }
   };
@@ -167,14 +154,13 @@ export default function DashboardPage() {
       } else {
         setChatHistory(prev => [...prev, { role: 'bot', text: res.reply }]);
       }
-    } catch (err) {
+    } catch {
       setChatHistory(prev => [...prev, { role: 'bot', text: '處理您的請求時發生錯誤。' }]);
     } finally {
       setChatLoading(false);
     }
   };
 
-  // 按下「符合」：維持 5 秒後平滑淡出
   const handleConfirmFit = async () => {
     const outcome = await acceptRecommendation();
     setConfirmation({ state: 'accepted', outcome });
@@ -186,7 +172,6 @@ export default function DashboardPage() {
     }, 5000);
   };
 
-  // 按下「需要調整」：維持 5 秒後平滑淡出
   const handleRequestAdjust = () => {
     setConfirmation({ state: 'adjusting' });
     setIsFading(false);
@@ -197,7 +182,6 @@ export default function DashboardPage() {
     }, 5000);
   };
 
-  // 點擊從課表移除：立即關閉詳細彈窗並開啟原因對話框（徹底消除殘影）
   const handleRemoveClick = (course) => {
     setDetailCourse(null);
     setRemovalCandidate(course);
@@ -214,12 +198,6 @@ export default function DashboardPage() {
   const handleOpenDetail = (course) => {
     setDetailCourse(course);
     logCourseViewed(course);
-  };
-
-  const handleSelectPlan = (variantId) => {
-    const target = plans.find(plan => plan.id === variantId);
-    if (!selectPlan(variantId)) return;
-    setScheduleNotice(prev => buildScheduleNoticeForPlan({ success: true, message: prev?.message }, target));
   };
 
   return (
@@ -383,7 +361,6 @@ export default function DashboardPage() {
         onConfirm={handleRemoveConfirmed}
       />
 
-      {/* 防禦性渲染：當退選對話框開啟時，強制不渲染底層的 CourseDetailModal 以徹底消除殘影 */}
       {!removalCandidate && (
         <CourseDetailModal
           course={detailCourse}
