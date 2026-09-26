@@ -1,113 +1,92 @@
 import { useState } from 'react';
+import { X, AlertCircle } from 'lucide-react';
 
-// 退課原因清單 (之後若心樂決定修改文字，直接在這裡改陣列內容即可)
-const REASONS = [
-  '想保留空堂',
-  '有更想優先排入的課程',
-  '課程內容不感興趣',
-  '授課教師因素',
-  '課業負擔太重',
-  '不符修課資格',
-  '其他原因'
+const REASON_OPTIONS = [
+  { id: 'interest', label: '對該課程主題興趣不高' },
+  { id: 'workload', label: '作業、報告或考試負擔太重' },
+  { id: 'instructor', label: '授課風格或教師評價不符合期待' },
+  { id: 'difficulty', label: '課程難度過高或先修能力不足' },
+  { id: 'schedule_slot', label: '上課時段雖無衝堂但個人時間安排不理想' },
+  { id: 'credits', label: '學分數與預期學分規劃不符' },
+  { id: 'redundant', label: '課程內容與其他已修或排入課程高度重複' },
+  { id: 'other', label: '其他個人因素（如職涯方向調整等）' },
 ];
 
 export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
-  const [selectedReasons, setSelectedReasons] = useState([]);
-  const [prevCourseId, setPrevCourseId] = useState(null);
-
-  // 替換 useEffect：當傳入的課程改變時，直接重置選項 (符合嚴格 Lint 規範)
-  if (course && course.id !== prevCourseId) {
-    setSelectedReasons([]);
-    setPrevCourseId(course.id);
-  }
+  const [selectedReasons, setSelectedReasons] = useState(new Set());
 
   if (!course) return null;
 
-  // 處理點擊選項的切換邏輯 (Toggle)
-  const toggleReason = (reason) => {
-    setSelectedReasons(prev => 
-      prev.includes(reason) 
-        ? prev.filter(r => r !== reason) // 如果已選，則移除
-        : [...prev, reason]              // 如果未選，則加入
-    );
+  const handleToggle = (id) => {
+    const next = new Set(selectedReasons);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedReasons(next);
   };
 
-  const handleConfirm = () => {
-    // 將選中的原因陣列組合成字串（例如："人數已滿, 其他原因"）傳給上層，
-    // 也可以依據後端需求直接傳陣列。這裡先用逗號分隔字串。
-    onConfirm(selectedReasons.join(', '));
+  const handleSubmit = () => {
+    onConfirm([...selectedReasons]);
+    setSelectedReasons(new Set());
   };
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px', padding: '24px' }}>
-        <h2 style={{ fontSize: '1.25rem', marginBottom: '8px', color: 'var(--text-primary, #111827)' }}>
-          移除「{course.name}」
-        </h2>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary, #6b7280)', marginBottom: '20px', lineHeight: '1.5' }}>
-          告訴我們原因，之後的推薦才不會把「排不進去」當成「你不喜歡」：
-        </p>
-        
-        {/* 選項網格 (複選) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '24px' }}>
-          {REASONS.map(reason => {
-            const isSelected = selectedReasons.includes(reason);
-            return (
-              <button
-                key={reason}
-                type="button"
-                onClick={() => toggleReason(reason)}
-                style={{
-                  padding: '10px 8px',
-                  borderRadius: '6px',
-                  border: `1px solid ${isSelected ? 'var(--accent-blue, #3b82f6)' : '#d1d5db'}`,
-                  backgroundColor: isSelected ? '#eff6ff' : 'transparent',
-                  color: isSelected ? 'var(--accent-blue, #3b82f6)' : '#374151',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                  textAlign: 'center',
-                  transition: 'all 0.15s ease-in-out',
-                  fontWeight: isSelected ? '600' : '400'
-                }}
-              >
-                {reason}
-              </button>
-            );
-          })}
+    <div style={{
+      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+      backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+    }}>
+      {/* 調整為寬一點、高度精簡的對話框 */}
+      <div style={{
+        backgroundColor: '#ffffff', width: '650px', maxWidth: '90vw',
+        borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', overflow: 'hidden', display: 'flex', flexDirection: 'column'
+      }}>
+        {/* 標題列 */}
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0, color: '#1e293b' }}>從課表移除課程</h3>
+            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>正在移除：{course.name} ({course.code})</span>
+          </div>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}>
+            <X size={18} />
+          </button>
         </div>
 
-        {/* 底部操作按鈕：取消與確認 */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-          <button 
-            type="button"
-            onClick={onCancel}
-            style={{ 
-              padding: '8px 16px', 
-              border: 'none', 
-              background: 'transparent', 
-              color: '#6b7280', 
-              cursor: 'pointer',
-              fontSize: '0.95rem'
-            }}
-          >
+        {/* 內容區塊：改為兩欄式或緊湊排列，減少縱向高度 */}
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '60vh', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#d97706', background: '#fef3c7', padding: '10px 14px', borderRadius: '8px', fontSize: '0.85rem' }}>
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span>請勾選您不想修這門課的原因（可複選，無衝堂選項）：</span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
+            {REASON_OPTIONS.map(option => {
+              const isChecked = selectedReasons.has(option.id);
+              return (
+                <label key={option.id} style={{
+                  display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px',
+                  borderRadius: '8px', border: `1px solid ${isChecked ? '#3b82f6' : '#e2e8f0'}`,
+                  backgroundColor: isChecked ? '#eff6ff' : '#f8fafc', cursor: 'pointer', transition: 'all 0.2s'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => handleToggle(option.id)}
+                    style={{ width: '15px', height: '15px', accentColor: '#3b82f6', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '0.85rem', fontWeight: isChecked ? '600' : '400', color: isChecked ? '#1e40af' : '#334155', lineHeight: '1.2' }}>
+                    {option.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 底部按鈕區：拿掉「並回報演算法」，改用柔和的紅色 */}
+        <div style={{ padding: '14px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: '10px', backgroundColor: '#f8fafc' }}>
+          <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: '8px', background: '#e2e8f0', color: '#475569', border: 'none', fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer' }}>
             取消
           </button>
-          <button 
-            type="button"
-            onClick={handleConfirm}
-            // 防呆：如果都沒選，就不給按確認 (或者你可以拿掉 disabled 允許不選)
-            disabled={selectedReasons.length === 0}
-            style={{ 
-              padding: '8px 16px', 
-              borderRadius: '6px', 
-              backgroundColor: selectedReasons.length === 0 ? '#d1d5db' : 'var(--accent-blue, #3b82f6)', 
-              color: '#fff', 
-              border: 'none', 
-              cursor: selectedReasons.length === 0 ? 'not-allowed' : 'pointer',
-              fontSize: '0.95rem',
-              fontWeight: '600'
-            }}
-          >
+          <button onClick={handleSubmit} style={{ padding: '8px 20px', borderRadius: '8px', background: '#ef4444', color: '#fff', border: 'none', fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 2px 4px rgba(239, 68, 68,.2)' }}>
             確認移除
           </button>
         </div>

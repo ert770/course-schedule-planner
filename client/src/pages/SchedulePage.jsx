@@ -53,7 +53,6 @@ export default function SchedulePage() {
   const [detailCourse, setDetailCourse] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   
-  // 互動狀態：退選原因與關注更新
   const [removalCandidate, setRemovalCandidate] = useState(null);
   const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
 
@@ -172,7 +171,6 @@ export default function SchedulePage() {
     setConfirmation({ state: 'accepted', outcome });
   };
 
-  // 🔑 關鍵修復：點擊移除時，設定退選候選人，並強制關閉詳細資訊 Modal 避免圖層被壓在下面
   const handleRemoveClick = (course) => {
     setRemovalCandidate(course);
     setDetailCourse(null);
@@ -197,20 +195,15 @@ export default function SchedulePage() {
     setWatchlistUpdatingId('');
   };
 
-  const handleSave = async () => {
-    const result = await saveCurrentSchedule();
-    setNotice(makeNotice({
-      level: result.success ? 'success' : 'error',
-      message: result.success ? '課表已儲存到目前登入帳號。' : result.message,
-    }));
-  };
-
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
   const graduationCredits = schedule.reduce(
     (sum, course) => (course.countsTowardGraduation === false ? sum : sum + (course.credits || 0)),
     0
   );
   const hasNonGraduationCredits = graduationCredits !== totalCredits;
+
+  // 新增：動態判斷低修下限，優先讀取 courseSearchScope，若無則依賴 user 設定
+  const minCredits = (courseSearchScope?.gradeLevel === 4 || user?.gradeLevel === 4) ? 9 : 12;
 
   return (
     <div className="layout-container" id="schedule-page">
@@ -251,10 +244,24 @@ export default function SchedulePage() {
 
       <div className="dashboard-content">
         <div className="schedule-area">
+          {/* 替換的 schedule-header-bar */}
           <div className="schedule-header-bar">
             <div className="schedule-stats">
               <span className="stat-badge course-badge">📚 {schedule.length} 門課</span>
               <span className="stat-badge credit-badge">🎓 {totalCredits} 學分</span>
+              
+              {/* 超修與低修提示 */}
+              {totalCredits > 25 && (
+                <span className="stat-badge error-badge" style={{ backgroundColor: '#fee2e2', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
+                  ⚠️ 已超修 (上限25)
+                </span>
+              )}
+              {totalCredits > 0 && totalCredits < minCredits && (
+                <span className="stat-badge warning-badge" style={{ backgroundColor: '#fef3c7', color: '#d97706', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
+                  ⚠️ 低修警告 (下限{minCredits})
+                </span>
+              )}
+
               {hasNonGraduationCredits && (
                 <span
                   className="stat-badge credit-badge"
@@ -265,10 +272,6 @@ export default function SchedulePage() {
               )}
             </div>
             <div className="schedule-actions">
-              <button className="action-btn secondary" onClick={handleSave} disabled={saving || schedule.length === 0} id="save-schedule-btn">
-                <Save size={16} />
-                {saving ? '儲存中…' : '儲存課表'}
-              </button>
               <button className="action-btn secondary" onClick={() => setShowCourses(!showCourses)} id="toggle-courses-btn">
                 <BookOpen size={16} />
                 {showCourses ? '隱藏課程' : '瀏覽課程'}
