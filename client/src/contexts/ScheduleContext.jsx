@@ -214,17 +214,30 @@ export function ScheduleProvider({ children }) {
       }
 
       const proposed = [...scheduleRef.current, course];
+      
+      // 計算加入後的總學分
+      const proposedTotalCredits = proposed.reduce((sum, c) => sum + Number(c?.credits || 0), 0);
+      // 絕對上限 30 學分（超過 30 才死擋，25 到 30 之間允許超修加入並顯示警告）
+      if (proposedTotalCredits > 30) {
+        return { success: false, code: 'CREDIT_CEILING', message: `課表共 ${proposedTotalCredits} 學分，已超過絕對上限 30 學分。` };
+      }
+
       setValidating(true);
       try {
-        // scheduleAPI.validate 固定送出 `{ courses }`；只有後端明確通過才加入。
         const result = await scheduleAPI.validate(proposed);
-        if (result?.valid !== true || result?.hardConstraintsValid !== true) {
+        
+        // 允許除了「學分上限 (CREDIT_CEILING)」以外的錯誤阻擋，
+        // 如果只是超過 25 學分但小於等於 30，我們放行讓它加入！
+        const hasOnlyCreditOverload = result?.violations?.every(v => v.constraintId === 'CREDIT_CEILING') && proposedTotalCredits <= 30;
+
+        if ((result?.valid !== true || result?.hardConstraintsValid !== true) && !hasOnlyCreditOverload) {
           return { success: false, ...describeValidationFailure(result), validation: result };
         }
+
         if (requestedGeneration !== accountGenerationRef.current) {
           return { success: false, code: 'ACCOUNT_CHANGED', message: '登入帳號已變更，未加入課程。' };
         }
-        // 加入後才記錄。驗證沒過的課從來沒有進過課表，記成「使用者選了」是錯的。
+
         scheduleRef.current = proposed;
         setSchedule(proposed);
         emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, course, {
@@ -248,7 +261,6 @@ export function ScheduleProvider({ children }) {
     addQueueRef.current = operation.catch(() => undefined);
     return operation;
   }, [emit, requestIdForAction]);
-
   // `feedbackReason` 為 7 個 enum 之一或 null；null 只代表未蒐集原因（例如未啟用
   // 個人化或舊呼叫端），退課原因對話框本身不再提供略過選項。
   // 本系統沒有連學校選課系統，「退掉已經在課表上的課」就是 roadmap #2 的

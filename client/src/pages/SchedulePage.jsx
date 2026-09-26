@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
@@ -14,7 +14,7 @@ import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PlanComparison from '../components/Schedule/PlanComparison';
-import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
+import { makeNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
 import { coursesAPI, profileAPI, scheduleAPI } from '../services/api';
 
@@ -27,16 +27,15 @@ export default function SchedulePage() {
   const { theme, toggleTheme } = useTheme();
   const {
     schedule,
-    saving,
+    watchlist,
+    toggleWatchlist,
     replaceSchedule,
     removeCourse,
-    saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
     logScheduleRegenerated,
     acceptRecommendation,
     personalizationEnabled,
-    // roadmap #27
     plans,
     selectedPlanId,
     planDiversity,
@@ -51,7 +50,10 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
+  
   const [removalCandidate, setRemovalCandidate] = useState(null);
+  const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
+
   const [notice, setNotice] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
@@ -61,8 +63,6 @@ export default function SchedulePage() {
   useEffect(() => {
     let cancelled = false;
 
-    // 未登入時不呼叫，也不退回 `default` 使用者——那會讀到共用假帳號的 scope，
-    // 畫面看起來正常但資料是別人的。
     if (userIdentity === null) {
       setNotice(makeNotice({ level: 'error', message: '尚未登入，請重新登入後再操作。' }));
       return () => { cancelled = true; };
@@ -122,8 +122,6 @@ export default function SchedulePage() {
 
     setLoading(true);
     try {
-      // 曝光事件現在由伺服器在算出結果時直接寫入（roadmap #2 對抗式審查修正）；
-      // 前端只送 `surface`／`trigger` 標記這次排課在哪個畫面、被什麼觸發。
       const data = await scheduleAPI.generate({
         courseIds: selectedCourses.map(c => c.id),
         constraints: {},
@@ -132,11 +130,7 @@ export default function SchedulePage() {
       });
 
       logScheduleRegenerated(data.requestId, { surface: 'schedule', trigger: 'manual_generate' });
-
-      // 原本這裡只看 `data.warnings`，excludedCourses／unscheduledCourses
-      // 完全沒讀——排除原因在這一頁靜默消失。改用跟 DashboardPage 同一份
-      // `buildScheduleNotice()`，兩頁的提示內容才一致。
-      setNotice(buildScheduleNotice(data));
+      setNotice(buildScheduleNoticeForPlan(data));
 
       if (data.success) {
         replaceSchedule(data.schedule, buildRecommendation(data), data.plans, data.planDiversity);
@@ -150,16 +144,12 @@ export default function SchedulePage() {
     }
   };
 
-  // roadmap #27：切換方案後，提示訊息也要換成選中方案自己的排除原因與
-  // 時間未定課程——理由與 DashboardPage 的 handleSelectPlan 相同。
   const handleSelectPlan = (variantId) => {
     const target = plans.find(plan => plan.id === variantId);
     if (!selectPlan(variantId)) return;
     setNotice(prev => buildScheduleNoticeForPlan({ success: true, message: prev?.message }, target));
   };
 
-  // ChatPanel 只回傳課表陣列；帶得到完整結果時一併顯示確認提示。曝光事件
-  // 已由伺服器在 `agentService.js` 呼叫排課時直接寫入，前端不用也不能回報。
   const handleScheduleFromChat = (newSchedule, result = null) => {
     replaceSchedule(
       newSchedule,
@@ -179,20 +169,16 @@ export default function SchedulePage() {
     setConfirmation({ state: 'accepted', outcome });
   };
 
-  // 未同意個人化學習時不問原因，直接移除。不同意的人不該被問。
   const handleRemoveClick = (course) => {
-    if (!personalizationEnabled) {
-      removeCourse(course.id);
-      setDetailCourse(null);
-      return;
-    }
     setRemovalCandidate(course);
+    setDetailCourse(null);
   };
 
   const handleRemoveConfirmed = (feedbackReason) => {
-    if (removalCandidate) removeCourse(removalCandidate.id, { feedbackReason });
+    if (removalCandidate) {
+      removeCourse(removalCandidate.id, { feedbackReason });
+    }
     setRemovalCandidate(null);
-    setDetailCourse(null);
   };
 
   const handleOpenDetail = (course) => {
@@ -200,26 +186,25 @@ export default function SchedulePage() {
     logCourseViewed(course);
   };
 
-  const handleSave = async () => {
-    const result = await saveCurrentSchedule();
-    setNotice(makeNotice({
-      level: result.success ? 'success' : 'error',
-      message: result.success ? '課表已儲存到目前登入帳號。' : result.message,
-    }));
+  const handleToggleWatchlist = async (event, course) => {
+    if (event) event.stopPropagation();
+    setWatchlistUpdatingId(String(course.id));
+    await toggleWatchlist(course);
+    setWatchlistUpdatingId('');
   };
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
-  // 軍訓國防科技、體育、班級活動要排進課表但不計入畢業學分（校規）。
-  // 後端在每門課上標記 countsTowardGraduation；未標記者一律視為計入。
   const graduationCredits = schedule.reduce(
     (sum, course) => (course.countsTowardGraduation === false ? sum : sum + (course.credits || 0)),
     0
   );
   const hasNonGraduationCredits = graduationCredits !== totalCredits;
 
+  // 新增：動態判斷低修下限，優先讀取 courseSearchScope，若無則依賴 user 設定
+  const minCredits = (courseSearchScope?.gradeLevel === 4 || user?.gradeLevel === 4) ? 9 : 12;
+
   return (
     <div className="layout-container" id="schedule-page">
-      {/* Top Navbar */}
       <header className="top-nav">
         <div className="nav-brand">
           <Calendar size={20} className="nav-icon" />
@@ -256,12 +241,25 @@ export default function SchedulePage() {
       </header>
 
       <div className="dashboard-content">
-        {/* Center: schedule + course browser */}
         <div className="schedule-area">
+          {/* 替換的 schedule-header-bar */}
           <div className="schedule-header-bar">
             <div className="schedule-stats">
               <span className="stat-badge course-badge">📚 {schedule.length} 門課</span>
               <span className="stat-badge credit-badge">🎓 {totalCredits} 學分</span>
+              
+              {/* 超修與低修提示 */}
+              {totalCredits > 25 && (
+                <span className="stat-badge error-badge" style={{ backgroundColor: '#fee2e2', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
+                  ⚠️ 已超修 (上限25)
+                </span>
+              )}
+              {totalCredits > 0 && totalCredits < minCredits && (
+                <span className="stat-badge warning-badge" style={{ backgroundColor: '#fef3c7', color: '#d97706', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
+                  ⚠️ 低修警告 (下限{minCredits})
+                </span>
+              )}
+
               {hasNonGraduationCredits && (
                 <span
                   className="stat-badge credit-badge"
@@ -272,37 +270,17 @@ export default function SchedulePage() {
               )}
             </div>
             <div className="schedule-actions">
-              <button
-                className="action-btn secondary"
-                onClick={handleSave}
-                disabled={saving || schedule.length === 0}
-                id="save-schedule-btn"
-              >
-                <Save size={16} />
-                {saving ? '儲存中…' : '儲存課表'}
-              </button>
-              <button
-                className="action-btn secondary"
-                onClick={() => setShowCourses(!showCourses)}
-                id="toggle-courses-btn"
-              >
+              <button className="action-btn secondary" onClick={() => setShowCourses(!showCourses)} id="toggle-courses-btn">
                 <BookOpen size={16} />
                 {showCourses ? '隱藏課程' : '瀏覽課程'}
               </button>
-              <button
-                className="action-btn primary"
-                onClick={generateSchedule}
-                disabled={loading}
-                id="generate-btn"
-              >
+              <button className="action-btn primary" onClick={generateSchedule} disabled={loading} id="generate-btn">
                 <Sparkles size={16} />
                 {loading ? '排課中...' : '自動排課'}
               </button>
             </div>
           </div>
 
-          {/* roadmap #27：同 DashboardPage 的理由——`.schedule-wrapper` 是
-              `flex:1`，方案切換／比較的文字量不設邊界會把課表格擠到幾乎消失。 */}
           <div className="schedule-top-stack">
             <ScheduleConfirmationBar
               confirmation={confirmation}
@@ -353,12 +331,7 @@ export default function SchedulePage() {
                   placeholder="尚未匯入班級"
                   id="department-select"
                 />
-                <select
-                  className="input-field"
-                  value={filters.category}
-                  onChange={(e) => setFilters(f => ({ ...f, category: e.target.value }))}
-                  id="category-select"
-                >
+                <select className="input-field" value={filters.category} onChange={(e) => setFilters(f => ({ ...f, category: e.target.value }))} id="category-select">
                   <option value="">所有類別</option>
                   <option value="必修">必修</option>
                   <option value="核心選修">核心選修</option>
@@ -398,7 +371,6 @@ export default function SchedulePage() {
           </div>
         </div>
 
-        {/* Right: AI chat */}
         <ChatPanel onScheduleGenerated={handleScheduleFromChat} />
       </div>
 
@@ -408,11 +380,14 @@ export default function SchedulePage() {
         onConfirm={handleRemoveConfirmed}
       />
 
-      {/* Course Detail Modal */}
       <CourseDetailModal
         course={detailCourse}
         onClose={() => setDetailCourse(null)}
+        isWatched={detailCourse ? watchlist.includes(String(detailCourse.id)) : false}
+        isAdded={detailCourse ? schedule.some(item => String(item.id) === String(detailCourse.id)) : false}
+        onToggleWatchlist={handleToggleWatchlist}
         onRemove={handleRemoveClick}
+        watchlistUpdating={detailCourse ? watchlistUpdatingId === String(detailCourse.id) : false}
       />
     </div>
   );
