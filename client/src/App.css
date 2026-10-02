@@ -78,9 +78,9 @@
 }
 .setup-card {
   background: var(--bg-card); border-radius: var(--radius-xl); padding: 40px;
-  width: 100%; max-width: 960px; box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 1120px; box-shadow: var(--shadow-lg);
 }
-.setup-content { display: grid; grid-template-columns: 200px 1fr 1fr; gap: 32px; }
+.setup-content { display: grid; grid-template-columns: 200px 1fr 1.2fr; gap: 32px; }
 .setup-steps { border-right: 1px solid var(--border-color); padding-right: 24px; }
 .setup-heading { font-size: 1.1rem; font-weight: 700; margin-bottom: 24px; }
 .setup-step {
@@ -142,6 +142,19 @@
   border-color: var(--accent-blue); color: var(--accent-blue);
   background: rgba(74,124,247,0.08); font-weight: 600;
 }
+.setup-interest-help {
+  margin: -6px 0 16px; color: var(--text-muted); font-size: 0.84rem; line-height: 1.55;
+}
+.setup-interest-status { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+.setup-interest-input {
+  width: 100%; margin-top: 12px; padding: 9px 11px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-primary);
+}
+.setup-interest-clear {
+  margin-top: 9px; padding: 0; border: 0; background: transparent; color: var(--accent-blue);
+  font-size: 0.82rem; cursor: pointer; text-decoration: underline;
+}
+.setup-secondary-title { margin-top: 28px; }
 .setup-footer { margin-top: 32px; display: flex; justify-content: flex-end; }
 .setup-submit-btn {
   display: flex; align-items: center; gap: 8px;
@@ -305,6 +318,34 @@
   overflow-y: auto;
   padding-right: 2px; /* 捲軸不擋住內容 */
 }
+
+/* 本次規劃的避開清單。沿用 .schedule-notice 的版面尺寸，讓它在同一個
+   .schedule-top-stack 裡看起來屬於同一組提示，而不是外掛上去的東西。 */
+.session-avoidance-bar {
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.session-avoidance-main { display: flex; flex-wrap: wrap; gap: 6px; }
+.session-avoidance-pending {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+}
+/* 必修衝突：那門課其實還在課表上，用警示色講清楚它「沒有」被避開。 */
+.session-avoidance-conflict {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #d97706;
+}
+[data-theme="dark"] .session-avoidance-conflict { color: #fbbf24; }
+.session-avoidance-bar .action-btn { margin-top: 10px; }
 
 /* 排課結果提示：失敗原因、警告與被排除課程 */
 .schedule-notice {

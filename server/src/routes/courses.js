@@ -5,8 +5,10 @@ import {
   getDepartments,
   getInstructors,
   getClassNames,
+  searchCoursesForSchedule,
 } from '../skills/courseQuery.js';
-import { buildCourseQueryScope } from '../skills/courseScope.js';
+import { buildCourseQueryScope, isOwnDepartmentElective } from '../skills/courseScope.js';
+import { buildInterestOptions } from '../data/interestPreferences.js';
 
 const router = Router();
 
@@ -90,6 +92,50 @@ router.get('/instructors', async (req, res) => {
     res.json({ instructors: await getInstructors() });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 興趣選項不能在前端寫死：官方修課路徑來自課程地圖，細部主題則直接統計
+// 目前排課候選的 Course_Sections.rag_tag。班別未選好時仍回傳修課路徑，
+// 但不猜測候選課程主題。
+router.get('/interest-options', async (req, res) => {
+  try {
+    const { department, gradeLevel, className } = req.query;
+    const gradeNumber = Number(gradeLevel);
+    if (typeof department !== 'string' || !department.trim() || !Number.isInteger(gradeNumber)) {
+      return res.status(400).json({ error: 'department 與 gradeLevel 為必填' });
+    }
+
+    let courses = [];
+    let scope = null;
+    if (typeof className === 'string' && className.trim()) {
+      const filters = {
+        department: department.trim(),
+        gradeLevel: gradeNumber,
+        className: className.trim(),
+      };
+      scope = buildCourseQueryScope(filters);
+      courses = await searchCoursesForSchedule(filters, scope);
+    }
+
+    // 問「想往哪個方向」時只使用本系選修與已有正式 track 的課程主題。
+    // 完整 scheduling pool 含大量通識與跨院課，直接統計會讓「語言學習／文化研究」
+    // 壓過人工智慧、資安等專業方向，問題本身就失去用途。
+    const topicCourses = scope
+      ? courses.filter(course => course.track || isOwnDepartmentElective(course, scope))
+      : [];
+    const options = buildInterestOptions(topicCourses);
+    res.json({
+      ...options,
+      // 三條路徑是資工系正式課程地圖，其他系所不顯示成自己的官方分類。
+      tracks: department.trim() === '資訊工程學系' ? options.tracks : [],
+      scopeReady: Boolean(scope?.resolved),
+      candidateCourseCount: courses.length,
+      topicCourseCount: topicCourses.length,
+    });
+  } catch (err) {
+    if (!err.status) console.error('Interest options error:', err);
+    res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 });
 

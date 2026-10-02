@@ -1,24 +1,47 @@
-import { PREFERENCE_AXES } from './scoringPolicy.js';
+import { EASY_DIRECTION } from './scoringPolicy.js';
 
-// 最多嘗試五個可重現方案，並以使用者有表達的偏好軸為中心。
-// strategy 是搜尋設定，不能只看名稱就反推出使用者接受方案的原因。
+export const PLAN_ARCHETYPES = Object.freeze({
+  BALANCED: 'balanced',
+  EASY: 'easy',
+  CHALLENGE: 'challenge',
+  INTEREST: 'interest',
+  COMPACT: 'compact',
+});
+
+// S₀ 永遠沿用現行 greedy 與使用者自己的 policy；替代方案由 MILP 主軸產生。
 export function buildPlanStrategies(policy) {
-  const make = (id, title, description, scoringPolicy, stopWhen = 'no-credit-progress') => ({
-    id, title, description, scoringPolicy, stopWhen,
-  });
-  const strategies = [make('personalized', '個人化綜合方案',
-    '依照你的整體偏好挑選課程，並優先安排必修與重補修。', policy)];
-  const labels = { interest: '更重視興趣', compact: '更集中排課',
-    easy: policy.weights.easy < 0 ? '更重視挑戰' : '更重視輕鬆' };
-  for (const axis of PREFERENCE_AXES) {
-    if (policy.weights[axis] === 0) continue;
-    strategies.push(make(`personalized_${axis}`, labels[axis],
-      `保留你的偏好方向，提高「${labels[axis]}」的相對重要程度，供你比較取捨。`, {
-        ...policy, weights: { ...policy.weights, [axis]: policy.weights[axis] * 1.5 },
-      }));
-  }
-  strategies.push(make('personalized_credits', '較多學分方案',
-    '保留你的偏好方向，提高學分的排序比重，在上限內嘗試不同組合。',
-    { ...policy, creditCoefficient: 3 }, 'candidate-exhausted'));
-  return strategies;
+  return [{
+    id: 'personalized',
+    archetype: PLAN_ARCHETYPES.BALANCED,
+    title: '個人化綜合方案',
+    description: '依照你的整體偏好挑選課程，並優先安排必修與重補修。',
+    scoringPolicy: { ...policy, archetype: PLAN_ARCHETYPES.BALANCED },
+    stopWhen: 'no-credit-progress',
+  }];
+}
+
+export function buildDiverseArchetypes(easyDirection = EASY_DIRECTION.NONE) {
+  const challenge = easyDirection === EASY_DIRECTION.CHALLENGE;
+  return [
+    {
+      archetype: challenge ? PLAN_ARCHETYPES.CHALLENGE : PLAN_ARCHETYPES.EASY,
+      id: challenge ? 'personalized_challenge' : 'personalized_easy',
+      title: challenge ? '挑戰導向方案' : '輕鬆導向方案',
+      description: challenge
+        ? '在維持學分與品質下限下，提高有評價的挑戰課程比例。'
+        : '在維持學分與品質下限下，提高有評價的輕鬆課程比例。',
+    },
+    {
+      archetype: PLAN_ARCHETYPES.INTEREST,
+      id: 'personalized_interest',
+      title: '興趣導向方案',
+      description: '在維持學分與品質下限下，提高興趣主題的涵蓋率。',
+    },
+    {
+      archetype: PLAN_ARCHETYPES.COMPACT,
+      id: 'personalized_compact',
+      title: '集中排課方案',
+      description: '在維持學分與品質下限下，減少每週需要到校的天數。',
+    },
+  ];
 }

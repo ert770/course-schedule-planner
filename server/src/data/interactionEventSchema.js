@@ -6,6 +6,19 @@ import { normalizeSemesterLabel } from './activeTerm.js';
 // 必須先完成 #33 的 consent／匿名化／保存規則，再由 #2 接上產品埋點。
 export const INTERACTION_EVENT_SCHEMA_VERSION = 1;
 
+// roadmap #10 任務 3A：方案特徵向量 φ 的定義版本。**刻意與 `SCORING_POLICY_VERSION` 分開**——
+// 評分規則的版本與 φ 的定義版本是兩件事，φ 改了但評分沒改（或反之）都可能發生，混用會讓
+// 「這批特徵能不能餵給學習器」無法判定。
+export const PLAN_FEATURE_VERSION = 'plan-feature-v1';
+const SUPPORTED_PLAN_FEATURE_VERSIONS = new Set([PLAN_FEATURE_VERSION]);
+
+// 供 service 層判定「這筆曝光的特徵能不能餵給學習器」。把集合本身留在模組內，
+// 呼叫端只問是非，不要各自維護一份版本清單。
+export function isSupportedPlanFeatureVersion(version) {
+  return SUPPORTED_PLAN_FEATURE_VERSIONS.has(version);
+}
+const PLAN_FEATURE_AXES = Object.freeze(['interest', 'compact', 'easy']);
+
 export const INTERACTION_EVENT_TYPES = Object.freeze({
   RECOMMENDATION_EXPOSED: 'recommendation_exposed',
   COURSE_VIEWED: 'course_viewed',
@@ -14,6 +27,11 @@ export const INTERACTION_EVENT_TYPES = Object.freeze({
   COURSE_SELECTED: 'course_selected',
   COURSE_DESELECTED: 'course_deselected',
   RECOMMENDATION_ACCEPTED: 'recommendation_accepted',
+  // roadmap #10 任務 3A：真正的 set-wise choice——使用者在**看得到多個方案**的情況下
+  // 挑了其中一個。與 `recommendation_accepted` 刻意分成兩個型別而不是加旗標：後者包含
+  // 「Agent 只顯示主推方案、使用者說好」這種情況，那只代表接受推薦，不能證明使用者
+  // 比較過整組方案。混在同一個型別裡，日後就再也分不出哪些能餵給 Choice Perceptron。
+  PLAN_CHOSEN: 'plan_chosen',
   COURSE_REMOVED: 'course_removed',
   COURSE_WITHDRAWN: 'course_withdrawn',
   SCHEDULE_REGENERATED: 'schedule_regenerated',
@@ -147,18 +165,88 @@ function normalizeTerm(term) {
 }
 
 // #7 對 v1 增加的附加欄位：歷史事件可缺席；新事件依 scoring policy 版本回放。
+
+// ---------------------------------------------------------------------------
+// roadmap #10 任務 3B-0：signed weight 的休眠契約
+// ---------------------------------------------------------------------------
+// Choice Perceptron 產生的是**三軸都帶號**的權重，而現行 `planPolicies[].weights`
+// 的值域只允許 `easy` 為負（見下方 validate）。CP 一旦套用，曝光事件就會驗證失敗被拒，
+// 而 `plan_chosen` 需要真實曝光佐證——等於 CP 啟用的那一刻切斷自己的訓練資料來源。
+//
+// 因此先把契約準備好，但**維持 v2 的形狀完全不變**：
+//
+//   - `weightMode` 缺席 ＝ `boost`，套用今天的值域。v2 **不輸出這個欄位**。
+//     （`resolveScoringPolicy()` 的回傳同時出現在課表 API 的 `generationPolicy` 與曝光事件的
+//     `planPolicies`，多一個 key 兩邊都不可能與改動前 deep-equal，所以連 `weightMode: null`
+//     都不行——正規化時用條件展開，不是固定建欄位。）
+//   - `signed` 三軸皆 `[-2, 2]`（`CHOICE_WEIGHT_LIMIT` 的投影界線）。
+//
+// **三個版本軸互不相干，不可互相代用**：`planPolicies[].version` 管評分／權重契約、
+// `source.modelVersion` 管偏好學習模型、`planFeatureVersion` 管特徵格式（φ）。
+// 所以這裡**不**用 `isSupportedPlanFeatureVersion()` 判 signed。
+export const PLAN_POLICY_WEIGHT_MODES = Object.freeze({ BOOST: 'boost', SIGNED: 'signed' });
+
+// 目前沒有任何正式路徑會產生這個 scoring policy 版本——它是休眠的，
+// 只讓 schema 認得。`resolveScoringPolicy()` 不得產生它。
+const SIGNED_SCORING_POLICY_VERSIONS = new Set(['personalized-scoring-v3-signed']);
+const SIGNED_LEARNER_VERSIONS = new Set(['choice-perceptron-v1']);
+const SIGNED_WEIGHT_LIMIT = 2;
+
+// `signed` 必須三項條件同時成立，缺一不可。呼叫端光是送 `weightMode: 'signed'`
+// 不會生效：曝光事件只有伺服器寫得進來（`allowExposureWrite`），而 `weightMode`
+// 由 `buildExposureDraft()` 依它剛才實際用的 scoring policy 推導。
+function planPolicyWeightRange(policy) {
+  if (policy.weightMode === undefined) {
+    return { ok: true, min: axis => (axis === 'easy' ? -3 : 0), max: 3 };
+  }
+  if (policy.weightMode !== PLAN_POLICY_WEIGHT_MODES.SIGNED) return { ok: false };
+  if (!SIGNED_SCORING_POLICY_VERSIONS.has(policy.version)) return { ok: false };
+  if (!SIGNED_LEARNER_VERSIONS.has(policy.source?.modelVersion)) return { ok: false };
+  return { ok: true, min: () => -SIGNED_WEIGHT_LIMIT, max: SIGNED_WEIGHT_LIMIT };
+}
+
 function normalizePlanPolicies(value) {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return value;
-  return value.map(item => ({
+  return value.map(item => {
+    // **條件展開，不是固定建欄位。** 寫成 `weightMode: asTrimmedString(...)` 會讓 v2 得到
+    // `weightMode: null`，曝光 JSON 與課表 API 就都多一個 key，不可能 deep-equal。
+    const weightMode = asTrimmedString(item?.weightMode);
+    return {
     planId: asTrimmedString(item?.planId), variantId: asTrimmedString(item?.variantId),
     version: asTrimmedString(item?.version),
+    ...(weightMode === null ? {} : { weightMode }),
     weights: Object.fromEntries(['interest', 'compact', 'easy'].map(axis => [axis, item?.weights?.[axis]])),
     categoryCoefficient: item?.categoryCoefficient,
     creditCoefficient: item?.creditCoefficient,
     stopWhen: asTrimmedString(item?.stopWhen),
+    archetype: asTrimmedString(item?.archetype),
+    solver: item?.solver && typeof item.solver === 'object' ? {
+      method: asTrimmedString(item.solver.method),
+      category: asTrimmedString(item.solver.category),
+      rawStatus: asTrimmedString(item.solver.rawStatus),
+      approximate: item.solver.approximate,
+    } : null,
     source: { learnedApplied: item?.source?.learnedApplied,
       reason: asTrimmedString(item?.source?.reason), modelVersion: asTrimmedString(item?.source?.modelVersion) },
+    };
+  });
+}
+
+// roadmap #10 任務 3A：Choice Perceptron 的特徵向量 φ(x, y)。與 `planPolicies` **並列**而不是
+// 合併進去：policy 是「生成這個方案用了什麼權重」（輸入），features 是「生成出來的方案量到
+// 什麼」（輸出）；而且 `assertProvenance()` 拿 planPolicies 當契約用，把測量值塞進契約會讓
+// 「policy 對不上」與「特徵缺一軸」變成同一種錯誤。舊事件沒有這個欄位，視為空陣列。
+//
+// `easy` 允許為 null（該方案排入的課全無評價證據，見 scheduler.js 的 getEasiness()）；
+// `interest`／`compact` 不得為 null——它們對空課表也回 0，真的缺值代表上游壞了。
+function normalizePlanFeatures(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return value;
+  return value.map(item => ({
+    planId: asTrimmedString(item?.planId),
+    variantId: asTrimmedString(item?.variantId),
+    ...Object.fromEntries(PLAN_FEATURE_AXES.map(axis => [axis, item?.[axis] ?? null])),
   }));
 }
 
@@ -173,6 +261,8 @@ function normalizeExposureContext(context) {
     // `assertProvenance()` 會另外 fallback 到 `plan.planId` 維持相容。
     displayedPlanIds: normalizePlanIdList(context.displayedPlanIds),
     planPolicies: normalizePlanPolicies(context.planPolicies),
+    planFeatureVersion: asTrimmedString(context.planFeatureVersion),
+    planFeatures: normalizePlanFeatures(context.planFeatures),
   };
 }
 
@@ -361,6 +451,13 @@ export function validateInteractionEvent(input) {
     errors.push('recommendation_accepted 必須指定 course 或 plan');
   }
 
+  // `plan_chosen` 的語意是「在這組方案裡選了這一個」，所以方案是必填；
+  // 課程層級的欄位無意義，帶了就是形狀不對。
+  if (event.eventType === INTERACTION_EVENT_TYPES.PLAN_CHOSEN) {
+    if (!event.plan?.planId) errors.push('plan_chosen 必須指定 plan.planId');
+    if (event.course !== null) errors.push('plan_chosen 不得帶 course');
+  }
+
   if (FEEDBACK_EVENTS.has(event.eventType)) {
     if (event.feedbackReason !== null && !FEEDBACK_REASON_SET.has(event.feedbackReason)) {
       errors.push('feedbackReason 不在允許清單');
@@ -387,17 +484,71 @@ export function validateInteractionEvent(input) {
     } else {
       const seenPlans = new Set();
       for (const policy of policies) {
+        // `weightMode` 缺席＝`boost`（今天唯一的情況）；`signed` 另需版本相符，見上方說明。
+        // `Number.isFinite()` 本身就擋掉 NaN、Infinity 與字串。
+        const range = planPolicyWeightRange(policy);
         if (!policy.planId || !event.exposureContext.displayedPlanIds.includes(policy.planId)
           || seenPlans.has(policy.planId) || !policy.variantId || !policy.version
+          || !range.ok
           || !Object.entries(policy.weights).every(([axis, value]) => Number.isFinite(value)
-            && value >= (axis === 'easy' ? -3 : 0) && value <= 3)
+            && value >= range.min(axis) && value <= range.max)
           || ![0.35, 1].includes(policy.categoryCoefficient)
           || ![1, 3].includes(policy.creditCoefficient)
-          || !['no-credit-progress', 'candidate-exhausted'].includes(policy.stopWhen)
+          || !['no-credit-progress', 'candidate-exhausted', 'milp-optimized'].includes(policy.stopWhen)
+          || (policy.archetype && !['balanced', 'easy', 'challenge', 'interest', 'compact'].includes(policy.archetype))
+          || (policy.solver && (
+            policy.solver.method !== 'dinkelbach-milp'
+            || !['optimal', 'limit-with-solution'].includes(policy.solver.category)
+            || typeof policy.solver.approximate !== 'boolean'
+          ))
           || typeof policy.source.learnedApplied !== 'boolean') {
           errors.push('planPolicies 含無效方案、版本或權重');
         }
         seenPlans.add(policy.planId);
+      }
+    }
+    // roadmap #10 任務 3A：φ 的三態相容規則。
+    // (a) 沒有版本也沒有特徵 → 合法的舊事件，但不得用於 Choice Perceptron；
+    // (b) 有支援的版本 → `displayedPlanIds` 與 `planFeatures[].planId` 必須一對一完全相符
+    //     （公式需要「其餘方案的平均」，少一筆就不是同一個 query set）；
+    // (c) 有版本但只覆蓋一部分 → 直接拒絕，不靜默略過。靜默略過會讓「上游壞掉」與
+    //     「這批資料不能用」變成同一種沉默。
+    const features = event.exposureContext.planFeatures;
+    const featureVersion = event.exposureContext.planFeatureVersion;
+    if (!featureVersion) {
+      if (Array.isArray(features) && features.length > 0) {
+        errors.push('planFeatures 必須搭配 planFeatureVersion');
+      }
+    } else if (!SUPPORTED_PLAN_FEATURE_VERSIONS.has(featureVersion)) {
+      errors.push('planFeatureVersion 不在支援清單');
+    } else if (!Array.isArray(features) || features.length > 6) {
+      errors.push('planFeatures 必須是至多 6 筆的陣列');
+    } else {
+      const displayedIds = event.exposureContext.displayedPlanIds;
+      const policyByPlanId = new Map(
+        (event.exposureContext.planPolicies || [])
+          .filter(policy => policy?.planId)
+          .map(policy => [policy.planId, policy])
+      );
+      const seenFeaturePlans = new Set();
+      for (const feature of features) {
+        const policy = policyByPlanId.get(feature.planId);
+        if (!feature.planId || !displayedIds.includes(feature.planId)
+          || seenFeaturePlans.has(feature.planId) || !feature.variantId
+          // policy 可缺席（放寬階梯與 fallback 方案沒有 generationPolicy，但照樣被展示、
+          // 照樣是 query set 的一員）；有 policy 時才比對 variantId 一致性。
+          || (policy && policy.variantId !== feature.variantId)
+          || !PLAN_FEATURE_AXES.every(axis => {
+            const value = feature[axis];
+            if (axis === 'easy' && value === null) return true;
+            return Number.isFinite(value) && value >= 0 && value <= 1;
+          })) {
+          errors.push('planFeatures 含無效方案或特徵值');
+        }
+        seenFeaturePlans.add(feature.planId);
+      }
+      if (seenFeaturePlans.size !== displayedIds.length) {
+        errors.push('planFeatures 必須與 displayedPlanIds 一對一對應');
       }
     }
     validateCourseRefList(event.exposureContext.candidateSet, 'exposureContext.candidateSet', errors);
@@ -419,6 +570,18 @@ export function validateInteractionEvent(input) {
 }
 
 function canonicalIdempotencyPayload(event) {
+  // roadmap #10 任務 3A：`plan_chosen` 用專屬 payload，唯一性只由 requestId + eventType
+  // 決定（subject 由資料庫的 `(subject_id, idempotency_key)` UNIQUE 索引另外界定）。
+  // **刻意不含被選方案**：一次詢問只能產生一次學習更新，否則使用者先選 A 再改選 B 會
+  // 算出兩個不同的 key、兩筆都寫得進去，同一個 query set 就被學了兩次。改選另一個方案
+  // 會撞到同一個 key 而被判為 conflict，那正是我們要的語意。
+  if (event.eventType === INTERACTION_EVENT_TYPES.PLAN_CHOSEN) {
+    return {
+      schemaVersion: event.schemaVersion,
+      requestId: event.requestId,
+      eventType: event.eventType,
+    };
+  }
   return {
     schemaVersion: event.schemaVersion,
     requestId: event.requestId,
@@ -434,6 +597,29 @@ function canonicalIdempotencyPayload(event) {
         }
       : null,
   };
+}
+
+
+/**
+ * `course_withdrawn` 的確定性 actionId。
+ *
+ * 同一次移除可能由兩條路徑各記一次：使用者在畫面上按移除（`POST /api/interactions`），
+ * 以及他接著在 Chat 講同一件事（Agent 的 `record_schedule_feedback`）。前端用的是隨機
+ * UUID，而 `canonicalIdempotencyPayload()` 把 `actionId` 算進 key，兩邊因此永遠撞不到
+ * 同一個鍵，同一個動作會被寫成兩筆。
+ *
+ * 解法與 `plan_chosen` 相同：識別碼由**伺服器**依 `(requestId, sectionId)` 決定，
+ * 呼叫端送什麼都覆寫。兩個 service 共用這一份，不各自複製種子字串——複製的那天
+ * 起，兩邊只要有一邊改了格式就會靜默地又變成兩筆。
+ */
+export function courseWithdrawalActionId(requestId, sectionId) {
+  const hex = crypto.createHash('sha256')
+    .update(`course-withdrawn:${requestId}|${sectionId}`)
+    .digest('hex');
+  return [
+    hex.slice(0, 8), hex.slice(8, 12), `4${hex.slice(13, 16)}`,
+    `8${hex.slice(17, 20)}`, hex.slice(20, 32),
+  ].join('-');
 }
 
 export function buildInteractionIdempotencyKey(input) {
@@ -477,6 +663,28 @@ export function createInteractionEvent(identity, input = {}, options = {}) {
 
 function comparableEvent(event) {
   const normalized = normalizeInteractionEvent(event);
+
+  // `course_withdrawn` 用專屬比較，只看「誰、哪一次、哪門課、什麼原因」。
+  //
+  // 理由是兩條路徑的 `source` 本來就不同：UI 依課程動態決定（`courseSource()` 會回
+  // `required`／`system_recommendation`／`explicit_selection`），Agent 固定寫
+  // `system_recommendation`。把 `source` 納入比較的話，移除一門正式必修時即使
+  // `actionId` 與原因都一樣，也會被判成 `conflict`——那不是衝突，是同一件事的兩種記法。
+  // `versionSnapshot` 同理：它是伺服器當下的版本，跨部署重送不該變成衝突。
+  //
+  // **`feedbackReason` 仍然比較**：使用者改了說法是真的衝突，不該靜默覆蓋。
+  if (normalized.eventType === INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN) {
+    return {
+      schemaVersion: normalized.schemaVersion,
+      eventType: normalized.eventType,
+      userId: normalized.userId,
+      requestId: normalized.requestId,
+      actionId: normalized.actionId,
+      course: normalized.course ? { sectionId: normalized.course.sectionId } : null,
+      feedbackReason: normalized.feedbackReason,
+    };
+  }
+
   // eventId 與 timestamp 是每次 server 嘗試建立時產生的 envelope 欄位；重送
   // 同一 logical action 時可以不同，不得因此繞過 idempotency。
   return {
@@ -539,6 +747,7 @@ export default {
   migrateInteractionEvent,
   validateInteractionEvent,
   buildInteractionIdempotencyKey,
+  courseWithdrawalActionId,
   createInteractionEvent,
   resolveIdempotentAppend,
 };

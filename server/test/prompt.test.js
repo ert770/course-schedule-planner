@@ -207,6 +207,22 @@ describe('P4 Roadmap #24：永久寫入的兩段式確認', () => {
     }
   });
 
+  test('update_preferences 可保存興趣方向', () => {
+    const props = toolByName.get('update_preferences').parameters.properties;
+
+    for (const field of ['preferredTrack', 'interests', 'preferredKeywords']) {
+      assert.ok(Object.hasOwn(props, field), `缺少興趣偏好欄位 ${field}`);
+    }
+  });
+
+  test('沒有興趣資料時先詢問方向，但使用者可選擇一般排課', () => {
+    const prompt = buildSystemPrompt({});
+
+    assert.ok(prompt.includes('先用一個簡短問題詢問方向'));
+    assert.ok(prompt.includes('明確表示沒有特定方向'));
+    assert.ok(prompt.includes('不得強迫回答'));
+  });
+
   test('system prompt 說明兩段式流程且禁止自行編造 token', () => {
     const prompt = buildSystemPrompt({});
 

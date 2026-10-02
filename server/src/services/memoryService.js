@@ -4,6 +4,15 @@ import {
 import { normalizeProfile } from '../data/profileSchema.js';
 import { isMysqlConfigured, queryRows } from '../db/mysql.js';
 import { DEFAULT_MIN_CREDITS } from '../data/creditPolicy.js';
+import { mergeInterestPreferences } from '../data/interestPreferences.js';
+import {
+  mergeSemesterPlanningPreferences,
+  SEMESTER_PLANNING_PREFERENCE_FIELDS,
+} from '../data/semesterPlanningPreferences.js';
+import {
+  mergePersonalizationPreferences,
+  PERSONALIZATION_PREFERENCE_FIELDS,
+} from '../data/personalizationPreferences.js';
 
 // 沒有 profile 時的骨架。
 //
@@ -97,9 +106,34 @@ export async function getUserPreferences(identity) {
 export async function updateUserPreferences(identity, updates) {
   const canonicalId = String(identity.canonicalId);
 
+  // 興趣是 preferences_json 裡的可擴充偏好。寫入前先與既有 values 合併，
+  // 避免 Setup 只改興趣時把其他個人化資料整包覆蓋。
+  const jsonFields = [
+    'preferredTrack', 'interests', 'preferredKeywords',
+    ...PERSONALIZATION_PREFERENCE_FIELDS,
+    ...SEMESTER_PLANNING_PREFERENCE_FIELDS,
+  ];
+  const hasJsonUpdate = jsonFields.some(field => Object.hasOwn(updates, field));
+  let writeUpdates = updates;
+  if (hasJsonUpdate) {
+    const current = await getUserPreferences(identity);
+    // 兩個 merger 串接：各自只動自己負責的鍵，所以「只改興趣」不會洗掉學習開關，
+    // 「只改開關」也不會洗掉興趣。
+    writeUpdates = {
+      ...updates,
+      preferencesJson: mergeSemesterPlanningPreferences(
+        mergePersonalizationPreferences(
+          mergeInterestPreferences(current.preferencesJson, updates),
+          updates
+        ),
+        updates
+      ),
+    };
+  }
+
   await upsertByField('user_preferences', 'userId', canonicalId, {
     userId: canonicalId,
-    ...updates,
+    ...writeUpdates,
     updatedAt: new Date().toISOString(),
   });
   return getUserPreferences(identity);

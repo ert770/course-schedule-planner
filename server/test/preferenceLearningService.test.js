@@ -286,6 +286,24 @@ describe('PL25-27 getSchedulingPreferenceWeights()（roadmap #5B／P0-3）', () 
   // 直接呼叫排課要用的 getSchedulingPreferenceWeights()，只要事件數已達門檻，
   // 就應該自己觸發重算並回傳 applied:true——這正是 roadmap 要補的缺口
   // 「互動紀錄要影響排序，不能只在使用者主動開過隱私頁之後才生效」。
+  // roadmap #10 任務 3A：學習開關這一輪**只做持久化、不被消費**，否則 3A 就不再是
+  // shadow（關掉開關會立刻改變正式推薦結果）。這個測試釘住「現在還沒接上」，
+  // 3B 接上時它會失敗——那正是提醒「該改這裡了」的訊號，不是壞掉。
+  test('3A useLearnedPreference 尚未被消費，排課權重逐位元不受它影響', async () => {
+    const id = identity('3A-SWITCH-NOT-CONSUMED');
+    await grantPersonalizationConsent(id);
+    await recordInteractionEvents(id, paddingDrafts(50, 'time'));
+
+    const withSwitchOn = await getSchedulingPreferenceWeights(id, {
+      prefs: { useLearnedPreference: true },
+    });
+    const withSwitchOff = await getSchedulingPreferenceWeights(id, {
+      prefs: { useLearnedPreference: false },
+    });
+    assert.equal(JSON.stringify(withSwitchOff), JSON.stringify(withSwitchOn));
+    assert.equal(withSwitchOff.applied, true);
+  });
+
   test('P0-3 已同意且事件數已達門檻，直接呼叫排課權重（不先開隱私頁）→ applied:true', async () => {
     const id = identity('P0-3-DIRECT-SCHEDULING');
     await grantPersonalizationConsent(id);

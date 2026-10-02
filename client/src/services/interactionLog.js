@@ -13,6 +13,9 @@ export const INTERACTION_EVENT_TYPES = {
   COURSE_SELECTED: 'course_selected',
   COURSE_DESELECTED: 'course_deselected',
   RECOMMENDATION_ACCEPTED: 'recommendation_accepted',
+  // roadmap #10 任務 3A：使用者在看得到多個方案時挑了其中一個。與 accepted 分開，
+  // 只有這個型別會餵給 Choice Perceptron（後端另有來源驗證，前端送的不算數）。
+  PLAN_CHOSEN: 'plan_chosen',
   COURSE_WITHDRAWN: 'course_withdrawn',
   SCHEDULE_REGENERATED: 'schedule_regenerated',
 };
@@ -117,7 +120,8 @@ export function courseSource(course, { systemRecommendedIds } = {}) {
 // 手動加入，對 #30 是完全不同的訊號。
 export function buildRecommendation(result) {
   if (!result?.requestId) return null;
-  const primary = Array.isArray(result.plans) ? result.plans[0] : null;
+  const plans = Array.isArray(result.plans) ? result.plans : [];
+  const primary = plans.find(plan => plan.planId === result.recommendedPlanId) ?? plans[0] ?? null;
   return {
     requestId: result.requestId,
     planId: primary?.planId ?? null,

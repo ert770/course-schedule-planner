@@ -113,6 +113,31 @@ describe('本次操作狀態不從已儲存偏好回填', () => {
     assert.deepEqual(merged.selectedCourseIds, []);
     assert.deepEqual(merged.watchingCourseIds, []);
   });
+
+  test('sessionAvoidances 只取 request，不從偏好回填', () => {
+    const fromPrefs = buildScheduleConstraints({}, {
+      sessionAvoidances: [{ sectionId: 101, reason: 'content' }],
+    });
+    const fromRequest = buildScheduleConstraints(
+      { sessionAvoidances: [{ sectionId: 101, reason: 'content' }] }, {}
+    );
+
+    assert.deepEqual(fromPrefs.sessionAvoidances, [], '「這次不想要」不該沉澱成永久設定');
+    assert.equal(fromRequest.sessionAvoidances.length, 1);
+  });
+
+  // `avoidInstructors` 是持久化的 profile 欄位，而 `pickList()` 的語意是
+  // 「request 非空就覆蓋已儲存偏好」。把本次避開的教師塞進去，會把使用者
+  // 存好的避開教師清單整包蓋掉。
+  test('本次避開不得影響持久化的 avoidInstructors', () => {
+    const merged = buildScheduleConstraints(
+      { sessionAvoidances: [{ sectionId: 101, reason: 'instructor', instructor: '王大明' }] },
+      { avoidInstructors: ['李小華'] }
+    );
+
+    assert.deepEqual(merged.avoidInstructors, ['李小華']);
+    assert.equal(merged.sessionAvoidances.length, 1);
+  });
 });
 
 describe('roadmap #5B：preferChallengingCourses 與 learnedPreference', () => {
@@ -142,6 +167,38 @@ describe('roadmap #5B：preferChallengingCourses 與 learnedPreference', () => {
   test('context 沒有 learnedPreference 時為 null，不是 undefined', () => {
     const merged = buildScheduleConstraints({}, {});
     assert.equal(merged.learnedPreference, null);
+  });
+});
+
+describe('畢業配額只接受後端計算結果', () => {
+  test('request 與 profile 不能覆寫 graduationPlanning', () => {
+    const trustedPlanning = {
+      enabled: true,
+      gaps: { required: 2, elective: 6, general: 4, external: 0 },
+      remainingSemesters: 1,
+    };
+    const forgedPlanning = {
+      enabled: true,
+      gaps: { required: 0, elective: 99, general: 0, external: 0 },
+      remainingSemesters: 8,
+    };
+
+    const merged = buildScheduleConstraints(
+      { graduationPlanning: forgedPlanning },
+      { graduationPlanning: forgedPlanning },
+      { graduationPlanning: trustedPlanning }
+    );
+
+    assert.strictEqual(merged.graduationPlanning, trustedPlanning);
+    assert.notStrictEqual(merged.graduationPlanning, forgedPlanning);
+  });
+
+  test('context 沒有資料時維持 null', () => {
+    const merged = buildScheduleConstraints(
+      { graduationPlanning: { enabled: true } },
+      { graduationPlanning: { enabled: true } }
+    );
+    assert.equal(merged.graduationPlanning, null);
   });
 });
 

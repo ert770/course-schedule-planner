@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getUserPreferences, updateUserPreferences } from '../services/memoryService.js';
-import { isDepartmentInput } from '../utils/text.js';
+import { validateProfileUpdate } from '../data/profileUpdateValidation.js';
 import { buildCourseSearchScope } from '../skills/courseScope.js';
 import { PREFERENCE_TAG_GROUPS } from '../data/preferenceTags.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
@@ -39,25 +39,9 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
     const { userId, ...updates } = req.body;
 
-    // 型別錯誤的 department 必須在邊界擋下，不能靠正規化「救回來」。
-    // 物件、陣列、數字經字串轉換後會變成看起來正常的值寫進資料庫，
-    // 之後所有系所比對都會失敗且無從察覺。
-    if (updates.department !== undefined && !isDepartmentInput(updates.department)) {
-      return res.status(400).json({ error: 'department 必須是非空字串' });
-    }
-
-    for (const field of ['enrolledPrograms', 'mustTakeCourses', 'avoidInstructors']) {
-      if (updates[field] !== undefined && !Array.isArray(updates[field])) {
-        return res.status(400).json({ error: `${field} 必須是陣列` });
-      }
-    }
-    if (
-      updates.preferencesJson !== undefined
-      && (!updates.preferencesJson || typeof updates.preferencesJson !== 'object'
-        || Array.isArray(updates.preferencesJson))
-    ) {
-      return res.status(400).json({ error: 'preferencesJson 必須是物件' });
-    }
+    // 輸入驗證抽在 `data/profileUpdateValidation.js`，可以不起 HTTP server 就測（見該檔說明）。
+    const validationError = validateProfileUpdate(updates);
+    if (validationError) return res.status(400).json({ error: validationError });
 
     // 避開時段接受第 1～14 節。先前這裡會在含第 1 節時回 400，要求改用
     // 「#不排早八」標籤（舊決策 C）——但那兩者不是同一件事：標籤是「每天的

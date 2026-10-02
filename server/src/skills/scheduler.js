@@ -6,10 +6,13 @@ import {
   resolveScoringPolicy, normalizeCourseFeatures, computePreferenceComponents,
   EASY_DIRECTION, resolveEasyDirection,
 } from './scoringPolicy.js';
-import { buildPlanStrategies } from './planStrategies.js';
+import { buildPlanStrategies, buildDiverseArchetypes } from './planStrategies.js';
 import { normalizeBlockedPeriods } from '../utils/periods.js';
 import {
   buildStudentScope,
+  isCrossYearOwnDepartmentElective,
+  isOwnDepartmentClass,
+  isOwnDepartmentElective,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
 } from './courseScope.js';
@@ -22,6 +25,7 @@ import {
   UNRECOGNIZED_OUTSIDE_ELECTIVE,
 } from '../data/generalEducation.js';
 import {
+  getFailedRequiredCourseCodes,
   getFailedRequiredCourses,
   getPassedCourseCodes,
 } from '../data/courseHistory.js';
@@ -46,6 +50,16 @@ import {
   DEFAULT_SOLVER_SEED,
 } from './scheduleSolver.js';
 import { resolveMinCredits } from '../data/creditPolicy.js';
+import { generateDiverseCandidates } from './optimization/diversePlanSolver.js';
+import { selectDiverseSubset, SUBSET_BASE_ID, SUBSET_SELECTION_METHOD } from './optimization/diverseSubsetSelector.js';
+import { checkMilpPlan } from './optimization/milpPlanChecks.js';
+import { solveLpTextSync } from './optimization/highsRuntime.js';
+
+let configuredHighsRuntime = null;
+
+export function setSchedulingHighsRuntime(runtime) {
+  configuredHighsRuntime = runtime || null;
+}
 
 // 校規：每學期上限 25 學分、下限 12 學分（四年級 9，見 `data/creditPolicy.js`），
 // 超修申請後至多 30。見 `docs/COURSE_SELECTION_RULES.md`。先前寫死的 15／22 沒有出處。
@@ -60,6 +74,7 @@ const UNSCHEDULED_NAMES_IN_WARNING = 3;
 // roadmap #26：每個決策點記幾名落選者。記太多會讓回應變胖又幫不上忙——
 // 使用者想知道的是「差一點的是誰」，不是完整排名。
 const GREEDY_RUNNERS_UP_RECORDED = 3;
+const DIAGNOSTIC_TOP_CANDIDATES = GREEDY_RUNNERS_UP_RECORDED + 1;
 // 涼度覆蓋率低於此比例時，主推方案要提醒使用者「涼度只由少數幾門課推得」，
 // 不能讓使用者把它當成整份課表的涼度。
 const LOW_REVIEW_COVERAGE_RATIO = 0.5;
@@ -94,6 +109,35 @@ const CATEGORY_WEIGHT = 120;
 // 會有兩個實作，遲早漂移。
 const REQUIRED_COURSE_BONUS = 5000;
 
+// **本系優先的排序階層**（Roadmap #13C／#13D，2026-09-18 專案負責人決定）：
+//
+//   本人必修（+5,000）→ 本年級的本系選修（0）→ 他年級的本系選修（-2,500）
+//   → 非本系課程：B～F 班級、通識、外系課（-5,000）
+//
+// 候選池放寬（學院綜合班、學分學程、外語選修…）之後實測發現，涼課或英文授課
+// 偏好會讓外語與通識課塞滿課表，資工系學生只剩 1 門資工課——那些課有評價，
+// 資工選修多半沒有。這是「偏好照設計運作」，但不符合本系統「資工系個人化課表」
+// 的定位，因此改成先排本系課，學分還沒滿才補非本系課。
+//
+// 階層間距 2,500 大於偏好各項能造成的最大分差（興趣、集中各 ±480、涼度 ±240、
+// 八項內容偏好 ±320、學分係數約 72，合計約 2,150），所以階層之間不會被偏好翻轉；
+// 偏好只在同一階層內決定順序。只在學生系所年級可判定時生效，範圍不明時維持舊排序。
+const CROSS_YEAR_ELECTIVE_PENALTY = -2500;
+const OUTSIDE_OWN_DEPARTMENT_PENALTY = -5000;
+
+function departmentTierComponents(course, scope, categoryPriority) {
+  if (!scope?.resolved || categoryPriority === CATEGORY_PRIORITY['必修']) {
+    return { crossYearElective: 0, outsideOwnDepartment: 0 };
+  }
+  if (isOwnDepartmentClass(course, scope)) {
+    return {
+      crossYearElective: isCrossYearOwnDepartmentElective(course, scope) ? CROSS_YEAR_ELECTIVE_PENALTY : 0,
+      outsideOwnDepartment: 0,
+    };
+  }
+  return { crossYearElective: 0, outsideOwnDepartment: OUTSIDE_OWN_DEPARTMENT_PENALTY };
+}
+
 // 警告訊息中只列出前幾個課名。全部列出會有數十行，反而讓其他警告看不到。
 function summarizeNames(names, limit = UNSCHEDULED_NAMES_IN_WARNING) {
   const shown = names.slice(0, limit).join('、');
@@ -107,6 +151,16 @@ function toArray(value) {
 
 function toIdSet(value) {
   return new Set(toArray(value).map(Number).filter(Number.isFinite));
+}
+
+// 課名結尾的 (一)(二)…，例如 `日文(一)` 與 `日文(二)` 屬於同一系列 `日文`。
+// 只認中文數字：`程式設計(III)`／`(IV)` 這類羅馬數字的必修是學校安排同學期修的，
+// 不該被這條推測規則誤傷。
+const SERIES_SUFFIX = /^(.+?)\s*[（(]([一二三四五六七八九十])[)）]\s*$/u;
+
+function getCourseSeriesKey(course) {
+  const match = String(course?.name || '').trim().match(SERIES_SUFFIX);
+  return match ? match[1].trim() : null;
 }
 
 function getCategoryPriority(course) {
@@ -127,6 +181,167 @@ function getEffectiveCategoryPriority(course, scope) {
     return CATEGORY_PRIORITY['一般選修'];
   }
   return getCategoryPriority(course);
+}
+
+export const GRADUATION_BUCKET = Object.freeze({
+  REQUIRED: 'required',
+  ELECTIVE: 'elective',
+  GENERAL: 'general',
+  EXTERNAL: 'external',
+  OTHER: 'other',
+});
+
+// 畢業配額用的類別。這和畫面上的「核心選修／一般選修」不同：兩者在畢業規則裡
+// 都屬於本系選修。本人必修仍由既有 isRequiredForStudent() 判定，不能只看資料庫 type。
+export function getGraduationBucket(course, scope) {
+  if (isRequiredForStudent(course, scope)) return GRADUATION_BUCKET.REQUIRED;
+  if (course?.category === '通識') return GRADUATION_BUCKET.GENERAL;
+  if (course?.category === '系外選修') return GRADUATION_BUCKET.EXTERNAL;
+  if (isOwnDepartmentElective(course, scope)) return GRADUATION_BUCKET.ELECTIVE;
+  return GRADUATION_BUCKET.OTHER;
+}
+
+function scheduledCourses(plan) {
+  return [...plan.schedule, ...plan.unscheduledCourses];
+}
+
+function graduationBucketSummary(plan, scope) {
+  const summary = Object.fromEntries(
+    Object.values(GRADUATION_BUCKET).map(key => [key, { courses: 0, credits: 0 }])
+  );
+  for (const course of scheduledCourses(plan)) {
+    const bucket = getGraduationBucket(course, scope);
+    summary[bucket].courses += 1;
+    summary[bucket].credits += Number(course.credits) || 0;
+  }
+  return summary;
+}
+
+// 通識／系外最多兩門。每次把一個名額分給「本學期尚未覆蓋的需求」較大者，
+// 因而只會得到 1+1、2+0、0+2；若一門就已覆蓋本學期目標，保留一門而不硬塞第二門。
+export function buildBreadthSequence(graduationPlanning) {
+  if (!graduationPlanning?.enabled) return [];
+  const remaining = {
+    general: Math.max(0, Number(graduationPlanning.semesterTargets?.general) || 0),
+    external: Math.max(0, Number(graduationPlanning.semesterTargets?.external) || 0),
+  };
+  const gaps = graduationPlanning.gaps || {};
+  const sequence = [];
+  for (let slot = 0; slot < 2; slot += 1) {
+    const available = ['general', 'external'].filter(key => (
+      Number(gaps[key] || 0) > 0 && remaining[key] > 0
+    ));
+    if (available.length === 0) break;
+    available.sort((a, b) => remaining[b] - remaining[a] || a.localeCompare(b));
+    const chosen = available[0];
+    sequence.push(chosen);
+    // 通識常見 2 學分；這裡只負責分配門數，實際學分會在選中課程後計算。
+    remaining[chosen] = Math.max(0, remaining[chosen] - 2);
+  }
+  return sequence;
+}
+
+function createGraduationAllocationState(plan, constraints, scope) {
+  const planning = constraints.graduationPlanning;
+  if (!planning?.enabled) return null;
+  const state = {
+    planning,
+    scope,
+    breadthSequence: buildBreadthSequence(planning),
+    unavailable: new Set(),
+    topUp: [],
+  };
+  // 用**總學分**判斷，不用類別缺口：修課紀錄的類別可能沒分類（缺口會被高估），
+  // 但已取得的總學分是可靠的。
+  const totalRequired = Number(planning.totalRequired);
+  const totalEarned = Number(planning.totalEarned);
+  const totalGap = planning.totalRequired != null && planning.totalEarned != null
+    && Number.isFinite(totalRequired) && Number.isFinite(totalEarned)
+    ? Math.max(0, totalRequired - totalEarned)
+    : null;
+  state.creditFloorOnly = totalGap !== null && totalGap < plan.minCredits;
+  plan.graduationPlanning = {
+    enabled: true,
+    ruleVersion: planning.ruleVersion,
+    appliedFallbackVersion: planning.appliedFallbackVersion,
+    remainingSemesters: planning.remainingSemesters,
+    remainingSemestersSource: planning.remainingSemestersSource,
+    gapsBefore: { ...planning.gaps },
+    semesterTargets: { ...planning.semesterTargets },
+    breadthSequence: [...state.breadthSequence],
+    selected: graduationBucketSummary(plan, scope),
+    totalGap,
+    creditFloorOnly: state.creditFloorOnly,
+  };
+  for (const warning of planning.warnings || []) {
+    if (!plan.warnings.includes(warning)) plan.warnings.push(warning);
+  }
+  const initial = plan.graduationPlanning.selected;
+  if (initial.elective.courses > 3
+    || initial.elective.credits > Number(planning.semesterTargets?.elective || 0)) {
+    plan.warnings.push(
+      '你明確指定的本系選修已超過本學期自動配額；系統保留指定課程，但不再自動增加本系選修。'
+    );
+  }
+  return state;
+}
+
+function nextGraduationPhase(plan, state) {
+  const selected = graduationBucketSummary(plan, state.scope);
+  const electiveTarget = Math.max(0, Number(state.planning.semesterTargets?.elective) || 0);
+  if (!state.unavailable.has(GRADUATION_BUCKET.ELECTIVE)
+    && electiveTarget > 0
+    && selected.elective.courses < 3
+    && selected.elective.credits < electiveTarget) {
+    return GRADUATION_BUCKET.ELECTIVE;
+  }
+
+  const selectedBreadth = {
+    general: selected.general.courses,
+    external: selected.external.courses,
+  };
+  for (const bucket of state.breadthSequence) {
+    if (selectedBreadth[bucket] > 0) {
+      selectedBreadth[bucket] -= 1;
+      continue;
+    }
+    if (!state.unavailable.has(bucket)) return bucket;
+  }
+  return null;
+}
+
+function refreshGraduationPlanningResult(plan, state) {
+  if (!state || !plan.graduationPlanning) return;
+  plan.graduationPlanning.selected = graduationBucketSummary(plan, state.scope);
+  plan.graduationPlanning.unavailableBuckets = [...state.unavailable];
+  // 配額之外、為了達到最低學分而補的課。說明可以據此區分「畢業需要」與「補足學分」。
+  plan.graduationPlanning.creditFloorTopUp = {
+    courses: state.topUp.length,
+    credits: state.topUp.reduce((sum, course) => sum + (Number(course.credits) || 0), 0),
+    sectionIds: state.topUp.map(course => Number(course.id)),
+  };
+  if (state.topUp.length > 0 && !state.topUpWarned) {
+    state.topUpWarned = true;
+    plan.warnings.push(
+      `本學期畢業缺口只需要部分學分；為達最低 ${plan.minCredits} 學分，另補 ${state.topUp.length} 門課`
+      + '（優先選仍可計入畢業學分的類別）。'
+    );
+  }
+}
+
+// 補足最低學分時的候選：優先取「畢業缺口還沒補完」的類別（選修／通識／系外），
+// 這些課修了仍然算進畢業學分；都沒有時才退回任何還排得進去的課。
+// 正式必修不在這裡補——必修由前面的必修階段處理。
+function creditFloorTopUpCandidates(remaining, state, selectedBuckets, scope) {
+  const gaps = state.planning.gaps || {};
+  const stillNeeded = bucket => (
+    Number(gaps[bucket] || 0) - Number(selectedBuckets[bucket]?.credits || 0) > 0
+  );
+  const countable = remaining.filter(course => {
+    const bucket = getGraduationBucket(course, scope);
+    return bucket !== GRADUATION_BUCKET.REQUIRED && stillNeeded(bucket);
+  });
+  return countable.length > 0 ? countable : [...remaining];
 }
 
 function getCourseStatus(course, constraints) {
@@ -287,6 +502,88 @@ function isAvoidedInstructor(course, constraints) {
   return toArray(constraints.avoidInstructors)
     .some(value => normalizedInstructorName(value) === instructor);
 }
+
+// ---------------------------------------------------------------------------
+// 本次規劃的避開清單：使用者剛在畫面上移除的課，下一次重排要立即避開。
+//
+// 與上面的 `avoidInstructors` 差在「這次」與「永久」：那是 `User_Profiles` 的
+// 持久化欄位，這是 request-scoped 狀態，這次排完就沒有（見 `constraintService.js`）。
+//
+// 每一筆的 `scope` 由**後端**依退課原因推導（`data/planningContextSchema.js`），
+// 不接受呼叫端指定——否則送 `{ reason: 'time', scope: 'catalog_course' }`
+// 就能把「這個時段不方便」放大成排除整門課。
+// ---------------------------------------------------------------------------
+
+function buildSessionAvoidanceRules(constraints) {
+  const rules = [];
+  for (const entry of toArray(constraints.sessionAvoidances)) {
+    const sectionId = Number(entry?.sectionId);
+    if (!Number.isInteger(sectionId) || sectionId <= 0) continue;
+
+    const catalogCourseCode = String(entry?.catalogCourseCode ?? '').trim();
+    const instructor = normalizedInstructorName(entry?.instructor);
+    let scope = entry?.scope ?? 'section';
+    // 放大範圍需要對應的識別資料。課號或教師解析不出來時**退回只排除該班次**，
+    // 而不是整筆放棄——使用者按了移除，最起碼那個班次不該再出現。
+    if (scope === 'catalog_course' && !catalogCourseCode) scope = 'section';
+    if (scope === 'instructor' && !instructor) scope = 'section';
+
+    rules.push({
+      sectionId,
+      reason: entry?.reason ?? null,
+      // 「還沒問到原因」與「使用者說不想講」都是 `reason === null`，但前者要再問、
+      // 後者不該再問。因此這個旗標由呼叫端決定，不從 `reason` 推。
+      pendingReason: entry?.pendingReason !== false && (entry?.reason ?? null) === null,
+      scope,
+      catalogCourseCode,
+      instructor,
+      // 執行過程中填寫，最後由 `generateSchedule()` 回報給前端。
+      status: 'not-found',
+      matchedSectionIds: [],
+      protectedCourses: [],
+    });
+  }
+  return rules;
+}
+
+function matchSessionAvoidance(course, rules) {
+  for (const rule of rules) {
+    if (rule.scope === 'catalog_course') {
+      if (String(course.catalogCourseCode || '').trim() === rule.catalogCourseCode) return rule;
+      continue;
+    }
+    if (rule.scope === 'instructor') {
+      if (normalizedInstructorName(course.instructor ?? course.teacher) === rule.instructor) return rule;
+      continue;
+    }
+    if (Number(course.id) === rule.sectionId) return rule;
+  }
+  return null;
+}
+
+// 避開清單**不能**靜默排除的課。
+//
+// 刻意不用 `collectExplicitCourseIds()`：那個集合還含 `explicitCourseIds`
+// （`POST /api/schedule/generate` 的 `courseIds`——使用者在課程瀏覽器勾選的課，
+// 而 `SchedulePage` 每次排課都把目前課表整批重送）。它的用途只是讓這些課**繞過
+// 資格與學期過濾**、不要被靜默剔除，並不代表「一定要排進課表」。若避開清單讓位
+// 給它，使用者在那一頁移除課程後重排，那門課會原封不動被保留——正是這次要修的症狀。
+function collectProtectedCourseIds(constraints) {
+  return toIdSet([
+    ...toArray(constraints.selectedCourseIds),
+    ...toArray(constraints.mustTakeCourseIds),
+    ...toArray(constraints.mustTakeCourses),
+  ]);
+}
+
+// 回傳「為什麼不能排除」的人話，沒有理由時回 null。
+function protectedAvoidanceReason(course, scope, protectedIds, failedRequiredCodes) {
+  if (isRequiredForStudent(course, scope)) return '是你本學期的必修';
+  if (failedRequiredCodes.has(course.catalogCourseCode)) return '是你需要重補修的必修';
+  if (protectedIds.has(Number(course.id))) return '同時被你指定為一定要修的課';
+  return null;
+}
+
 
 // roadmap #21：`options.skipTimePreferences` 讓呼叫端（`addCourseToPlan()`）
 // 對正式必修課無條件豁免 3 個時段類「舒適偏好」——`不排早八`／`不排晚課`／
@@ -817,6 +1114,7 @@ function computeScoreComponents(
     base: 1000,
     requiredSelection: requiredIds.has(Number(course.id)) ? 10000 : 0,
     requiredCourse: categoryPriority === CATEGORY_PRIORITY['必修'] ? REQUIRED_COURSE_BONUS : 0,
+    ...departmentTierComponents(course, scope, categoryPriority),
     category: -categoryPriority * CATEGORY_WEIGHT * policy.categoryCoefficient,
     credits: (course.credits || 0) * 12 * policy.creditCoefficient,
     contentPreference: getContentPreferenceScore(course, constraints),
@@ -828,6 +1126,40 @@ function computeScoreComponents(
 
 function sumScoreComponents(components) {
   return Object.values(components).reduce((total, value) => total + value, 0);
+}
+
+function diagnosticCourse(course) {
+  return {
+    sectionId: course?.id ?? course?.sectionId ?? null,
+    catalogCourseCode: course?.catalogCourseCode ?? null,
+    name: course?.name ?? null,
+    department: course?.department ?? null,
+    category: course?.category ?? null,
+    credits: Number(course?.credits) || 0,
+    dayOfWeek: course?.dayOfWeek ?? null,
+    startPeriod: course?.startPeriod ?? null,
+    endPeriod: course?.endPeriod ?? null,
+  };
+}
+
+function enablePlanDiagnostics(plan) {
+  Object.defineProperty(plan, '_generationDiagnostics', {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value: {
+      decisionSteps: [],
+      skippedReasons: new Map(),
+    },
+  });
+}
+
+function recordDiagnosticSkip(plan, course, constraintId, reason) {
+  const diagnostics = plan._generationDiagnostics;
+  if (!diagnostics) return;
+  const sectionId = Number(course?.id ?? course?.sectionId);
+  if (!Number.isFinite(sectionId) || diagnostics.skippedReasons.has(sectionId)) return;
+  diagnostics.skippedReasons.set(sectionId, { constraintId, reason });
 }
 
 function scoreCourse(course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore = EASY_SCORE_MAX / 2) {
@@ -848,6 +1180,26 @@ function evaluateCoursePlacement(plan, course, constraints, options = {}) {
     const placed = plan.placedCourseKeys.get(courseKey);
     const message = `已排入同一門課的其他班次（${placed.department}／${placed.instructor || '未定'}）`;
     return { allowed: false, message, constraintId: 'DUPLICATE_SECTION', conflictingCourse: placed };
+  }
+
+  // 同一系列的 (一)(二)… 不排在同一學期（2026-09-18 專案負責人決定）。
+  // 資料庫沒有先修資料（`prerequisites` 全為空），這是依課名推測的規則，不是校方
+  // 規定，因此本人必修（學校可能本來就安排同學期修，例如 程式設計(III)/(IV)）
+  // 與使用者明確指定的課不受限制，獨立驗證器也不複查這一條。
+  const seriesKey = getCourseSeriesKey(course);
+  if (seriesKey && options.formallyRequired !== true && options.required !== true) {
+    const explicitIds = collectExplicitCourseIds(constraints);
+    const sibling = [...plan.placedCourseKeys.values()].find(placed => (
+      getCourseSeriesKey(placed) === seriesKey && getCourseKey(placed) !== courseKey
+    ));
+    if (sibling && !explicitIds.has(Number(course.id)) && !explicitIds.has(Number(sibling.id))) {
+      return {
+        allowed: false,
+        message: `與「${sibling.name}」是同一系列的課，不排在同一學期`,
+        constraintId: 'SAME_SERIES_SAME_TERM',
+        conflictingCourse: sibling,
+      };
+    }
   }
 
   // roadmap #21：正式必修（`isRequiredForStudent()===true`，見 buildPlan()
@@ -1084,8 +1436,8 @@ function placeCourseWithCorequisite(plan, regularCourse, internshipCandidates, c
   return false;
 }
 
-function createEmptyPlan(variant, constraints) {
-  return {
+function createEmptyPlan(variant, constraints, { includeDiagnostics = false } = {}) {
+  const plan = {
     id: variant.id,
     title: variant.title,
     description: variant.description,
@@ -1109,6 +1461,8 @@ function createEmptyPlan(variant, constraints) {
     // 每日課程數上限沒有校方依據，預設不限制；呼叫端仍可自行指定。
     maxCoursesPerDay: constraints.maxCoursesPerDay ?? Infinity,
   };
+  if (includeDiagnostics) enablePlanDiagnostics(plan);
+  return plan;
 }
 
 // 四年級的學分下限為 9（其餘年級 12）——判斷式見 `data/creditPolicy.js`，
@@ -1210,9 +1564,17 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   const unrecognizedExplicit = [];
   const unknownEligibilityNames = new Set();
   const unknownEligibilityExplicit = [];
+  const ineligibleNames = new Set();
+  const ineligibleExplicit = [];
   const offTermNames = new Set();
   const offTermExplicit = [];
   const gradeMismatchNames = new Set();
+  const failedRequiredCodes = new Set(getFailedRequiredCourseCodes(constraints.courseHistory));
+  // 本次規劃的避開清單。`rules` 會在迴圈裡被就地更新（`status`／`matchedSectionIds`／
+  // `protectedCourses`），最後隨 `prepared` 一起回傳給 `generateSchedule()` 回報前端。
+  const sessionAvoidanceRules = buildSessionAvoidanceRules(constraints);
+  const protectedCourseIds = collectProtectedCourseIds(constraints);
+  const avoidanceProtectedNames = new Set();
   let outsideExclusionCount = 0;
   // 有評價卻因資格待確認（#13C）而被排除的課程要單獨統計。使用者看到
   // 「涼課方案沒有通識」時，必須分得出來是「沒抓到評價」還是「抓到了但規則擋住」。
@@ -1250,7 +1612,47 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
       orphanedInternshipNames.add(`${course.name}（${course.catalogCourseCode}）`);
     }
 
-    if (isCourseGradeEligible(course, scope.gradeLevel) === false) {
+    // 本次規劃的避開清單：使用者剛移除的課，這一次重排就不該再出現。
+    //
+    // 刻意放在年級／學期／資格閘門**之前**——使用者明確的操作是最清楚的解釋，
+    // 讓它被「非本學期」這類系統原因蓋掉，畫面上的說明會答非所問。
+    const avoidRule = sessionAvoidanceRules.length > 0
+      ? matchSessionAvoidance(course, sessionAvoidanceRules)
+      : null;
+    if (avoidRule) {
+      avoidRule.matchedSectionIds.push(Number(course.id));
+      const protectedReason = protectedAvoidanceReason(
+        course, scope, protectedCourseIds, failedRequiredCodes
+      );
+      if (protectedReason) {
+        // 必修不得靜默移除：保留課程並明講衝突，讓使用者自己決定要放棄哪一邊。
+        // 回報時這一筆的狀態是 `protected-conflict`，**不是**「已避開」——
+        // 前端若照樣顯示成已避開，畫面說的跟課表做的就對不上。
+        avoidRule.status = 'protected-conflict';
+        avoidRule.protectedCourses.push({ sectionId: Number(course.id), name: course.name, reason: protectedReason });
+        avoidanceProtectedNames.add(`${course.name}（${protectedReason}）`);
+      } else {
+        // 一筆規則可能同時命中保留與可排除的班次（例如整個課號裡有一班是必修）。
+        // 只要有任何一班被保留，整筆就維持 `protected-conflict`。
+        if (avoidRule.status !== 'protected-conflict') avoidRule.status = 'applied';
+        exclusions.push({
+          course,
+          reason: '本次已由使用者移除',
+          constraintId: 'USER_REMOVED_THIS_SESSION',
+        });
+        continue;
+      }
+    }
+
+    // 同系選修的 target_grade 是開課年級，不是限修年級（#13C-5）：放行，
+    // 排序交給 CROSS_YEAR_ELECTIVE_PENALTY。
+    // 不及格必修的重補修一定是回頭修低年級開的課，年級限制不適用（2026-09-19 修正：
+    // 先前二年級重修一年級必修會被這裡整批排除，S4 重補修實際上排不進去）。
+    if (
+      isCourseGradeEligible(course, scope.gradeLevel) === false
+      && !isOwnDepartmentElective(course, scope)
+      && !failedRequiredCodes.has(course.catalogCourseCode)
+    ) {
       gradeMismatchNames.add(`${course.name}（${courseGradeLevelLabel(course.gradeLevel)}）`);
       exclusions.push({
         course,
@@ -1294,6 +1696,21 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
       }
 
       unknownEligibilityExplicit.push(course);
+    }
+
+    // #13C／#13D：B～F 依適用規則判定不可修。一般候選池已經不放這類課
+    // （`courseQuery.js` 的 schedulingPool），會走到這裡的是繞過候選池查詢的
+    // 兩條路徑：使用者明確勾選的 courseIds 與重補修 union。處理方式與 unknown 相同。
+    if (course.eligibility === 'ineligible' && course.classGroup && course.classGroup !== 'A') {
+      const label = `${course.name}（${course.department}）`;
+
+      if (!explicitIds.has(Number(course.id))) {
+        ineligibleNames.add(label);
+        exclusions.push({ course, reason: course.eligibilityReason, constraintId: 'ELIGIBILITY_INELIGIBLE' });
+        continue;
+      }
+
+      ineligibleExplicit.push(course);
     }
 
     const outside = evaluateOutsideElective(course, scope);
@@ -1383,7 +1800,28 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     warnings.push(
       `已保守排除 ${unknownEligibilityNames.size} 門資格待確認的 B～F 類課程`
       + `（${summarizeNames([...unknownEligibilityNames])}）。`
-      + '系統尚無正式適用對象規則，不會自動把它們排入課表。'
+      + '這些班級沒有適用規則，或你的系所、年級資料不足以判定，不會自動把它們排入課表。'
+    );
+  }
+
+  if (ineligibleNames.size > 0) {
+    warnings.push(
+      `已排除 ${ineligibleNames.size} 門依適用規則你不能修的 B～F 類課程`
+      + `（${summarizeNames([...ineligibleNames])}）。`
+    );
+  }
+
+  if (ineligibleExplicit.length > 0) {
+    const detail = ineligibleExplicit
+      .slice(0, UNSCHEDULED_NAMES_IN_WARNING)
+      .map(course => `${course.name}（${course.eligibilityReason}）`)
+      .join('；');
+    const rest = ineligibleExplicit.length > UNSCHEDULED_NAMES_IN_WARNING
+      ? ` 等 ${ineligibleExplicit.length} 門`
+      : '';
+    warnings.push(
+      `你指定的課程中有 ${ineligibleExplicit.length} 門依適用規則你不能修：${detail}${rest}。`
+      + '本方案依你的指定保留，但請先向開課單位確認能否修習。'
     );
   }
 
@@ -1404,8 +1842,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   if (unknownEligibilityWithReviews > 0) {
     warnings.push(
       `已保守排除的資格待確認課程中有 ${unknownEligibilityWithReviews} 門有課程評價`
-      + `（共 ${unknownEligibilityReviewCount} 則），因適用對象規則尚未確認`
-      + '（roadmap #13C）而未納入涼度評分。'
+      + `（共 ${unknownEligibilityReviewCount} 則），因資格無法判定而未納入涼度評分。`
     );
   }
 
@@ -1435,6 +1872,14 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   // 方案選出來才算，也不必逐一方案重算五次）。
   warnings.push(...buildContentPreferenceWarnings(computeContentPreferenceSignal(courses, constraints)));
 
+  if (avoidanceProtectedNames.size > 0) {
+    warnings.push(
+      `你要求本次避開的課程中有 ${avoidanceProtectedNames.size} 門仍保留在課表裡`
+      + `（${summarizeNames([...avoidanceProtectedNames])}）。`
+      + '請決定要保留必修，還是取消這項避開條件。'
+    );
+  }
+
   if (orphanedInternshipNames.size > 0) {
     warnings.push(
       `${orphanedInternshipNames.size} 門課程符合實習／實驗代碼慣例（課號以 P 結尾）`
@@ -1443,7 +1888,9 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     );
   }
 
-  return { courses, exclusions, warnings, scope, explicitIds, neutralEasyScore };
+  return {
+    courses, exclusions, warnings, scope, explicitIds, neutralEasyScore, sessionAvoidanceRules,
+  };
 }
 
 // roadmap #26：把「其實也排進來了」的課從落選清單裡剔除。
@@ -1589,9 +2036,9 @@ function alreadyTakenRequiredWarning(alreadyTaken) {
     + `${summarizeNames(names)}。其餘指定課程照常排入。`;
 }
 
-function buildPlan(prepared, constraints, variant) {
+function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
   const candidateCourses = prepared.courses;
-  const plan = createEmptyPlan(variant, constraints);
+  const plan = createEmptyPlan(variant, constraints, diagnosticOptions);
   // 系外選修認列條件的排除結果對每個方案都相同，直接帶進各方案的排除清單，
   // 讓使用者在任何一個方案上都看得到「為什麼這門課不見了」。
   plan.excludedCourses.push(...prepared.exclusions);
@@ -1631,6 +2078,14 @@ function buildPlan(prepared, constraints, variant) {
     )
   );
   const otherRequiredIds = new Set(otherRequired.map(course => Number(course.id)));
+  for (const course of otherRequired) {
+    recordDiagnosticSkip(
+      plan,
+      course,
+      'OTHER_STUDENT_REQUIRED',
+      '其他系所、學制、年級或班別的必修，不屬於這位學生的可選課程'
+    );
+  }
 
   if (exemptedRequired.length > 0) {
     const names = [...new Set(exemptedRequired.map(course => `${course.name}（${course.department}）`))];
@@ -1770,6 +2225,10 @@ function buildPlan(prepared, constraints, variant) {
     }
   }
 
+  // 正式必修、重補修與使用者明確指定的課排完後，才開始消耗本學期的自動選課配額。
+  // 明確指定的選修／通識／系外課也會計入已用配額，避免系統在它們之外又補一整份。
+  const graduationAllocation = createGraduationAllocationState(plan, constraints, scope);
+
   const placedIds = new Set([
     ...plan.schedule.map(c => Number(c.id)),
     ...plan.unscheduledCourses.map(c => Number(c.id)),
@@ -1789,14 +2248,159 @@ function buildPlan(prepared, constraints, variant) {
     && course.corequisiteRole !== 'internship'
   ));
 
+  for (const course of optional) {
+    if (!hasScheduledTime(course)) {
+      recordDiagnosticSkip(
+        plan,
+        course,
+        'NO_SCHEDULED_TIME_FOR_OPTIONAL',
+        '課程沒有排定時間，且不是必要課程，不參與自動填充'
+      );
+    } else if (course.corequisiteRole === 'internship') {
+      recordDiagnosticSkip(
+        plan,
+        course,
+        'COREQUISITE_PARTNER_ONLY',
+        '共同必修的實習課只能由對應正課帶動排入，不單獨參與競爭'
+      );
+    }
+  }
+
+  // roadmap #10 任務 1 spike：MILP 求解器需要「固定課程排完、貪婪填充開始前」
+  // 的同一份候選與狀態。只在 opt-in 時擷取，掛成不可列舉屬性，不進 API 回應；
+  // 靜態檢查直接用正式的 evaluateCoursePlacement()，不另寫第二套規則。
+  if (diagnosticOptions.includeMipInputs) {
+    const interestKeywords = collectInterestKeywords(constraints);
+    const normalizedInterest = course => {
+      if (interestKeywords.length === 0) return 0;
+      return clamp01(
+        getInterestScore(course, constraints) / (interestKeywords.length * INTEREST_KEYWORD_SCORE)
+      );
+    };
+    const describe = course => ({
+      course,
+      courseKey: getCourseKey(course),
+      seriesKey: getCourseSeriesKey(course),
+      graduationBucket: getGraduationBucket(course, scope),
+      placement: evaluateCoursePlacement(plan, course, constraints),
+      interestScore: normalizedInterest(course),
+      easyScore: getEasyCourseScore(course) === null
+        ? null
+        : clamp01(getEasyCourseScore(course) / MAX_EASY_COURSE_SCORE),
+      rated: Boolean(course.reviewEvidence),
+    });
+    const fixedScheduledFeatures = plan.schedule.map(course => describe(course));
+    Object.defineProperty(plan, '_mipInputs', {
+      configurable: true,
+      enumerable: false,
+      value: {
+        fixedSchedule: [...plan.schedule],
+        fixedUnscheduled: [...plan.unscheduledCourses],
+        fixedCredits: plan.totalCredits,
+        minCredits: plan.minCredits,
+        maxCredits: plan.maxCredits,
+        maxCoursesPerDay: plan.maxCoursesPerDay,
+        explicitIds: [...collectExplicitCourseIds(constraints)],
+        graduationPlanning: plan.graduationPlanning ?? null,
+        fixedGraduationBuckets: graduationBucketSummary(plan, scope),
+        competitive: remaining.map(course => ({
+          ...describe(course),
+          scoreComponents: computeScoreComponents(
+            course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+          ),
+          score: scoreCourse(
+            course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+          ),
+        })),
+        internships: eligible
+          .filter(course => course.corequisiteRole === 'internship' && !placedIds.has(Number(course.id)))
+          .map(describe),
+        featureSummary: {
+          hasInterestKeywords: interestKeywords.length > 0,
+          fixedCount: fixedScheduledFeatures.length,
+          fixedInterestSum: fixedScheduledFeatures.reduce((sum, entry) => sum + entry.interestScore, 0),
+          fixedRatedCount: fixedScheduledFeatures.filter(entry => entry.rated).length,
+          fixedEasySum: fixedScheduledFeatures.reduce(
+            (sum, entry) => sum + (entry.rated ? entry.easyScore : 0), 0
+          ),
+          // 主軸可達範圍要把固定課一起算進來（平均值含固定課）。
+          fixedInterestMax: finiteBound(
+            fixedScheduledFeatures.map(entry => entry.interestScore), Math.max
+          ),
+          fixedEasyMax: finiteBound(
+            fixedScheduledFeatures.filter(entry => entry.rated).map(entry => entry.easyScore), Math.max
+          ),
+          fixedEasyMin: finiteBound(
+            fixedScheduledFeatures.filter(entry => entry.rated).map(entry => entry.easyScore), Math.min
+          ),
+          fixedDays: new Set(plan.schedule.flatMap(course => [...getUsedDays(course)])).size,
+        },
+      },
+    });
+  }
+
   while (remaining.length > 0 && plan.totalCredits < plan.maxCredits) {
-    remaining.sort((a, b) => (
+    const phase = graduationAllocation
+      ? nextGraduationPhase(plan, graduationAllocation)
+      : null;
+    // 畢業配額排完後若仍低於最低學分，進入補足階段：配額決定「先排什麼」，
+    // 最低學分仍是下限。快畢業的學生每學期目標可能只有 2～3 學分，只照配額排會低於
+    // 最低修課學分，替代方案也因為幾乎沒有課可換而全部無解。
+    const toppingUp = Boolean(graduationAllocation) && phase === null;
+    if (toppingUp && plan.totalCredits >= plan.minCredits) break;
+    // 距離畢業門檻的總學分已低於最低學分時，本學期只需要修到最低學分：
+    // 配額仍決定先排哪一類，但一達到下限就停，不再照類別配額往上排。
+    if (graduationAllocation?.creditFloorOnly && plan.totalCredits >= plan.minCredits) break;
+
+    const selectedBuckets = graduationAllocation ? graduationBucketSummary(plan, scope) : null;
+    const phaseCandidates = toppingUp
+      ? creditFloorTopUpCandidates(remaining, graduationAllocation, selectedBuckets, scope)
+      : graduationAllocation
+      ? remaining.filter(course => {
+        if (getGraduationBucket(course, scope) !== phase) return false;
+        if (phase !== GRADUATION_BUCKET.ELECTIVE) return true;
+        const slots = course.corequisiteRole === 'regular'
+          && eligible.some(item => item.catalogCourseCode === course.corequisiteCode)
+          ? 2
+          : 1;
+        return selectedBuckets.elective.courses + slots <= 3;
+      })
+      : remaining;
+    if (toppingUp && phaseCandidates.length === 0) break;
+    if (graduationAllocation && phaseCandidates.length === 0) {
+      graduationAllocation.unavailable.add(phase);
+      plan.warnings.push(
+        phase === GRADUATION_BUCKET.ELECTIVE
+          ? '本學期沒有更多可排入的本系選修，選修配額未完全補足。'
+          : `${phase === GRADUATION_BUCKET.GENERAL ? '通識' : '系外選修'}缺少可排入課程，已保留未補足狀態。`
+      );
+      continue;
+    }
+
+    phaseCandidates.sort((a, b) => (
       scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
       - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
       || Number(a.id) - Number(b.id)
     ));
 
-    const course = remaining.shift();
+    const rankedCandidates = plan._generationDiagnostics
+      ? phaseCandidates.slice(0, DIAGNOSTIC_TOP_CANDIDATES).map((candidate, index) => {
+        const components = computeScoreComponents(
+          candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+        );
+        return {
+          rank: index + 1,
+          course: diagnosticCourse(candidate),
+          totalScore: sumScoreComponents(components),
+          scoreComponents: components,
+        };
+      })
+      : null;
+    const course = phaseCandidates[0];
+    const runnerUpCourses = phaseCandidates.slice(1, GREEDY_RUNNERS_UP_RECORDED + 1);
+    remaining.splice(remaining.indexOf(course), 1);
+    const creditsBefore = plan.totalCredits;
+    const excludedBefore = plan.excludedCourses.length;
 
     // roadmap #26：誰輸給了它。`remaining` 剛依同一個 `plan.schedule` 狀態排好序，
     // 因此排在後面的就是這個決策點上的落選者——不必另外模擬一次競爭。
@@ -1809,7 +2413,7 @@ function buildPlan(prepared, constraints, variant) {
     );
     const alternatives = buildAlternatives(
       score(course),
-      remaining.slice(0, GREEDY_RUNNERS_UP_RECORDED).map(c => ({ course: c, score: score(c) }))
+      runnerUpCourses.map(c => ({ course: c, score: score(c) }))
     );
     const scoreComponents = computeScoreComponents(
       course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
@@ -1832,13 +2436,74 @@ function buildPlan(prepared, constraints, variant) {
       addCourseToPlan(plan, course, constraints, variant.title, explain);
     }
 
+    if (toppingUp && plan.totalCredits > creditsBefore) graduationAllocation.topUp.push(course);
+
+    if (plan._generationDiagnostics) {
+      const placedIdsAfter = new Set([
+        ...plan.schedule.map(item => Number(item.id)),
+        ...plan.unscheduledCourses.map(item => Number(item.id)),
+      ]);
+      const newlyExcluded = plan.excludedCourses
+        .slice(excludedBefore)
+        .filter(item => Number(item.course?.id) === Number(course.id));
+      plan._generationDiagnostics.decisionSteps.push({
+        step: plan._generationDiagnostics.decisionSteps.length + 1,
+        creditsBefore,
+        creditsAfter: plan.totalCredits,
+        rankedCandidates,
+        attemptedCourse: diagnosticCourse(course),
+        outcome: placedIdsAfter.has(Number(course.id)) ? 'selected' : 'rejected',
+        rejectionReasons: newlyExcluded.map(item => ({
+          constraintId: item.constraintId ?? null,
+          reason: item.reason ?? null,
+        })),
+      });
+    }
+
     if (plan.totalCredits >= plan.minCredits && variant.stopWhen !== 'candidate-exhausted') {
       // 只計入還能推進學分的課程。0 學分課程恆滿足學分上限條件，
       // 會讓這個中止判斷永遠為真，迴圈跑到候選清單耗盡。
       const canAddMore = remaining.some(next => (
         (next.credits || 0) > 0 && plan.totalCredits + next.credits <= plan.maxCredits
       ));
-      if (!canAddMore) break;
+      if (!canAddMore) {
+        for (const next of remaining) {
+          const exceedsCeiling = plan.totalCredits + (next.credits || 0) > plan.maxCredits;
+          recordDiagnosticSkip(
+            plan,
+            next,
+            exceedsCeiling ? 'CREDIT_CEILING' : 'NO_CREDIT_PROGRESS',
+            exceedsCeiling
+              ? `目前 ${plan.totalCredits} 學分，加入後會超過學分上限 ${plan.maxCredits}`
+              : '已達最低學分，剩餘課程無法再增加學分，排課停止'
+          );
+        }
+        break;
+      }
+    }
+  }
+
+  refreshGraduationPlanningResult(plan, graduationAllocation);
+
+  if (graduationAllocation && remaining.length > 0) {
+    for (const next of remaining) {
+      recordDiagnosticSkip(
+        plan,
+        next,
+        'GRADUATION_CATEGORY_QUOTA',
+        '本學期的選修／通識／系外配額已完成，未再用其他課程填滿學分上限'
+      );
+    }
+  }
+
+  if (!graduationAllocation && remaining.length > 0 && plan.totalCredits >= plan.maxCredits) {
+    for (const next of remaining) {
+      recordDiagnosticSkip(
+        plan,
+        next,
+        'CREDIT_CEILING',
+        `目前已達學分上限 ${plan.maxCredits}，未再處理後續候選課程`
+      );
     }
   }
 
@@ -2398,8 +3063,70 @@ function buildReviewCoverage(plan) {
 // `warnings` 陣列裡的一則。前端要照驗收標準「誠實顯示實際方案數與重複原因」，
 // 就只能去 parse 中文字串——那是必然會壞的作法。改成先算出結構，句子再從結構
 // 產生：兩個出口，一份資料。
-function buildPlanDiversity(allPlans, dedupedPlans, prepared) {
+function buildPlanDiversity(allPlans, dedupedPlans, prepared, milpGeneration = null) {
   const survivingIds = new Set(dedupedPlans.map(plan => plan.id));
+  if (milpGeneration) {
+    const labels = {
+      easy: { id: 'personalized_easy', title: '輕鬆導向方案' },
+      challenge: { id: 'personalized_challenge', title: '挑戰導向方案' },
+      interest: { id: 'personalized_interest', title: '興趣導向方案' },
+      compact: { id: 'personalized_compact', title: '集中排課方案' },
+    };
+    const collapsed = (milpGeneration.collapseReasons || []).map(item => {
+      const definition = labels[item.archetype];
+      return {
+        variantId: definition?.id ?? item.archetype,
+        title: definition?.title ?? item.archetype,
+        reason: item.reason,
+        ...(item.detail ? { detail: item.detail } : {}),
+        // 只有「與已選方案太像」才帶這個 key。這裡就把 archetype 解析成方案 id 與顯示名稱，
+        // 前端不必自己維護一份對照。
+        ...(Array.isArray(item.conflictsWith) && item.conflictsWith.length > 0 ? {
+          conflictsWith: item.conflictsWith.map(archetype => {
+            if (archetype === SUBSET_BASE_ID) {
+              return {
+                variantId: milpGeneration.baseVariant?.id ?? 'personalized',
+                title: milpGeneration.baseVariant?.title ?? '綜合平衡方案',
+              };
+            }
+            return {
+              variantId: labels[archetype]?.id ?? archetype,
+              title: labels[archetype]?.title ?? archetype,
+            };
+          }),
+        } : {}),
+      };
+    });
+    return {
+      requestedVariants: 4,
+      distinctPlans: dedupedPlans.length,
+      reason: collapsed.length > 0 ? 'milp-candidate-unavailable' : null,
+      collapsed,
+      competablePoolSize: milpGeneration.baseSelection
+        ? (milpGeneration.universeSize ?? prepared?.courses?.length ?? 0)
+        : (prepared?.courses?.length ?? 0),
+      solver: {
+        method: milpGeneration.method ?? 'dinkelbach-milp',
+        status: milpGeneration.status,
+        elapsedMs: milpGeneration.elapsedMs ?? 0,
+        // `method` 是候選的**產生**方法；從候選中**挑選**的方法另外記在這裡，兩者不混用。
+        ...(milpGeneration.subsetSelection ? { subsetSelection: milpGeneration.subsetSelection } : {}),
+        axes: milpGeneration.axes?.map(axis => ({
+          archetype: axis.archetype, status: axis.status, reason: axis.reason,
+          ...(axis.detail ? { detail: axis.detail } : {}),
+          ...(axis.diagnosis ? { diagnosis: axis.diagnosis } : {}),
+          candidateCount: axis.candidates?.length ?? 0,
+          candidates: axis.candidates?.map(candidate => ({
+            ratio: candidate.ratio,
+            qualityRetention: candidate.qualityRetention,
+            distanceFromBase: candidate.distanceFromBase,
+            convergence: candidate.convergence,
+            category: candidate.category,
+          })) ?? [],
+        })) ?? [],
+      },
+    };
+  }
   return {
     requestedVariants: allPlans.length,
     distinctPlans: dedupedPlans.length,
@@ -2411,17 +3138,189 @@ function buildPlanDiversity(allPlans, dedupedPlans, prepared) {
   };
 }
 
+function scheduleIdentityKey(plan) {
+  return plan.schedule.map(course => course.id).sort((a, b) => a - b).join(',');
+}
+
+function diagnosticSelectedCourse(course) {
+  return {
+    ...diagnosticCourse(course),
+    scheduleState: course?.scheduleState ?? null,
+    selectedBecause: course?.recommendationReason?.selectedBecause ?? null,
+    placementReason: course?.recommendationReason?.placementReason ?? course?.reason ?? null,
+  };
+}
+
+function buildUnselectedCourseDiagnostics(plan, prepared, candidateCourses) {
+  const selectedIds = new Set([
+    ...plan.schedule.map(course => Number(course.id)),
+    ...plan.unscheduledCourses.map(course => Number(course.id)),
+    ...plan.watchedCourses.map(course => Number(course.id)),
+  ]);
+  const selectedByCourseKey = new Map(
+    [...plan.schedule, ...plan.unscheduledCourses]
+      .map(course => [getCourseKey(course), course])
+  );
+  const annotatedById = new Map();
+  for (const course of prepared.courses) annotatedById.set(Number(course.id), course);
+  for (const item of prepared.exclusions) {
+    if (item?.course) annotatedById.set(Number(item.course.id), item.course);
+  }
+
+  const exclusionReasons = new Map();
+  for (const item of plan.excludedCourses || []) {
+    const sectionId = Number(item.course?.id);
+    if (!Number.isFinite(sectionId)) continue;
+    const reasons = exclusionReasons.get(sectionId) || [];
+    reasons.push({
+      constraintId: item.constraintId ?? null,
+      reason: item.reason ?? null,
+      conflictingCourse: item.pairedCourse ? diagnosticCourse(item.pairedCourse) : null,
+    });
+    exclusionReasons.set(sectionId, reasons);
+  }
+
+  const uniqueCandidates = new Map();
+  for (const raw of candidateCourses) {
+    const sectionId = Number(raw?.id ?? raw?.sectionId);
+    if (!Number.isFinite(sectionId) || uniqueCandidates.has(sectionId)) continue;
+    uniqueCandidates.set(sectionId, annotatedById.get(sectionId) || raw);
+  }
+
+  const diagnostics = plan._generationDiagnostics;
+  return [...uniqueCandidates.values()]
+    .filter(course => !selectedIds.has(Number(course.id)))
+    .map(course => {
+      const sectionId = Number(course.id);
+      const excluded = exclusionReasons.get(sectionId);
+      if (excluded?.length) {
+        return {
+          course: diagnosticCourse(course),
+          stage: 'excluded',
+          reasons: excluded,
+        };
+      }
+
+      const skipped = diagnostics?.skippedReasons.get(sectionId);
+      if (skipped) {
+        return {
+          course: diagnosticCourse(course),
+          stage: 'not-competed',
+          reasons: [{ ...skipped, conflictingCourse: null }],
+        };
+      }
+
+      const selectedSection = selectedByCourseKey.get(getCourseKey(course));
+      if (selectedSection) {
+        return {
+          course: diagnosticCourse(course),
+          stage: 'alternative-section',
+          reasons: [{
+            constraintId: 'ALTERNATIVE_SECTION_NOT_SELECTED',
+            reason: `同一門課已選擇其他班次（section ${selectedSection.id}）`,
+            conflictingCourse: diagnosticCourse(selectedSection),
+          }],
+        };
+      }
+
+      return {
+        course: diagnosticCourse(course),
+        stage: 'ranking',
+        reasons: [{
+          constraintId: 'RANKING_NOT_REACHED',
+          reason: plan.totalCredits >= plan.maxCredits
+            ? `方案已達學分上限 ${plan.maxCredits}，此候選未輪到處理`
+            : `方案依 ${plan.stopWhen} 停止條件結束前，此候選未進入可排入結果`,
+          conflictingCourse: null,
+        }],
+      };
+    });
+}
+
+function buildGenerationDiagnostics(allPlans, prepared, candidateCourses) {
+  const firstVariantBySchedule = new Map();
+  return {
+    topCandidateLimit: DIAGNOSTIC_TOP_CANDIDATES,
+    candidatePoolSize: candidateCourses.length,
+    variants: allPlans.map(plan => {
+      const key = scheduleIdentityKey(plan);
+      const duplicateOfVariantId = firstVariantBySchedule.get(key) ?? null;
+      if (!duplicateOfVariantId) firstVariantBySchedule.set(key, plan.id);
+      const scheduled = plan.schedule.map(diagnosticSelectedCourse);
+      const unscheduled = plan.unscheduledCourses.map(diagnosticSelectedCourse);
+      return {
+        variantId: plan.id,
+        title: plan.title,
+        duplicateOfVariantId,
+        totalCredits: plan.totalCredits,
+        generationPolicy: plan.generationPolicy,
+        stopWhen: plan.stopWhen,
+        courseSet: {
+          scheduled,
+          unscheduled,
+          all: [...scheduled, ...unscheduled],
+        },
+        watchedCourses: plan.watchedCourses.map(diagnosticSelectedCourse),
+        decisionSteps: plan._generationDiagnostics?.decisionSteps ?? [],
+        unselectedCourses: buildUnselectedCourseDiagnostics(
+          plan, prepared, candidateCourses
+        ),
+      };
+    }),
+  };
+}
+
+// 塌縮原因的中文說法。warnings 是直接給使用者看的句子，不該把 `no-signal` 這種代碼印出去。
+// 這份文案與 client/src/components/Schedule/PlanSwitcher.jsx 的 reasonText／detailText 對齊；
+// 前後端不共用程式碼，所以各有一份——改其中一邊時兩邊都要改。
+const COLLAPSE_REASON_TEXT = {
+  'no-signal': '候選課缺少可區分的資料',
+  'insufficient-difference': '無法在品質下限內換進、換出至少兩門課',
+  'credit-parity-infeasible': '無法維持綜合方案的學分',
+  'axis-threshold-infeasible': '無法達到主軸改善門檻',
+  'hierarchy-parity-infeasible': '無法維持與綜合方案相同的本系／跨年級／系外課程結構',
+  'graduation-category-infeasible': '無法維持綜合方案的選修／通識／系外門數',
+  'rating-coverage-infeasible': '有評價的課不足，無法在維持評價涵蓋下提高主軸表現',
+  'quality-floor': '換課後品質會低於綜合方案的 87%',
+  'combined-constraints': '學分、品質、換課與主軸門檻無法同時滿足',
+  'solver-time-limit': '單次求解時間不足',
+  'solver-budget-exceeded': '求解時間已達本次上限',
+  'solver-unavailable': '求解器目前無法使用',
+  'same-course-combination': '排出來的課程組合與其他方案相同',
+  'candidate-check-failed': '產生的候選未通過課表規則檢查',
+  'selection-error': '方案挑選步驟發生錯誤',
+  infeasible: '限制組合下沒有可行解',
+};
+
+// no-signal 太籠統時改用 detail 的說法——「已經做不到更好」和「資料分不出差別」是兩件事。
+const COLLAPSE_DETAIL_TEXT = {
+  'threshold-unreachable': '綜合方案已達目前課程資料可改善的界線，無法再產生有意義的主軸改善',
+};
+
+// 這條主軸其實排得出合法方案，只是與已選的方案太像。文案要帶對方的名稱，所以是函式不是字串。
+function describeTooSimilar(item) {
+  const names = (item.conflictsWith || []).map(other => `「${other.title}」`).join('');
+  return `與${names || '其他方案'}換課不到兩門，幾乎相同${names ? '；已保留整組差異較大的組合' : ''}`;
+}
+
 function describePlanCollapse(diversity) {
   if (!diversity || diversity.collapsed.length === 0) return null;
-  return `${diversity.collapsed.map(item => item.title).join('、')}排出的課表與其他方案相同，已合併，`
+  const details = diversity.collapsed.map(item => {
+    if (item.detail === 'too-similar-to-selected') return `${item.title}：${describeTooSimilar(item)}`;
+    const text = COLLAPSE_DETAIL_TEXT[item.detail]
+      || COLLAPSE_REASON_TEXT[item.reason]
+      || COLLAPSE_REASON_TEXT['same-course-combination'];
+    return `${item.title}：${text}`;
+  }).join('；');
+  return `${details}，因此未能保留為獨立方案。`
     + `目前提供 ${diversity.distinctPlans} 種方案。可競爭的課程共 ${diversity.competablePoolSize} 門；`
-    + '本次調整取捨仍得到相同組合，不能僅憑重複結果判定是候選池不足。';
+    + '系統已保留實際原因，沒有把標題或排序差異當成新方案。';
 }
 
 function uniquePlans(plans) {
   const seen = new Set();
   return plans.filter(plan => {
-    const key = plan.schedule.map(course => course.id).sort((a, b) => a - b).join(',');
+    const key = scheduleIdentityKey(plan);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -2437,6 +3336,356 @@ function comparePlans(a, b) {
     return b.preferenceScore - a.preferenceScore;
   }
   return b.totalCredits - a.totalCredits;
+}
+
+// 主軸可達範圍的容差：門檻與極值只差浮點誤差時視為可達。
+const AXIS_BOUND_EPSILON = 1e-9;
+
+// 取有限值的極值；沒有任何可用值（沒有固定課、沒有評價）時回傳 null。
+function finiteBound(values, pick) {
+  const finite = values.filter(Number.isFinite);
+  return finite.length > 0 ? finite.reduce((best, value) => pick(best, value)) : null;
+}
+
+// 依序檢查訊號條件，回傳第一個不成立的原因；全部成立回傳 null。
+function firstBlocker(checks) {
+  const blocked = checks.find(([ok]) => !ok);
+  return blocked ? blocked[1] : null;
+}
+
+
+function distinctNumericValues(values) {
+  return new Set(values.filter(Number.isFinite).map(value => Number(value.toFixed(6)))).size;
+}
+
+// 匯出供單元測試驗證訊號判定；排課流程只在 generateMilpPlans() 內呼叫。
+export function buildMilpAxes(inputs, basePlan, easyIntent, minGain = 0.02) {
+  const summary = inputs.featureSummary || {};
+  const archetypes = buildDiverseArchetypes(easyIntent.label);
+  const interestValues = inputs.competitive.map(entry => entry.interestScore);
+  const ratedEntries = inputs.competitive.filter(entry => entry.rated);
+  const ratedValues = ratedEntries.map(entry => entry.easyScore);
+  // 2026-09-20 使用者決定：評價數下限取 S₀ 的一半（至少 2 門）。要求替代方案的
+  // 評價覆蓋率不低於 S₀ 會讓整條主軸直接無解，那不是資料沒有訊號。
+  const minRated = Math.max(2, Math.ceil((basePlan.reviewCoverage?.rated || 0) / 2));
+  // 主軸限制是「整份方案（固定課＋競爭課）的平均值 ≥／≤ 門檻」。平均值不可能高於
+  // 池中的最大值、也不可能低於最小值，所以固定課的分數必須一起納入上下限，否則
+  // 只看競爭課會把「其實做得到」誤判成 no-signal。門檻落在可達範圍外＝資料上不可能
+  // 改善，回報 no-signal；有改善空間卻求不出解，才由求解後的診斷分類為
+  // axis-threshold-infeasible／combined-constraints。
+  const interestBound = finiteBound([...interestValues, summary.fixedInterestMax], Math.max);
+  const easyUpperBound = finiteBound([...ratedValues, summary.fixedEasyMax], Math.max);
+  const easyLowerBound = finiteBound([...ratedValues, summary.fixedEasyMin], Math.min);
+
+  return archetypes.map(definition => {
+    if (definition.archetype === 'interest') {
+      const baseline = basePlan.preferenceBreakdown?.interest ?? 0;
+      const threshold = Math.min(1, baseline + minGain);
+      const blocked = firstBlocker([
+        [Boolean(summary.hasInterestKeywords), 'no-interest-keywords'],
+        [distinctNumericValues(interestValues) > 1, 'flat-scores'],
+        [interestBound !== null && interestBound >= threshold - AXIS_BOUND_EPSILON, 'threshold-unreachable'],
+      ]);
+      return {
+        ...definition, type: 'interest', signal: blocked === null,
+        reason: blocked === null ? null : 'no-signal',
+        detail: blocked,
+        threshold,
+        reachableBound: interestBound,
+        fixedCount: summary.fixedCount || 0,
+        fixedScoreSum: summary.fixedInterestSum || 0,
+      };
+    }
+    if (definition.archetype === 'easy' || definition.archetype === 'challenge') {
+      const baseline = basePlan.preferenceBreakdown?.easy;
+      const challenge = definition.archetype === 'challenge';
+      const hasBaseline = Number.isFinite(baseline);
+      const threshold = hasBaseline
+        ? (challenge ? Math.max(0, baseline - minGain) : Math.min(1, baseline + minGain))
+        : null;
+      const bound = challenge ? easyLowerBound : easyUpperBound;
+      const reachable = hasBaseline && bound !== null && (challenge
+        ? bound <= threshold + AXIS_BOUND_EPSILON
+        : bound >= threshold - AXIS_BOUND_EPSILON);
+      const blocked = firstBlocker([
+        [hasBaseline, 'no-easiness-baseline'],
+        [ratedEntries.length + (summary.fixedRatedCount || 0) >= minRated, 'insufficient-rating'],
+        [distinctNumericValues(ratedValues) > 1, 'flat-scores'],
+        [reachable, 'threshold-unreachable'],
+      ]);
+      return {
+        ...definition, type: challenge ? 'challenge' : 'easy', signal: blocked === null,
+        reason: blocked === null ? null : 'no-signal',
+        detail: blocked,
+        threshold,
+        reachableBound: bound,
+        minRated,
+        fixedRatedCount: summary.fixedRatedCount || 0,
+        fixedEasySum: summary.fixedEasySum || 0,
+      };
+    }
+    const baseDays = basePlan.planMetrics?.usedDays ?? 0;
+    const blocked = firstBlocker([
+      [baseDays > 1, 'single-day'],
+      [baseDays - 1 >= (summary.fixedDays || 0), 'fixed-days-blocked'],
+    ]);
+    return {
+      ...definition, type: 'compact', signal: blocked === null,
+      reason: blocked === null ? null : 'no-signal', detail: blocked,
+      maxDays: Math.max(0, baseDays - 1),
+    };
+  });
+}
+
+function cloneMilpCourse(entry, variant, constraints) {
+  const course = entry.course;
+  const credits = Number(course.credits) || 0;
+  const nonGraduationCategory = getNonGraduationCategory(course);
+  const reason = `由「${variant.title}」的整體最佳化模型排入`;
+  return {
+    ...course,
+    scheduleState: 'selected',
+    reason,
+    countsTowardGraduation: nonGraduationCategory === null,
+    nonGraduationCategory,
+    recommendationReason: buildRecommendationReason({
+      course: { ...course, countsTowardGraduation: nonGraduationCategory === null, nonGraduationCategory },
+      placementReason: reason,
+      scoreComponents: entry.scoreComponents ?? null,
+      scoringPolicy: variant.scoringPolicy,
+      contentHits: collectContentPreferenceHits(course, constraints),
+      interestHits: collectInterestHits(course, constraints),
+      alternatives: { status: COMPETITION_STATUS.NOT_APPLICABLE_MILP, candidates: [] },
+    }),
+    _creditsForSummary: credits,
+  };
+}
+
+function materializeMilpPlan(candidate, definition, inputs, constraints, prepared, preferenceProfile) {
+  const scoringPolicy = resolveScoringPolicy(constraints);
+  const plan = createEmptyPlan({
+    id: definition.id,
+    title: definition.title,
+    description: definition.description,
+    scoringPolicy: {
+      ...scoringPolicy,
+      archetype: definition.archetype,
+      solver: {
+        method: 'dinkelbach-milp',
+        category: candidate.category,
+        rawStatus: candidate.rawStatus,
+        approximate: candidate.approximate,
+      },
+    },
+    stopWhen: 'milp-optimized',
+  }, constraints);
+
+  plan.schedule = (inputs.fixedSchedule || []).map(course => ({ ...course }));
+  plan.unscheduledCourses = (inputs.fixedUnscheduled || []).map(course => ({ ...course }));
+  plan.watchedCourses = (inputs.basePlan.watchedCourses || []).map(course => ({ ...course }));
+  plan.excludedCourses = [...prepared.exclusions];
+  const chosen = candidate.selectedSections.map(entry => cloneMilpCourse(entry, definition, constraints));
+  plan.schedule.push(...chosen.filter(course => getTimeBlocks(course).length > 0));
+  plan.unscheduledCourses.push(...chosen.filter(course => getTimeBlocks(course).length === 0));
+  plan.schedule.sort((left, right) => (
+    Number(left.dayOfWeek) - Number(right.dayOfWeek)
+    || Number(left.startPeriod) - Number(right.startPeriod)
+    || Number(left.id) - Number(right.id)
+  ));
+  const selected = [...plan.schedule, ...plan.unscheduledCourses];
+  plan.totalCredits = selected.reduce((sum, course) => sum + (Number(course.credits) || 0), 0);
+  plan.graduationCredits = selected.reduce(
+    (sum, course) => sum + (countsTowardGraduation(course) ? (Number(course.credits) || 0) : 0), 0
+  );
+  plan.nonGraduationCredits = plan.totalCredits - plan.graduationCredits;
+  if (inputs.graduationPlanning?.enabled) {
+    plan.graduationPlanning = {
+      ...inputs.graduationPlanning,
+      selected: graduationBucketSummary(plan, prepared.scope),
+    };
+  }
+  plan.courseCount = selected.length;
+  plan.success = true;
+  plan.watchOnly = false;
+  plan.warnings = candidate.approximate
+    ? [`方案「${definition.title}」為近似解：${candidate.convergence.reason}`]
+    : [];
+  delete plan.placedCourseKeys;
+
+  const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
+  plan.preferenceScore = score;
+  plan.preferenceBreakdown = breakdown;
+  plan.reviewCoverage = buildReviewCoverage(plan);
+  plan.planMetrics = computePlanMetrics(plan);
+  const baseCodes = new Map((inputs.competitive || []).map(entry => [entry.courseKey, entry.course]));
+  plan.comparisonToBaseline = {
+    removed: candidate.distanceFromBase.removed.map(key => diagnosticCourse(baseCodes.get(key))),
+    added: candidate.distanceFromBase.added.map(key => diagnosticCourse(baseCodes.get(key))),
+    hammingDistance: candidate.distanceFromBase.hammingDistance,
+    replacementDistance: candidate.distanceFromBase.replacementDistance,
+    utility: candidate.utility,
+    baselineUtility: candidate.baselineUtility,
+    qualityRetention: candidate.qualityRetention,
+    axisValue: breakdown[definition.archetype === 'challenge' ? 'easy' : definition.archetype] ?? null,
+    usedDays: plan.planMetrics.usedDays,
+    bindingConstraints: candidate.bindingConstraints,
+  };
+  plan.milpSolver = {
+    method: 'dinkelbach-milp', category: candidate.category, rawStatus: candidate.rawStatus,
+    approximate: candidate.approximate, convergence: candidate.convergence, trace: candidate.trace,
+  };
+  return plan;
+}
+
+// 穩定的候選識別值：課號集合＋班次 ID 集合。同課號集合、不同班次的候選也分得出來，
+// 而且不依賴候選在陣列中的位置。
+function milpCandidateId(candidate) {
+  const keys = [...candidate.selectedKeys].map(String).sort();
+  const sections = (candidate.selectedSections || [])
+    .map(entry => Number(entry.course?.id)).sort((left, right) => left - right);
+  return `${keys.join(',')}|${sections.join(',')}`;
+}
+
+function generateMilpPlans(basePlan, inputs, constraints, prepared, preferenceProfile, easyIntent, runtimeOptions) {
+  const definitions = buildDiverseArchetypes(easyIntent.label);
+  if (runtimeOptions.planSet === 'primary-only') {
+    return { plans: [], axes: [], status: 'primary-only' };
+  }
+  const runtime = runtimeOptions.highsRuntime ?? configuredHighsRuntime;
+  if (!runtime) return {
+    plans: [], axes: [], status: 'solver-unavailable',
+    collapseReasons: definitions.map(axis => ({
+      archetype: axis.archetype, reason: 'solver-unavailable',
+    })),
+  };
+  const axes = buildMilpAxes(inputs, basePlan, easyIntent, runtimeOptions.axisMinGain ?? 0.02);
+  const solved = generateDiverseCandidates(inputs, {
+    axes,
+    options: runtimeOptions.diverseSolverOptions,
+    solve: (model, options) => solveLpTextSync(runtime, model.lpText, model.columnNames, options),
+  });
+  // 測試接縫：讓測試在「求解之後、檢查與挑選之前」改寫候選，用來重現求解器不容易
+  // 剛好產生的情況（兩條主軸太像、候選不通過檢查）。正式路徑不傳這個選項。
+  const generated = typeof runtimeOptions.diverseCandidatesHook === 'function'
+    ? (runtimeOptions.diverseCandidatesHook(solved) ?? solved)
+    : solved;
+
+  // 任務 2：先逐候選做單一方案檢查（與挑選順序無關），再把通過的候選一次交給選擇器。
+  // 舊做法依主軸順序累積選取，兩條主軸的候選太像時永遠捨棄排在後面的那條。
+  const checkedByArchetype = new Map();
+  const rejectedCandidates = [];
+  for (const axisResult of generated.axes) {
+    if (axisResult.status === 'no-signal') continue;
+    const definition = axes.find(axis => axis.archetype === axisResult.archetype);
+    const valid = new Map();
+    for (const candidate of axisResult.candidates) {
+      const candidateId = milpCandidateId(candidate);
+      if (valid.has(candidateId)) continue;
+      const plan = materializeMilpPlan(
+        candidate, definition, inputs, constraints, prepared, preferenceProfile
+      );
+      const courses = [...plan.schedule, ...plan.unscheduledCourses];
+      const validator = validateScheduleAgainstConstraints(courses, constraints, {
+        excludedCourses: plan.excludedCourses,
+      });
+      const modelCheck = checkMilpPlan(courses, inputs, {
+        creditTarget: basePlan.totalCredits,
+        hierarchyTargets: generated.hierarchyTargets,
+      });
+      plan.milpChecks = { validator, model: modelCheck };
+      if (!validator.valid) {
+        rejectedCandidates.push({ archetype: axisResult.archetype, stage: 'validator' });
+      } else if (!modelCheck.valid) {
+        rejectedCandidates.push({ archetype: axisResult.archetype, stage: 'model-check' });
+      } else {
+        valid.set(candidateId, {
+          candidateId, selectedKeys: candidate.selectedKeys, ratio: candidate.ratio, plan,
+        });
+      }
+    }
+    checkedByArchetype.set(axisResult.archetype, valid);
+  }
+
+  // D_bin 的分母是不重複的競爭課號數：`inputs.competitive` 按班次列，同課號多班次在 MILP
+  // 裡是同一個 z_k，用 `.length` 會讓多開班的課把 D_bin 稀釋。
+  const b = new Set((inputs.competitive || []).map(entry => entry.courseKey)).size;
+  const selectionStartedAt = performance.now();
+  let selection;
+  let selectionError = null;
+  try {
+    selection = selectDiverseSubset({
+      baseSelection: generated.baseSelection || new Set(),
+      axes: [...checkedByArchetype.entries()].map(([archetype, valid]) => ({
+        archetype, candidates: [...valid.values()],
+      })),
+      b,
+    });
+  } catch (error) {
+    // 選擇器的契約被違反時退回只有 S₀，不讓整個排課請求失敗；原因留在診斷裡。
+    selectionError = error.message;
+    selection = {
+      chosen: [], dropped: [], objective: { planCount: 1, dBin: null, pairwiseHammingSum: 0 },
+      b, evaluated: 0, feasible: 0, method: SUBSET_SELECTION_METHOD,
+    };
+  }
+  const selectedPlans = selection.chosen.map(item => (
+    checkedByArchetype.get(item.archetype).get(item.candidateId).plan
+  ));
+  const chosenArchetypes = new Set(selection.chosen.map(item => item.archetype));
+  const droppedByArchetype = new Map(selection.dropped.map(item => [item.archetype, item]));
+
+  const collapseReasons = [];
+  for (const axisResult of generated.axes) {
+    const { archetype } = axisResult;
+    if (chosenArchetypes.has(archetype)) continue;
+    if (axisResult.status === 'no-signal') {
+      collapseReasons.push({ archetype, reason: 'no-signal', detail: axisResult.detail ?? null });
+      continue;
+    }
+    if (axisResult.candidates.length === 0) {
+      collapseReasons.push({
+        archetype, reason: axisResult.reason || axisResult.status || 'insufficient-difference',
+      });
+      continue;
+    }
+    const dropped = droppedByArchetype.get(archetype);
+    if (dropped) {
+      // 這條主軸有合法方案，只是與已選組合太像——不是「求解不出換兩門課的方案」。
+      collapseReasons.push({
+        archetype, reason: 'insufficient-difference',
+        detail: 'too-similar-to-selected', conflictsWith: dropped.conflictsWith,
+      });
+      continue;
+    }
+    if (selectionError) {
+      collapseReasons.push({ archetype, reason: 'selection-error' });
+      continue;
+    }
+    // 求解器給了候選，但沒有一個通過單一方案檢查。不能說成「與其他方案太像」。
+    const stages = new Set(rejectedCandidates
+      .filter(item => item.archetype === archetype).map(item => item.stage));
+    collapseReasons.push({
+      archetype, reason: 'candidate-check-failed',
+      detail: stages.size > 1 ? 'mixed'
+        : stages.has('validator') ? 'validator-rejected' : 'model-check-rejected',
+    });
+  }
+  return {
+    ...generated,
+    plans: selectedPlans,
+    collapseReasons,
+    baseVariant: { id: basePlan.id, title: basePlan.title },
+    subsetSelection: {
+      method: selection.method,
+      objective: selection.objective,
+      b: selection.b,
+      evaluated: selection.evaluated,
+      feasible: selection.feasible,
+      elapsedMs: Number((performance.now() - selectionStartedAt).toFixed(3)),
+      rejectedCandidates,
+      ...(selectionError ? { error: selectionError } : {}),
+    },
+  };
 }
 
 // roadmap #21：無解時的結構化 conflict set，取代「只回傳第一個錯誤字串」。
@@ -2527,6 +3776,31 @@ function tryRelaxationLadder(prepared, constraints, variant) {
   return null;
 }
 
+
+// 把避開規則的執行結果整理成前端要的形狀。
+//
+// **每一筆一定要帶 `status`**：必修衝突時課程其實還在課表裡，若照樣列成「已避開」，
+// 畫面會說「本次重排會避開 X」而 X 就在旁邊的課表上——那是系統自己說謊。
+function reportSessionAvoidances(rules = []) {
+  return rules.map(rule => {
+    let message = null;
+    if (rule.status === 'protected-conflict') {
+      const detail = rule.protectedCourses.map(item => `「${item.name}」${item.reason}`).join('、');
+      message = `未套用：${detail}，仍保留在課表中。請決定要保留必修，還是取消這項避開條件。`;
+    } else if (rule.status === 'not-found') {
+      message = '未套用：這次的候選課程裡找不到對應的課。';
+    }
+    return {
+      sectionId: rule.sectionId,
+      reason: rule.reason,
+      scope: rule.scope,
+      pendingReason: rule.pendingReason,
+      status: rule.status,
+      message,
+    };
+  });
+}
+
 export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeOptions = {}) {
   // 封鎖時段在此統一正規化，而不是要求每個呼叫端各自處理。
   // 使用者偏好可能存成時間字串（例如 ["08:00"]），未轉換時 bp.day 為 undefined，
@@ -2557,6 +3831,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       nonGraduationCredits: 0,
       courseCount: 0,
       excludedCourses: [],
+      // 連候選課程都沒有，避開規則根本沒有機會執行，因此不回報任何結果——
+      // 回 `not-found` 會讓使用者以為是他移除的課消失了，其實是資料源掛了。
+      appliedSessionAvoidances: [],
       watchedCourses: [],
       unscheduledCourses: [],
       draftSchedule: [],
@@ -2620,9 +3897,15 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
 
   const scoringPolicy = resolveScoringPolicy(constraints);
   const strategies = buildPlanStrategies(scoringPolicy);
-  const allVariantPlans = strategies
+  const includePlanDiagnostics = runtimeOptions.includePlanDiagnostics === true;
+  const needMipInputs = runtimeOptions.includeMipInputs === true
+    || runtimeOptions.planSet !== 'primary-only';
+  let allVariantPlans = strategies
     .map(variant => {
-      const plan = buildPlan(prepared, constraints, variant);
+      const plan = buildPlan(prepared, constraints, variant, {
+        includeDiagnostics: includePlanDiagnostics,
+        includeMipInputs: needMipInputs,
+      });
       const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
       plan.preferenceScore = score;
       plan.preferenceBreakdown = breakdown;
@@ -2634,14 +3917,33 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     .sort(comparePlans);
 
   let plans = uniquePlans(allVariantPlans);
+  const basePlan = allVariantPlans.find(plan => plan.id === strategies[0].id) ?? plans[0];
+  const mipInputs = basePlan?._mipInputs ? { ...basePlan._mipInputs, basePlan } : null;
+  const milpGeneration = mipInputs
+    ? generateMilpPlans(
+      basePlan, mipInputs, constraints, prepared, preferenceProfile, easyIntent, runtimeOptions
+    )
+    : { plans: [], axes: [], status: 'data-insufficient', collapseReasons: [] };
+  if (milpGeneration.plans?.length > 0) {
+    allVariantPlans = [...allVariantPlans, ...milpGeneration.plans];
+    plans = uniquePlans(allVariantPlans).sort(comparePlans);
+  }
   // roadmap #10：方案數少於 variant 數時要說出**為什麼**，不能讓使用者以為
   // 系統只想得出這幾種。原因有兩類且處置完全不同：候選池太小（等 #13C 的
   // 適用對象規則）與某個 variant 沒有可用訊號（資料缺口）。
   // roadmap #27：同一份資料另外以 `planDiversity` 結構化回傳給前端。
-  const planDiversity = buildPlanDiversity(allVariantPlans, plans, prepared);
+  const planDiversity = buildPlanDiversity(
+    allVariantPlans,
+    plans,
+    prepared,
+    runtimeOptions.planSet === 'primary-only' ? null : milpGeneration
+  );
+  const generationDiagnostics = includePlanDiagnostics
+    ? buildGenerationDiagnostics(allVariantPlans, prepared, candidateCourses)
+    : null;
   const collapsedVariantWarning = describePlanCollapse(planDiversity);
 
-  const baselinePrimary = plans[0];
+  const baselinePrimary = basePlan;
   const baselineCheck = baselinePrimary?.success
     ? validateScheduleAgainstConstraints(
       [...baselinePrimary.schedule, ...baselinePrimary.unscheduledCourses],
@@ -2657,7 +3959,14 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   } : null;
 
   let repair = null;
-  if (shouldAttemptRepair(baselinePrimary, baselineCheck, runtimeOptions)) {
+  // 畢業配額啟用時，學分不足代表該類別沒有可排候選；不能再讓通用 repair 用額外
+  // 本系選修把最低學分補滿，否則會直接推翻本次功能的核心限制。硬限制失敗仍可 repair。
+  const quotaLimitedButValid = Boolean(
+    constraints.graduationPlanning?.enabled
+    && baselinePrimary?.success
+    && baselineCheck.valid
+  );
+  if (!quotaLimitedButValid && shouldAttemptRepair(baselinePrimary, baselineCheck, runtimeOptions)) {
     repair = runRepair(prepared, constraints, preferenceProfile, plans, runtimeOptions);
     repair.solver.baseline = baseline;
     if (repair.plan) {
@@ -2728,11 +4037,14 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
           ...relaxed.relaxedConstraints.map(r => r.reason),
         ])];
 
+        const relaxedPlans = uniquePlans([relaxed.plan, ...plans]);
         return {
           success: true,
           watchOnly: relaxed.plan.watchOnly,
           schedule: relaxed.plan.schedule,
-          plans: uniquePlans([relaxed.plan, ...plans]),
+          plans: relaxedPlans,
+          recommendedPlanId: relaxed.plan.id,
+          displayOrder: relaxedPlans.map(plan => plan.id),
           totalCredits: relaxed.plan.totalCredits,
           graduationCredits: relaxed.plan.graduationCredits,
           nonGraduationCredits: relaxed.plan.nonGraduationCredits,
@@ -2757,6 +4069,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
           preferenceProfileSource,
           hasExpressedPreference,
           reviewDataLoaded,
+          ...(generationDiagnostics ? { generationDiagnostics } : {}),
           message: `已放寬部分時段偏好以產生可行課表：${relaxed.plan.schedule.length} 門課，`
             + `共 ${relaxed.plan.totalCredits} 學分。`,
         };
@@ -2774,6 +4087,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       nonGraduationCredits: 0,
       courseCount: 0,
       excludedCourses: primary?.excludedCourses || [],
+      appliedSessionAvoidances: reportSessionAvoidances(prepared.sessionAvoidanceRules),
       // 失敗時仍要帶回關注課程，否則使用者標記的關注會從畫面上消失。
       watchedCourses: primary?.watchedCourses || [],
       unscheduledCourses: primary?.unscheduledCourses || [],
@@ -2788,6 +4102,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       // 不取代它們——舊呼叫端只讀 message／warnings 仍得到跟改動前一樣的內容。
       conflictSet: repair?.conflictSet || buildConflictSet(plans),
       reviewDataLoaded,
+      ...(generationDiagnostics ? { generationDiagnostics } : {}),
       message: warnings[0] || '無法產生符合限制的課表。',
     };
   }
@@ -2817,6 +4132,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       nonGraduationCredits: 0,
       courseCount: 0,
       excludedCourses: primary.excludedCourses,
+      appliedSessionAvoidances: reportSessionAvoidances(prepared.sessionAvoidanceRules),
       watchedCourses: primary.watchedCourses,
       unscheduledCourses: primary.unscheduledCourses,
       draftSchedule: primary.schedule,
@@ -2841,12 +4157,16 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       ],
       conflictSet: selfCheck.violations,
       reviewDataLoaded,
+      ...(generationDiagnostics ? { generationDiagnostics } : {}),
       message: '內部一致性檢查失敗，請回報此問題。',
     };
   }
 
   const allWarnings = [...new Set(plans.flatMap(plan => plan.warnings))];
   if (collapsedVariantWarning) allWarnings.push(collapsedVariantWarning);
+  if (milpGeneration.status === 'solver-unavailable') {
+    allWarnings.push('多方案求解器尚未就緒，本次只提供綜合方案。');
+  }
   if (!hasExpressedPreference) {
     allWarnings.push('未設定興趣關鍵字、集中排課或涼課／挑戰難課偏好，主推方案改以總學分決定，個人化程度有限。');
   }
@@ -2911,17 +4231,21 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     ? `目前沒有可排入的正式加選課程，僅顯示 ${primary.watchedCourses.length} 門關注課程供你比較時段。`
     : `已產生 ${plans.length} 個課表方案，預設採用「${primary.title}」（${selectionReason}）：${primary.schedule.length} 門課${unscheduledNote}，${creditNote}`;
 
-  return {
+  const result = {
     success: true,
     watchOnly: primary.watchOnly,
     schedule: primary.schedule,
     plans,
+    recommendedPlanId: primary.id,
+    displayOrder: plans.map(plan => plan.id),
     planDiversity,
     totalCredits: primary.totalCredits,
     graduationCredits: primary.graduationCredits,
+    graduationPlanning: primary.graduationPlanning ?? null,
     nonGraduationCredits: primary.nonGraduationCredits,
     courseCount: primary.courseCount,
     excludedCourses: primary.excludedCourses,
+    appliedSessionAvoidances: reportSessionAvoidances(prepared.sessionAvoidanceRules),
     watchedCourses: primary.watchedCourses,
     unscheduledCourses: primary.unscheduledCourses,
     draftSchedule: [],
@@ -2935,8 +4259,19 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     preferenceProfileSource,
     hasExpressedPreference,
     reviewDataLoaded,
+    ...(generationDiagnostics ? { generationDiagnostics } : {}),
     message,
   };
+  // roadmap #10 任務 1 spike：只有 opt-in 時掛上基準策略（strategies[0]）的 MILP 輸入，
+  // 不可列舉，JSON 序列化與 API 回應都看不到。
+  if (runtimeOptions.includeMipInputs === true) {
+    Object.defineProperty(result, 'mipInputs', {
+      configurable: true,
+      enumerable: false,
+      value: basePlan?._mipInputs ? { ...basePlan._mipInputs, basePlan } : null,
+    });
+  }
+  return result;
 }
 
 export function validateSchedule(courses = []) {

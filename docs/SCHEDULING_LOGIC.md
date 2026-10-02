@@ -160,11 +160,11 @@
 「明確指定」= `POST /api/schedule/generate` 的 `courseIds`、`selectedCourseIds`、
 `mustTakeCourseIds`。
 
-### B～F 班級分類與 unknown eligibility
+### B～F 班級分類與適用規則（#13B／#13C／#13D）
 
 現行 MySQL 的 562 個相異 `Courses.dept` 已全部分類：483 個可由一般語法解析的 A 類、
-8 個明確對照的特殊格式 A 類，以及 71 個 B～F 類。B～F 目錄位於
-`server/src/data/classKindCatalog.js`，分類只回答「這是哪一種班級」，不回答「誰可以修」。
+8 個明確對照的特殊格式 A 類，以及 71 個 B～F 類。B～F 目錄與適用規則都在
+`server/src/data/classKindCatalog.js`。
 
 - B：全校共同與通識班級。
 - C：學院綜合班。
@@ -172,11 +172,31 @@
 - E：學分學程。
 - F：用途待確認班級。
 
-在 #13C 取得正式適用規則前，B～F 一律回傳 `eligibility: 'unknown'` 與
-`eligibilityReason`。搜尋保留這些課讓使用者看得到；排課器不得自動排入，會把課程及
-原因放入 `excludedCourses` 並彙整 warning。使用者透過 `courseIds`、
-`selectedCourseIds` 或 `mustTakeCourseIds` 明確指定時，課程仍保留並排入，但 warning
-必須顯示「資格待確認」。
+**適用規則（`ELIGIBILITY_RULES`）來自專案負責人 2026-09-18 口頭確認，不是校方書面文件**，
+`eligibilitySource` 因此標為 `class-catalog:owner-confirmed-2026-09-18`。完整規則表見
+`docs/DEPARTMENT_MAPPING.md`，摘要如下：
+
+| 類別 | 規則 |
+| --- | --- |
+| B | `人文藝術與社會經典教育`、`軍訓(一年級)` 限一年級；`大二英文綜合班` 限二年級；`國文綜合班`、`核心必修綜合班` 限一、二年級；其他不限年級 |
+| C | 學院綜合班：該學院學生可修（系所欄就是該綜合班，或系所屬於該學院，對照表 `COLLEGE_DEPARTMENTS`）；`創能學院綜合班`、`社會創新學院綜合班` 任何人可修；碩士綜合班大學部不可修 |
+| D | 獨立學制，本系統內沒有學生屬於這些班 → 不可修 |
+| E | 不需報名，任何人可修 |
+| F | 排除於本系統外 → 不可修 |
+
+判定結果：
+
+- `eligible`：與 A 類一樣進入排課候選池。
+- `ineligible`：排課候選池不收（連通識分支也不收）；繞過候選池查詢的路徑（明確指定的
+  `courseIds`、重補修 union）由 `prepareCandidates()` 以 `ELIGIBILITY_INELIGIBLE` 排除並
+  彙整 warning，使用者明確指定時保留並警告。
+- `unknown`：沒有規則的班級（`進修英班`、`大二進修英班`），或規則需要的學生資料不足
+  （例如沒有年級、系所沒有學院對照）。搜尋保留；排課器不自動排入，以
+  `ELIGIBILITY_UNKNOWN` 放入 `excludedCourses`；明確指定時保留並顯示「資格待確認」。
+
+**`eligibility` 只回答能不能修，不回答算哪一類畢業學分。** 學院綜合班、學程課程的類別多半
+是 MySQL 原始的 `選修`；畢業頁的補學分推薦（`graduation.js`）因此對 B～F 仍只推通識，
+不把它們當成本系選修。排課的 `graduationCredits` 目前會把它們計入，這是已知的近似。
 
 ### Active Term（Roadmap #20）
 
@@ -209,13 +229,48 @@
 0 一律可進候選，其他值必須與學生 `gradeLevel` 相同；年級不符屬不可放寬的結構性排除。
 班名中的碩一／碩二另存為 scope 的 `classYear`，不得與研究所層級 5 混用。
 
+**例外：同系、同學制的選修（#13C-5，2026-09-18）。** 同系其他年級開的選修可以修，
+`target_grade` 對它們只代表開課年級，不是限修年級。排課候選池（`schedulingPool`）、
+`prepareCandidates()` 的年級閘門與獨立驗證器都放行這類課（判定：`courseScope.js` 的
+`isOwnDepartmentElective()`），排序由下一節的階層處理。**必修不適用**：必修不得換班，
+他年級必修仍屬於別人。課程搜尋頁與 Agent 查課不套用這個例外，那兩條路徑的年級是使用者
+自己選的篩選條件。
+
+**例外：不及格必修的重補修（2026-09-19）。** `courseHistory` 中不及格的必修課號
+（`getFailedRequiredCourseCodes()`）不受開課年級限制：重補修一定是回頭修低年級開的課。
+`prepareCandidates()` 的年級閘門與獨立驗證器用同一條件放行。修正前，二年級重修一年級必修
+會被 `COURSE_GRADE_MISMATCH` 整批排除，S4 重補修實際上排不進去（`fixed-courses-control`
+驗收案例發現）。只放行有不及格紀錄的課號；其他低年級必修仍受年級限制。
+
+### 本系優先的排序階層（2026-09-18）
+
+學生系所年級可判定時，`computeScoreComponents()` 對候選加上固定的階層分：
+
+| 階層 | 分數項 | 分數 |
+| --- | --- | ---: |
+| 本人必修 | `requiredCourse` | +5,000 |
+| 本年級的本系選修 | — | 0 |
+| 他年級的本系選修 | `crossYearElective` | -2,500 |
+| 非本系課程（B～F、通識、外系） | `outsideOwnDepartment` | -5,000 |
+
+階層間距 2,500 大於偏好各項能造成的最大分差（約 2,150），偏好只在同一階層內決定順序；
+學分還沒滿時，下一階層的課照樣補進去。這個階層是在候選池放寬後加上的：實測涼課或英文
+授課偏好會讓有評價的外語、通識課塞滿課表，Persona C 與 U1 都只剩 1 門資工課。
+
+### 同一系列的 (一)(二) 不排同學期（2026-09-18）
+
+課名只差結尾中文數字（`日文(一)`、`日文(二)`）的課屬於同一系列，`evaluateCoursePlacement()`
+只排其中一門，另一門以 `SAME_SERIES_SAME_TERM` 排除。資料庫沒有先修資料，這是依課名
+推測的規則，因此：本人必修與使用者明確指定的課豁免；只認中文數字（`程式設計(III)`／
+`(IV)` 是學校安排同學期修的必修）；獨立驗證器不複查。
+
 ### 候選課程的可追溯 metadata（Roadmap #20）
 
 每門候選課除了既有的 `eligibility`／`eligibilityReason`，另外附加三個欄位：
 
 | 欄位 | 說明 |
 | --- | --- |
-| `eligibilitySource` | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`（例如 `department-required-table`、`class-catalog:unconfirmed-rules`），供 UI／Agent／未來的 evidence-based reason（#26）追查來源 |
+| `eligibilitySource` | `eligibility` 結論套用的規則代號，見 `server/src/skills/courseScope.js` 的 `ELIGIBILITY_SOURCE`（例如 `department-required-table`、`class-catalog:owner-confirmed-2026-09-18`、`class-catalog:unconfirmed-rules`），供 UI／Agent／evidence-based reason（#26）追查來源 |
 | `term` | `{ academicYear, semester, isActiveTerm }`，這門課**自己的**開課學期與是否為 active term |
 | `scopeReason` | 給人看的完整白話說明，融合 term／類別／eligibility／系外選修認列結果；優先序為：非本學期 → `eligibility=unknown` → 必修判定（本人／他人）→ 通識 → 系外選修 → 一般選修 |
 
@@ -228,8 +283,8 @@
 | 可加選 | `eligibility !== 'ineligible'` 且 `term.isActiveTerm`；`scopeReason` 講明是哪個閘門在擋 | `courseCategory.js`（term 與 eligibility 融合） |
 | 可計入畢業學分 | 本人必修／本系選修／通識預設可計；系外選修委由 `evaluateOutsideElective().eligible` | `outsideElective.js`（不動）；文字併入 `scopeReason` |
 
-B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決，`eligibility` 與
-`scopeReason` 在那些情境下維持 `unknown`／保守排除，不因本項完成而宣稱已知誰可以修。
+B～F 適用對象（#13C）與學制／學程（#13D）已於 2026-09-18 依專案負責人口頭確認的規則
+實作（見上方「B～F 班級分類與適用規則」）；沒有規則或資料不足的情境仍維持 `unknown`。
 
 ### 無法判定時
 
@@ -331,13 +386,15 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 
 ### 尚未定義的部分
 
-通識與共同科目（`國文綜合班`、`大二英文綜合班`、`核心必修綜合班`、`軍訓(一年級)`）、學院綜合班、英語授課班與國際學程、學分學程的**班級種類已於 #13B 完成分類**；正式適用對象仍未確認，整理於路線圖 `#13C` 與 `docs/DEPARTMENT_MAPPING.md`。目前搜尋保留並標示 `unknown`，排課不會自動納入。
+通識與共同科目、學院綜合班、英語授課班與國際學程、學分學程的班級種類已於 #13B 完成分類，
+適用規則已於 2026-09-18 依專案負責人口頭確認實作（#13C／#13D，見上方「B～F 班級分類與
+適用規則」）。**仍未定義**：`進修英班`／`大二進修英班` 的適用對象、研究生對碩士綜合班的
+適用範圍、B～F 課程算哪一類畢業學分、他系選修的可修範圍（系統目前只服務資訊工程學系）。
 
 **#20 本輪已完成**：active term 過濾、`eligibilitySource`／`scopeReason`／`term` 三個
-可追溯欄位、四種候選判定的正式對照（見上方兩節）。**仍未解決**：B～F 的正式適用對象
-（卡 `#13C`，需系辦／校方書面規則）、學制與學程欄位（卡 `#13D`，需 Profile schema
-擴充學制／雙聯學程／英語班／已報名學分學程等欄位，目前 `User_Profiles` 沒有這些欄位）。
-這兩項在取得前維持 `unknown`，不得用猜測填入判定邏輯。
+可追溯欄位、四種候選判定的正式對照（見上方兩節）。#13D 原本規劃的「已報名學分學程」
+欄位不再需要（學分學程不需報名即可修）；D 類獨立學制不在 `User_Profiles.department`
+的值域內，因此一律不可修，也不需要額外欄位。
 
 ## 大二以上排課流程
 
@@ -345,9 +402,68 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 2. 推估當學期應補足的課程類別與學分。
 3. 優先安排必修課（限本系所、本年級——見上方「必修範圍」）。
 4. 若學生曾有必修課不及格，檢查當學期是否開授重補修課程，並優先排入。
-5. 必修確定後，依序安排核心選修、一般選修、通識、系外選修。
+5. 必修確定後，依下方「畢業缺口的當學期配額」安排本系選修，再安排通識／系外選修。
 6. 依照偏好產生多個課表方案。
 7. 回傳課表、學分、衝堂資訊、推薦理由與備選課程。
+
+### 畢業缺口的當學期配額（Roadmap #23，2026-09-21）
+
+排課器會把 `User_Course_History` 的已取得學分與入學年度適用的畢業規則放在同一個
+`graduationPlanning` 中。對本系選修、通識、系外選修分別計算：
+
+```text
+本學期目標學分 = max(0, 畢業要求學分 - 已取得學分) / 剩餘學期數
+```
+
+剩餘學期優先讀取 Profile 的 `remainingSemesters`；未設定時依年級與 active term 推算，
+而且把目前學期算進去。例如大四下為 1 學期，大三下為 3 學期。無歷史修課、找不到
+適用規則或無法判定剩餘學期時，不啟用這組配額，並在 `warnings` 說明原因。
+
+實際順序固定為：
+
+1. 本人當學期必修與不及格必修重補修。
+2. 本系選修，最多 3 門；達到本學期選修目標後立即停止加本系選修。
+3. 最多 2 門廣度課。系統以通識與系外選修各自的「剩餘缺口 ÷ 剩餘學期」比較需求，
+   形成 1 通識＋1 系外、2 通識或 2 系外三種組合之一。
+
+「本系優先」仍保留在每個類別內的排序；它不再跨類別把通識與系外全部擠掉。
+`maxCredits` 仍是硬上限，但不是必須填滿的目標。某類候選不足時保留缺口並警告。
+使用者明確指定的課仍會保留；若因此超過配額，回應會揭露警告，不會暗中移除使用者的選擇。
+
+**補到最低學分（2026-10-02）。** 配額決定「先排什麼」，`minCredits` 仍是下限。上面三步排完後
+若總學分仍低於 `minCredits`，進入補足階段，一次補一門直到達到下限為止（不會繼續填到
+`maxCredits`）：
+
+1. 優先從**畢業缺口還沒補完**的類別挑（該類別的 `gaps` 減去本方案已排入的學分仍大於 0），
+   這些課修了仍然計入畢業學分。正式必修不在這裡補。
+2. 沒有這種課時，才退回任何還排得進去的課。
+3. 類別內仍依原本的分數排序（本系優先照舊）；此階段不受「本系選修最多 3 門」限制。
+
+補的課記在 `graduationPlanning.creditFloorTopUp`（門數、學分、班次 ID），並附一則 warning。
+原因：缺口分攤到剩餘學期後，快畢業的學生本學期目標可能只有幾學分（實例：選修缺 6、通識缺 4、
+剩 3 學期 → 目標 2 與 1.33 學分），只照配額排會得到 5 學分，低於最低修課學分；替代方案又被要求
+與 S₀ 的學分與類別門數相同，2 門課幾乎沒有可換的空間，於是全部無解、只剩 1 個方案。
+
+**距離畢業不到最低學分時，只排到最低學分（2026-10-02）。**
+
+```text
+距離畢業的總學分 = 畢業門檻總學分 − 已取得總學分
+若 距離畢業的總學分 < minCredits  →  本學期排到 minCredits 就停
+```
+
+配額仍決定先排哪一類，但一達到下限就停，不再照類別配額繼續排。判斷用的是**總學分**，
+不是類別缺口：修課紀錄的類別沒分類時類別缺口會被高估（實例：已取得 126／128 學分，卻被算成
+選修缺 28、通識缺 16，照類別配額會排到 12 學分），而已取得的總學分是可靠的。
+距離畢業的總學分**等於或高於** `minCredits` 時不套用，照類別配額排。沒有總學分資料時也不套用。
+結果記在 `graduationPlanning.totalGap` 與 `creditFloorOnly`。因為一門課有 2～3 學分，
+實際學分是「第一次達到或超過下限」的值（例如下限 9、排到 10）。
+
+候選真的不夠而補不到下限時，照舊回報學分不足的 warning；通用 backtracking repair 在配額啟用時
+仍不介入（補足已由上述階段負責，repair 不會再用另一套規則塞課）。
+
+S₀ 決定實際的類別門數；替代 MILP 方案以 equality constraints 保持相同的本系選修／
+通識／系外門數，`milpPlanChecks` 求解後再獨立複查。這樣多方案只能在同一份畢業配置內
+替換課程，不能靠增加系外或本系選修製造表面差異。
 
 ### 方案分化：個人化權重與有限替代策略（Roadmap #7）
 
@@ -356,12 +472,13 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 0，已表態軸的絕對值落在 `[1,2]`，其中學到的 boost 只能加強顯式方向，不能自行新增
 方向或推翻方向。`easy < 0` 代表挑戰難課。
 
-系統不再固定產生五種預設取向。每次先建立「個人化綜合方案」，再只針對使用者已表達的
-軸建立加重 1.5 倍的比較方案，最後加入一個提高學分係數的方案；總數上限仍為 5。沒有
-偏好時只嘗試綜合與較多學分兩種策略，不把「涼課」或其他未表態取向塞給使用者。
+**2026-09-19 起（Roadmap #10 任務 1）**：greedy 只產生一個「個人化綜合方案」S₀；
+「已表達軸 ×1.5」與「較多學分（學分係數 ×3）」兩類策略已移除——這正是 Trapp & Konrad
+（2015）實測會得到「品質高但很像」或「很不同但品質差」的擾動目標係數做法，也是 #10
+方案塌縮的根因。替代方案改由 HiGHS MILP 依主軸產生，見下方「多方案 MILP」。
 
-`scoringPolicy.js` 負責權重範圍、特徵正規化與各軸分數；`planStrategies.js` 只建立有限且
-可重現的搜尋策略；`scheduler.js` 套用策略。方案 ID 是生成策略的識別值，不能當成使用者
+`scoringPolicy.js` 負責權重範圍、特徵正規化與各軸分數；`planStrategies.js` 定義 S₀ 與
+三個主軸（`buildDiverseArchetypes()`）；`scheduler.js` 套用策略。方案 ID 是生成策略的識別值，不能當成使用者
 接受某一偏好軸的證據。每個方案都保存實際 `generationPolicy`，每門經排序加入的課也在
 `recommendationReason.scoringPolicy` 保存同一快照。
 
@@ -394,8 +511,10 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 屬於此類），否則「A 輸給 B」是假的。
 
 **方案數少於 5 時要說明原因**：`warnings` 會指出哪些取向被合併、以及可競爭的課程數。
-最常見的原因不是排序邏輯，而是**可修的課太少**（demo 帳號實測 227 門候選裡 211 門
-因 #13C 適用對象規則未確認而保守排除，真正能競爭的只有 16 門）。
+過去最常見的原因不是排序邏輯，而是**可修的課太少**（demo 帳號實測 227 門候選裡 211 門
+因 #13C 適用對象規則未確認而保守排除，真正能競爭的只有 16 門）。2026-09-18 #13C 實作後，
+同一帳號可競爭的課程增加到 365 門；但「本系優先」的階層讓各方案在本系課程上仍高度重疊，
+方案數仍以實測為準（P0-5）。
 另外，使用者若本來就勾了「盡量集中排課」，每個方案本來就會集中，
 「集中排課」方案自然不會再產生第二種答案——這是合理結果，warnings 會明講。
 
@@ -495,7 +614,7 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 
 **方案層涼度（`preferenceBreakdown.easy`）與課程層不同調，是刻意設計**：課程層排序需要每門課都有分數，因此無證據給中性分；方案層是「這個方案涼度 68%」這種對使用者的宣稱，只在**有評價證據的課**上取平均，無證據的課不參與，且可能回傳 `null`（代表整個方案沒有任何一門課帶評價）。覆蓋率另外由 `plan.reviewCoverage`（`{ rated, total, ratio }`）回報，讓使用者分得清楚「涼度 68%」是由幾門課推出來的。
 
-**已知限制**：181 筆評價中最大一塊（68 筆通識）因 #13C（B～F 類正式適用對象規則尚未確認）被保守排除，不會進入自動排課，因此不影響涼度評分。實際會生效的評價依候選池而定，warnings 會列出「有課程評價但因資格待確認未納入」的統計。
+**已知限制**：181 筆評價中最大一塊（68 筆通識）在 #13C 實作前（2026-09-18 以前）被保守排除。實作後這些課依適用規則進入候選池，但排在本系課程之後（本系優先階層），所以涼度偏好主要在同一階層內起作用。資格仍無法判定的課程，warnings 會列出「有課程評價但因資格待確認未納入」的統計。
 
 ### 涼度來源：`easinessSource`（Roadmap #10）
 
@@ -519,6 +638,62 @@ B～F 正式適用對象（#13C）與學制／學程欄位（#13D）仍未解決
 **誠實邊界**：`proxy` 分數只影響**排序**，不得進入 `plan.reviewCoverage`，
 也不得讓方案層 `preferenceBreakdown.easy` 冒出數字——那兩者只認真實評價
 （見上一段）。`server/test/scheduler.test.js` 的 P10-5 釘住這條界線。
+
+## Choice Perceptron（Roadmap #10 任務 3A，**目前只跑 shadow**）
+
+**現況先講清楚**：這個引擎已經寫好並有測試，但**完全不影響任何推薦結果**——
+它不接 `learnPreferenceWeights()` 的出口、不升 `PREFERENCE_LEARNING_MODEL_VERSION`、
+不寫 `Learned_Preference_Weights`。上一節（#5B）描述的「符號由顯式決定、學到的權重
+只能加強」**現在仍然是正式行為**。要等部署後蒐集到真實 `plan_chosen`、離線重播判定為
+go，才會進入 3B 改變合成規則。
+
+**依據**：Dragone, Teso, Passerini,《Constructive Preference Elicitation over Hybrid
+Combinatorial Spaces》, AAAI 2018（arXiv:1711.07875）的 Algorithm 1 與式 (1)：
+
+```
+Δ_t = φ(x_t, ȳ_t) − (1/(k−1))·Σ_{y∈Q_t, y≠ȳ_t} φ(x_t, y)
+w_{t+1} = w_t + η·Δ_t
+```
+
+是「選中方案減去**其餘**方案的平均」，不是減整個 query 的平均，也不是減目前模型的
+argmax。論文 `w₁ = 0`、`η` 為固定 step-size（實驗中另以 cross-validation 在
+`{0.1, 0.2, 0.5, 1, 2, 5, 10}` 上自適應）。
+
+| 論文 | 本系統 |
+| --- | --- |
+| context `x_t` | 一次排課請求 |
+| query set `Q_t` | 同一 `requestId` 曝光時實際顯示的方案集合 |
+| 使用者選擇 `ȳ_t` | `plan_chosen` 指向的方案 |
+| `φ(x_t, y)` | `plan.preferenceBreakdown = {interest, compact, easy}` |
+
+`interest` 量的是「符合**這一次輸入**的興趣關鍵字的程度」，是 request scoped——論文的
+`φ(x, y)` 本來就允許依 context，所以這不是偏離；但也因此 `deriveExplicitProfile()`
+沒有東西可以當它的初始值，`w₁.interest` 取 0。
+
+**四項偏離（不宣稱論文的 regret bound）**：
+
+1. `w₁` 取顯式偏好而非 0；
+2. 每筆更新乘上時間衰減（120 天半衰期、跨學期 ×0.5；論文沒有，移除等於撤回 #31 的承諾）；
+3. 全部累加完才把權重 clip 到 ±2 **一次**（論文沒有；逐步截斷是另一種演算法，
+   而「最後才投影」讓結果對事件順序不敏感，只對時間戳敏感）；
+4. 缺值逐軸遮罩：某軸只要 query set 中**任一**方案缺值，該軸本輪 `Δ = 0`
+   （論文假設 φ 完整）。只對剩下的方案取平均等於偷換 query set；補 0 則是把
+   「查不到涼度」謊報成「完全不涼」。
+
+不宣稱 bound 的理由不是「我們的 query 策略不是論文那個」——論文的 bound 對任何 query
+策略都成立，只透過 α-informativeness、β-affirmativeness 與 M 三個常數依賴它。真正的
+理由是：沒有證明本系統 query 策略的 α-informativeness；上述四項延伸都不在 Theorem 2 的
+前提內；本系統排序含缺值排除與 `comparePlans()` 的 tie-breaker；三維 φ 很可能無法線性
+表示真實偏好。
+
+**與現行排序函式的關係**（修正先前文件的說法）：`evaluatePreference()` 展開後是
+`score = (⟨w, φ⟩ + Σ_{w_a<0}|w_a|) / Σ_a|w_a|`，**φ 完整時是 `⟨w, φ⟩` 的正仿射變換，
+排序一致**，不是完全不同的效用函式。錯配只有三處：`easy = null` 讓不同方案排除不同的軸、
+`comparePlans()` 的 tie-breaker、query set 的產生不看學到的方向（後者 3B 才處理）。
+
+**資料來源**：只讀 `plan_chosen`（見 `docs/DATA_SCHEMA.md`），一次 `requestId` 只算一次；
+曝光必須帶覆蓋整組方案的 `planFeatures`，缺一即整筆跳過、不做回退推估。
+離線重播與校準見 `npm run bench:choice-perceptron --prefix server -- --markdown`。
 
 ## Per-user 加權方向（Roadmap #5B）
 
@@ -591,6 +766,72 @@ Roadmap #3。8 個內容偏好（免期中考／免分組報告／討論課／�
 `confidence` 欄位，也沒有逐級放寬機制。#21 的正式 schema 見下方「Hard/Soft
 Constraint Schema（Roadmap #21）」一節。
 
+## 本次規劃的避開清單（2026-09-21）
+
+使用者移除一門課、按「重新排課」，同一門課常常又被排回來，畫面上沒有任何解釋。
+
+成因不是 bug 而是設計缺口：移除只做兩件事——從畫面拿掉，以及（在已同意個人化時）
+送一筆 `course_withdrawn`。後者走的是**長期**偏好學習（`WITHDRAW_REASON_RULES` 把
+`time`／`workload`／`content` 轉成 `compact`／`easy`／`interest` 的投票，
+且現行 v2 要累積 50 筆可用事件才會正式套用權重），對「下一次重排」完全沒有作用。
+候選池與限制條件與上一次完全相同，排回來是必然結果。
+
+因此把「立即重排」與「長期學習」分成兩條**互不取代**的路徑：
+
+| 路徑 | 需要什麼 | 作用 |
+| --- | --- | --- |
+| 本次避開清單（`constraints.sessionAvoidances`） | section id 在 `Courses` 裡查得到 | 下一次重排立即生效 |
+| `course_withdrawn` 互動事件 | 個人化同意 | 長期偏好權重，規則不變 |
+
+**避開條件不需要個人化同意。** 它是使用者本次的排課限制，不是訓練資料。
+（這一點在實作上很容易寫錯：`recordInteractionEvents()` 在寫入任何事件之前先擋
+consent，`recommendation_exposed` 也走那個函式——未同意個人化的使用者根本沒有
+曝光紀錄。把「requestId 對得上曝光」當成前提，功能對他們會完全失效。）
+
+### 避開範圍由退課原因推導
+
+**保守優先**：只有明確指向「這門課本身」或「這位教師」的原因才放大範圍。
+
+| `reason` | 範圍 | 下一次重排 |
+| --- | --- | --- |
+| `content`、`workload` | `catalog_course` | 排除整個課號的所有班次（不滿意的是課程本身，換班次沒有意義） |
+| `instructor` | `instructor` | 排除該教師的班次，其他教師的同課程仍可排 |
+| `time`、`full`、`eligibility` | `section` | 只排除該班次——這三個原因對「課程內容偏好」是中性的 |
+| `other`、未填 | `section` | 沒有可據以放大的資訊 |
+
+範圍由**伺服器**依 `reason` 推導，呼叫端送 `scope` 一律忽略；課號與教師也由伺服器從
+`Courses` 重查。課號或教師解析不出來時範圍退回 `section`，而不是整筆放棄——
+使用者按了移除，最起碼那個班次不該再出現。
+
+排除結果以 `constraintId: "USER_REMOVED_THIS_SESSION"` 進入 `plan.excludedCourses`，
+沿用既有的診斷通道。
+
+### 避開清單**不能**靜默移除的課
+
+| 類別 | 命中避開時 |
+| --- | --- |
+| 本學期正式必修（`isRequiredForStudent()`） | 保留並警告／澄清 |
+| 重補修（`getFailedRequiredCourseCodes()`） | 同上 |
+| `mustTakeCourseIds`、`selectedCourseIds` | 同上 |
+| **`explicitCourseIds`／`courseIds`** | **避開清單優先，可以排除** |
+
+最後一列是關鍵。`collectExplicitCourseIds()` 把四個來源合併成同一個 `explicitIds`
+集合，用途只有一個：讓這些課**繞過資格、學期與系外選修過濾**，不要被靜默剔除。
+它**不代表「一定要排進課表」**。而 `SchedulePage` 每次排課都把目前課表當 `courseIds`
+重送、後端再併進 `explicitCourseIds`——若避開清單讓位給它，使用者在那一頁移除課程
+後重排，那門課會原封不動被保留，正是這次要修的症狀。因此另有一個更窄的
+`collectProtectedCourseIds()`，只含上表前三類。
+
+### 必修衝突的兩條路徑處理方式**不同**
+
+| 路徑 | 行為 |
+| --- | --- |
+| Chat | `requirementPreflight.js` 的第 (14) 項產生澄清問題，排課前先問 |
+| REST | `scheduler.js` 保留課程並在 `warnings` 說明；`appliedSessionAvoidances` 該筆回 `protected-conflict` |
+
+REST 路徑沒有 preflight（該檔第 (13) 項的註解已說明這道防線只涵蓋 chat），
+兩者不一致是事實，不假裝一致。兩條路徑共同的保證是：**不靜默違反任何一方**。
+
 ## 硬性限制
 
 硬性限制違反時，課表方案不得成立：
@@ -634,6 +875,19 @@ Constraint Schema（Roadmap #21）」一節。
   （`discussion`）、重視平時成績（`weightDaily`）、實作評量（`practicalExam`）、
   期末報告（`finalReport`）、英文授課（`englishTaught`）、學到較多內容（`learnMore`），
   見下方「內容偏好評分與訊號可靠度警告」。
+
+興趣可以由設定頁明確詢問，不需等待互動學習。資訊工程學系先讓使用者單選正式課程地圖的
+`嵌入式系統類`、`技術應用類`、`網路與安全類`，再從目前排課候選課程的
+`Course_Sections.rag_tag` 顯示可複選的細部主題；使用者也可輸入自訂關鍵字或選擇
+「沒有特定方向」。這些值保存於 `User_Profiles.preferences_json.values`，經 Profile
+映射為上述三個 constraint 欄位。
+
+主題目錄只統計本系選修或已對應正式修課路徑的課程。完整 scheduling pool 還包含通識與
+跨院課，若全部一起統計，熱門項目會被「語言學習／文化研究」等通識主題占據，無法回答
+使用者想發展的專業方向；這項過濾只影響設定頁選項，不縮小真正的排課候選池。
+
+排課器以課名、課號、教師、系所、分類、課程描述、正式修課路徑與 `ragTag` 做包含比對。
+興趣命中只提高單門課與方案的偏好分數，不會排除未命中的課，也不會壓過必修與重補修。
 
 ## Hard/Soft Constraint Schema（Roadmap #21）
 
@@ -697,9 +951,8 @@ Constraint Schema（Roadmap #21）」一節。
 
 ### Bounded backtracking repair（Roadmap #22）
 
-系統把 `buildPlanStrategies()` 產生的每個 greedy variant 都保留作為 baseline——數量不是固定
-五個，而是依使用者已表態、非零權重的偏好軸數量動態決定（1 到 5 個：`personalized` 固定 1 個，
-之後每個非零軸各加 1 個，再加 1 個 `personalized_credits`）。主推 baseline 未通過獨立 validator，或
+repair 的 baseline 是 greedy 產生的 S₀（2026-09-19 起 `buildPlanStrategies()` 只回傳
+`personalized` 一個策略；MILP 主軸方案不作為 repair baseline）。主推 baseline 未通過獨立 validator，或
 所有通過 validator 的 baseline 都低於 `minCredits` 時，才啟動 repair；已合法且達最低學分
 的 baseline 不額外搜尋。
 
@@ -769,9 +1022,9 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 
 ## 多方案課表
 
-`generateSchedule()` 依當次個人化權重產生最多 5 個策略方案（見「方案分化：個人化權重
-與有限替代策略（Roadmap #7）」）：個人化綜合方案、已啟用偏好軸的加重方案，以及較多
-學分方案。`#22` bounded backtracking 失敗時可插入非常態的 `限制修復方案`。每個方案帶：
+`generateSchedule()` 最多回傳 4 個方案：greedy 的個人化綜合方案 S₀，加上 MILP 主軸方案
+（輕鬆或挑戰、興趣、集中；見下一節）。`#22` bounded backtracking 失敗時可插入非常態的
+`限制修復方案`。每個方案帶：
 
 - 課程清單（`schedule`／`unscheduledCourses`／`watchedCourses`）。
 - 總學分（`totalCredits`／`graduationCredits`／`nonGraduationCredits`）。
@@ -784,6 +1037,207 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 集合**，不是排序；`planDiversity` 結構化記錄哪些策略被合併、可競爭課程池多大與
 `reason: same-course-combination`。重複結果只證明這次調整取捨仍得到相同組合，不能單憑
 這點判定候選池不足；`describePlanCollapse()` 從同一份結構產生使用者可讀的說明。
+
+### 多方案 MILP（Roadmap #10 任務 1，2026-09-19）
+
+**依據與對外宣稱。** 採 Petit & Trapp（IJCAI 2015）允許非最佳起點的框架，以 Trapp &
+Konrad（IIE Trans. 2015）的 centroid 多樣性與 Dinkelbach 轉換建立 MILP，距離硬限制取自
+Hebrard 等（AAAI 2005）；內層由 HiGHS（npm `highs` 1.15.3，第三方 highs-js 包裝，求解
+核心由愛丁堡大學團隊開發）求解。對外只能這樣宣稱：**Dinkelbach 各輪回傳 Optimal、殘差
+收斂且未撞迭代上限時，所得為「所建模比值問題」在 `mip_rel_gap`（1e-4）內的最佳解**；
+不擴大成「現實中最好的課表」。任一條件不成立的候選標為 `approximate` 並附原因。
+
+**模型**（`optimization/scheduleMipModel.js`）。班次 `s_j` 與課號 `z_k` 兩層二元變數，
+`Σ_{j∈k} s_j = z_k`。固定課程（本人必修、重補修、明確指定）沿用 S₀ 的班次，以常數參與；
+候選先用正式的 `evaluateCoursePlacement()` 對「只有固定課」的狀態做靜態檢查。限制：
+
+| 限制 | 寫法 |
+| --- | --- |
+| 衝堂 | 每個（星期, 節次）`Σ s_j ≤ 1` |
+| 學分 | `≥ S₀ 學分`（學分對齊，硬限制）且 `≤ maxCredits` |
+| 每日課數 | 每日 `Σ s_j ≤ maxCoursesPerDay − 當日固定課數` |
+| 共同必修 | `z正課 = z實習` |
+| 同系列 | 同系列課號 `Σ z ≤ 1`，明確指定豁免 |
+| 至少換 2 門 | 對每個參考方案 P：`Σ_{k∈P∩C}(1−z_k) ≥ 2` 且 `Σ_{k∈C\P} z_k ≥ 2` |
+| 品質下限 | `d ≥ U(S₀) − U(z)`、`0 ≤ d ≤ 0.13·qualityScale` |
+| 本系階層 | 跨年級與系外競爭課門數各自等於 S₀；只在同階層內換課 |
+| 主軸門檻 | 興趣：`Σ(interest_k − T)z_k ≥ …`；輕鬆／挑戰：只計有評價課，另加評價數下限；集中：日變數 `y_d`，`Σ y_d ≤ days(S₀) − 1` |
+
+興趣與難度主軸的最小改善量 `minGain` 經真實資料校準為 0.02；0.04 仍使無偏好案例的
+難度主軸不可行。這只改主軸要比 S₀ 改善多少，不放寬 87% 品質、學分、換課或階層限制。
+
+品質 `U(z) = Σ (score_j − base_j − crossYearElective_j − outsideOwnDepartment_j)·s_j`，
+`score_j` 是 greedy 填充前以使用者 policy 算出的靜態分數。`−2500`／`−5000` 的本系階層差
+改由上表的硬限制保護，不拿它稀釋 87% 的偏好品質門檻；`qualityScale = max(|U(S₀)|, 1000)`；**品質保留率一律為
+`1 − d/qualityScale`**（`U(S₀)` 實測為負數，不能用 `U/U(S₀)`）。
+
+**Dinkelbach**（`optimization/diversePlanSolver.js`）。`N̂ = Σ_k[c_k(1−z_k)+(1−c_k)z_k]/|C|`
+（`c_k` 為課號在參考集合中的比例，分母為固定常數），`D̂ = d/qualityScale + 1e-3`。
+
+1. **x⁰**：同一組限制下最大化 `U(z)` 的 MILP（T&K Algorithm 1 允許任一可行解起步）。
+   係數各不相同，求解遠快於多樣性目標；x⁰ 只提供 λ₁ 與暖啟動，不參與收斂判定。
+2. 以 `λ₁ = N̂(x⁰)/D̂(x⁰)` 起步，每輪求 `max N̂ − λ·D̂`，並把上一輪解交給 HiGHS 當起始解
+   （T&K §3.3.1）。每輪解完**都用選課結果重算** `d = max(0, U(S₀) − U(z))`，再更新 λ。
+3. 殘差 `|N̂ − λ·D̂| ≤ 1e-6` 停止；最多 8 輪。收斂僅在「每輪 optimal、殘差收斂、未撞上限」
+   時成立；否則 `approximate`，原因為 `iteration-limit`／`solver-limit`／`deadline`。
+4. 求解器判定不可行時，逐一放寬單一限制群組重解，找出「只放寬這一組就可行」的群組，
+   回報 `rating-coverage-infeasible`、`axis-threshold-infeasible`、`insufficient-difference`、
+   `quality-floor`、`credit-parity-infeasible` 或 `hierarchy-parity-infeasible`；沒有單一群組能解開時為
+   `combined-constraints`。放寬後的解只用於說明，一律不採用。
+5. 沒有訊號時不建模（`no-signal`）。依序檢查下列條件，第一個不成立的記在 `detail`：
+   - 興趣：沒有興趣關鍵字（`no-interest-keywords`）、興趣分數全部相同（`flat-scores`）、
+     門檻落在可達範圍外（`threshold-unreachable`）。
+   - 輕鬆／挑戰：S₀ 沒有難度基準（`no-easiness-baseline`）、有評價的課不足 `minRated`
+     （`insufficient-rating`）、難度分數全部相同（`flat-scores`）、門檻落在可達範圍外
+     （`threshold-unreachable`）。
+   - 集中：S₀ 只用一天（`single-day`）、固定課已佔滿可減少的天數（`fixed-days-blocked`）。
+
+   **可達範圍**：主軸門檻限制的是「整份方案（固定課＋競爭課）的平均值」。平均值不可能
+   高於池中最大值、也不可能低於最小值，所以上下限取「競爭課 ∪ 固定課」的極值——只看
+   競爭課會把「固定課本來就能把平均拉上去」的案例誤判成沒有訊號。這是必要條件而非
+   充分條件：門檻在可達範圍內仍可能與學分、換課、品質或階層限制組合後無解，那時才由
+   第 4 點的診斷分類為 `axis-threshold-infeasible`／`combined-constraints`。換句話說，
+   **「資料上不可能改善」回報 `no-signal`，「有改善空間但湊不出合法方案」回報不可行**。
+
+   評價數下限 `minRated = max(2, ⌈S₀ 有評價課數 ÷ 2⌉)`（2026-09-20 使用者決定）。要求
+   替代方案的評價覆蓋率不得低於 S₀ 會讓整條主軸直接無解，那不是資料沒有訊號。診斷
+   放寬評價數下限時仍保留至少 1 門，避免平均門檻因「一門都不選」而空洞成立。
+
+**時間預算。** 線上與 benchmark 是兩組分開記錄的設定（`optimization/diversePlanSolver.js`），改一邊不會動到另一邊：
+線上 `DEFAULT_DIVERSE_OPTIONS` 為每主軸 1 個候選（`candidatesPerAxis: 1`）、共用 2.5 秒 deadline、單次求解上限 `min(0.8 秒, 剩餘時間)`（2026-09-19 使用者決定）；
+`BENCHMARK_DIVERSE_OPTIONS` 只把候選數覆寫為 3，供 `bench:plan-diversity` 量完整候選池，其餘預算與線上相同，報告的 `solverOptions.profile` 會記成 `benchmark`。
+單次上限撞到但全域仍有餘裕記為
+`solver-time-limit`，全域用盡記為 `deadline`／`solver-budget-exceeded`。
+`model.run()` 為同步、單執行緒，會阻塞 event loop；多人部署前需改 `worker_threads`。
+伺服器啟動時載入 WASM 一次；載入失敗時只回 S₀ 並附 `solver-unavailable`。
+
+**方案挑選與推薦方案（任務 2，2026-10-01）。** 採用 Danna & Woodruff (2009, ORL 37:255–260)
+的 **D_bin 目標**，並對本系統的小型受限問題**以窮舉精確求解**
+（`optimization/diverseSubsetSelector.js`）。沒有實作論文 §3.1 的線性化整數規劃，也沒有
+§4 的啟發式。流程分三步：
+
+1. **逐候選檢查**：每條主軸的每個候選先 materialize，並須通過獨立驗證器與 `milpPlanChecks`
+   （學分上下限與對齊、固定課覆蓋、共同必修、同課一班、同系列、每日上限、階層配額）。
+   這些都是單一方案的檢查，與挑選順序無關。不通過者記入
+   `solver.subsetSelection.rejectedCandidates`，不進入挑選。
+2. **挑選**：S₀ 必選；每條主軸選 0 或 1 個候選；任兩份方案 `replacementDistance ≥ 2`。
+   在所有可行組合中依下列字典序取最佳。
+3. **推薦**：挑完仍由 `comparePlans` 決定推薦方案並移到 `plans[0]`，
+   `recommendedPlanId === plans[0].id`。
+
+量度（論文 §2.2）：
+
+```text
+D_bin(S) = 2 / (|S|(|S|−1)) · Σ_{j<k} d_bin(x⁽ʲ⁾, x⁽ᵏ⁾)
+d_bin(x, y) = (1/b) · Σ_{i∈B} |xᵢ − yᵢ| = hammingDistance / b
+```
+
+`B` 取競爭課號的二元變數 `z_k`；`b` ＝**不重複的競爭課號數**（`inputs.competitive` 按班次列，
+同課號多班次是同一個 `z_k`，不能用班次數當分母）。
+
+字典序（所有 tie-break 只看固定常數 `CANONICAL_ARCHETYPE_ORDER = easy, challenge, interest,
+compact`，**不看輸入陣列的順序**）：
+
+1. 方案數多者勝。
+2. D_bin 大者勝。方案數相同時 `|S|` 與 `b` 都是常數，所以直接比整數
+   `pairwiseHammingSum = Σ_{j<k} hammingDistance`，不使用浮點容差（容差不具傳遞性）。
+3. 依 canonical 順序比「有沒有選這條主軸」，先出現「有」者勝。
+4. 逐主軸比被選候選的 Dinkelbach 比值，大者勝（只在同一條主軸內互比；各主軸的比值單位
+   不同，不相加）。
+5. 逐主軸比 `candidateId`（排序後的課號集合＋班次 ID 集合），字典序小者勝。
+
+邊界：只有 S₀ 時 D_bin 的分母為 0，`dBin` 回 **`null`**（未定義），不回 0；有候選而 `b` 不是
+正數屬於契約違反，選擇器丟 `RangeError`，`generateMilpPlans()` 接住後退回只有 S₀ 並把原因
+寫進 `solver.subsetSelection.error`，不讓排課請求失敗。
+
+主軸沒有產出方案時的原因：
+
+| 狀況 | `reason` | `detail` |
+| --- | --- | --- |
+| 資料沒有訊號 | `no-signal` | 既有的訊號代碼 |
+| 求解器沒有給候選 | 求解器回報的原因 | — |
+| 有候選但全部沒通過檢查 | `candidate-check-failed` | `validator-rejected`／`model-check-rejected`／`mixed` |
+| 有合法候選，但與已選組合太像 | `insufficient-difference` | `too-similar-to-selected`，另帶 `conflictsWith` |
+
+最後一列的 `conflictsWith` 保證非空：第一順位是方案數，所以被捨棄主軸的每個候選加進已選組合
+都必然違反距離限制。
+
+**K=1 下的退化（照實記錄）。** 論文假設候選池有上百到上千份、從中挑 p ≤ 10 份。線上每主軸只有
+1 個候選，池子最多是 S₀ 加 3 份，「挑選」實際上退化成「候選彼此太像時該捨棄哪一條」；候選之間
+沒有衝突時，結果與被取代的順序挑選器**完全相同**。只有 benchmark 的 K=3（最多 4³ ＝ 64 種組合）
+才會依 D_bin 在同一主軸的多個候選之間做選擇。被取代的挑選器依主軸順序累積選取，兩條主軸的
+候選太像時永遠捨棄排在後面的那條；另外它把「與已選方案太像」回報成
+「無法在品質下限內換進、換出至少兩門課」，那描述的是求解失敗，不是實情。
+
+**距離名稱。** `hammingDistance = |A △ B|`；`replacementDistance = min(|A\B|, |B\A|)`，
+兩者分開記錄，不混用。
+
+**說明方式。** MILP 方案不包裝成「A 課在某一步贏過 B 課」（`alternatives` 標
+`not-applicable-milp`），改以 `comparisonToBaseline` 說明相較 S₀ 移除／加入的課、品質保留、
+主軸指標、上課日數與 `bindingConstraints`（以相對容差 `1e-6·max(1,|bound|)` 判定）。
+
+**與論文的差異（誠實紀錄）。**
+
+| 項目 | 論文 | 本系統 |
+| --- | --- | --- |
+| 起點 | T&K 以原問題最佳解起步 | 採 P&T：S₀ 是 greedy 解，不一定最佳 |
+| 品質 | 原目標函數 | greedy 靜態逐課分數（不含集中度的遞增效果） |
+| 集中度 | — | 只用上課日數；「日數相同再比空堂」未實作 |
+| 挑選：量度的變數範圍 | D&W 的 D_bin 對模型**全部**二元變數計算 | 只取競爭課號的 `z_k`，不含班次變數 `s_j` 與集中排課的日變數 `y_d`；只差班次的兩份方案 `d_bin = 0`（配合「比較課程集合」的產品需求） |
+| 挑選：方案數 | 固定 `\|S\| = p` | 不固定；先最大化方案數，再最大化 D_bin（D_bin 是平均值，不同 `\|S\|` 不可比） |
+| 挑選：額外限制 | 匿名的解，無分組 | 每個 archetype 至多一份、S₀ 必選、兩兩 `replacementDistance ≥ 2` |
+| 挑選：解法 | 線性化整數規劃（式 (1)–(5)）、局部搜尋、sequential screening | 窮舉（線上 ≤ 8、benchmark ≤ 64 種組合），未實作論文的 IP 與啟發式 |
+| 挑選：候選池大小 | 上百到上千份，挑 p ≤ 10 | 線上最多 S₀ 加 3 份，屬退化情形（見上） |
+| 挑選：量度種類 | D_bin、D_all、D_CV | 只用 D_bin（決策變數全為二元） |
+| 候選數 | 論文設定 K=10 | 線上每主軸 K=1、共用 2.5 秒 deadline；benchmark 覆寫為 K=3 |
+
+### 多方案量化驗收（Roadmap #10）
+
+`npm run bench:plan-diversity --prefix server -- --markdown` 以目前 MySQL 課程、三位 demo
+persona 與一組無偏好對照重跑正式 `generateSchedule()`。runner 只執行 SELECT；不呼叫會
+記錄推薦曝光的 service，也不把重算的 learned weights 寫回資料庫。每個 case 保存候選池
+hash，確保同一次 case 的所有策略使用相同候選集合。
+
+驗收規則如下：
+
+1. `reportedDistinctPlans / requestedVariants >= 0.75`；整數門檻使用
+   `ceil(requestedVariants * 0.75)`。
+2. 有偏好時至少 3 個不重複方案，無偏好時至少 2 個，且不超過分母。2026-09-19 起 S₀ 加三個主軸
+   共 4 個；**因資料本身沒有訊號（`no-signal`）而合併的主軸不計入分母**（使用者決定），報告以
+   `rawRequestedVariants` 與 `excludedNoSignalVariants` 列出被排除者；其他合併原因（不可行、
+   超時等）照常計入分母。
+3. 比較內容前排除 `REQUIRED_COURSE`、`RETAKE_REQUIRED`、`USER_SPECIFIED`，避免所有方案
+   必然相同的課程把重疊率拉高。
+4. 課程身分以 `catalogCourseCode` 為準；同課號只換 section 不算新的競爭課程組合。
+5. 所有保留方案兩兩計算 Jaccard similarity（交集／聯集），中位數必須 `<= 0.75`；每一對
+   方案都必須雙向至少換入／換出 2 門競爭課程（`replacementDistance >= 2`）。
+6. 每個方案另以 `validateScheduleAgainstConstraints()` 複查，hard violation 必須為 0。
+7. （2026-09-19 起）MILP 替代方案另須：品質保留率 `1 − d/qualityScale ≥ 0.87`、學分不少於
+   S₀、與其他方案 `replacementDistance ≥ 2`，並通過 `milpPlanChecks`。
+8. 另有 `fixed-courses-control`：真實課程資料上的二年級資工，含本人必修、一門不及格的
+   三年級必修（重補修）與一門指定課，`maxCoursesPerDay = 3`，驗證固定課路徑。
+
+若只有一個方案，沒有可計算的 pair；此時 similarity 為 `null`，方案數與實際差異兩項直接
+失敗，不能把「沒有比較對象」當成低重疊。報告不保存姓名、學號或完整課表，只保存匿名 case、
+候選池 hash、方案數、相似度、差異數與 validator 結果。
+
+#### 塌縮診斷資料
+
+benchmark 另以 `runtimeOptions.includePlanDiagnostics: true` 啟用唯讀診斷；正式 API 不設定此
+選項，因此不增加一般回應大小，也不改變分數、排序或選課結果。診斷保存於
+`server/test/reports/plan-diversity-diagnostics-latest.json`，包含：
+
+1. 每個策略在 `uniquePlans()` 去重前的 `courseSet`，以及相同組合所對應的
+   `duplicateOfVariantId`。
+2. 貪婪填充每個決策點的前 4 名候選（勝出者加 3 名競爭者）、當下總分與
+   `computeScoreComponents()` 的完整分數組成；診斷不得另寫第二套評分公式。
+3. 每門未入選候選的結構化原因。優先沿用正式 `constraintId`（例如 `TIME_CONFLICT`、
+   `CREDIT_CEILING`）；只有「其他班次已入選」「無時間的非必要課」「排課停止前未輪到」等
+   原流程沒有代碼的情況，才使用診斷專用代碼。
+
+`courseSet.all.length + watchedCourses.length + unselectedCourses.length` 必須等於該 case 的候選池數量，
+避免只解釋被嘗試過的課、遺漏因停止條件而未輪到的候選。診斷 sidecar 含匿名 case 的完整課程
+集合與決策軌跡，不含姓名、學號、密碼或其他帳號識別資料；不應直接當作正式 API payload。
 
 ### 方案比較與 counterfactual（Roadmap #27）
 
@@ -805,6 +1259,7 @@ exists a in A.timeBlocks, b in B.timeBlocks such that
 確實不變，附上原因）／`not-applicable`（這項偏好目前沒開）。demo 帳號實測：13 項偏好裡
 5 項目前開著，全部落在 `unchanged`——可競爭的課只有 16 門，候選用完就停了，偏好沒有
 發揮空間；把候選池放大模擬 `#13C` 已解後，同一支端點對同一組偏好回傳真正的 `changed`。
+（2026-09-03 的量測；#13C 已於 2026-09-18 實作，真實帳號的結果需重新量測。）
 
 **曝光紀錄要記下「這次顯示過的每一個方案」，不是只記主推的那一個。** 這是瀏覽器實測時
 發現的真實 bug：切到方案切換列的第二個方案再按「符合」，被 `assertProvenance()` 拒絕，

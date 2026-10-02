@@ -2,10 +2,45 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-02
+
+1. [把 main 合併進 backend，解決 PR #24 的衝突](./2026-10-02-merge-main-into-backend.md)
+2. [三個 demo persona 的年級由四年級更正為三年級](./2026-10-02-demo-persona-grade-correction.md)
+3. [修復互動事件整合測試未關閉 MySQL pool，導致 npm test 延遲退出](./2026-10-02-fix-test-hang-mysql-pool.md)
+4. [設定頁移除避開特定時段的大型時段格](./2026-10-02-remove-avoid-periods-settings-ui.md)
+5. [PR #24 設定頁衝突：保留新版收合介面並整合興趣與剩餘學期](./2026-10-02-pr24-setup-conflict-resolution.md)
+6. [畢業配額排完後補到最低學分；benchmark 載入器對齊線上路徑；修課紀錄分類回填](./2026-10-02-graduation-quota-credit-floor-top-up.md)
+
+## 2026-10-01
+
+1. [Roadmap #10 任務 2：以 D_bin 目標取代暫時的方案挑選器](./2026-10-01-roadmap-10-task2-dbin-subset-selection.md)
+
+## 2026-09-22
+
+1. [Roadmap #10 任務 3B-0（第一段）：pilot 的兩個阻塞前提與 CP sufficiency codec](./2026-09-22-roadmap-10-3b0-pilot-prerequisites.md)
+
+## 2026-09-21
+
+1. [移除課程後的「本次避開清單」＋ Chat Agent 取得規劃狀態](./2026-09-21-session-avoidance-and-planning-context.md)
+2. [依畢業缺口與剩餘學期分配本學期選修／通識／系外課程](./2026-09-21-graduation-aware-semester-allocation.md)
+3. [Roadmap #10 任務 3A：Choice Perceptron 的資料層與 shadow learner](./2026-09-20-roadmap-10-choice-perceptron-3a.md)
+
+## 2026-09-20
+
+1. [Roadmap #10 任務 1 修正：主軸訊號判定（評價下限、可達範圍、no-signal 與不可行的界線）](./2026-09-20-roadmap-10-axis-signal-correction.md)
+
+## 2026-09-19
+
+1. [Roadmap #10 任務 1：HiGHS MILP＋Dinkelbach 候選池](./2026-09-19-roadmap-10-milp-candidate-generation.md)
+2. [Roadmap #10 任務 1：HiGHS 求解器 spike（真實候選池量測，GO）](./2026-09-19-roadmap-10-highs-spike.md)
+
 ## 2026-09-18
 
-1. [更新 DEPARTMENT_MAPPING.md：記錄 #13C 待確認問題的答案](./2026-09-18-department-mapping-13c-answers.md)
-2. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
+1. [Roadmap #10 方案塌縮診斷：去重前逐策略對帳入選與未入選原因](./2026-09-18-roadmap-10-collapse-diagnostics.md)
+2. [Roadmap #10 多方案量化驗收：真實 MySQL 唯讀 benchmark 與正式門檻](./2026-09-18-roadmap-10-acceptance.md)
+3. [實作 roadmap #13C／#13D：B～F 班級適用規則、同系跨年級選修、本系優先排序](./2026-09-18-implement-13c-13d-eligibility-rules.md)
+4. [更新 DEPARTMENT_MAPPING.md：記錄 #13C 待確認問題的答案](./2026-09-18-department-mapping-13c-answers.md)
+5. [修復 K5／P0-4：已通過的課號放進指定清單時不再讓整份請求失敗](./2026-09-18-fix-k5-p0-4-already-taken-must-take.md)
 
 ## 2026-09-17
 

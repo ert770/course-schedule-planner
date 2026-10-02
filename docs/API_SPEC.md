@@ -393,6 +393,31 @@ Response:
 }
 ```
 
+### `GET /api/courses/interest-options`
+
+回傳設定頁可詢問使用者的課程方向。`department`、`gradeLevel` 必填；`className`
+尚未提供時仍回傳該系的官方修課路徑，但 `topics` 為空。班別完整時，`topics`
+由目前排課候選課程的 `Course_Sections.rag_tag` 統計而來，不在前端寫死。
+同一課程的不同 section 對相同主題只計一次。
+
+```json
+{
+  "tracks": ["嵌入式系統類", "技術應用類", "網路與安全類"],
+  "topics": [
+    { "name": "人工智慧", "courseCount": 12 },
+    { "name": "資訊安全", "courseCount": 8 }
+  ],
+  "scopeReady": true,
+  "candidateCourseCount": 365,
+  "topicCourseCount": 53
+}
+```
+
+上述三條官方路徑只適用資訊工程學系；其他系所的 `tracks` 為空陣列。
+`topics` 只統計本系選修或已有正式修課路徑的課程，避免完整候選池中的通識與跨院課
+把專業方向淹沒；`candidateCourseCount` 仍表示完整排課候選數，`topicCourseCount` 是實際
+用來產生主題的課程數。
+
 ### `GET /api/courses/:id`
 
 `id` is `Course_Sections.section_id`.
@@ -433,7 +458,8 @@ Request:
     "timePreferencePriority": [],
     "department": "資訊工程學系",
     "gradeLevel": 3,
-    "className": "資訊三甲"
+    "className": "資訊三甲",
+    "sessionAvoidances": [{ "sectionId": 102, "reason": "workload" }]
   },
   "surface": "dashboard",
   "trigger": "manual_generate"
@@ -460,7 +486,37 @@ Request:
 schedule request 重複傳班級；route 會先依 session identity 讀取 profile，再呼叫
 `searchCoursesForSchedule()`。
 
+畢業缺口配額不接受 request 指定。伺服器會用 Profile、MySQL
+`User_Course_History`、入學年度適用的畢業規則與 `remainingSemesters` 建立
+`graduationPlanning`，再透過 trusted context 交給排課器；request body 即使送入同名欄位
+也會被忽略。配額計算與選課順序見 `docs/SCHEDULING_LOGIC.md` 的
+「畢業缺口的當學期配額」。
+
 `courseIds`、`selectedCourseIds`、`watchingCourseIds` 與 `mustTakeCourseIds` 使用 section id。
+
+`sessionAvoidances` 是**本次規劃**的避開清單：使用者剛在畫面上移除的課，這一次重排
+就不要再出現。每一筆只有 `sectionId` 與 `reason`（值域同 `feedbackReason`）；
+課號與教師由伺服器從 `Courses` 重查，避開範圍由伺服器依 `reason` 推導，
+呼叫端送 `scope` 也會被忽略。範圍對照表見 `docs/SCHEDULING_LOGIC.md`。
+
+它是 **request-scoped**：不從已儲存偏好回填，也不會寫回偏好——「這次不想要」不該
+靜默沉澱成永久設定（立場同 `nonNegotiablePreferenceIds`）。特別注意它**不是**
+`avoidInstructors`：後者是持久化的 profile 欄位，把本次避開寫進去會整包蓋掉
+使用者存好的清單。
+
+它**不需要個人化同意也會生效**：避開條件是使用者本次的排課限制，不是訓練資料。
+
+回應新增 `appliedSessionAvoidances`，每一筆是
+`{ sectionId, reason, scope, pendingReason, status, message }`：
+
+| `status` | 意義 |
+| --- | --- |
+| `applied` | 真的避開了 |
+| `protected-conflict` | 那門課是必修、重補修或使用者指定必排，**仍在課表中**；`message` 說明衝突 |
+| `not-found` | 這次的候選課程裡找不到對應的課 |
+
+只有 `applied` 才可以在畫面上說「已避開」。`protected-conflict` 顯示成已避開，
+畫面就會和旁邊的課表自相矛盾。
 
 `avoidInstructors` 是教師完整姓名陣列。比對時只去除前後空白並忽略英文大小寫，
 不做模糊搜尋，也不自行拆分或猜測姓名。命中的一般候選課會以
@@ -595,6 +651,21 @@ Response:
   "graduationCredits": 17,
   "nonGraduationCredits": 1,
   "courseCount": 6,
+  "graduationPlanning": {
+    "enabled": true,
+    "remainingSemesters": 1,
+    "remainingSemestersSource": "grade-and-active-term",
+    "gaps": { "required": 2, "elective": 6, "general": 4, "external": 0 },
+    "semesterTargets": { "elective": 6, "general": 4, "external": 0 },
+    "selected": {
+      "required": { "courses": 0, "credits": 0 },
+      "elective": { "courses": 2, "credits": 6 },
+      "general": { "courses": 2, "credits": 4 },
+      "external": { "courses": 0, "credits": 0 }
+    },
+    "unavailableBuckets": [],
+    "creditFloorTopUp": { "courses": 0, "credits": 0, "sectionIds": [] }
+  },
   "message": "...",
   "plans": [],
   "excludedCourses": [],
@@ -653,6 +724,19 @@ Response:
 `reviewDataLoaded`（Roadmap #4）表示這次排課是否取得了任何 `Course_Reviews` 資料。為 `false`
 代表接線異常（呼叫端沒帶 `courseReviews` 或資料庫回空），不是「沒有評價可用所以正常忽略」——
 此時所有課程的涼度一律以中性值計算，`warnings` 會明確告知。與成功與否無關，成功與失敗回應都會帶上。
+
+`graduationPlanning`（Roadmap #23）說明這次排課採用的畢業缺口、剩餘學期、每學期目標與
+實際排入的類別門數／學分。`enabled:false` 代表歷史修課、畢業規則或剩餘學期不足，系統
+不會假裝有配額。它也會出現在每個方案中；多方案的類別門數必須與 S₀ 一致。
+
+`graduationPlanning.totalGap`／`creditFloorOnly`（2026-10-02，出現在各方案的
+`graduationPlanning`）：`totalGap` 是畢業門檻總學分減已取得總學分（沒有資料時為 `null`）；
+`creditFloorOnly: true` 代表 `totalGap < minCredits`，本學期排到最低學分就停，不再照類別配額往上排。
+
+`graduationPlanning.creditFloorTopUp`（2026-10-02）：配額排完後總學分仍低於 `minCredits` 時，
+為達下限而另外補的課。`courses`／`credits` 是門數與學分，`sectionIds` 是補進來的班次。沒有補課時
+三者為 `0`、`0`、`[]`。有補課時 `warnings` 另有一則
+「本學期畢業缺口只需要部分學分；為達最低 N 學分，另補 M 門課…」。
 
 `watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
 
@@ -824,6 +908,103 @@ metadata」兩節。
 這個欄位推論候選池不足。失敗回應（`success:false`）也會帶這個欄位；`collapsed` 沒有
 塌縮時為空陣列，不是 `null`。
 
+**2026-09-19 起（Roadmap #10 任務 1）**：替代方案改由 HiGHS MILP 產生，`requestedVariants`
+固定為 4（S₀ 加三個主軸），每個 `collapsed` 項目帶 `reason`，另有 `solver` 摘要：
+
+```json
+{
+  "requestedVariants": 4,
+  "distinctPlans": 3,
+  "reason": "milp-candidate-unavailable",
+  "collapsed": [
+    { "variantId": "personalized_interest", "title": "興趣導向方案", "reason": "no-signal",
+      "detail": "threshold-unreachable" }
+  ],
+  "competablePoolSize": 218,
+  "solver": {
+    "method": "dinkelbach-milp",
+    "status": "generated",
+    "elapsedMs": 1240,
+    "axes": [
+      { "archetype": "easy", "status": "generated", "reason": null, "candidateCount": 1,
+        "candidates": [{ "ratio": 75.0, "qualityRetention": 1,
+          "distanceFromBase": { "removed": [], "added": [], "hammingDistance": 8, "replacementDistance": 4 },
+          "convergence": { "converged": true, "reason": null, "iterations": 2, "residual": 0,
+            "initialSolution": "quality-optimal" },
+          "category": "optimal" }] },
+      { "archetype": "interest", "status": "no-signal", "reason": "no-signal",
+        "detail": "threshold-unreachable", "candidateCount": 0 }
+    ]
+  }
+}
+```
+
+`collapsed[].reason` 可能值：`no-signal`、`rating-coverage-infeasible`、
+`axis-threshold-infeasible`、`insufficient-difference`、`quality-floor`、
+`credit-parity-infeasible`、`hierarchy-parity-infeasible`、`combined-constraints`、`solver-time-limit`、
+`solver-budget-exceeded`、`solver-unavailable`、`candidate-check-failed`、`selection-error`。
+不可行時 `solver.axes[].diagnosis` 列出 `resolvedBy`（只放寬哪一組限制就可行）。
+
+**2026-10-01 起（Roadmap #10 任務 2）**：方案挑選改採 Danna & Woodruff (2009) 的 D_bin 目標並以
+窮舉精確求解（規則見 `docs/SCHEDULING_LOGIC.md`）。回應新增三件事：
+
+1. `collapsed[]` 的新代碼：
+   - `reason: "candidate-check-failed"`：求解器給了候選，但全部沒通過單一方案檢查。`detail` 為
+     `validator-rejected`、`model-check-rejected` 或 `mixed`。
+   - `reason: "insufficient-difference"` ＋ `detail: "too-similar-to-selected"`：這條主軸排得出
+     合法方案，只是與已選的方案換課不到兩門。此時**另帶** `conflictsWith`。
+     （不帶 `detail` 的 `insufficient-difference` 意義不變：求解器在限制內換不出兩門課。）
+   - `reason: "selection-error"`：挑選步驟的輸入契約被違反，退回只有 S₀；細節在
+     `solver.subsetSelection.error`。
+2. `collapsed[].conflictsWith`：**陣列**，元素是 `{ "variantId", "title" }`，指向畫面上實際顯示、
+   與這條主軸太像的方案（可能包含綜合平衡方案）。只在 `too-similar-to-selected` 時出現，
+   其他情況**沒有這個 key**。前端直接用 `title` 組句子，不需自行對照。
+3. `solver.subsetSelection`：挑選步驟的診斷。`solver.method` 仍是候選的**產生**方法
+   （`dinkelbach-milp`），兩者不混用。
+
+```json
+{
+  "collapsed": [
+    { "variantId": "personalized_compact", "title": "集中排課方案",
+      "reason": "insufficient-difference", "detail": "too-similar-to-selected",
+      "conflictsWith": [{ "variantId": "personalized_interest", "title": "興趣導向方案" }] }
+  ],
+  "solver": {
+    "method": "dinkelbach-milp",
+    "subsetSelection": {
+      "method": "dbin-exact-enumeration",
+      "objective": { "planCount": 3, "dBin": 0.0268, "pairwiseHammingSum": 18 },
+      "b": 224, "evaluated": 4, "feasible": 4, "elapsedMs": 0.5,
+      "rejectedCandidates": [{ "archetype": "easy", "stage": "validator" }]
+    }
+  }
+}
+```
+
+`objective.dBin` 在只有一份方案時為 `null`（公式分母為 0，未定義）。`b` 是不重複的競爭課號數。
+`evaluated` 是搜尋空間大小、`feasible` 是其中滿足距離限制的組合數；兩者相等代表候選之間沒有
+衝突。`rejectedCandidates[].stage` 為 `validator` 或 `model-check`。未注入求解器時沒有
+`subsetSelection`。
+
+`reason` 為 `no-signal` 時另帶 `detail`，說明是哪一項資料條件不成立：
+`no-interest-keywords`、`no-easiness-baseline`、`insufficient-rating`、`flat-scores`、
+`threshold-unreachable`（主軸門檻超出「固定課 ∪ 競爭課」的可達範圍，做不到比 S₀ 更好）、
+`single-day`、`fixed-days-blocked`。**前端在 `detail` 有更精確說法時優先依 `detail` 顯示**：`threshold-unreachable` 顯示「綜合方案已達目前課程資料可改善的界線，無法再產生有意義的主軸改善」，其餘 `no-signal` 才顯示「候選課缺少可區分的資料」（`client/src/components/Schedule/PlanSwitcher.jsx`）。
+
+MILP 方案另帶：
+
+- `comparisonToBaseline`：相較 S₀ 的 `removed`／`added`、`hammingDistance`、
+  `replacementDistance`、`utility`、`baselineUtility`、`qualityRetention`（`1 − d/qualityScale`）、
+  `axisValue`、`usedDays`、`bindingConstraints`。
+- `milpSolver`：`method`、`category`（`optimal`／`limit-with-solution`…）、`rawStatus`（HiGHS 原始
+  狀態字串）、`approximate`、`convergence`、`trace`（每輪 λ、耗時、N̂、D̂、殘差、暖啟動狀態）。
+- `milpChecks`：獨立驗證器與 `milpPlanChecks` 的結果，後者另回傳跨年級／系外
+  `hierarchyCounts`。品質效用排除 `base`、`crossYearElective`、`outsideOwnDepartment`；兩個
+  階層項改由與 S₀ 相同門數的硬限制保護。
+
+頂層另新增 `recommendedPlanId`（推薦方案，恆等於 `plans[0]`；經 service 後為 `planId`）與
+`displayOrder`（方案顯示順序）。舊的 `personalized_credits` 與各軸 ×1.5 方案已移除。
+
 ### `POST /api/schedule/counterfactual`（Roadmap #27）
 
 「取消某項偏好，課表會怎麼變」。**獨立端點，不併入 `/generate`**——實測候選池放大後
@@ -912,7 +1093,7 @@ Response（`valid`／`conflicts`／`duplicates`／`totalCredits`／`graduationCr
   "nonGraduationCredits": 1,
   "hardConstraintsValid": true,
   "violations": [],
-  "unchecked": ["PREREQUISITE", "COREQUISITE"]
+  "unchecked": ["SAME_SERIES_SAME_TERM", "PREREQUISITE", "COREQUISITE"]
 }
 ```
 
@@ -931,7 +1112,7 @@ Response（`valid`／`conflicts`／`duplicates`／`totalCredits`／`graduationCr
     { "constraintId": "CREDIT_CEILING", "severity": "hard", "relaxable": false,
       "source": "user:numeric-limit", "confidence": 1, "courses": [], "reason": "課表共 28 學分，超過上限 25 學分" }
   ],
-  "unchecked": ["PREREQUISITE", "COREQUISITE"]
+  "unchecked": ["SAME_SERIES_SAME_TERM", "PREREQUISITE", "COREQUISITE"]
 }
 ```
 
@@ -940,7 +1121,8 @@ Response（`valid`／`conflicts`／`duplicates`／`totalCredits`／`graduationCr
 （只查衝堂與重複班次）範圍更完整。
 
 `unchecked` 永遠包含 `PREREQUISITE`／`COREQUISITE`（先修／共修，見 Roadmap #21）——這
-兩項專案裡完全沒有資料來源可查。**`COREQUISITE_PAIR_INCOMPLETE`（Roadmap #15）只在
+兩項專案裡完全沒有資料來源可查。2026-09-18 起也永遠包含 `SAME_SERIES_SAME_TERM`：同一
+系列的 (一)(二) 不排同學期是排課時依課名推測的規則，validator 刻意不複查。**`COREQUISITE_PAIR_INCOMPLETE`（Roadmap #15）只在
 送入的課程物件完全沒有任何一門帶 `corequisiteRole` 欄位時才會出現在 `unchecked`
 裡**——這個欄位只由 `generateSchedule()` 產出的課表天生帶著；外部直接組出來、沒有這
 個欄位的原始課程物件無法讓 validator 安全判斷哪些課「應該」有搭檔（`catalogCourseCode`
@@ -980,9 +1162,32 @@ Request:
 
 ```json
 {
-  "message": "幫我排課"
+  "message": "幫我排課",
+  "planningContext": {
+    "requestId": "…",
+    "activePlanId": "…",
+    "activeVariantId": "…",
+    "currentCourses": [{ "sectionId": 101 }],
+    "removedCourses": [{ "sectionId": 102, "reason": "workload" }]
+  }
 }
 ```
+
+`planningContext` 是選用的：使用者畫面上目前留著哪些課、本次移除了哪些課、原因是什麼。
+少了它，Agent 只能反問它其實問得到的資料。
+
+**只收 ID 與原因代號。** 課名、課號、教師一律由伺服器從 `Courses` 重查
+（`services/planningContextService.js`）——那些字串會進 system prompt，
+由呼叫端提供等於讓它決定「避開的到底是哪門課」，也能把任意文字塞進 prompt。
+`reason` 的值域與 `POST /api/interactions` 的 `feedbackReason` 完全相同。
+
+`scope`（避開範圍）與 `pendingReason`（原因是否還沒問到）**不接受呼叫端指定**，
+由伺服器依 `reason` 推導；送了也會被忽略。對照表見
+`docs/SCHEDULING_LOGIC.md` 的「本次規劃的避開清單」。
+
+這份資料只能變成兩種東西：本次排課的 request-scoped 限制，以及 prompt 裡的事實敘述。
+它**不會**寫入 `Interaction_Events`、不構成曝光證明，也不會放寬
+`record_schedule_feedback` 的來源驗證。
 
 Response:
 
@@ -990,7 +1195,8 @@ Response:
 {
   "reply": "...",
   "intent": "run_csp_scheduler",
-  "data": {}
+  "data": {},
+  "planningContextStatus": "accepted"
 }
 ```
 
@@ -999,6 +1205,20 @@ Response:
 | `reply` | 要顯示給使用者的文字。 |
 | `intent` | 這次請求中**最後一個成功**的工具名稱；沒有任何工具成功時為 `general_chat`，呼叫模型本身失敗時為 `error`。 |
 | `data` | 最後一個成功的**可渲染**工具結果（`query_course_db`、`search_dcard_reviews`、`run_csp_scheduler`、`get_easy_courses`），否則為 `null`。 |
+| `planningContextStatus` | `accepted`／`rejected-invalid`／`temporarily-unavailable`，見下表。 |
+
+**`planningContext` 不合法不會讓整次對話失敗。** 它住在瀏覽器的 `sessionStorage`，
+會因為部署升版、開著沒關的舊分頁、瀏覽器資料損壞而變成舊格式；回 400 的話使用者的
+**每一則訊息**都會失敗，直到他自己想到要清 storage。只有 `message` 不合法才回 400。
+
+| `planningContextStatus` | 意義 | 前端應有的行為 |
+| --- | --- | --- |
+| `accepted` | 正常採用（沒送 `planningContext` 時也是這個值） | 照常 |
+| `rejected-invalid` | 格式不合法：舊版本殘留或資料損壞 | **清除**本地的避開清單 |
+| `temporarily-unavailable` | 後端暫時查不到課程資料等暫時性問題 | **保留**避開清單，本次不採用，之後可重試 |
+
+未通過驗證的內容一律不會用來組 prompt 或當成排課限制——丟棄就是整包丟棄，不做部分採用。
+
 
 **工具被拒絕時不會出現在 `intent` 或 `data` 裡。** Agent 的工具有伺服器端驗證
 （例如 `record_schedule_feedback` 會對照推薦曝光紀錄），被拒時只回一個 `{ error }`
@@ -1038,6 +1258,49 @@ tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`err
 ### `POST /api/profile`
 
 只更新 session 使用者的 `User_Profiles` 支援欄位。request 不需也不應傳 `userId`。
+
+興趣方向可用下列欄位更新：
+
+```json
+{
+  "preferredTrack": "網路與安全類",
+  "interests": ["資訊安全", "網路"],
+  "preferredKeywords": ["密碼學"]
+}
+```
+
+`preferredTrack` 必須是字串或 `null`；`interests` 與 `preferredKeywords` 必須是陣列。
+這三個 API 欄位持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
+更新時會保留 `values` 中其他個人化資料。
+
+**Roadmap #10 任務 3A** 另接受 `useLearnedPreference`（布林，預設 `true`）：
+
+```json
+{ "useLearnedPreference": false }
+```
+
+同樣存在 `preferences_json.values`。**只接受真正的布林值**，字串 `"false"`、`0`、`null`
+一律回 `400`——一個決定「要不要用學到的偏好」的旗標，不該靠型別轉換猜測使用者的意思。
+
+更新興趣不會洗掉這個開關，更新開關也不會洗掉興趣。
+
+Profile 另接受 `remainingSemesters`（1～8 的整數或 `null`）：
+
+```json
+{ "remainingSemesters": 3 }
+```
+
+它保存在 `preferences_json.values.remainingSemesters`。`null` 會刪除明確設定，排課回到
+依年級與 active term 推算；字串 `"3"`、小數、0 與 9 一律回 `400`。
+
+**`preferencesJson` 本身不可直接更新**（送了回 `400`）：`preferences_json.values` 的每個
+受管理欄位都有專屬 API 欄位。開放整包覆寫會讓上面的型別檢查可以被繞過
+（送 `{ values: { useLearnedPreference: "false" } }` 就能存進不合法的字串，讀取時再靜默
+退回預設），也會順手洗掉 `values` 裡的其他鍵。
+
+**這一輪只做持久化，開關尚未生效**：`getSchedulingPreferenceWeights()` 還沒有讀它，
+排課結果在 `true`／`false` 下完全相同。真正讓它生效（回 `user-opted-out`）並補上前端
+介面是 3B 的範圍——提前生效會讓 3A 不再是「不改變正式推薦結果」的 shadow 階段。
 
 `department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
 
@@ -1114,6 +1377,20 @@ Request：
   當時曝光的 `displayedSet` 裡。對不上（含 `requestId` 查無曝光紀錄）一律回 `rejected`。
   格式驗證只證明「像一個事件」，不證明「這件事真的發生過」——這個檢查固定在
   `recordInteractionEvents()` 本身，任何呼叫端都繞不過去，不只是 Agent tool 那條路徑。
+- **`eventType: "plan_chosen"`（Roadmap #10 任務 3A）** 的驗證比 `recommendation_accepted`
+  更嚴格，因為它是 Choice Perceptron 唯一的學習輸入：曝光必須存在、曝光的
+  `planFeatureVersion` 必須是目前支援的值、`displayedPlanIds` 至少 2 個（只顯示一個方案
+  不構成 set-wise choice）、被選方案必須有特徵且 `variantId` 相符、特徵必須覆蓋整組方案。
+  **一次詢問只能學一次**：它的 idempotency 只由 `requestId + eventType` 決定，不含被選方案，
+  所以同方案重送回 `duplicate`、同 `requestId` 改選另一方案回 `conflict`；`actionId` 由伺服器
+  依 `requestId` 推導，client 送的隨機值會被覆寫。
+  `recommendation_accepted` 照舊寫入，兩者是同一次操作的兩筆事件，學習器只讀 `plan_chosen`。
+- **`eventType: "course_withdrawn"`** 的 `actionId` 由伺服器依 `(requestId, sectionId)` 推導，
+  client 送的隨機 UUID 會被覆寫。理由是同一次移除會經過兩條路徑（畫面上按移除、
+  接著在 Chat 講同一件事），不統一識別碼就會寫成兩筆。冪等比較也只看
+  `requestId + sectionId + feedbackReason`，**不比 `source` 與 `versionSnapshot`**——
+  移除一門必修時前端寫 `source: "required"`、Agent 寫 `"system_recommendation"`，
+  那不是衝突，是同一件事的兩種記法。改了原因才回 `conflict`。詳見 `docs/DATA_SCHEMA.md`。
 - 其餘 event type（`course_viewed`／`course_favorited`／`course_selected` 等）沒有可對照的
   伺服器端事實可驗證，維持格式驗證即可寫入。
 

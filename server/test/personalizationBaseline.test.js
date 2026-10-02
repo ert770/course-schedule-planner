@@ -12,17 +12,32 @@ import {
   runPersonalizationCase,
 } from '../src/skills/personalizationExperiment.js';
 import { buildCounterfactuals } from '../src/skills/planComparison.js';
-import { generateSchedule } from '../src/skills/scheduler.js';
+import { generateSchedule, setSchedulingHighsRuntime } from '../src/skills/scheduler.js';
+import { getHighsRuntime } from '../src/skills/optimization/highsRuntime.js';
 
 const fixturePath = path.join(process.cwd(), 'test', 'fixtures', 'personalizationCases.json');
 const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 const widePool = fixture.cases[0];
 
-test('PB0 fixture has a wide enough candidate pool for comparison', () => {
-  const result = runPersonalizationCase(widePool, widePool.personas[0]);
+test('PB0 fixture has a wide enough candidate pool for comparison', async () => {
+  // 替代方案改由 HiGHS 產生（roadmap #10 任務 1）；求解器未載入時只會有 S₀。
+  setSchedulingHighsRuntime(await getHighsRuntime());
+  let result;
+  try {
+    result = runPersonalizationCase(widePool, widePool.personas[0]);
+  } finally {
+    setSchedulingHighsRuntime(null);
+  }
   assert.equal(widePool.candidateCourses.length, 12);
-  assert.ok(result.runs.B1.planDiversity.distinctPlans >= 2);
-  assert.equal(result.runs.B1.planDiversity.competablePoolSize, 12);
+  const diversity = result.runs.B1.planDiversity;
+  // 舊版靠 ×1.5／學分 ×3 策略必然產生第二個方案；改成 MILP 後，替代方案必須同時滿足
+  // 品質保留 ≥ 0.87、學分對齊與至少換 2 門。做不到時不得靜默合併，每一項都要有原因。
+  assert.ok(diversity.distinctPlans >= 1);
+  assert.equal(diversity.distinctPlans + diversity.collapsed.length, diversity.requestedVariants);
+  for (const item of diversity.collapsed) {
+    assert.ok(item.reason && item.reason !== 'same-course-combination', `${item.variantId} 缺少合併原因`);
+  }
+  assert.equal(diversity.competablePoolSize, 12);
 });
 
 test('PB1/PB2 B0, B1 and P keep hard constraints and a fixed candidate set', () => {

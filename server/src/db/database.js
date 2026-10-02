@@ -639,6 +639,7 @@ function normalizeProfileForWrite(item) {
 
 function mapUserProfileRow(row) {
   const preferenceTags = parseJson(row.preference_tags, []);
+  const preferencesJson = parseJson(row.preferences_json, { schemaVersion: 1, values: {} });
 
   // `avoid_time` 與偏好標籤是兩組獨立的設定，不互相推導。
   //
@@ -681,7 +682,7 @@ function mapUserProfileRow(row) {
     preferenceTags: tags,
     selectedTags: tags,
     avoidInstructors: parseJson(row.avoid_instructors, []),
-    preferencesJson: parseJson(row.preferences_json, { schemaVersion: 1, values: {} }),
+    preferencesJson,
     programType: row.program_type ?? null,
     enrolledPrograms: parseJson(row.enrolled_programs, []),
     college: row.college ?? null,
@@ -990,7 +991,7 @@ function assertMysqlAvailable(collection) {
   if (MYSQL_ONLY_COLLECTIONS.has(collection) && !isMysqlConfigured()) {
     throw new Error(
       `${collection} 只能來自 MySQL，但未設定資料庫連線。`
-      + '請在 `server/.env` 設定 DB_HOST、DB_USER 與 DB_NAME（見 `.env.example`）。'
+      + '請在 `server/.env` 設定 DB_HOST、DB_USER 與 DB_NAME（範本見專案根目錄的 `.env.example`）。'
     );
   }
 }

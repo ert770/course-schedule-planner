@@ -8,6 +8,7 @@ import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, 
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
+import SessionAvoidanceBar from '../components/Schedule/SessionAvoidanceBar';
 import ChatPanel from '../components/Chat/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
@@ -38,8 +39,14 @@ export default function SchedulePage() {
     personalizationEnabled,
     plans,
     selectedPlanId,
+    recommendedPlanId,
     planDiversity,
+    activePlan,
     selectPlan,
+    // 本次規劃的避開清單
+    sessionAvoidances,
+    clearSessionAvoidances,
+    buildAvoidanceConstraints,
   } = useSchedule();
 
   const [courses, setCourses] = useState([]);
@@ -124,7 +131,12 @@ export default function SchedulePage() {
     try {
       const data = await scheduleAPI.generate({
         courseIds: selectedCourses.map(c => c.id),
-        constraints: {},
+        // 本次規劃的避開清單。
+        //
+        // 這一頁特別需要它：`courseIds` 會在後端併進 `explicitCourseIds`，而那個
+        // 集合的用途是讓課程**繞過資格與學期過濾**。若避開清單讓位給它，使用者在
+        // 這一頁移除課程後重排，那門課會原封不動被保留——正是這次要修的症狀。
+        constraints: { sessionAvoidances: buildAvoidanceConstraints() },
         surface: 'schedule',
         trigger: 'manual_generate',
       });
@@ -300,15 +312,41 @@ export default function SchedulePage() {
               domId="schedule-page-notice"
             />
 
+            {activePlan?.graduationPlanning?.enabled && (
+              <div
+                id="graduation-semester-plan"
+                style={{
+                  marginBottom: '12px', padding: '10px 12px', borderRadius: '8px',
+                  border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
+                  fontSize: '0.88rem',
+                }}
+              >
+                <strong style={{ color: 'var(--text-primary)' }}>本學期畢業缺口分配</strong>
+                {' '}（剩餘 {activePlan.graduationPlanning.remainingSemesters} 學期）：
+                本系選修 {activePlan.graduationPlanning.selected?.elective?.courses || 0} 門／
+                {activePlan.graduationPlanning.selected?.elective?.credits || 0} 學分
+                （目標 {Number(activePlan.graduationPlanning.semesterTargets?.elective || 0).toFixed(1)}）；
+                通識 {activePlan.graduationPlanning.selected?.general?.courses || 0} 門；
+                系外 {activePlan.graduationPlanning.selected?.external?.courses || 0} 門。
+              </div>
+            )}
+
+            <SessionAvoidanceBar
+              avoidances={sessionAvoidances}
+              onClear={clearSessionAvoidances}
+            />
+
             <PlanSwitcher
               plans={plans}
               selectedPlanId={selectedPlanId}
+              recommendedPlanId={recommendedPlanId}
               planDiversity={planDiversity}
               onSelectPlan={handleSelectPlan}
             />
 
             <PlanComparison
               plans={plans}
+              recommendedPlanId={recommendedPlanId}
               constraints={{}}
               courseIds={selectedCourses.map(c => c.id)}
               surface="schedule"

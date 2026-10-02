@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import {
   loadCourseReviewsSafely, loadLearnedPreferenceSafely, buildNoCandidatesResult, buildExposureDraft,
 } from '../src/services/scheduleService.js';
+import { PLAN_FEATURE_VERSION } from '../src/data/interactionEventSchema.js';
 
 describe('loadCourseReviewsSafely：評價查詢失敗不得讓排課請求整體失敗', () => {
   test('loader 成功時回傳其解析結果', async () => {
@@ -172,5 +173,72 @@ describe('buildExposureDraft：roadmap #27 之後 displayedSet／displayedPlanId
     const draft = buildExposureDraft(result, 'req-1', { surface: 'dashboard', trigger: 'initial_load' });
     const sectionIds = draft.exposureContext.displayedSet.map(c => c.sectionId).sort();
     assert.deepEqual(sectionIds, [1, 2, 3]);
+  });
+});
+
+// roadmap #10 任務 3A：Choice Perceptron 的更新式需要「其餘方案的平均」，所以曝光必須記下
+// 每個展示方案的特徵向量 φ，而且要嘛全記、要嘛整組不記。
+describe('buildExposureDraft：planFeatures 是 Choice Perceptron 的 φ', () => {
+  const courseA = { id: 1, catalogCourseCode: 'IECS3002', sectionId: 1 };
+  const courseB = { id: 2, catalogCourseCode: 'IECS3059', sectionId: 2 };
+  const policy = {
+    version: 'personalized-scoring-v2',
+    weights: { interest: 1, compact: 0, easy: -1.4 },
+    categoryCoefficient: 0.35,
+    creditCoefficient: 1,
+    source: { learnedApplied: true, reason: 'applied', modelVersion: 'preference-learning-v2' },
+  };
+
+  function makeResult(overrides = {}) {
+    const plans = [
+      { id: 'personalized', variantId: 'personalized', planId: 'req-9:personalized',
+        schedule: [courseA], generationPolicy: policy, stopWhen: 'milp-optimized',
+        preferenceBreakdown: { interest: 0.25, compact: 0.5, easy: 0.72 } },
+      { id: 'personalized_interest', variantId: 'personalized_interest',
+        planId: 'req-9:personalized_interest', schedule: [courseB],
+        generationPolicy: policy, stopWhen: 'milp-optimized',
+        preferenceBreakdown: { interest: 0.9, compact: 0.25, easy: null } },
+    ];
+    return { schedule: [courseA], excludedCourses: [], plans, ...overrides };
+  }
+
+  const draftOf = result => buildExposureDraft(result, 'req-9', {
+    surface: 'dashboard', trigger: 'initial_load',
+  });
+
+  test('每個展示方案各一筆，形狀固定為 planId／variantId／三軸', () => {
+    const context = draftOf(makeResult()).exposureContext;
+    assert.equal(context.planFeatureVersion, PLAN_FEATURE_VERSION);
+    assert.equal(context.planFeatures.length, context.displayedPlanIds.length);
+    assert.deepEqual(context.planFeatures[0], {
+      planId: 'req-9:personalized', variantId: 'personalized',
+      interest: 0.25, compact: 0.5, easy: 0.72,
+    });
+  });
+
+  test('easy 沒有評價證據時保留 null，不得補成 0', () => {
+    const context = draftOf(makeResult()).exposureContext;
+    assert.equal(context.planFeatures[1].easy, null);
+    assert.equal(context.planFeatures[1].interest, 0.9);
+  });
+
+  test('任一方案缺特徵時整組不寫，退回舊形狀而不是只寫一半', () => {
+    const result = makeResult();
+    delete result.plans[1].preferenceBreakdown;
+    const context = draftOf(result).exposureContext;
+    assert.equal(context.planFeatureVersion, undefined);
+    assert.equal(context.planFeatures, undefined);
+    // 其餘欄位不受影響，曝光仍然照常寫入。
+    assert.equal(context.displayedPlanIds.length, 2);
+    assert.equal(context.planPolicies.length, 2);
+  });
+
+  test('沒有 generationPolicy 的方案仍然要有特徵（fallback 方案也是 query set 的一員）', () => {
+    const result = makeResult();
+    delete result.plans[1].generationPolicy;
+    const context = draftOf(result).exposureContext;
+    assert.equal(context.planPolicies.length, 1);
+    assert.equal(context.planFeatures.length, 2);
+    assert.equal(context.planFeatures[1].planId, 'req-9:personalized_interest');
   });
 });

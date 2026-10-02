@@ -63,6 +63,18 @@ node --check src/app.js
 | S15 | Agent 送 `mondayFree` | 展開為週一 1-14 節封鎖並與既有封鎖時段合併 |
 | S16 | 候選課程全為關注狀態 | `success` 為 true、`watchOnly` 為 true、回傳關注課程與對應訊息 |
 | S17 | 指定必修排不進去且有關注課程 | `success` 為 false，但 `watchedCourses` 仍完整回傳 |
+| S18 | 大四下、歷史缺口為本系選修 6／通識 4／系外 0 | 先排正式必修，再排 2 門 3 學分本系選修與 2 門 2 學分通識；達配額即停止，不填滿 25 學分 |
+| S19 | 通識配額有缺口但沒有可排通識，本系選修仍很多 | 保留通識缺口的 warning；總學分低於 `minCredits` 時補到下限為止（2026-10-02 起，原本是不補），補的課記在 `creditFloorTopUp` |
+| S19b | 快畢業：配額目標只有選修 2／通識 1.33 學分，`minCredits` 為 12 | 補到 12 學分以上且不超過一門課的量；系外缺口為 0 時不拿系外選修來補 |
+| S19c | 配額本身已達 `minCredits` | 不進入補足階段，`creditFloorTopUp.courses` 為 0，沒有補足的 warning |
+| S19d | 各類缺口都補完後仍低於 `minCredits` | 退回任何排得進去的課，補到下限 |
+| S19e | 已取得 126／128（距離畢業 2 學分）、`minCredits` 9，類別缺口被高估成選修 28／通識 16 | `creditFloorOnly` 為 true，排到 9 學分以上就停，不排到類別配額的 13 學分 |
+| S19f | 已取得 110／128（距離畢業 18 學分）、`minCredits` 9 | 不套用，照類別配額排 3 門選修＋2 門通識 |
+| S19g | 沒有已取得總學分資料 | `totalGap` 為 `null`，不套用 |
+| HC1–HC3 | 歷史修課的畢業分類（`courseHistoryClassification.test.js`） | 資工必修、外系開課必修（課號列舉）、核心選修／選修、通識基礎必修各自歸類；他系同名課、課號與課名不符、不在科目表上的課一律不猜（回 `null`）；Markdown 匯入套用分類後，已取得學分落在正確類別 |
+| S20 | request 或 profile 夾帶自製 `graduationPlanning` | 一律忽略，只接受 schedule service 由規則與歷史修課建立的 trusted context |
+| S21 | 明確設定 `remainingSemesters` | 1～8 的整數或 `null` 可用；字串、小數、0、9 拒絕；明確值優先於年級推算 |
+| S22 | HiGHS 產生替代方案 | 本系選修／通識／系外門數與 S₀ 相同，模型限制與 `milpPlanChecks` 都要驗證 |
 | M1 | 多時段課程與其**第二個以後**的時段重疊 | 判定衝堂 |
 | M2 | 多時段課程與任一時段皆不重疊 | 不判定衝堂 |
 | M3 | 封鎖時段命中多時段課程的非第一段 | 該課程被排除且理由為封鎖時段 |
@@ -516,6 +528,9 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 - 登出或切換帳號時先清空共用課表與關注狀態；舊帳號尚未完成的非同步回應不得覆寫新帳號狀態。
 - 儀表板可產生課表。
 - 課表格可顯示不同星期與節次。
+- 畢業缺口排課 A/B：同一帳號同一候選池下，未注入 `graduationPlanning` 的舊流程會填到
+  學分上限附近；注入後應依歷史缺口／剩餘學期停止。課表頁要顯示本系選修、通識、系外
+  的實際門數／學分與目標；console 不得出現新錯誤。
 - 畢業學分頁可顯示缺口。
 - AI 聊天輸入後可顯示回覆。
 - 自動重補修瀏覽器 A/B 使用 `server/test/fixtures/browser-with-failed` 與
@@ -596,6 +611,110 @@ IL-13e～g、IL-14 來自第一輪對抗式審查；IL-15、IL-17～20 與 RL-1�
 | PM4 | 涵蓋每條路徑 | 成功、失敗、放寬、repair 路徑回傳的每個 plan 都帶 `planMetrics` |
 | PM5 | 欄位一致 | `planMetrics.preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位相同 |
 | PM6 | 不改變決策 | 加了 `planMetrics` 前後，排出來的課程集合不變 |
+
+`server/test/planDiversityAcceptance.test.js` 的 PDA1-PDA8（Roadmap #10 量化驗收純函式）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PDA1 | 4 個策略得到 3 個方案 | 保留率 75%，方案數門檻通過 |
+| PDA2 | 4 個策略只得到 2 個方案 | 保留率 50%，驗收失敗 |
+| PDA3 | 無偏好 persona 嘗試綜合與較多學分兩個策略 | 只要求 2 個方案，不強制 3 個 |
+| PDA4 | 課表含必修、重補修、使用者指定及一般選修 | 前三類從競爭課程集合排除，只比較一般選修 |
+| PDA5 | 兩組課程集合有 2 門交集、4 門聯集 | Jaccard similarity 為 0.5；兩組皆空時為 1 |
+| PDA6 | 偶數筆相似度 | 中位數取排序後中間兩筆平均 |
+| PDA7 | 多數方案只替換極少課程 | 中位 Jaccard 超過 0.75 時驗收失敗 |
+| PDA8 | 兩個方案只有 section ID 不同、正式課號相同 | `meaningfulDistinctPlans` 仍為 1，實際課程差異失敗 |
+
+`server/test/planDiversityDiagnostics.test.js` 的 PDD1-PDD5（Roadmap #10 塌縮診斷）：
+
+| 編號 | 情境 | 預期結果 |
+| --- | --- | --- |
+| PDD1 | 兩個策略產生相同課程集合 | 去重後雖只有一個正式方案，診斷仍保存兩個策略的完整 `courseSet`，並標出 `duplicateOfVariantId` |
+| PDD2 | 診斷一個貪婪決策點 | 保存前 4 名候選；每門課的 `totalScore` 等於同筆 `scoreComponents` 加總 |
+| PDD3 | 候選因學分上限未入選 | 每門未入選課都有結構化原因，且本情境為 `CREDIT_CEILING` |
+| PDD4 | 候選與已選課衝堂 | 原因沿用 `TIME_CONFLICT`，並保留實際衝突課程 |
+| PDD5 | 正式排課未啟用診斷 | 回應不含 `generationDiagnostics`，避免把大型診斷資料送到一般 API |
+
+真實資料驗收使用：
+
+```bash
+npm run bench:plan-diversity --prefix server -- --markdown
+```
+
+runner 使用目前 MySQL 與正式排課器，報告寫入
+`server/test/reports/plan-diversity-acceptance-latest.json`。命令 exit code 0 代表所有 case
+通過；exit code 1 代表至少一個 case 未達門檻。這不是測試程式崩潰，應讀取報告的
+`criteria` 判斷是方案數、保留率、相似度、實際課程差異或安全檢查失敗。
+同一命令另寫入 `server/test/reports/plan-diversity-diagnostics-latest.json`；此 sidecar 保存
+去重前課程集合、每次選課的前 4 名分數拆解，以及所有未入選候選的原因，供失敗時定位塌縮。
+
+### 多方案 MILP（Roadmap #10 任務 1，2026-09-19）
+
+純函式與合成案例（需要 HiGHS WASM，不需網路或資料庫）：
+
+| 檔案 | 覆蓋內容 |
+| --- | --- |
+| `scheduleMipModel.test.js` | 同時段取高分（精確 argmax）、同課一班、greedy 會選錯的組合、學分上下限、共同必修、同系列豁免、固定課衝突前置排除；空模型三種狀態（`no-competitive-candidates`／`infeasible`／`data-insufficient`）；學分對齊、雙向換課、興趣門檻、品質下限、評價數下限、集中日變數；`bindingConstraints` 相對容差 |
+| `diversePlanSolver.test.js` | 每步用選課結果重算 d 並收斂到窮舉最佳比值；`U(S₀) < 0` 的品質保留率；共用 deadline；x⁰ 起步與 λ₁；暖啟動傳遞；不可行時逐組放寬的原因診斷；線上預設（K=1、2.5 秒、單次 0.8 秒）與 benchmark 設定（只覆寫 K=3）互不影響 |
+| `milpPlanChecks.test.js` | 學分對齊與固定班次；固定班次、重複課號、系列、每日上限、共同必修、跨年級／系外階層配額逐項反例 |
+| `milpAxisSignal.test.js` | 興趣／難度訊號判定、校準後 `minGain=0.02`、評價覆蓋下限 `max(2, ⌈S₀÷2⌉)`、門檻可達範圍（含固定課分數）、固定課已占滿集中日數 |
+| `highsRuntime.test.js` | 限制停止時區分「已有可行解」與「沒有可行解」 |
+| `schedulerMilpIntegration.test.js` | S₀ 與 `primary-only` 相同；`recommendedPlanId` 與 `plans[0]` 一致；未注入 solver 時只回 S₀ 並揭露原因 |
+| `scheduler.test.js` S4 | 重修低年級必修不受開課年級限制，排課器與驗證器一致 |
+
+### Roadmap #10 任務 2（方案挑選，D_bin 窮舉，2026-10-01）
+
+| 檔案 | 覆蓋內容 |
+| --- | --- |
+| `diverseSubsetSelector.test.js` | DS1：D_bin 與論文 §2.2 公式的手算對照（三份、兩份、四份；`b` 只影響縮放）。DS-B1～B5 邊界：只有 S₀ → `dBin: null`；`b = 0` 且無候選不丟例外；有候選而 `b` 非正數 → `RangeError`；候選為空的主軸不列入 `dropped`；缺 `candidateId` → `TypeError`。DS2：距離限制、方案數優先於 D_bin、S₀ 必在、輸出依 canonical 順序。DS3：衝突時留下使 D_bin 較高的主軸並回報 `conflictsWith`（與被取代的順序挑選器結果相反）；`conflictsWith` 在 200 組隨機案例中永遠非空。DS4：300 組固定 seed 的隨機小池，最佳值與獨立暴力實作一致，`evaluated` 等於搜尋空間大小。DS5：**打亂主軸與候選順序 40 次結果不變**，含 D_bin 平手、比值平手、同課號集合只差班次、D_bin 近似平手（`b = 1e15`，確認用整數比較而非浮點容差）、重複 `candidateId` 去重 |
+| `planSubsetSelectionIntegration.test.js` | 真的用 HiGHS 求解，再以 `diverseCandidatesHook`（測試接縫）改寫候選。SS1：`solver.method` 仍是 `dinkelbach-milp`、挑選方法另記在 `solver.subsetSelection`；無塌縮時 `collapsed[]` 不帶 `conflictsWith` key。SS1b：多一個同課號班次時 `b` 不變（先斷言 `competitive.length` 為 9、`b` 為 8）。SS2：兩條主軸課號集合相同 → `too-similar-to-selected`，`conflictsWith` 是 `{ variantId, title }` 且指向畫面上存在的方案，warning 句子帶對方名稱且不再出現「品質下限」文案。SS3：候選被塞進衝堂課 → `candidate-check-failed`，**不是** `too-similar-to-selected`，且記入 `rejectedCandidates` |
+
+回歸：改動前後以唯讀方式對真實 MySQL 課程重跑 `generateSchedule()`（D1249697 與三位 demo
+persona），K=1 的方案集合與推薦方案必須完全相同——候選之間沒有衝突時，新舊挑法等價。
+
+### Roadmap #10 任務 3A（Choice Perceptron，shadow）
+
+| 檔案 | 覆蓋內容 |
+| --- | --- |
+| `choicePerceptron.test.js` | CP1–CP12：手算 Δ（query size 2／3／4）、η 線性縮放、平移不變、方案排列不變、可重播與時鐘純度、缺值逐軸遮罩（選中或任一未選方案缺值即該軸不動）、舊事件與覆蓋不全的曝光整筆跳過並記原因、1000 次同向後 `\|w\| ≤ 2` 且寫得進 `DECIMAL(4,3)`、顯式 `compact=1` 持續選分散 → 權重轉負、零 choice 時等於初始值、`evidence` 每軸上限 20 筆 |
+| `choiceReplayFixture.test.js` | 重播素材本身：同 seed 逐位元可重現、φ 完整時系統分數與 `⟨w, φ⟩` 排序一致、`null-easy` persona 不更新 easy 軸、每回合成對產生 `plan_chosen` 與 `recommendation_accepted`、切分不重疊、accuracy 與名次的定義 |
+| `interactionEventSchema.test.js`（#10 3A 區塊） | `planFeatures` 三態相容：舊事件無版本 → 合法但不可學；新版本只覆蓋一部分 → 拒絕；一對一相符 → 通過；`easy: null` 合法、`interest: null` 與越界值被拒；`variantId` 與 policy 不一致被拒，但沒有 policy 的 fallback 方案仍可通過 |
+| `interactionEvents.test.js`（#10 3A 區塊） | `plan_chosen` 來源驗證五條；**同 requestId 同方案 → `duplicate`、改選另一方案 → `conflict`**；`actionId` 由伺服器依 `requestId` 推導；`recommendation_accepted` 照舊寫入 |
+| `profileUpdateValidation.test.js` | `POST /api/profile` 的輸入驗證（純函式，規則抽在 `data/profileUpdateValidation.js`）：`useLearnedPreference` 只收布林；**`preferencesJson` 一律拒絕**（否則字串可經這條路徑繞過布林檢查、整包覆寫還會洗掉其他鍵）；既有的陣列、字串與 department 規則不變；只回報第一個錯誤。路由確實接上這些規則由瀏覽器實測證明——在 Windows 上起 `app.js` 的測試檔會留下殘留 handle 而不結束 |
+| `personalizationPreferences.test.js` | `useLearnedPreference` 預設 true、非布林退回預設、與興趣互不覆蓋、`preferences_json.values` 其他鍵不受影響、攤到 profile 頂層 |
+| `preferenceLearningService.test.js`（3A 新增一項） | **3A 尚未消費開關**：排課權重在 `true`／`false` 下逐位元相同。3B 接上時這個測試會失敗，那是提醒該改它了 |
+| `scheduleService.test.js`（planFeatures 區塊） | 每個展示方案各一筆且形狀固定；`easy` 無證據時保留 `null` 不補 0；任一方案缺特徵時整組不寫；沒有 `generationPolicy` 的 fallback 方案仍要有特徵 |
+
+## 本次規劃的避開清單（2026-09-21）
+
+| 測試檔 | 涵蓋內容 |
+| --- | --- |
+| `sessionAvoidance.test.js` | SA1–SA7：三種避開範圍（內容／負擔→整個課號、教師→該教師、時段等→只該班次）；**`explicitCourseIds` 指名的課仍會被避開**（若讓位給它，`SchedulePage` 移除後重排會原地復活，正是要修的症狀）；`selectedCourseIds`／必修改為保留並回 `protected-conflict`；`appliedSessionAvoidances` 的三種 `status`；`pendingReason` 由呼叫端決定而不從 `reason` 推；**空清單時排課結果與改動前完全相同**；課號與教師由伺服器解析，呼叫端送錯也不影響 |
+| `planningContextSchema.test.js` | 純 shape：`reason` 值域沿用 `INTERACTION_FEEDBACK_REASONS`；**client 送的 `scope`／`pendingReason` 一律忽略**（否則送 `{reason:'time', scope:'catalog_course'}` 就能把「時段不合」放大成排除整門課）；課程數上限；重覆 ID 去重而非報錯 |
+| `planningContextService.test.js` | **沒有曝光紀錄時避開條件仍成立**（未同意個人化的使用者根本沒有曝光列，把它當前提功能會對他們完全失效）；課名／教師由後端重查、client 送的值丟棄；查不到的 sectionId 只丟那一筆；`activePlanId` 對不上時忽略該欄位；**查課失敗回 `temporarily-unavailable` 而不是 `rejected-invalid`**（後者會讓前端清掉仍然有效的避開清單） |
+| `removalReasonResolutions.test.js` | RR1–RR6：只接受待補項目的答覆、`reason` 值域檢查、未知 `outcome` 忽略、`declined` 之後不再追問、沒有答覆時原狀帶出、答覆不是陣列時不讓排課失敗 |
+| `requirementPreflight.test.js`（RP14 新增） | 避開必修 → 產生 `confirm-avoidance-required-conflict`；避開選修不誤報；`courseById` 沒載入那門課時不誤報（提醒呼叫端要把避開的班次一併載入） |
+| `constraints.test.js`（新增三項） | `sessionAvoidances` 只取 request、不從偏好回填；**不得影響持久化的 `avoidInstructors`** |
+| `interactionEvents.test.js`（IL-3b～IL-3e） | `course_withdrawn` 的 `actionId` 由伺服器決定，呼叫端換 UUID 不會變成第二筆；**UI 寫 `source:"required"`、Agent 寫 `"system_recommendation"` 時仍判 `duplicate`**；改了原因才 `conflict`；「不同 actionId ＝不同操作」這條通則改由 `course_selected` 守著 |
+
+`POST /api/chat` 的三態 `planningContextStatus`、以及路由確實接上這些規則，
+由真實帳號的瀏覽器實測作證（見 2026-09-21 變更報告）——在 Windows 上起 `app.js`
+的測試檔會留下殘留 handle 而不結束（`interactionEvents.test.js` 就是現存的例子）。
+
+
+離線重播：`npm run bench:choice-perceptron --prefix server -- --markdown`（加 `--real-data` 會唯讀查詢真實可用的 `plan_chosen` 筆數）。
+training／validation／test 三分，η 與 choice 門檻只用 validation 選，test 只評估一次。
+
+真實資料量測：
+
+```bash
+node scripts/highsSpike.js --markdown --soak 500
+```
+
+spike 報告（`server/test/reports/highs-spike-latest.json`）的 GO 判斷同時看 validator、
+`milpPlanChecks`、全部 optimal、warm p95 ≤ 200 ms、重跑一致，以及 `fixed-courses-control`
+必須同時出現本人必修、重補修與指定課三種固定來源。`--soak N` 記錄連續求解的 RSS 趨勢，
+只是觀測值，不證明長時間執行不會累積。
 
 `server/test/planComparison.test.js` 的 CF1-CF4（純函式，不需網路或資料庫）：
 

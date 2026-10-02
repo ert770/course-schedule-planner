@@ -15,8 +15,11 @@ import {
 } from '../data/departmentMapping.js';
 import {
   CLASS_KIND_LABELS,
+  ELIGIBILITY_RULES_SOURCE,
+  getEligibilityRule,
   getNonDepartmentClassEntry,
   getSpecialDepartmentClassEntry,
+  getStudentColleges,
 } from '../data/classKindCatalog.js';
 import { normalizeDepartment } from '../utils/text.js';
 
@@ -344,6 +347,28 @@ export function isOtherStudentsRequiredCourse(course, scope) {
   return !isRequiredForStudent(course, scope);
 }
 
+// 同系、同學制的**選修**（任何年級、任何班別）。
+//
+// Roadmap #13C-5（2026-09-18 專案負責人確認）：同系其他年級開的選修可以修，
+// 但本年級的選修優先。必修不適用——必修不得換班、他年級必修屬於別人
+// （`isOtherStudentsRequiredCourse()`）。
+export function isOwnDepartmentElective(course, scope) {
+  if (!scope?.resolved) return false;
+  const sourceCategory = course?.sourceCategory ?? course?.type ?? course?.category;
+  if (sourceCategory === '必修') return false;
+
+  const parsed = parseClassName(course?.department);
+  return parsed.isDepartmentClass
+    && scope.abbreviations.includes(parsed.abbreviation)
+    && parsed.degree === scope.degree;
+}
+
+// 同系選修，但開在別的年級。排課時照樣可以排入，只是排序在本年級的選修之後。
+export function isCrossYearOwnDepartmentElective(course, scope) {
+  if (!isOwnDepartmentElective(course, scope)) return false;
+  return parseClassName(course?.department).grade !== scope.classYear;
+}
+
 // 這門課是否開在學生本系的班級底下（不論年級與班別）。
 // 系外選修判定用：只有系所班級才分本系／外系，通識、共同科目、學院綜合班、
 // 學分學程等非系所班級不屬於任何一系，不在此判定範圍。
@@ -363,8 +388,11 @@ export function isOwnDepartmentClass(course, scope) {
 export const ELIGIBILITY_SOURCE = Object.freeze({
   // B～F 目錄裡完全查無這個班級名稱。
   UNCLASSIFIED: 'class-catalog:unclassified',
-  // B～F 目錄裡查得到，但正式適用對象規則仍待 #13C 確認。
+  // B～F 目錄裡查得到，但這個班級沒有適用規則（例如進修英班），或規則需要的
+  // 學生資料（年級、學院）不足以判定。
   UNCONFIRMED_RULES: 'class-catalog:unconfirmed-rules',
+  // B～F 目錄裡查得到，且套用 #13C／#13D 的適用規則得出 eligible 或 ineligible。
+  CONFIRMED_RULES: `class-catalog:${ELIGIBILITY_RULES_SOURCE}`,
   // A 表系所班級的必修，但學生系所／年級資料不足，無法比對。
   REQUIRED_SCOPE_UNRESOLVED: 'department-required-table:scope-unresolved',
   // A 表系所班級的必修，且學生範圍已可比對（eligible 或 ineligible 皆同一來源）。
@@ -373,7 +401,65 @@ export const ELIGIBILITY_SOURCE = Object.freeze({
   ELECTIVE_DEFAULT: 'department-required-table:elective-default',
 });
 
-// #13B 只把「是否知道適用對象」顯性化，不猜 B～F 的正式修課規則。
+const GRADE_LABEL = { 1: '一', 2: '二', 3: '三', 4: '四' };
+
+function isGraduateScope(scope) {
+  return ['master', 'masterInService', 'doctor'].includes(scope?.degree) || scope?.gradeLevel === 5;
+}
+
+// Roadmap #13C／#13D：套用 `classKindCatalog.js` 的 B～F 適用規則。
+// 回傳 { eligibility, reason }；規則需要的學生資料不足時回 unknown，不猜。
+function applyNonDepartmentRule(rule, parsed, scope) {
+  const label = CLASS_KIND_LABELS[parsed.classKind] || parsed.classKind;
+
+  if (rule.type === 'anyone') {
+    return { eligibility: 'eligible', reason: `${label}，任何學生皆可修。` };
+  }
+
+  if (rule.type === 'nobody') {
+    return { eligibility: 'ineligible', reason: `${label}屬於獨立學制或已排除的班級，本系統的學生不適用。` };
+  }
+
+  if (rule.type === 'grades') {
+    const gradeText = rule.grades.map(grade => `${GRADE_LABEL[grade]}年級`).join('、');
+    if (isGraduateScope(scope)) {
+      return { eligibility: 'ineligible', reason: `${label}，限大學部${gradeText}。` };
+    }
+    if (!scope?.classYear) {
+      return { eligibility: 'unknown', reason: `${label}限${gradeText}，但學生年級資料不足，無法判定。` };
+    }
+    return rule.grades.includes(scope.classYear)
+      ? { eligibility: 'eligible', reason: `${label}，限${gradeText}，符合學生年級。` }
+      : { eligibility: 'ineligible', reason: `${label}，限${gradeText}，不符合學生年級。` };
+  }
+
+  if (rule.type === 'graduateOnly') {
+    if (!scope?.department && !scope?.gradeLevel) {
+      return { eligibility: 'unknown', reason: `${rule.college}碩士綜合班，學生學制資料不足，無法判定。` };
+    }
+    return isGraduateScope(scope)
+      ? { eligibility: 'unknown', reason: `${rule.college}碩士綜合班，研究生的適用範圍尚未確認。` }
+      : { eligibility: 'ineligible', reason: `${rule.college}碩士綜合班，大學部學生不可修。` };
+  }
+
+  if (rule.type === 'college') {
+    const colleges = getStudentColleges(scope?.department);
+    if (colleges.length === 0) {
+      return {
+        eligibility: 'unknown',
+        reason: scope?.department
+          ? `${rule.college}綜合班，但系所「${scope.department}」沒有學院對照，無法判定。`
+          : `${rule.college}綜合班，學生系所資料不足，無法判定。`,
+      };
+    }
+    return colleges.includes(rule.college)
+      ? { eligibility: 'eligible', reason: `${rule.college}綜合班，本學院學生可修。` }
+      : { eligibility: 'ineligible', reason: `${rule.college}綜合班，限${rule.college}學生。` };
+  }
+
+  return { eligibility: 'unknown', reason: `${label}的適用規則格式無法辨識。` };
+}
+
 // `eligibility` 是班級範圍判定；系外選修是否計入畢業學分仍由 outsideElective
 // 的獨立規則處理，兩者不可混為同一欄位。
 export function resolveCourseEligibility(course, scope) {
@@ -390,13 +476,27 @@ export function resolveCourseEligibility(course, scope) {
       };
     }
 
-    const label = CLASS_KIND_LABELS[parsed.classKind] || parsed.classKind;
+    const rule = getEligibilityRule(parsed.className);
+    if (!rule) {
+      const label = CLASS_KIND_LABELS[parsed.classKind] || parsed.classKind;
+      return {
+        classGroup: parsed.classGroup,
+        classKind: parsed.classKind,
+        eligibility: 'unknown',
+        eligibilityReason: `${label}（${parsed.classGroup} 類）的適用對象規則尚未確認。`,
+        eligibilitySource: ELIGIBILITY_SOURCE.UNCONFIRMED_RULES,
+      };
+    }
+
+    const applied = applyNonDepartmentRule(rule, parsed, scope);
     return {
       classGroup: parsed.classGroup,
       classKind: parsed.classKind,
-      eligibility: 'unknown',
-      eligibilityReason: `${label}（${parsed.classGroup} 類）的正式適用對象規則尚未確認。`,
-      eligibilitySource: ELIGIBILITY_SOURCE.UNCONFIRMED_RULES,
+      eligibility: applied.eligibility,
+      eligibilityReason: applied.reason,
+      eligibilitySource: applied.eligibility === 'unknown'
+        ? ELIGIBILITY_SOURCE.UNCONFIRMED_RULES
+        : ELIGIBILITY_SOURCE.CONFIRMED_RULES,
     };
   }
 
@@ -443,6 +543,8 @@ export default {
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
   isOwnDepartmentClass,
+  isOwnDepartmentElective,
+  isCrossYearOwnDepartmentElective,
   resolveCourseEligibility,
   classSuffixCovers,
   ELIGIBILITY_SOURCE,

@@ -166,8 +166,12 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `eligibility` | `eligible` \| `ineligible` \| `unknown` | 對目前學生的班級適用資格 |
 | `eligibilityReason` | string | 判定或未知的可讀原因 |
 
-`eligibility` 不代表學分是否可計入畢業。B～F 類正式適用規則仍待 roadmap #13C，
-目前一律為 `unknown`；系外選修畢業認列仍由 `outsideElective` 獨立判定。
+| `eligibilitySource` | string | 判定套用的規則代號；B～F 依 2026-09-18 確認的規則判定時為 `class-catalog:owner-confirmed-2026-09-18`，沒有規則或資料不足時為 `class-catalog:unconfirmed-rules` |
+
+`eligibility` 不代表學分是否可計入畢業。B～F 類依 roadmap #13C／#13D 的規則（專案負責人
+2026-09-18 口頭確認，見 `docs/DEPARTMENT_MAPPING.md`）判定為 `eligible`／`ineligible`，
+沒有規則的班級（`進修英班`、`大二進修英班`）或學生資料不足時為 `unknown`；
+系外選修畢業認列仍由 `outsideElective` 獨立判定。
 
 | 應用程式欄位 | 型別 | 說明 |
 | --- | --- | --- |
@@ -329,7 +333,7 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 | --- | --- | --- |
 | `must_take_courses` | JSON NULL | `profile.mustTakeCourses`；Profile API 已接讀寫 |
 | `avoid_instructors` | JSON NULL | `profile.avoidInstructors`；持久化並接入排課限制 |
-| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }` |
+| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。**Roadmap #23** 另加 `values.remainingSemesters`（1～8 的整數）：使用者明確設定的剩餘學期數；缺少時依年級與 active term 推算。各欄位只接受正式型別，更新時各自只動自己的鍵，互不覆蓋。**3A 的開關只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
 | `password_hash` | varchar(255) NULL | 刻意不搬 `users.json.password` 明碼；雜湊方案另案處理 |
 | `watchlist` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
 | `skill_tree` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
@@ -340,6 +344,24 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 `total_credits`、`created_at`。設定 DB 連線時 runtime 直接讀寫此表，`schedule_json`
 使用 `{ schemaVersion, term, courses }`；`total_credits` 由後端依 courses 重算，不信任前端總數。
 未設定 DB 的測試環境才保留 JSON fallback。
+
+興趣偏好沿用 `preferences_json`，沒有新增 `preferred_track` 等平行欄位。範例：
+
+```json
+{
+  "schemaVersion": 1,
+  "values": {
+    "preferredTrack": "技術應用類",
+    "interests": ["人工智慧", "資料科學"],
+    "preferredKeywords": ["深度學習"],
+    "remainingSemesters": 3
+  }
+}
+```
+
+`memoryService.updateUserPreferences()` 只合併本次有提供的受管理鍵，既有的學習結果或其他
+`values` 成員保持不變。`profileSchema.normalizeProfile()` 再把興趣與剩餘學期展開到 Profile 頂層，
+讓 REST 與 Agent 排課共用 `constraintService.js` 的既有合併邏輯。
 
 ### `Courses.target_grade` 與 `Courses.prerequisites`
 
@@ -666,7 +688,7 @@ validator）與 `scheduler.js` 的結構化 conflict set／放寬階梯使用。
 | `overridableBy` | string（可選） | 使用者可用哪種方式繞過這項排除（目前只有 `CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION`） |
 | `flag` | string（可選） | 對應到 `constraints` 上的旗標／清單名稱；3 個時段類舒適偏好是布林，`AVOID_INSTRUCTOR` 對應教師姓名清單 |
 | `label` | string（可選） | 中文顯示標籤，供揭露警告與放寬訊息使用 |
-| `enforced` | boolean | validator 是否真的檢查得到；`false` 只有先修／共修（`PREREQUISITE`／`COREQUISITE`），因為完全沒有資料來源 |
+| `enforced` | boolean | validator 是否真的檢查得到；`false` 的有先修／共修（`PREREQUISITE`／`COREQUISITE`，完全沒有資料來源），以及 `SAME_SERIES_SAME_TERM`（依課名推測的 (一)(二) 同學期規則，只在排課時執行，validator 不複查） |
 
 `CONSTRAINT_SOURCE` 為固定列舉字串（例如 `'user:flag'`、`'academic-record:completed-courses'`），
 比照 `resolveCourseEligibility()` 的 `ELIGIBILITY_SOURCE`「不得用裸字串」的紀律，但這是**限制類型
@@ -712,6 +734,13 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
       { "catalogCourseCode": "IECS3002", "sectionId": 101 }
     ],
     "displayedPlanIds": ["plan-a", "plan-b"],
+    "planFeatureVersion": "plan-feature-v1",
+    "planFeatures": [
+      { "planId": "plan-a", "variantId": "personalized",
+        "interest": 0.25, "compact": 0.5, "easy": 0.72 },
+      { "planId": "plan-b", "variantId": "personalized_interest",
+        "interest": 0.9, "compact": 0.25, "easy": null }
+    ],
     "planPolicies": [
       {
         "planId": "plan-a",
@@ -749,26 +778,101 @@ validator、v0 draft → v1 migration 與 idempotency 純邏輯，並保持純�
 | `userId` | string | #29 純 schema 建立時是 authenticated canonical ID；#2 持久化前必須經 #33 boundary 換成 HMAC `subject_id`，持久層不得同時保存 canonical ID |
 | `timestamp` | UTC ISO 8601 | server 認定的事件發生時間，不接受 client 覆寫 |
 | `requestId` | UUID | 一次搜尋／推薦／排課請求；同一 response 產生的事件共用 |
-| `actionId` | UUID | 一次 logical UI action；React 重送同一操作時沿用 |
-| `idempotencyKey` | `sha256:<hex>` | 由 request/action/event/plan/course subject 決定，不含 `eventId`／`timestamp` |
+| `actionId` | UUID | 一次 logical UI action；React 重送同一操作時沿用。`plan_chosen` 與 `course_withdrawn` 例外：由**伺服器**推導，見下一列 |
+| `idempotencyKey` | `sha256:<hex>` | 由 request/action/event/plan/course subject 決定，不含 `eventId`／`timestamp`。**`plan_chosen` 用專屬 payload**：唯一性只由 `requestId + eventType` 決定，**不含被選方案**，因此同一次詢問只能產生一次有效學習——同方案重送為 `duplicate`，改選另一方案為 `conflict`。其 `actionId` 也由伺服器依 `requestId` 推導（`sha256("plan-chosen:" + requestId)` 轉 UUID 形狀），不採用前端送來的隨機值 |
+
+**`course_withdrawn` 的 `actionId` 與冪等比較**（2026-09-21）
+
+同一次移除會經過兩條路徑：使用者在畫面上按移除（`POST /api/interactions`，前端用隨機
+UUID），以及他接著在 Chat 講同一件事（Agent 的 `record_schedule_feedback`，用確定性 UUID）。
+`actionId` 算進 idempotency key，兩邊因此永遠撞不到同一個鍵，**同一個動作被寫成兩筆**。
+
+修法與 `plan_chosen` 同一個模式：`actionId` 由伺服器依 `(requestId, sectionId)` 推導
+（`courseWithdrawalActionId()`，`sha256("course-withdrawn:<requestId>|<sectionId>")` 轉 UUID
+形狀），兩個 service 共用同一份，呼叫端送什麼都覆寫。
+
+光是統一 `actionId` 還不夠：冪等比較原本也比 `source` 與 `versionSnapshot`，而兩條路徑的
+`source` 本來就不同——前端依課程動態決定（`required`／`system_recommendation`／
+`explicit_selection`），Agent 固定寫 `system_recommendation`。因此 `course_withdrawn`
+另有專屬比較，只看 `requestId + sectionId + feedbackReason`：
+
+| 情況 | 結果 |
+| --- | --- |
+| 同一次移除、同原因（即使 `source` 不同） | `duplicate` |
+| 同一次移除、**改了原因** | `conflict`（使用者改了說法，不該靜默覆蓋） |
 | `course` | object \| null | `catalogCourseCode` 是穩定課號，`sectionId` 是實際班次；非單課事件可為 null |
 | `term` | object | `academicYear` + 正規化後的 `semester: first \| second` |
 | `plan` | object \| null | `planId` 是具體方案，`variantId` 是 `personalized`／`personalized_easy` 等當次產生策略；方案不是固定五種 |
 | `position` | object | `planRank`／`courseRank` 一律從 1 起算；不適用者為 null |
 | `exposureContext` | object \| null | 畫面、觸發方式、依顯示順序保存的完整候選集與實際曝光清單；`displayedPlanIds` 列出所有顯示方案；`planPolicies`（Roadmap #7）逐一保存方案使用的 `variantId`、policy 版本、三軸權重、類別／學分係數、停止條件與學習來源，供後續回放與來源驗證 |
+| `planFeatures` | array | **Roadmap #10 任務 3A**：每個展示方案的特徵向量 φ（Choice Perceptron 的輸入），見下方說明 |
 | `versionSnapshot` | object | 當時的 Profile schema、排課模型與推薦理由版本 |
 | `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
 
 `planPolicies` 是既有 JSON envelope 的附加欄位，因此事件 `schemaVersion` 維持 1，MySQL
-也不需要 migration。歷史曝光缺少此欄位時正規化為空陣列，仍可重播；新曝光必須讓每個
+也不需要 migration。
+
+**2026-09-19（Roadmap #10 任務 1）**：`planPolicies` 每項可再帶 `archetype`
+（`balanced`／`easy`／`challenge`／`interest`／`compact`）與 `solver`
+（`{ method: "dinkelbach-milp", category: "optimal"|"limit-with-solution", rawStatus, approximate }`）；
+MILP 方案的 `stopWhen` 為 `milp-optimized`，policy 版本升為 `personalized-scoring-v2`。
+兩個欄位都是選填附加欄位：舊事件缺少時照舊驗證通過，`creditCoefficient` 仍接受歷史值
+`1` 與 `3`、`stopWhen` 仍接受 `candidate-exhausted`，但新版產生器只會產生 `1`。歷史曝光缺少此欄位時正規化為空陣列，仍可重播；新曝光必須讓每個
 policy 的 `planId` 對得上 `displayedPlanIds`，接受方案時也會核對 `variantId`。
+
+**2026-09-22（Roadmap #10 任務 3B-0）**：`planPolicies` 每項新增**選填**的 `weightMode`，
+為 Choice Perceptron 的 signed 權重預留契約。**目前是休眠的，沒有任何正式路徑會產生它。**
+
+存在的理由：CP 產生的是**三軸都帶號**的權重，而下方的值域只允許 `easy` 為負
+（`interest`／`compact` 必須 ≥ 0）。CP 一旦套用，曝光事件就會驗證失敗被拒，而
+`plan_chosen` 需要真實曝光佐證——等於 CP 啟用的那一刻切斷自己的訓練資料來源。
+
+| `weightMode` | 值域 |
+| --- | --- |
+| **缺席**（v2，今天唯一的情況） | `easy ∈ [-3, 3]`、`interest`／`compact ∈ [0, 3]` |
+| `signed` | 三軸皆 `[-2, 2]`（`CHOICE_WEIGHT_LIMIT` 的投影界線） |
+
+- **v2 不輸出這個 key**，連 `weightMode: null` 都不行：`resolveScoringPolicy()` 的回傳同時
+  出現在課表 API 的 `generationPolicy` 與曝光事件的 `planPolicies`，多一個 key 兩邊都不再與
+  改動前 deep-equal。正規化因此用**條件展開**，不是固定建欄位。
+- `signed` 需要三項條件**同時**成立：`weightMode === 'signed'`、
+  `version === 'personalized-scoring-v3-signed'`、`source.modelVersion === 'choice-perceptron-v1'`。
+  三個版本軸互不相干（policy 版本管權重契約、`modelVersion` 管 learner、`planFeatureVersion`
+  管特徵格式），不可互相代用。
+- 明確寫 `weightMode: 'boost'` 也**拒絕**——這樣「v2 不得出現這個 key」才是可強制的不變式。
+- 呼叫端無法自稱是 CP：曝光事件只有伺服器寫得進來（`allowExposureWrite`），`weightMode`
+  由 `buildExposureDraft()` 依它實際用的 scoring policy 推導。
+
+同樣是既有 JSON envelope 的選填欄位，事件 `schemaVersion` 維持 1，不需要 migration。
+
+**2026-09-21（Roadmap #10 任務 3A）**：`exposureContext` 新增與 `planPolicies` **並列**的
+`planFeatures` 與 `planFeatureVersion`。
+
+- `planPolicies` 是**輸入**（生成這個方案用了什麼權重），`planFeatures` 是**輸出**
+  （生成出來的方案量到什麼），兩者語意不同，且 `assertProvenance()` 拿 `planPolicies`
+  當契約用，因此不合併。
+- 每項為 `{ planId, variantId, interest, compact, easy }`。`interest`／`compact` 必為
+  `[0, 1]` 的有限數；**`easy` 可以是 `null`**（該方案排入的課全無評價證據，是合法值，
+  不是缺漏；補 0 等於把「查不到涼度」謊報成「完全不涼」）。
+- **`planFeatureVersion` 是獨立常數**（目前 `plan-feature-v1`），不沿用
+  `SCORING_POLICY_VERSION`：評分規則版本與 φ 的定義版本是兩件事。
+- 相容三態：**沒有版本也沒有特徵** → 合法（舊事件可讀），但不得用於學習；
+  **有支援的版本** → `displayedPlanIds` 與 `planFeatures[].planId` 必須一對一完全相符
+  （Choice Perceptron 的更新式需要「其餘方案的平均」，少一筆就不是同一個 query set）；
+  **有版本但只覆蓋一部分** → 直接拒絕寫入，不靜默略過。
+- 產生端採「**要嘛覆蓋全部展示方案、要嘛整組不寫**」：任一方案缺特徵時退回舊形狀，
+  曝光照常寫入，只是這一筆不能用於學習。
+- 同樣是 JSON envelope 的附加欄位，事件 `schemaVersion` 維持 1，**MySQL 不需要 migration**。
+- 寫入端與學習端**共用同一份版本判定**（`isSupportedPlanFeatureVersion()`）：未知版本的曝光
+  既寫不進去、也不會被學習器採用。兩邊各自維護清單的話，未知的 φ 定義會混進同一個模型。
 
 ### Event types
 
 | `eventType` | 意義 |
 | --- | --- |
 | `recommendation_exposed` | 推薦清單或方案已實際顯示；必須帶 `exposureContext`。**只能由伺服器在 `services/scheduleService.js` 產生排課結果時自己寫入**（Roadmap #2 對抗式審查修正），任何呼叫端經 `POST /api/interactions` 提交一律拒絕，即使格式合法——client 自己說「系統顯示了什麼」等於自己發證明給自己驗證 |
+| `plan_chosen` | **Roadmap #10 任務 3A**：使用者在**看得到多個方案**的情況下挑了其中一個，是 Choice Perceptron 唯一的輸入。與 `recommendation_accepted` **刻意分成兩個型別而不是加旗標**——後者包含「Agent 只顯示主推方案、使用者說好」這種情況，那只代表接受推薦，不能證明使用者比較過整組方案；混在同一個型別裡日後就再也分不出哪些能餵給學習器。同一次操作會同時產生 `recommendation_accepted`（照舊）與 `plan_chosen`（新增），學習器只讀後者，不得把兩者算成兩次證據。伺服器端另外驗證：曝光存在、`planFeatureVersion` 受支援、`displayedPlanIds` 至少 2 個、被選方案有特徵且 `variantId` 相符、特徵覆蓋整組方案 |
 | `course_viewed` | 開啟課程詳情 |
 | `course_favorited`／`course_unfavorited` | 加入／移出收藏或關注 |
 | `course_selected`／`course_deselected` | 手動加入／移出排課輸入 |

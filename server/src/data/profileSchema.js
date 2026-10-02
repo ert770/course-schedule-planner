@@ -2,6 +2,9 @@ import { normalizeBlockedPeriods } from '../utils/periods.js';
 import { normalizeDepartment } from '../utils/text.js';
 import { extractTags, tagsToFlags } from './preferenceTags.js';
 import { normalizeAdmissionYear } from './graduationRuleVersions.js';
+import { readInterestPreferences, normalizePreferencesJson } from './interestPreferences.js';
+import { readPersonalizationPreferences } from './personalizationPreferences.js';
+import { readSemesterPlanningPreferences } from './semesterPlanningPreferences.js';
 
 // Profile 的 canonical shape 永遠標記為這個版本。
 //
@@ -23,20 +26,12 @@ function normalizeStringList(value) {
   return [...new Set(value.map(item => String(item ?? '').trim()).filter(Boolean))];
 }
 
-function normalizePreferencesJson(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { schemaVersion: 1, values: {} };
-  }
-  return {
-    schemaVersion: Number.isInteger(Number(value.schemaVersion)) ? Number(value.schemaVersion) : 1,
-    values: value.values && typeof value.values === 'object' && !Array.isArray(value.values)
-      ? value.values
-      : {},
-  };
-}
-
 export function normalizeProfile(profile = {}) {
   const tags = extractTags(profile) ?? [];
+  const interestPreferences = readInterestPreferences(profile);
+  // roadmap #10 任務 3A：學習開關與興趣一樣存在 preferences_json，攤到頂層供呼叫端直接讀。
+  const personalizationPreferences = readPersonalizationPreferences(profile);
+  const semesterPlanningPreferences = readSemesterPlanningPreferences(profile);
   const normalized = {
     ...profile,
     schemaVersion: PROFILE_SCHEMA_VERSION,
@@ -70,6 +65,9 @@ export function normalizeProfile(profile = {}) {
     mustTakeCourses: Array.isArray(profile.mustTakeCourses) ? profile.mustTakeCourses : [],
     avoidInstructors: normalizeStringList(profile.avoidInstructors),
     preferencesJson: normalizePreferencesJson(profile.preferencesJson),
+    ...interestPreferences,
+    ...personalizationPreferences,
+    ...semesterPlanningPreferences,
     ...tagsToFlags(tags),
   };
 
@@ -106,6 +104,17 @@ export function validateProfile(profile) {
   if (!Array.isArray(profile.enrolledPrograms)) errors.push('enrolledPrograms 必須是陣列');
   if (!Array.isArray(profile.mustTakeCourses)) errors.push('mustTakeCourses 必須是陣列');
   if (!Array.isArray(profile.avoidInstructors)) errors.push('avoidInstructors 必須是陣列');
+  if (profile.preferredTrack !== null && typeof profile.preferredTrack !== 'string') {
+    errors.push('preferredTrack 必須是字串或 null');
+  }
+  if (profile.remainingSemesters !== null
+    && (!Number.isInteger(profile.remainingSemesters)
+      || profile.remainingSemesters < 1
+      || profile.remainingSemesters > 8)) {
+    errors.push('remainingSemesters 必須是 1～8 的整數或 null');
+  }
+  if (!Array.isArray(profile.interests)) errors.push('interests 必須是陣列');
+  if (!Array.isArray(profile.preferredKeywords)) errors.push('preferredKeywords 必須是陣列');
   if (!profile.preferencesJson || typeof profile.preferencesJson !== 'object' || Array.isArray(profile.preferencesJson)) {
     errors.push('preferencesJson 必須是物件');
   }

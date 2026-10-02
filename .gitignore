@@ -42,3 +42,9 @@ server/backups/
 # deletion would not remove already-pushed records. The file stays on disk
 # for the local JSON-fallback runtime path; only tracking is disabled.
 server/data/chat_history.json
+
+# Roadmap #10 多方案驗收的逐案診斷輸出。每跑一次 bench 就整份重寫，單檔約 8 MB，
+# 進版控會讓 repo 迅速膨脹。它是可重現的中間產物——需要時用
+# `npm run bench:plan-diversity --prefix server` 重新產生；對外要引用的結論寫進
+# `docs/CHANGE_REPORTS/`，驗收摘要另有 plan-diversity-acceptance-latest.json 會進版控。
+server/test/reports/plan-diversity-diagnostics-latest.json

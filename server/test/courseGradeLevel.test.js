@@ -38,25 +38,36 @@ describe('Courses.target_grade → course.gradeLevel', () => {
     assert.deepEqual(result.map(course => course.id), [1, 2]);
   });
 
-  test('scheduler 對直接指定的候選也執行同一個年級閘門', () => {
+  test('scheduler 對直接指定的候選也執行同一個年級閘門（同系選修除外）', () => {
     const result = generateSchedule([
       {
         id: 11, name: '全年級選修', department: '資訊三甲', category: '選修',
         gradeLevel: 0, credits: 3, dayOfWeek: 1, startPeriod: 2, endPeriod: 3,
       },
       {
-        id: 12, name: '大二選修', department: '資訊三甲', category: '選修',
+        id: 12, name: '外系大二選修', department: '電機二甲', category: '選修',
         gradeLevel: 2, credits: 3, dayOfWeek: 2, startPeriod: 2, endPeriod: 3,
+      },
+      {
+        id: 13, name: '本系大二選修', department: '資訊二合', category: '選修',
+        gradeLevel: 2, credits: 3, dayOfWeek: 3, startPeriod: 2, endPeriod: 3,
       },
     ], {
       department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲', minCredits: 0,
     });
 
     assert.equal(result.schedule.some(course => course.id === 11), true);
+    // 外系的年級不符照舊排除。
     assert.equal(result.schedule.some(course => course.id === 12), false);
     assert.equal(
       result.excludedCourses.some(item => item.course.id === 12 && item.constraintId === 'COURSE_GRADE_MISMATCH'),
       true
+    );
+    // #13C-5：同系其他年級的選修可以修（排序在後，見 scheduler.test.js 的 CY 系列）。
+    assert.equal(result.schedule.some(course => course.id === 13), true);
+    assert.equal(
+      result.excludedCourses.some(item => item.course.id === 13 && item.constraintId === 'COURSE_GRADE_MISMATCH'),
+      false
     );
   });
 });

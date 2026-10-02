@@ -17,16 +17,19 @@
     "migrate:saved-schedules": "node scripts/savedSchedulesMigration.js",
     "seed:demo-personas": "node scripts/demoPersonasSeed.js",
     "bench:personalization": "node scripts/personalizationBenchmark.js",
+    "bench:plan-diversity": "node scripts/planDiversityAcceptanceReport.js",
     "bench:scheduler": "node scripts/schedulerBenchmarkReport.js",
     "eval:golden-set": "node scripts/agentGoldenSetReport.js",
     "configure:privacy": "node scripts/configurePrivacyEnvironment.js",
     "cleanup:privacy": "node scripts/privacyCleanup.js",
-    "cleanup:legacy-chat": "node scripts/legacyChatCleanup.js"
+    "cleanup:legacy-chat": "node scripts/legacyChatCleanup.js",
+    "bench:choice-perceptron": "node scripts/choicePerceptronReplay.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.1.0",
+    "highs": "1.15.3",
     "mysql2": "^3.22.5",
     "openai": "^7.8.0",
     "uuid": "^11.1.0",

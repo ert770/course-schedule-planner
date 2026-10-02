@@ -151,10 +151,20 @@ describe('AG6 排課結果送進模型前要投影', () => {
     return {
       success: true, requestId: 'req-1', totalCredits: 9, courseCount: 3,
       hasExpressedPreference: true, reviewDataLoaded: false, isDraft: false,
+      graduationPlanning: {
+        enabled: true,
+        remainingSemesters: 1,
+        gaps: { elective: 6, general: 4, external: 0 },
+        semesterTargets: { elective: 6, general: 4, external: 0 },
+      },
       schedule: [course(1), course(2), course(3)],
       plans: [{
         planId: 'req-1:interest', variantId: 'interest', title: '興趣優先',
         preferenceScore: 0.26, reviewCoverage: { rated: 1, total: 8, ratio: 0.125 },
+        graduationPlanning: {
+          enabled: true,
+          selected: { elective: { courses: 2, credits: 6 }, general: { courses: 2, credits: 4 } },
+        },
         schedule: [course(1), course(2), course(3)],
       }],
       excludedCourses: Array.from({ length: 200 }, (_, i) => ({
@@ -184,7 +194,9 @@ describe('AG6 排課結果送進模型前要投影', () => {
     assert.equal(compact.clarification.required, false);
     assert.equal(compact.hasExpressedPreference, true);
     assert.equal(compact.reviewDataLoaded, false);
+    assert.equal(compact.graduationPlanning.remainingSemesters, 1);
     assert.equal(compact.plans[0].preferenceScore, 0.26);
+    assert.equal(compact.plans[0].graduationPlanning.selected.general.courses, 2);
     assert.deepEqual(compact.plans[0].reviewCoverage, { rated: 1, total: 8, ratio: 0.125 });
     assert.deepEqual(compact.warnings, ['訊號極弱']);
   });

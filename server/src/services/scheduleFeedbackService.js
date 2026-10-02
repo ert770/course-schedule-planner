@@ -19,6 +19,7 @@ import {
   INTERACTION_FEEDBACK_REASONS,
   INTERACTION_SOURCES,
 } from '../data/interactionEventSchema.js';
+import { courseWithdrawalActionId } from '../data/interactionEventSchema.js';
 import { findExposure, recordInteractionEvents } from './interactionEventService.js';
 import { sha256Hex } from '../utils/hash.js';
 
@@ -128,7 +129,10 @@ export async function recordScheduleFeedback(identity, args = {}, options = {}) 
     drafts.push({
       eventType: INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN,
       requestId,
-      actionId: deterministicActionId(`${requestId}|${sectionId}|withdrawn`),
+      // 與前端埋點共用同一份確定性識別碼，兩條路徑才會撞到同一個 idempotency key。
+      // 伺服器在 `recordInteractionEvents()` 也會覆寫一次，這裡明寫是為了讓這個
+      // service 自己的意圖可讀，而不是靠遠處的覆寫「剛好」生效。
+      actionId: courseWithdrawalActionId(requestId, sectionId),
       // 課號取自曝光紀錄本身，不另外查課程表——那份紀錄就是當時顯示的內容。
       course: {
         catalogCourseCode: exposure.displayedCourses.get(sectionId),

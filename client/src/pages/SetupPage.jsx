@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { coursesAPI, profileAPI } from '../services/api';
 import { Sparkles, CheckCircle2, Circle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
-import AvoidTimePicker from '../components/Setup/AvoidTimePicker';
 import { getUserIdentity } from '../utils/userIdentity';
 
 export default function SetupPage() {
@@ -13,6 +12,7 @@ export default function SetupPage() {
   
   const [department, setDepartment] = useState('資訊工程學系');
   const [gradeLevel, setGradeLevel] = useState('1');
+  const [remainingSemesters, setRemainingSemesters] = useState('');
   const [programType, setProgramType] = useState('');
   const [college, setCollege] = useState('');
   const [enrolledPrograms, setEnrolledPrograms] = useState('');
@@ -24,7 +24,12 @@ export default function SetupPage() {
 
   const [selectedTags, setSelectedTags] = useState(new Set());
   const [tagGroups, setTagGroups] = useState([]);
-  const [avoidPeriods, setAvoidPeriods] = useState([]);
+  const [preferredTrack, setPreferredTrack] = useState('');
+  const [selectedInterests, setSelectedInterests] = useState(new Set());
+  const [customInterests, setCustomInterests] = useState('');
+  const [interestOptions, setInterestOptions] = useState({ tracks: [], topics: [] });
+  const [interestOptionsLoading, setInterestOptionsLoading] = useState(false);
+  const [interestOptionsError, setInterestOptionsError] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const [showPreferencesModal, setShowPreferencesModal] = useState(false);
@@ -52,6 +57,7 @@ export default function SetupPage() {
         if (profile.department) setDepartment(profile.department);
         const savedGrade = profile.gradeLevel;
         if (savedGrade) setGradeLevel(String(savedGrade));
+        setRemainingSemesters(profile.remainingSemesters ? String(profile.remainingSemesters) : '');
         if (profile.className) setClassName(profile.className);
         if (profile.mbti) setMbti(profile.mbti);
         setProgramType(profile.programType || '');
@@ -62,9 +68,11 @@ export default function SetupPage() {
         if (Array.isArray(profile.selectedTags)) {
           setSelectedTags(new Set(profile.selectedTags));
         }
-        if (Array.isArray(profile.blockedPeriods)) {
-          setAvoidPeriods(profile.blockedPeriods);
-        }
+        setPreferredTrack(profile.preferredTrack || '');
+        setSelectedInterests(new Set([
+          ...(Array.isArray(profile.interests) ? profile.interests : []),
+          ...(Array.isArray(profile.preferredKeywords) ? profile.preferredKeywords : []),
+        ]));
       })
       .catch(() => {})
       .finally(() => {
@@ -89,11 +97,44 @@ export default function SetupPage() {
     return () => { cancelled = true; };
   }, [department, gradeLevel, programType]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setInterestOptionsLoading(true);
+
+    coursesAPI.getInterestOptions(department, gradeLevel, className)
+      .then(data => {
+        if (!cancelled) {
+          setInterestOptions({ tracks: data.tracks || [], topics: data.topics || [] });
+          setInterestOptionsError(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInterestOptions({ tracks: [], topics: [] });
+          setInterestOptionsError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setInterestOptionsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [department, gradeLevel, className]);
+
   const toggleTag = (tag) => {
     setSelectedTags(prev => {
       const next = new Set(prev);
       if (next.has(tag)) next.delete(tag);
       else next.add(tag);
+      return next;
+    });
+  };
+
+  const toggleInterest = (interest) => {
+    setSelectedInterests(prev => {
+      const next = new Set(prev);
+      if (next.has(interest)) next.delete(interest);
+      else next.add(interest);
       return next;
     });
   };
@@ -109,6 +150,7 @@ export default function SetupPage() {
       const prefData = {
         department,
         gradeLevel: Number(gradeLevel),
+        remainingSemesters: remainingSemesters ? Number(remainingSemesters) : null,
         className,
         mbti,
         programType: programType || null,
@@ -116,7 +158,14 @@ export default function SetupPage() {
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
-        blockedPeriods: avoidPeriods,
+        preferredTrack: preferredTrack || null,
+        interests: [...new Set([
+          ...selectedInterests,
+          ...customInterests
+            .split(/[、,，]/)
+            .map(value => value.trim())
+            .filter(Boolean),
+        ])],
       };
       await profileAPI.update(prefData);
       markSetupDone();
@@ -136,7 +185,7 @@ export default function SetupPage() {
     <div className="setup-page" id="setup-page">
       <div className="setup-card animate-fadeInUp" style={{ maxWidth: '850px', width: '100%' }}>
         {generating ? (
-          <div className="setup-generating">
+        <div className="setup-generating">
             <div className="setup-generating-spinner">
               <Loader2 size={48} className="spin-animation" />
             </div>
@@ -145,11 +194,11 @@ export default function SetupPage() {
           </div>
         ) : (
           <div className="setup-content" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
+
             {/* 1. 基本資料與人格特質 */}
             <div className="setup-section-box" style={{ background: 'var(--bg-secondary, #f9fafb)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color, #e5e7eb)' }}>
               <h3 className="setup-section-title" style={{ marginBottom: '16px', fontSize: '1.05rem', fontWeight: '600' }}>1. 基本資料與人格特質</h3>
-              
+
               <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
                 <select value={department} onChange={e => setDepartment(e.target.value)} style={{ padding: '8px', borderRadius: '6px', border: '1px solid #ccc' }}>
                   <option value="資訊工程學系">資訊工程學系</option>
@@ -207,6 +256,17 @@ export default function SetupPage() {
                 <input value={college} onChange={e => setCollege(e.target.value)} placeholder="學院（例：資訊電機學院）" style={{ padding: '8px', borderRadius: '6px', border: '1px solid #ccc' }} />
                 <input value={enrolledPrograms} onChange={e => setEnrolledPrograms(e.target.value)} placeholder="學程，多筆以頓號分隔" style={{ padding: '8px', borderRadius: '6px', border: '1px solid #ccc' }} />
                 <input value={avoidInstructors} onChange={e => setAvoidInstructors(e.target.value)} placeholder="避開教師，多筆以頓號分隔" style={{ padding: '8px', borderRadius: '6px', border: '1px solid #ccc' }} />
+                <select
+                  value={remainingSemesters}
+                  onChange={e => setRemainingSemesters(e.target.value)}
+                  aria-label="剩餘學期數"
+                  style={{ padding: '8px', borderRadius: '6px', border: '1px solid #ccc' }}
+                >
+                  <option value="">剩餘學期：依年級推算</option>
+                  {Array.from({ length: 8 }, (_, index) => index + 1).map(value => (
+                    <option key={value} value={value}>剩餘 {value} 學期</option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -232,7 +292,8 @@ export default function SetupPage() {
                 <div>
                   <h3 className="setup-section-title" style={{ fontSize: '1.05rem', fontWeight: '600', marginBottom: '4px' }}>2. 排課偏好與時段設定</h3>
                   <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: 0 }}>
-                    已選擇 <strong style={{ color: '#3b82f6' }}>{selectedTags.size}</strong> 項偏好標籤，避開時段設定已啟用。
+                    已選擇 <strong style={{ color: '#3b82f6' }}>{selectedTags.size}</strong> 項排課偏好；
+                    興趣方向{preferredTrack || selectedInterests.size > 0 || customInterests.trim() ? '已設定。' : '未設定。'}
                   </p>
                 </div>
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: '#3b82f6', fontWeight: '600', fontSize: '0.9rem' }}>
@@ -242,6 +303,94 @@ export default function SetupPage() {
 
               {showPreferencesModal && (
                 <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color, #e5e7eb)', paddingTop: '16px', animation: 'fadeIn 0.3s ease' }}>
+                  <div className="setup-pref-group" id="interest-preferences" style={{ marginBottom: '20px' }}>
+                    <h4 className="setup-pref-category" style={{ fontSize: '0.95rem', marginBottom: '6px', color: 'var(--text-primary, #1f2937)' }}>
+                      感興趣的課程方向
+                    </h4>
+                    <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: '0 0 12px' }}>
+                      選擇想深入的方向，系統會參考課程主題調整推薦排序；這是偏好，不會排除其他必修課。
+                    </p>
+
+                    {interestOptions.tracks.length > 0 && (
+                      <div style={{ marginBottom: '14px' }}>
+                        <h5 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '8px' }}>
+                          主要修課路徑（單選）
+                        </h5>
+                        <div className="setup-pref-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {interestOptions.tracks.map(track => (
+                            <button
+                              type="button"
+                              key={track}
+                              className={`setup-tag ${preferredTrack === track ? 'selected' : ''}`}
+                              onClick={() => setPreferredTrack(prev => prev === track ? '' : track)}
+                              aria-pressed={preferredTrack === track}
+                              id={`interest-track-${track}`}
+                              style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px' }}
+                            >
+                              {track}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ marginBottom: '12px' }}>
+                      <h5 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '8px' }}>
+                        想接觸的課程主題（可複選）
+                      </h5>
+                      {interestOptionsLoading ? (
+                        <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>正在整理目前可選課程的主題…</p>
+                      ) : interestOptionsError ? (
+                        <p style={{ fontSize: '0.8rem', color: '#b45309' }}>暫時無法載入興趣選項，請稍後再試。</p>
+                      ) : interestOptions.topics.length > 0 ? (
+                        <div className="setup-pref-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {[...new Set([
+                            ...interestOptions.topics.map(topic => topic.name),
+                            ...selectedInterests,
+                          ])].map(topic => (
+                            <button
+                              type="button"
+                              key={topic}
+                              className={`setup-tag ${selectedInterests.has(topic) ? 'selected' : ''}`}
+                              onClick={() => toggleInterest(topic)}
+                              aria-pressed={selectedInterests.has(topic)}
+                              id={`interest-topic-${topic}`}
+                              title={interestOptions.topics.find(option => option.name === topic)?.courseCount
+                                ? `目前有 ${interestOptions.topics.find(option => option.name === topic).courseCount} 門候選課程`
+                                : undefined}
+                              style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px' }}
+                            >
+                              {topic}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                          {className ? '目前候選課程沒有可用的主題標籤。' : '選好班別後會顯示目前候選課程的主題。'}
+                        </p>
+                      )}
+                    </div>
+
+                    <input
+                      value={customInterests}
+                      onChange={event => setCustomInterests(event.target.value)}
+                      placeholder="其他興趣，例如：生成式 AI、雲端；多筆以頓號分隔"
+                      aria-label="其他課程興趣"
+                      style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreferredTrack('');
+                        setSelectedInterests(new Set());
+                        setCustomInterests('');
+                      }}
+                      style={{ marginTop: '8px', padding: 0, border: 'none', background: 'none', color: '#3b82f6', cursor: 'pointer' }}
+                    >
+                      目前沒有特定方向，先平均探索
+                    </button>
+                  </div>
+
                   {tagGroups.map(({ category, tags }) => (
                     <div key={category} className="setup-pref-group" style={{ marginBottom: '12px' }}>
                       <h4 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '6px', color: 'var(--text-secondary)' }}>{category}</h4>
@@ -261,10 +410,6 @@ export default function SetupPage() {
                     </div>
                   ))}
 
-                  <div className="setup-pref-group" style={{ marginTop: '16px' }}>
-                    <h4 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '8px' }}>避開特定時段</h4>
-                    <AvoidTimePicker value={avoidPeriods} onChange={setAvoidPeriods} />
-                  </div>
                 </div>
               )}
             </div>

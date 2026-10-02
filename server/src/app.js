@@ -14,6 +14,8 @@ import privacyRoutes from './routes/privacy.js';
 import interactionRoutes from './routes/interactions.js';
 import { assertSessionSecretConfigured } from './services/sessionService.js';
 import { assertPrivacyConfigured } from './services/privacyService.js';
+import { getHighsRuntime } from './skills/optimization/highsRuntime.js';
+import { setSchedulingHighsRuntime } from './skills/scheduler.js';
 
 dotenv.config({ quiet: true });
 const __filename = fileURLToPath(import.meta.url);
@@ -46,13 +48,19 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-export function startServer(port = PORT) {
+export async function startServer(port = PORT) {
   // 生產環境沒有固定、所有 replica 共用的 SESSION_SECRET 時直接拒絕啟動，
   // 而不是安靜地退回每個 process 各自產生的暫時密鑰——後者會讓重啟後所有
   // 登入 session 失效，多台 replica 之間也互相拒絕彼此簽的 cookie，而且
   // 症狀是隨機、難以重現的認證失敗，不是一個清楚可診斷的啟動錯誤。
   assertSessionSecretConfigured();
   assertPrivacyConfigured();
+
+  try {
+    setSchedulingHighsRuntime(await getHighsRuntime());
+  } catch (error) {
+    console.warn(`HiGHS 載入失敗，多方案將退回綜合方案：${error.message}`);
+  }
 
   return app.listen(port, () => {
     console.log(`\n🚀 課表規劃推薦系統後端已啟動`);
@@ -62,7 +70,7 @@ export function startServer(port = PORT) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  startServer();
+  await startServer();
 }
 
 export default app;
