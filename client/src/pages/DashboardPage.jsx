@@ -16,9 +16,10 @@ import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PlanComparison from '../components/Schedule/PlanComparison';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
+import SkillTreeModal from '../components/Profile/SkillTreeModal';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
-import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles } from 'lucide-react';
+import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award } from 'lucide-react';
 
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
 //
@@ -76,7 +77,8 @@ export default function DashboardPage() {
   // roadmap #2：排課只是推薦，使用者是否覺得符合需求才是最終選擇。
   const [confirmation, setConfirmation] = useState(null);
   const [removalCandidate, setRemovalCandidate] = useState(null);
-  
+  const [showSkillModal, setShowSkillModal] = useState(false);
+
   const [showUserMenu, setShowUserMenu] = useState(false);
   const chatInputRef = useRef(null);
   const chatScrollRef = useRef(null);
@@ -373,7 +375,7 @@ export default function DashboardPage() {
           <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
             <div className="avatar">{(user?.name || '同')[0]}</div>
             <span>{user?.name || '同學'}</span>
-            
+
             {showUserMenu && (
               <div className="user-dropdown-menu">
                 <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
@@ -386,7 +388,7 @@ export default function DashboardPage() {
                   <Settings size={16} style={{marginRight: '8px'}} /> 隱私與資料
                 </button>
                 <button className="user-dropdown-item" onClick={toggleTheme}>
-                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 
+                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>}
                   切換主題 ({theme === 'dark' ? '淺色' : '深色'})
                 </button>
                 <div style={{height: '1px', background: 'var(--border-color)', margin: '4px 0'}}></div>
@@ -423,47 +425,19 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="sidebar-skill-tree">
-            <h3 className="sidebar-section-title">🌳 我的專業技能樹</h3>
-            <p className="sidebar-skill-desc">基於歷年成績與修課紀錄動態生成</p>
-            
-            <div className="skill-item">
-              <div className="skill-header">
-                <span className="skill-name">資訊與網路安全</span>
-                <span className="skill-level">Lv.4/5</span>
-              </div>
-              <div className="skill-bar"><div className="skill-bar-fill" style={{width: '80%'}}></div></div>
-            </div>
-            
-            <div className="skill-item">
-              <div className="skill-header">
-                <span className="skill-name">程式設計</span>
-                <span className="skill-level">Lv.4/5</span>
-              </div>
-              <div className="skill-bar"><div className="skill-bar-fill" style={{width: '80%'}}></div></div>
-            </div>
-            
-            <div className="skill-item">
-              <div className="skill-header">
-                <span className="skill-name">資料庫系統</span>
-                <span className="skill-level">Lv.4/5</span>
-              </div>
-              <div className="skill-bar"><div className="skill-bar-fill" style={{width: '80%'}}></div></div>
-            </div>
-
-            <div className="skill-item">
-              <div className="skill-header">
-                <span className="skill-name">微積分</span>
-                <span className="skill-level">Lv.4/5</span>
-              </div>
-              <div className="skill-bar"><div className="skill-bar-fill" style={{width: '80%'}}></div></div>
-            </div>
-
-            <div className="skill-overall">
-              <span className="skill-overall-score">整體能力指數</span>
-              <span className="score-value">80 / 100</span>
-            </div>
-            <div className="skill-bar overall-bar"><div className="skill-bar-fill overall" style={{width: '80%'}}></div></div>
+          <div className="sidebar-section" style={{ marginTop: '16px' }}>
+            <h3 className="sidebar-section-title">🌳 本學期課程主題</h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', lineHeight: '1.5' }}>
+              依課名與課程說明整理命中課程，不代表能力程度或歷年修課成果。
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowSkillModal(true)}
+              className="action-btn"
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              <Award size={16} /> 查看課程主題
+            </button>
           </div>
         </aside>
 
@@ -497,7 +471,7 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
-          
+
           {/* roadmap #27：`.schedule-area` 是 `overflow:hidden`、`.schedule-wrapper`
               是 `flex:1`——這個區塊（確認列／提示／方案切換／方案比較）加了
               PlanSwitcher 與 PlanComparison 之後文字量可能很大，若不設邊界，
@@ -564,7 +538,7 @@ export default function DashboardPage() {
               <p>用自然語言告訴我你的需求</p>
             </div>
           </div>
-          
+
           <div className="chat-messages" ref={chatScrollRef}>
             {chatHistory.map((msg, i) => (
               <div key={i} className={`chat-message ${msg.role}`}>
@@ -572,7 +546,7 @@ export default function DashboardPage() {
                   <div className="message-bubble">
                     {msg.schedule && <CheckCircle2 size={16} className="success-icon" />}
                     <span>{msg.text}</span>
-                    
+
                     {msg.schedule && (
                       <div className="chat-schedule-list">
                         {msg.schedule.map(c => (
@@ -615,9 +589,9 @@ export default function DashboardPage() {
                 onKeyDown={e => e.key === 'Enter' && handleChatSend()}
                 disabled={chatLoading}
               />
-              <button 
-                className="send-btn" 
-                onClick={() => handleChatSend()} 
+              <button
+                className="send-btn"
+                onClick={() => handleChatSend()}
                 disabled={!chatInput.trim() || chatLoading}
               >
                 <Send size={18} />
@@ -626,6 +600,12 @@ export default function DashboardPage() {
           </div>
         </aside>
       </div>
+
+      <SkillTreeModal
+        isOpen={showSkillModal}
+        onClose={() => setShowSkillModal(false)}
+        schedule={schedule}
+      />
 
       <RemoveReasonDialog
         course={removalCandidate}

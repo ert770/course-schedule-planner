@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, GraduationCap, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, GraduationCap, Loader2, AlertCircle } from 'lucide-react';
 import { authAPI } from '../services/api';
 import { useAuth } from '../contexts/useAuth';
 
@@ -30,7 +30,7 @@ export default function LoginPage() {
         navigate('/onboarding');
       }
     } catch (err) {
-      setError(err.message || '登入失敗，請確認帳號密碼');
+      setError(err.message || '登入失敗，請確認帳號密碼是否正確');
     } finally {
       setLoading(false);
     }
@@ -90,8 +90,13 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="login-error" id="login-error" role="alert">
-              {error}
+            <div className="login-error" id="login-error" role="alert" style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca',
+              padding: '10px 14px', borderRadius: '8px', fontSize: '0.9rem', marginBottom: '16px'
+            }}>
+              <AlertCircle size={18} style={{ flexShrink: 0 }} />
+              <span>{error}</span>
             </div>
           )}
 
