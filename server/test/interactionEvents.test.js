@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app } from '../src/app.js';
+import { closePool } from '../src/db/mysql.js';
 import {
   hasCurrentPurposeConsent,
   markServiceWithdrawn,
@@ -118,7 +119,10 @@ before(async () => {
   cookie = login.headers.get('set-cookie').split(';')[0];
 });
 
-after(() => new Promise((resolve, reject) => server.close(err => (err ? reject(err) : resolve()))));
+after(async () => {
+  await new Promise((resolve, reject) => server.close(err => (err ? reject(err) : resolve())));
+  await closePool();
+});
 
 beforeEach(() => {
   resetPrivacyMemoryStoreForTests();
