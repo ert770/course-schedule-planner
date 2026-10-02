@@ -249,7 +249,17 @@ function createGraduationAllocationState(plan, constraints, scope) {
     scope,
     breadthSequence: buildBreadthSequence(planning),
     unavailable: new Set(),
+    topUp: [],
   };
+  // 用**總學分**判斷，不用類別缺口：修課紀錄的類別可能沒分類（缺口會被高估），
+  // 但已取得的總學分是可靠的。
+  const totalRequired = Number(planning.totalRequired);
+  const totalEarned = Number(planning.totalEarned);
+  const totalGap = planning.totalRequired != null && planning.totalEarned != null
+    && Number.isFinite(totalRequired) && Number.isFinite(totalEarned)
+    ? Math.max(0, totalRequired - totalEarned)
+    : null;
+  state.creditFloorOnly = totalGap !== null && totalGap < plan.minCredits;
   plan.graduationPlanning = {
     enabled: true,
     ruleVersion: planning.ruleVersion,
@@ -260,6 +270,8 @@ function createGraduationAllocationState(plan, constraints, scope) {
     semesterTargets: { ...planning.semesterTargets },
     breadthSequence: [...state.breadthSequence],
     selected: graduationBucketSummary(plan, scope),
+    totalGap,
+    creditFloorOnly: state.creditFloorOnly,
   };
   for (const warning of planning.warnings || []) {
     if (!plan.warnings.includes(warning)) plan.warnings.push(warning);
@@ -302,6 +314,34 @@ function refreshGraduationPlanningResult(plan, state) {
   if (!state || !plan.graduationPlanning) return;
   plan.graduationPlanning.selected = graduationBucketSummary(plan, state.scope);
   plan.graduationPlanning.unavailableBuckets = [...state.unavailable];
+  // 配額之外、為了達到最低學分而補的課。說明可以據此區分「畢業需要」與「補足學分」。
+  plan.graduationPlanning.creditFloorTopUp = {
+    courses: state.topUp.length,
+    credits: state.topUp.reduce((sum, course) => sum + (Number(course.credits) || 0), 0),
+    sectionIds: state.topUp.map(course => Number(course.id)),
+  };
+  if (state.topUp.length > 0 && !state.topUpWarned) {
+    state.topUpWarned = true;
+    plan.warnings.push(
+      `本學期畢業缺口只需要部分學分；為達最低 ${plan.minCredits} 學分，另補 ${state.topUp.length} 門課`
+      + '（優先選仍可計入畢業學分的類別）。'
+    );
+  }
+}
+
+// 補足最低學分時的候選：優先取「畢業缺口還沒補完」的類別（選修／通識／系外），
+// 這些課修了仍然算進畢業學分；都沒有時才退回任何還排得進去的課。
+// 正式必修不在這裡補——必修由前面的必修階段處理。
+function creditFloorTopUpCandidates(remaining, state, selectedBuckets, scope) {
+  const gaps = state.planning.gaps || {};
+  const stillNeeded = bucket => (
+    Number(gaps[bucket] || 0) - Number(selectedBuckets[bucket]?.credits || 0) > 0
+  );
+  const countable = remaining.filter(course => {
+    const bucket = getGraduationBucket(course, scope);
+    return bucket !== GRADUATION_BUCKET.REQUIRED && stillNeeded(bucket);
+  });
+  return countable.length > 0 ? countable : [...remaining];
 }
 
 function getCourseStatus(course, constraints) {
@@ -2303,10 +2343,19 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     const phase = graduationAllocation
       ? nextGraduationPhase(plan, graduationAllocation)
       : null;
-    if (graduationAllocation && phase === null) break;
+    // 畢業配額排完後若仍低於最低學分，進入補足階段：配額決定「先排什麼」，
+    // 最低學分仍是下限。快畢業的學生每學期目標可能只有 2～3 學分，只照配額排會低於
+    // 最低修課學分，替代方案也因為幾乎沒有課可換而全部無解。
+    const toppingUp = Boolean(graduationAllocation) && phase === null;
+    if (toppingUp && plan.totalCredits >= plan.minCredits) break;
+    // 距離畢業門檻的總學分已低於最低學分時，本學期只需要修到最低學分：
+    // 配額仍決定先排哪一類，但一達到下限就停，不再照類別配額往上排。
+    if (graduationAllocation?.creditFloorOnly && plan.totalCredits >= plan.minCredits) break;
 
     const selectedBuckets = graduationAllocation ? graduationBucketSummary(plan, scope) : null;
-    const phaseCandidates = graduationAllocation
+    const phaseCandidates = toppingUp
+      ? creditFloorTopUpCandidates(remaining, graduationAllocation, selectedBuckets, scope)
+      : graduationAllocation
       ? remaining.filter(course => {
         if (getGraduationBucket(course, scope) !== phase) return false;
         if (phase !== GRADUATION_BUCKET.ELECTIVE) return true;
@@ -2317,6 +2366,7 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         return selectedBuckets.elective.courses + slots <= 3;
       })
       : remaining;
+    if (toppingUp && phaseCandidates.length === 0) break;
     if (graduationAllocation && phaseCandidates.length === 0) {
       graduationAllocation.unavailable.add(phase);
       plan.warnings.push(
@@ -2385,6 +2435,8 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     } else {
       addCourseToPlan(plan, course, constraints, variant.title, explain);
     }
+
+    if (toppingUp && plan.totalCredits > creditsBefore) graduationAllocation.topUp.push(course);
 
     if (plan._generationDiagnostics) {
       const placedIdsAfter = new Set([

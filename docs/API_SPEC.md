@@ -663,7 +663,8 @@ Response:
       "general": { "courses": 2, "credits": 4 },
       "external": { "courses": 0, "credits": 0 }
     },
-    "unavailableBuckets": []
+    "unavailableBuckets": [],
+    "creditFloorTopUp": { "courses": 0, "credits": 0, "sectionIds": [] }
   },
   "message": "...",
   "plans": [],
@@ -727,6 +728,15 @@ Response:
 `graduationPlanning`（Roadmap #23）說明這次排課採用的畢業缺口、剩餘學期、每學期目標與
 實際排入的類別門數／學分。`enabled:false` 代表歷史修課、畢業規則或剩餘學期不足，系統
 不會假裝有配額。它也會出現在每個方案中；多方案的類別門數必須與 S₀ 一致。
+
+`graduationPlanning.totalGap`／`creditFloorOnly`（2026-10-02，出現在各方案的
+`graduationPlanning`）：`totalGap` 是畢業門檻總學分減已取得總學分（沒有資料時為 `null`）；
+`creditFloorOnly: true` 代表 `totalGap < minCredits`，本學期排到最低學分就停，不再照類別配額往上排。
+
+`graduationPlanning.creditFloorTopUp`（2026-10-02）：配額排完後總學分仍低於 `minCredits` 時，
+為達下限而另外補的課。`courses`／`credits` 是門數與學分，`sectionIds` 是補進來的班次。沒有補課時
+三者為 `0`、`0`、`[]`。有補課時 `warnings` 另有一則
+「本學期畢業缺口只需要部分學分；為達最低 N 學分，另補 M 門課…」。
 
 `watchedCourses` 在成功與失敗回應中都會回傳。關注課程不佔時段、不計入衝堂，因此不會因為排課失敗而消失。
 

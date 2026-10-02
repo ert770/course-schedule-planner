@@ -24,11 +24,11 @@ import { validateScheduleAgainstConstraints } from '../src/skills/scheduleValida
 import { getHighsRuntime } from '../src/skills/optimization/highsRuntime.js';
 import { BENCHMARK_DIVERSE_OPTIONS } from '../src/skills/optimization/diversePlanSolver.js';
 import { sha256Hex } from '../src/utils/hash.js';
-import { buildScheduleConstraints } from '../src/services/constraintService.js';
 import { getUserPreferences } from '../src/services/memoryService.js';
 import {
   absentLearnedPreference,
   buildCandidates,
+  buildCaseConstraints,
   buildFixedCoursesControl,
   CASE_IDS,
   deriveLearnedPreferenceReadOnly,
@@ -72,7 +72,7 @@ function validatePlans(plans, constraints) {
 }
 
 async function runCase({ caseId, identity, input = {}, prefs, learnedPreference, reviews, allCourses }) {
-  const constraints = buildScheduleConstraints(input, prefs, { reviews, courseReviews: reviews, learnedPreference });
+  const constraints = buildCaseConstraints(input, prefs, { reviews, learnedPreference });
   const candidates = await buildCandidates(constraints, allCourses);
   const generationStartedAt = performance.now();
   const axisMinGainArg = process.argv.find(arg => arg.startsWith('--axis-min-gain='));

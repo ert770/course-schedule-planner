@@ -64,7 +64,14 @@ node --check src/app.js
 | S16 | 候選課程全為關注狀態 | `success` 為 true、`watchOnly` 為 true、回傳關注課程與對應訊息 |
 | S17 | 指定必修排不進去且有關注課程 | `success` 為 false，但 `watchedCourses` 仍完整回傳 |
 | S18 | 大四下、歷史缺口為本系選修 6／通識 4／系外 0 | 先排正式必修，再排 2 門 3 學分本系選修與 2 門 2 學分通識；達配額即停止，不填滿 25 學分 |
-| S19 | 通識配額有缺口但沒有可排通識，本系選修仍很多 | 保留通識缺口與 warning，不用第 3 門以上本系選修補滿最低學分 |
+| S19 | 通識配額有缺口但沒有可排通識，本系選修仍很多 | 保留通識缺口的 warning；總學分低於 `minCredits` 時補到下限為止（2026-10-02 起，原本是不補），補的課記在 `creditFloorTopUp` |
+| S19b | 快畢業：配額目標只有選修 2／通識 1.33 學分，`minCredits` 為 12 | 補到 12 學分以上且不超過一門課的量；系外缺口為 0 時不拿系外選修來補 |
+| S19c | 配額本身已達 `minCredits` | 不進入補足階段，`creditFloorTopUp.courses` 為 0，沒有補足的 warning |
+| S19d | 各類缺口都補完後仍低於 `minCredits` | 退回任何排得進去的課，補到下限 |
+| S19e | 已取得 126／128（距離畢業 2 學分）、`minCredits` 9，類別缺口被高估成選修 28／通識 16 | `creditFloorOnly` 為 true，排到 9 學分以上就停，不排到類別配額的 13 學分 |
+| S19f | 已取得 110／128（距離畢業 18 學分）、`minCredits` 9 | 不套用，照類別配額排 3 門選修＋2 門通識 |
+| S19g | 沒有已取得總學分資料 | `totalGap` 為 `null`，不套用 |
+| HC1–HC3 | 歷史修課的畢業分類（`courseHistoryClassification.test.js`） | 資工必修、外系開課必修（課號列舉）、核心選修／選修、通識基礎必修各自歸類；他系同名課、課號與課名不符、不在科目表上的課一律不猜（回 `null`）；Markdown 匯入套用分類後，已取得學分落在正確類別 |
 | S20 | request 或 profile 夾帶自製 `graduationPlanning` | 一律忽略，只接受 schedule service 由規則與歷史修課建立的 trusted context |
 | S21 | 明確設定 `remainingSemesters` | 1～8 的整數或 `null` 可用；字串、小數、0、9 拒絕；明確值優先於年級推算 |
 | S22 | HiGHS 產生替代方案 | 本系選修／通識／系外門數與 S₀ 相同，模型限制與 `milpPlanChecks` 都要驗證 |

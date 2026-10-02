@@ -6,6 +6,8 @@
 import { ACTIVE_TERM } from '../../src/data/activeTerm.js';
 import { getFailedRequiredCourseCodes } from '../../src/data/courseHistory.js';
 import { demoPersonaCanonicalId } from '../../src/data/demoPersonas.js';
+import { buildGraduationPlanning } from '../../src/data/graduationPlanning.js';
+import { buildScheduleConstraints } from '../../src/services/constraintService.js';
 import { buildStudentScope } from '../../src/skills/courseScope.js';
 import { searchCoursesForSchedule } from '../../src/skills/courseQuery.js';
 import {
@@ -17,6 +19,21 @@ import {
   getInteractionEventsForExport,
   hasPersonalizationConsent,
 } from '../../src/services/interactionEventService.js';
+
+// 與線上 `scheduleService.prepareGenerationInputs()` 組出同一份限制。
+//
+// 2026-10-02 之前 benchmark 各自呼叫 `buildScheduleConstraints()`，漏掉了線上會帶的
+// `graduationPlanning`（依畢業缺口分配本學期課程）。結果是 benchmark 量到 25 學分、3 個方案，
+// 同一位使用者在線上只有 5 學分、1 個方案——量的不是線上實際行為。集中在這裡組，
+// 之後線上多帶一項 trusted context 時只需要改這一處。
+export function buildCaseConstraints(input, prefs, { reviews, learnedPreference }) {
+  return buildScheduleConstraints(input, prefs, {
+    reviews,
+    courseReviews: reviews,
+    learnedPreference,
+    graduationPlanning: buildGraduationPlanning(prefs, ACTIVE_TERM),
+  });
+}
 
 export const CASE_IDS = Object.freeze([
   'persona-compact',

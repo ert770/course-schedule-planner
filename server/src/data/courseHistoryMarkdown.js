@@ -1,4 +1,5 @@
 import { validateCourseHistoryEntry } from './courseHistory.js';
+import { classifyHistoryEntryByCurriculum } from './courseHistoryClassification.js';
 
 const COURSE_CODE_PATTERN = /^[A-Z]{2,}\d{4}$/u;
 const EMPTY_VALUES = new Set(['', '—', '-', 'X']);
@@ -115,6 +116,15 @@ export function parseCourseHistoryMarkdown(markdown, { sourceName = 'unknown' } 
       generalEducationCategory: String(record['通識類別'] ?? '').trim() || null,
       graduationCategory: graduationCategory(section, reportedGraduationCredits),
     };
+    // 章節標題判定不了的課（系內、基礎必修）改用課號對照必選修科目表。
+    // 對不上的維持 `unspecified`；已由章節判定為通識／系外／不計入的不覆寫。
+    if (entry.graduationCategory === 'unspecified') {
+      const classified = classifyHistoryEntryByCurriculum(entry);
+      if (classified) {
+        entry.graduationCategory = classified.graduationCategory;
+        entry.requirementType = classified.requirementType;
+      }
+    }
     const validation = validateCourseHistoryEntry(entry);
     if (!validation.valid || !entry.courseName) {
       throw new Error(`${sourceName}:${lineIndex + 1} ${courseCode} 不符合 courseHistory 契約`);

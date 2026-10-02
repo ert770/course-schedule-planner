@@ -17,7 +17,6 @@ import { getAll } from '../src/db/database.js';
 import { closePool, isMysqlConfigured } from '../src/db/mysql.js';
 import { generateSchedule } from '../src/skills/scheduler.js';
 import { validateScheduleAgainstConstraints } from '../src/skills/scheduleValidator.js';
-import { buildScheduleConstraints } from '../src/services/constraintService.js';
 import { getUserPreferences } from '../src/services/memoryService.js';
 import { getHighsRuntime, solveLpText, SOLVE_STATUS } from '../src/skills/optimization/highsRuntime.js';
 import { buildScheduleMip, decodeSelection } from '../src/skills/optimization/scheduleMipModel.js';
@@ -25,6 +24,7 @@ import { checkMilpPlan } from '../src/skills/optimization/milpPlanChecks.js';
 import {
   absentLearnedPreference,
   buildCandidates,
+  buildCaseConstraints,
   buildFixedCoursesControl,
   CASE_IDS,
   deriveLearnedPreferenceReadOnly,
@@ -64,7 +64,7 @@ function validate(schedule, unscheduled, constraints, excludedCourses) {
 }
 
 async function runCase({ caseId, input = {}, prefs, learnedPreference, reviews, allCourses, expected = null }) {
-  const constraints = buildScheduleConstraints(input, prefs, { reviews, courseReviews: reviews, learnedPreference });
+  const constraints = buildCaseConstraints(input, prefs, { reviews, learnedPreference });
   const candidates = await buildCandidates(constraints, allCourses);
   const result = generateSchedule(candidates, constraints, { includeMipInputs: true });
   const inputs = result.mipInputs;

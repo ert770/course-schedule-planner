@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-02
+
+1. [畢業配額排完後補到最低學分；benchmark 載入器對齊線上路徑；修課紀錄分類回填](./2026-10-02-graduation-quota-credit-floor-top-up.md)
+
 ## 2026-10-01
 
 1. [Roadmap #10 任務 2：以 D_bin 目標取代暫時的方案挑選器](./2026-10-01-roadmap-10-task2-dbin-subset-selection.md)

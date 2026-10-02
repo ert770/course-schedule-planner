@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-01T10:09:16.561Z",
+  "generatedAt": "2026-10-02T04:28:24.067Z",
   "dataSource": "mysql-read-only",
   "activeTerm": {
     "academicYear": 114,
@@ -41,166 +41,62 @@
       },
       "safety": [
         {
-          "planId": "personalized_compact",
-          "valid": true,
-          "violationCount": 0,
-          "constraintIds": []
-        },
-        {
           "planId": "personalized",
-          "valid": true,
-          "violationCount": 0,
-          "constraintIds": []
-        },
-        {
-          "planId": "personalized_easy",
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
         }
       ],
-      "generationMs": 2122.11,
+      "generationMs": 230.88,
       "planDiversity": {
         "requestedVariants": 4,
-        "distinctPlans": 3,
+        "distinctPlans": 1,
         "reason": "milp-candidate-unavailable",
         "collapsed": [
+          {
+            "variantId": "personalized_easy",
+            "title": "輕鬆導向方案",
+            "reason": "no-signal",
+            "detail": "no-easiness-baseline"
+          },
           {
             "variantId": "personalized_interest",
             "title": "興趣導向方案",
             "reason": "no-signal",
             "detail": "no-interest-keywords"
+          },
+          {
+            "variantId": "personalized_compact",
+            "title": "集中排課方案",
+            "reason": "credit-parity-infeasible"
           }
         ],
         "competablePoolSize": 227,
         "solver": {
           "method": "dinkelbach-milp",
-          "status": "generated",
-          "elapsedMs": 1881.2966999999999,
+          "status": "no-signal",
+          "elapsedMs": 203.59999999999945,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
-              "planCount": 3,
-              "dBin": 0.06461086637298091,
-              "pairwiseHammingSum": 44
+              "planCount": 1,
+              "dBin": null,
+              "pairwiseHammingSum": 0
             },
             "b": 227,
-            "evaluated": 16,
-            "feasible": 16,
-            "elapsedMs": 0.682,
+            "evaluated": 1,
+            "feasible": 1,
+            "elapsedMs": 0.497,
             "rejectedCandidates": []
           },
           "axes": [
             {
               "archetype": "easy",
-              "status": "generated",
-              "reason": null,
-              "candidateCount": 3,
-              "candidates": [
-                {
-                  "ratio": 74.88986784140968,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2027",
-                      "code:IECS3053",
-                      "code:IECS2014",
-                      "code:IECS3059",
-                      "code:IECS2024",
-                      "code:IECS3021",
-                      "code:IECS4943",
-                      "code:IECS4071",
-                      "code:ATHL2050"
-                    ],
-                    "added": [
-                      "code:IINE2003",
-                      "code:IECS2041",
-                      "code:IECS2026",
-                      "code:IECS2053",
-                      "code:IECS3071",
-                      "code:IECS3048",
-                      "code:IECS4074",
-                      "code:IECS4944"
-                    ],
-                    "hammingDistance": 17,
-                    "replacementDistance": 8
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 1.3877787807814457e-17,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 59.471365638766514,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2027",
-                      "code:IECS3053",
-                      "code:IECS2014",
-                      "code:IECS4943",
-                      "code:IECS4073",
-                      "code:ATHL2050"
-                    ],
-                    "added": [
-                      "code:IECS2075",
-                      "code:IECS3074",
-                      "code:IECS3050",
-                      "code:IECS4944",
-                      "code:IECS4052"
-                    ],
-                    "hammingDistance": 11,
-                    "replacementDistance": 5
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 57.268722466960355,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2027",
-                      "code:IECS3053",
-                      "code:IECS2014",
-                      "code:IECS3059",
-                      "code:IECS2024",
-                      "code:IECS3021",
-                      "code:IECS4073",
-                      "code:ATHL2050"
-                    ],
-                    "added": [
-                      "code:IECS2026",
-                      "code:IECS2053",
-                      "code:IECS3074",
-                      "code:IECS3071",
-                      "code:IECS3061",
-                      "code:IECS4074",
-                      "code:SPAN1001"
-                    ],
-                    "hammingDistance": 15,
-                    "replacementDistance": 7
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                }
-              ]
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-easiness-baseline",
+              "candidateCount": 0,
+              "candidates": []
             },
             {
               "archetype": "interest",
@@ -212,210 +108,62 @@
             },
             {
               "archetype": "compact",
-              "status": "generated",
-              "reason": null,
-              "candidateCount": 3,
-              "candidates": [
-                {
-                  "ratio": 66.07929515418502,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2027",
-                      "code:IECS3053",
-                      "code:IECS2014",
-                      "code:IECS2024",
-                      "code:IECS3021",
-                      "code:IECS4943",
-                      "code:IECS4071",
-                      "code:ATHL2050"
-                    ],
-                    "added": [
-                      "code:IECS2026",
-                      "code:IECS2075",
-                      "code:IECS3048",
-                      "code:IECS3050",
-                      "code:IECS4074",
-                      "code:IECS4944",
-                      "code:JAPN1003"
-                    ],
-                    "hammingDistance": 15,
-                    "replacementDistance": 7
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 55.06607929515418,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2027",
-                      "code:IECS3053",
-                      "code:IECS2014",
-                      "code:IECS3059",
-                      "code:IECS4943",
-                      "code:IECS4071",
-                      "code:ATHL2050"
-                    ],
-                    "added": [
-                      "code:IECS2041",
-                      "code:IECS3074",
-                      "code:IECS3050",
-                      "code:IECS3061",
-                      "code:IECS4944",
-                      "code:SPAN1001"
-                    ],
-                    "hammingDistance": 13,
-                    "replacementDistance": 6
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 54.33186490455214,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2014",
-                      "code:IECS2024",
-                      "code:IECS3021",
-                      "code:IECS4073",
-                      "code:ATHL2050"
-                    ],
-                    "added": [
-                      "code:IECS2026",
-                      "code:IECS3048",
-                      "code:IECS4074",
-                      "code:HSS2008"
-                    ],
-                    "hammingDistance": 9,
-                    "replacementDistance": 4
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                }
-              ]
+              "status": "credit-parity-infeasible",
+              "reason": "credit-parity-infeasible",
+              "diagnosis": {
+                "reason": "credit-parity-infeasible",
+                "resolvedBy": [
+                  "credit",
+                  "hierarchy"
+                ],
+                "complete": true
+              },
+              "candidateCount": 0,
+              "candidates": []
             }
           ]
         }
       },
       "candidateMetrics": [
         {
-          "planId": "personalized_compact",
-          "totalCredits": 25,
-          "qualityRetention": 1,
-          "replacementDistance": 7,
-          "convergence": {
-            "converged": true,
-            "reason": null,
-            "iterations": 2,
-            "residual": 0,
-            "initialSolution": "quality-optimal"
-          },
-          "category": "optimal"
-        },
-        {
           "planId": "personalized",
-          "totalCredits": 25,
+          "totalCredits": 10,
           "qualityRetention": null,
           "replacementDistance": null,
           "convergence": null,
           "category": null
-        },
-        {
-          "planId": "personalized_easy",
-          "totalCredits": 25,
-          "qualityRetention": 1,
-          "replacementDistance": 7,
-          "convergence": {
-            "converged": true,
-            "reason": null,
-            "iterations": 2,
-            "residual": 0,
-            "initialSolution": "quality-optimal"
-          },
-          "category": "optimal"
         }
       ],
-      "pass": true,
+      "pass": false,
       "hasExpressedPreference": true,
-      "requestedVariants": 3,
+      "requestedVariants": 2,
       "rawRequestedVariants": 4,
       "excludedNoSignalVariants": [
+        "personalized_easy",
         "personalized_interest"
       ],
-      "reportedDistinctPlans": 3,
-      "meaningfulDistinctPlans": 3,
-      "requiredDistinctPlans": 3,
-      "requiredByRetention": 3,
+      "reportedDistinctPlans": 1,
+      "meaningfulDistinctPlans": 1,
+      "requiredDistinctPlans": 2,
+      "requiredByRetention": 2,
       "retentionThreshold": 0.75,
-      "retentionRate": 1,
+      "retentionRate": 0.5,
       "similarityThreshold": 0.75,
       "qualityRetentionThreshold": 0.87,
-      "minimumQualityRetention": 1,
+      "minimumQualityRetention": null,
       "minimumReplacementDistance": 2,
-      "medianJaccardSimilarity": 0.1176,
+      "medianJaccardSimilarity": null,
       "criteria": {
-        "enoughDistinctPlans": true,
-        "retentionRate": true,
-        "medianSimilarity": true,
-        "actualCourseDifference": true,
+        "enoughDistinctPlans": false,
+        "retentionRate": false,
+        "medianSimilarity": false,
+        "actualCourseDifference": false,
         "qualityFloor": true,
         "creditParity": true,
         "modelChecks": true,
         "safety": true
       },
-      "pairs": [
-        {
-          "leftPlanId": "personalized_compact",
-          "rightPlanId": "personalized",
-          "leftCompetitiveCourseCount": 9,
-          "rightCompetitiveCourseCount": 10,
-          "sharedCourseCount": 2,
-          "differenceCount": 15,
-          "replacementDistance": 7,
-          "jaccardSimilarity": 0.1176
-        },
-        {
-          "leftPlanId": "personalized_compact",
-          "rightPlanId": "personalized_easy",
-          "leftCompetitiveCourseCount": 9,
-          "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 2,
-          "differenceCount": 14,
-          "replacementDistance": 7,
-          "jaccardSimilarity": 0.125
-        },
-        {
-          "leftPlanId": "personalized",
-          "rightPlanId": "personalized_easy",
-          "leftCompetitiveCourseCount": 10,
-          "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 2,
-          "differenceCount": 15,
-          "replacementDistance": 7,
-          "jaccardSimilarity": 0.1176
-        }
-      ]
+      "pairs": []
     },
     {
       "caseId": "no-preference-control",
@@ -433,158 +181,58 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
-        },
-        {
-          "planId": "personalized_easy",
-          "valid": true,
-          "violationCount": 0,
-          "constraintIds": []
-        },
-        {
-          "planId": "personalized_compact",
-          "valid": true,
-          "violationCount": 0,
-          "constraintIds": []
         }
       ],
-      "generationMs": 1064.86,
+      "generationMs": 115.19,
       "planDiversity": {
         "requestedVariants": 4,
-        "distinctPlans": 3,
+        "distinctPlans": 1,
         "reason": "milp-candidate-unavailable",
         "collapsed": [
+          {
+            "variantId": "personalized_easy",
+            "title": "輕鬆導向方案",
+            "reason": "no-signal",
+            "detail": "no-easiness-baseline"
+          },
           {
             "variantId": "personalized_interest",
             "title": "興趣導向方案",
             "reason": "no-signal",
             "detail": "no-interest-keywords"
+          },
+          {
+            "variantId": "personalized_compact",
+            "title": "集中排課方案",
+            "reason": "credit-parity-infeasible"
           }
         ],
         "competablePoolSize": 227,
         "solver": {
           "method": "dinkelbach-milp",
-          "status": "generated",
-          "elapsedMs": 832.8153000000002,
+          "status": "no-signal",
+          "elapsedMs": 101.22520000000077,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
-              "planCount": 3,
-              "dBin": 0.05873715124816446,
-              "pairwiseHammingSum": 40
+              "planCount": 1,
+              "dBin": null,
+              "pairwiseHammingSum": 0
             },
             "b": 227,
-            "evaluated": 16,
-            "feasible": 16,
-            "elapsedMs": 0.133,
+            "evaluated": 1,
+            "feasible": 1,
+            "elapsedMs": 0.108,
             "rejectedCandidates": []
           },
           "axes": [
             {
               "archetype": "easy",
-              "status": "generated",
-              "reason": null,
-              "candidateCount": 3,
-              "candidates": [
-                {
-                  "ratio": 66.07929515418502,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2041",
-                      "code:IECS2027",
-                      "code:IECS2053",
-                      "code:IECS2014",
-                      "code:IECS3059",
-                      "code:IECS4943",
-                      "code:IECS4073",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IECS3071",
-                      "code:IECS3048",
-                      "code:IECS3050",
-                      "code:IECS3061",
-                      "code:IECS4074",
-                      "code:IECS4944",
-                      "code:IECS4052"
-                    ],
-                    "hammingDistance": 15,
-                    "replacementDistance": 7
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 55.06607929515418,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2027",
-                      "code:IECS2053",
-                      "code:IECS3059",
-                      "code:IECS3021",
-                      "code:IECS4071",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IECS2075",
-                      "code:IECS2024",
-                      "code:IECS3074",
-                      "code:IECS4074",
-                      "code:IECS4052"
-                    ],
-                    "hammingDistance": 11,
-                    "replacementDistance": 5
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 48.45814977973568,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2041",
-                      "code:IECS2027",
-                      "code:IECS2014",
-                      "code:IECS3059",
-                      "code:IECS4943",
-                      "code:IECS4071",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IINE2003",
-                      "code:IECS3074",
-                      "code:IECS3071",
-                      "code:IECS3048",
-                      "code:IECS4074",
-                      "code:IECS4944"
-                    ],
-                    "hammingDistance": 13,
-                    "replacementDistance": 6
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                }
-              ]
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-easiness-baseline",
+              "candidateCount": 0,
+              "candidates": []
             },
             {
               "archetype": "interest",
@@ -596,110 +244,18 @@
             },
             {
               "archetype": "compact",
-              "status": "generated",
-              "reason": null,
-              "candidateCount": 3,
-              "candidates": [
-                {
-                  "ratio": 66.07929515418502,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2041",
-                      "code:IECS2027",
-                      "code:IECS2053",
-                      "code:IECS2014",
-                      "code:IECS3059",
-                      "code:IECS4943",
-                      "code:IECS4073",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IECS2075",
-                      "code:IECS2024",
-                      "code:IECS3074",
-                      "code:IECS3048",
-                      "code:IECS3050",
-                      "code:IECS4944",
-                      "code:IECS3052"
-                    ],
-                    "hammingDistance": 15,
-                    "replacementDistance": 7
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 59.471365638766514,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2041",
-                      "code:IECS2027",
-                      "code:IECS2053",
-                      "code:IECS2014",
-                      "code:IECS3021",
-                      "code:IECS4943",
-                      "code:IECS4073",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IECS3053",
-                      "code:IECS2026",
-                      "code:IECS3071",
-                      "code:IECS3048",
-                      "code:IECS4074",
-                      "code:IECS4944",
-                      "code:IECS4052"
-                    ],
-                    "hammingDistance": 15,
-                    "replacementDistance": 7
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 57.268722466960355,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2041",
-                      "code:IECS3059",
-                      "code:IECS3021",
-                      "code:IECS4071",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IINE2824",
-                      "code:IECS2026",
-                      "code:IECS2024",
-                      "code:IECS4074"
-                    ],
-                    "hammingDistance": 9,
-                    "replacementDistance": 4
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                }
-              ]
+              "status": "credit-parity-infeasible",
+              "reason": "credit-parity-infeasible",
+              "diagnosis": {
+                "reason": "credit-parity-infeasible",
+                "resolvedBy": [
+                  "credit",
+                  "hierarchy"
+                ],
+                "complete": true
+              },
+              "candidateCount": 0,
+              "candidates": []
             }
           ]
         }
@@ -707,101 +263,43 @@
       "candidateMetrics": [
         {
           "planId": "personalized",
-          "totalCredits": 25,
+          "totalCredits": 10,
           "qualityRetention": null,
           "replacementDistance": null,
           "convergence": null,
           "category": null
-        },
-        {
-          "planId": "personalized_easy",
-          "totalCredits": 25,
-          "qualityRetention": 1,
-          "replacementDistance": 7,
-          "convergence": {
-            "converged": true,
-            "reason": null,
-            "iterations": 2,
-            "residual": 0,
-            "initialSolution": "quality-optimal"
-          },
-          "category": "optimal"
-        },
-        {
-          "planId": "personalized_compact",
-          "totalCredits": 25,
-          "qualityRetention": 1,
-          "replacementDistance": 4,
-          "convergence": {
-            "converged": true,
-            "reason": null,
-            "iterations": 2,
-            "residual": 0,
-            "initialSolution": "quality-optimal"
-          },
-          "category": "optimal"
         }
       ],
-      "pass": true,
+      "pass": false,
       "hasExpressedPreference": false,
-      "requestedVariants": 3,
+      "requestedVariants": 2,
       "rawRequestedVariants": 4,
       "excludedNoSignalVariants": [
+        "personalized_easy",
         "personalized_interest"
       ],
-      "reportedDistinctPlans": 3,
-      "meaningfulDistinctPlans": 3,
+      "reportedDistinctPlans": 1,
+      "meaningfulDistinctPlans": 1,
       "requiredDistinctPlans": 2,
-      "requiredByRetention": 3,
+      "requiredByRetention": 2,
       "retentionThreshold": 0.75,
-      "retentionRate": 1,
+      "retentionRate": 0.5,
       "similarityThreshold": 0.75,
       "qualityRetentionThreshold": 0.87,
-      "minimumQualityRetention": 1,
+      "minimumQualityRetention": null,
       "minimumReplacementDistance": 2,
-      "medianJaccardSimilarity": 0.1176,
+      "medianJaccardSimilarity": null,
       "criteria": {
-        "enoughDistinctPlans": true,
-        "retentionRate": true,
-        "medianSimilarity": true,
-        "actualCourseDifference": true,
+        "enoughDistinctPlans": false,
+        "retentionRate": false,
+        "medianSimilarity": false,
+        "actualCourseDifference": false,
         "qualityFloor": true,
         "creditParity": true,
         "modelChecks": true,
         "safety": true
       },
-      "pairs": [
-        {
-          "leftPlanId": "personalized",
-          "rightPlanId": "personalized_easy",
-          "leftCompetitiveCourseCount": 10,
-          "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 2,
-          "differenceCount": 15,
-          "replacementDistance": 7,
-          "jaccardSimilarity": 0.1176
-        },
-        {
-          "leftPlanId": "personalized",
-          "rightPlanId": "personalized_compact",
-          "leftCompetitiveCourseCount": 10,
-          "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 5,
-          "differenceCount": 9,
-          "replacementDistance": 4,
-          "jaccardSimilarity": 0.3571
-        },
-        {
-          "leftPlanId": "personalized_easy",
-          "rightPlanId": "personalized_compact",
-          "leftCompetitiveCourseCount": 9,
-          "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 1,
-          "differenceCount": 16,
-          "replacementDistance": 8,
-          "jaccardSimilarity": 0.0588
-        }
-      ]
+      "pairs": []
     },
     {
       "caseId": "persona-challenge",
@@ -821,7 +319,7 @@
           "constraintIds": []
         }
       ],
-      "generationMs": 464.27,
+      "generationMs": 169.95,
       "planDiversity": {
         "requestedVariants": 4,
         "distinctPlans": 1,
@@ -849,7 +347,7 @@
         "solver": {
           "method": "dinkelbach-milp",
           "status": "no-signal",
-          "elapsedMs": 327.9531999999999,
+          "elapsedMs": 118.95840000000135,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
@@ -860,7 +358,7 @@
             "b": 225,
             "evaluated": 1,
             "feasible": 1,
-            "elapsedMs": 0.093,
+            "elapsedMs": 0.075,
             "rejectedCandidates": []
           },
           "axes": [
@@ -888,7 +386,7 @@
                 "reason": "axis-threshold-infeasible",
                 "resolvedBy": [
                   "axis",
-                  "quality",
+                  "replacement",
                   "hierarchy"
                 ],
                 "complete": true
@@ -902,7 +400,7 @@
       "candidateMetrics": [
         {
           "planId": "personalized",
-          "totalCredits": 25,
+          "totalCredits": 10,
           "qualityRetention": null,
           "replacementDistance": null,
           "convergence": null,
@@ -952,7 +450,7 @@
       },
       "safety": [
         {
-          "planId": "personalized_easy",
+          "planId": "personalized",
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
@@ -962,20 +460,20 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
-        },
-        {
-          "planId": "personalized",
-          "valid": true,
-          "violationCount": 0,
-          "constraintIds": []
         }
       ],
-      "generationMs": 1354.62,
+      "generationMs": 209.42,
       "planDiversity": {
         "requestedVariants": 4,
-        "distinctPlans": 3,
+        "distinctPlans": 2,
         "reason": "milp-candidate-unavailable",
         "collapsed": [
+          {
+            "variantId": "personalized_easy",
+            "title": "輕鬆導向方案",
+            "reason": "no-signal",
+            "detail": "threshold-unreachable"
+          },
           {
             "variantId": "personalized_interest",
             "title": "興趣導向方案",
@@ -987,113 +485,28 @@
         "solver": {
           "method": "dinkelbach-milp",
           "status": "generated",
-          "elapsedMs": 1286.7594000000026,
+          "elapsedMs": 123.48879999999917,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
-              "planCount": 3,
-              "dBin": 0.04504504504504504,
-              "pairwiseHammingSum": 30
+              "planCount": 2,
+              "dBin": 0.018018018018018018,
+              "pairwiseHammingSum": 4
             },
             "b": 222,
-            "evaluated": 16,
-            "feasible": 16,
-            "elapsedMs": 0.146,
+            "evaluated": 2,
+            "feasible": 2,
+            "elapsedMs": 0.201,
             "rejectedCandidates": []
           },
           "axes": [
             {
               "archetype": "easy",
-              "status": "generated",
-              "reason": null,
-              "candidateCount": 3,
-              "candidates": [
-                {
-                  "ratio": 0.4763960372996541,
-                  "qualityRetention": 0.9159016000000008,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IINE1803",
-                      "code:IECS2026",
-                      "code:IECS3062",
-                      "code:IECS4944",
-                      "code:IECS4071"
-                    ],
-                    "added": [
-                      "code:IINE2003",
-                      "code:IECS2072",
-                      "code:IECS2027",
-                      "code:IECS4942"
-                    ],
-                    "hammingDistance": 9,
-                    "replacementDistance": 4
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 0.409679178596527,
-                  "qualityRetention": 0.9295312000000004,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IINE1803",
-                      "code:IECS2026",
-                      "code:IECS4944",
-                      "code:IECS4071"
-                    ],
-                    "added": [
-                      "code:IECS2072",
-                      "code:IECS4943",
-                      "code:IEE6014"
-                    ],
-                    "hammingDistance": 7,
-                    "replacementDistance": 3
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 1,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 0.33524165587753435,
-                  "qualityRetention": 0.9159016000000008,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IINE1803",
-                      "code:IECS2026",
-                      "code:IECS3062",
-                      "code:IECS4944",
-                      "code:IECS4071"
-                    ],
-                    "added": [
-                      "code:IECS2072",
-                      "code:IECS3061",
-                      "code:IECS4942",
-                      "code:ELAW1003"
-                    ],
-                    "hammingDistance": 9,
-                    "replacementDistance": 4
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                }
-              ]
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "threshold-unreachable",
+              "candidateCount": 0,
+              "candidates": []
             },
             {
               "archetype": "interest",
@@ -1106,91 +519,37 @@
             {
               "archetype": "compact",
               "status": "generated",
-              "reason": null,
-              "candidateCount": 3,
+              "reason": "axis-threshold-infeasible",
+              "diagnosis": {
+                "reason": "axis-threshold-infeasible",
+                "resolvedBy": [
+                  "axis",
+                  "replacement",
+                  "hierarchy"
+                ],
+                "complete": true
+              },
+              "candidateCount": 1,
               "candidates": [
                 {
-                  "ratio": 0.576206984612051,
-                  "qualityRetention": 0.9306424000000005,
+                  "ratio": 0.31528693949076225,
+                  "qualityRetention": 0.9438520000000002,
                   "distanceFromBase": {
                     "removed": [
-                      "code:IINE1803",
-                      "code:IECS2006",
-                      "code:IECS3062",
-                      "code:IECS4944",
-                      "code:IECS4073"
-                    ],
-                    "added": [
-                      "code:IECS2011",
-                      "code:IECS2027",
-                      "code:IECS4943",
-                      "code:JAPN1002"
-                    ],
-                    "hammingDistance": 9,
-                    "replacementDistance": 4
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 6.938893903907228e-18,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 0.483418683894569,
-                  "qualityRetention": 0.9031608000000004,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IINE1803",
                       "code:IECS2041",
-                      "code:IECS3074",
-                      "code:IECS4944",
-                      "code:IECS4071"
+                      "code:IECS4944"
                     ],
                     "added": [
-                      "code:IECS2072",
-                      "code:IECS2027",
-                      "code:IECS4942",
-                      "code:COME2031"
+                      "code:IECS2026",
+                      "code:IECS4942"
                     ],
-                    "hammingDistance": 9,
-                    "replacementDistance": 4
+                    "hammingDistance": 4,
+                    "replacementDistance": 2
                   },
                   "convergence": {
                     "converged": true,
                     "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 0.5762069846120511,
-                  "qualityRetention": 0.9306424000000005,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IINE1803",
-                      "code:IECS2006",
-                      "code:IECS3062",
-                      "code:IECS4944",
-                      "code:IECS4073"
-                    ],
-                    "added": [
-                      "code:IECS2011",
-                      "code:IECS3061",
-                      "code:IECS4942",
-                      "code:KORN1002"
-                    ],
-                    "hammingDistance": 9,
-                    "replacementDistance": 4
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
+                    "iterations": 1,
                     "residual": 0,
                     "initialSolution": "quality-optimal"
                   },
@@ -1203,60 +562,47 @@
       },
       "candidateMetrics": [
         {
-          "planId": "personalized_easy",
-          "totalCredits": 25,
-          "qualityRetention": 0.9159016000000008,
-          "replacementDistance": 4,
-          "convergence": {
-            "converged": true,
-            "reason": null,
-            "iterations": 2,
-            "residual": 0,
-            "initialSolution": "quality-optimal"
-          },
-          "category": "optimal"
-        },
-        {
-          "planId": "personalized_compact",
-          "totalCredits": 25,
-          "qualityRetention": 0.9306424000000005,
-          "replacementDistance": 4,
-          "convergence": {
-            "converged": true,
-            "reason": null,
-            "iterations": 2,
-            "residual": 6.938893903907228e-18,
-            "initialSolution": "quality-optimal"
-          },
-          "category": "optimal"
-        },
-        {
           "planId": "personalized",
-          "totalCredits": 25,
+          "totalCredits": 10,
           "qualityRetention": null,
           "replacementDistance": null,
           "convergence": null,
           "category": null
+        },
+        {
+          "planId": "personalized_compact",
+          "totalCredits": 11,
+          "qualityRetention": 0.9438520000000002,
+          "replacementDistance": 2,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 1,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
         }
       ],
       "pass": true,
       "hasExpressedPreference": true,
-      "requestedVariants": 3,
+      "requestedVariants": 2,
       "rawRequestedVariants": 4,
       "excludedNoSignalVariants": [
+        "personalized_easy",
         "personalized_interest"
       ],
-      "reportedDistinctPlans": 3,
-      "meaningfulDistinctPlans": 3,
-      "requiredDistinctPlans": 3,
-      "requiredByRetention": 3,
+      "reportedDistinctPlans": 2,
+      "meaningfulDistinctPlans": 2,
+      "requiredDistinctPlans": 2,
+      "requiredByRetention": 2,
       "retentionThreshold": 0.75,
       "retentionRate": 1,
       "similarityThreshold": 0.75,
       "qualityRetentionThreshold": 0.87,
-      "minimumQualityRetention": 0.9159,
+      "minimumQualityRetention": 0.9439,
       "minimumReplacementDistance": 2,
-      "medianJaccardSimilarity": 0.3571,
+      "medianJaccardSimilarity": 0.3333,
       "criteria": {
         "enoughDistinctPlans": true,
         "retentionRate": true,
@@ -1269,34 +615,14 @@
       },
       "pairs": [
         {
-          "leftPlanId": "personalized_easy",
+          "leftPlanId": "personalized",
           "rightPlanId": "personalized_compact",
-          "leftCompetitiveCourseCount": 9,
-          "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 3,
-          "differenceCount": 12,
-          "replacementDistance": 6,
-          "jaccardSimilarity": 0.2
-        },
-        {
-          "leftPlanId": "personalized_easy",
-          "rightPlanId": "personalized",
-          "leftCompetitiveCourseCount": 9,
-          "rightCompetitiveCourseCount": 10,
-          "sharedCourseCount": 5,
-          "differenceCount": 9,
-          "replacementDistance": 4,
-          "jaccardSimilarity": 0.3571
-        },
-        {
-          "leftPlanId": "personalized_compact",
-          "rightPlanId": "personalized",
-          "leftCompetitiveCourseCount": 9,
-          "rightCompetitiveCourseCount": 10,
-          "sharedCourseCount": 5,
-          "differenceCount": 9,
-          "replacementDistance": 4,
-          "jaccardSimilarity": 0.3571
+          "leftCompetitiveCourseCount": 4,
+          "rightCompetitiveCourseCount": 4,
+          "sharedCourseCount": 2,
+          "differenceCount": 4,
+          "replacementDistance": 2,
+          "jaccardSimilarity": 0.3333
         }
       ]
     },
@@ -1312,29 +638,28 @@
       },
       "safety": [
         {
-          "planId": "personalized_interest",
-          "valid": true,
-          "violationCount": 0,
-          "constraintIds": []
-        },
-        {
           "planId": "personalized",
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
         }
       ],
-      "generationMs": 1133.37,
+      "generationMs": 95.3,
       "planDiversity": {
         "requestedVariants": 4,
-        "distinctPlans": 2,
+        "distinctPlans": 1,
         "reason": "milp-candidate-unavailable",
         "collapsed": [
           {
             "variantId": "personalized_easy",
             "title": "輕鬆導向方案",
             "reason": "no-signal",
-            "detail": "no-easiness-baseline"
+            "detail": "threshold-unreachable"
+          },
+          {
+            "variantId": "personalized_interest",
+            "title": "興趣導向方案",
+            "reason": "axis-threshold-infeasible"
           },
           {
             "variantId": "personalized_compact",
@@ -1346,19 +671,19 @@
         "competablePoolSize": 245,
         "solver": {
           "method": "dinkelbach-milp",
-          "status": "generated",
-          "elapsedMs": 97.55359999999928,
+          "status": "no-signal",
+          "elapsedMs": 56.8666000000012,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
-              "planCount": 2,
-              "dBin": 0.024489795918367346,
-              "pairwiseHammingSum": 6
+              "planCount": 1,
+              "dBin": null,
+              "pairwiseHammingSum": 0
             },
             "b": 245,
-            "evaluated": 4,
-            "feasible": 4,
-            "elapsedMs": 0.088,
+            "evaluated": 1,
+            "feasible": 1,
+            "elapsedMs": 0.208,
             "rejectedCandidates": []
           },
           "axes": [
@@ -1366,91 +691,24 @@
               "archetype": "easy",
               "status": "no-signal",
               "reason": "no-signal",
-              "detail": "no-easiness-baseline",
+              "detail": "threshold-unreachable",
               "candidateCount": 0,
               "candidates": []
             },
             {
               "archetype": "interest",
-              "status": "generated",
-              "reason": null,
-              "candidateCount": 3,
-              "candidates": [
-                {
-                  "ratio": 24.489795918367346,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2011",
-                      "code:IECS2053",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IINE1806",
-                      "code:IECS2041",
-                      "code:IECS2006"
-                    ],
-                    "hammingDistance": 6,
-                    "replacementDistance": 3
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 2,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 16.3265306122449,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2011",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IINE2811",
-                      "code:IECS2006"
-                    ],
-                    "hammingDistance": 4,
-                    "replacementDistance": 2
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 1,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                },
-                {
-                  "ratio": 16.3265306122449,
-                  "qualityRetention": 1,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2053",
-                      "code:HSS2033"
-                    ],
-                    "added": [
-                      "code:IECS2006",
-                      "code:GEK1039"
-                    ],
-                    "hammingDistance": 4,
-                    "replacementDistance": 2
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 1,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                }
-              ]
+              "status": "axis-threshold-infeasible",
+              "reason": "axis-threshold-infeasible",
+              "diagnosis": {
+                "reason": "axis-threshold-infeasible",
+                "resolvedBy": [
+                  "axis",
+                  "hierarchy"
+                ],
+                "complete": true
+              },
+              "candidateCount": 0,
+              "candidates": []
             },
             {
               "archetype": "compact",
@@ -1465,20 +723,6 @@
       },
       "candidateMetrics": [
         {
-          "planId": "personalized_interest",
-          "totalCredits": 25,
-          "qualityRetention": 1,
-          "replacementDistance": 3,
-          "convergence": {
-            "converged": true,
-            "reason": null,
-            "iterations": 2,
-            "residual": 0,
-            "initialSolution": "quality-optimal"
-          },
-          "category": "optimal"
-        },
-        {
           "planId": "personalized",
           "totalCredits": 25,
           "qualityRetention": null,
@@ -1487,7 +731,7 @@
           "category": null
         }
       ],
-      "pass": true,
+      "pass": false,
       "hasExpressedPreference": true,
       "requestedVariants": 2,
       "rawRequestedVariants": 4,
@@ -1495,39 +739,28 @@
         "personalized_easy",
         "personalized_compact"
       ],
-      "reportedDistinctPlans": 2,
-      "meaningfulDistinctPlans": 2,
+      "reportedDistinctPlans": 1,
+      "meaningfulDistinctPlans": 1,
       "requiredDistinctPlans": 2,
       "requiredByRetention": 2,
       "retentionThreshold": 0.75,
-      "retentionRate": 1,
+      "retentionRate": 0.5,
       "similarityThreshold": 0.75,
       "qualityRetentionThreshold": 0.87,
-      "minimumQualityRetention": 1,
+      "minimumQualityRetention": null,
       "minimumReplacementDistance": 2,
-      "medianJaccardSimilarity": 0,
+      "medianJaccardSimilarity": null,
       "criteria": {
-        "enoughDistinctPlans": true,
-        "retentionRate": true,
-        "medianSimilarity": true,
-        "actualCourseDifference": true,
+        "enoughDistinctPlans": false,
+        "retentionRate": false,
+        "medianSimilarity": false,
+        "actualCourseDifference": false,
         "qualityFloor": true,
         "creditParity": true,
         "modelChecks": true,
         "safety": true
       },
-      "pairs": [
-        {
-          "leftPlanId": "personalized_interest",
-          "rightPlanId": "personalized",
-          "leftCompetitiveCourseCount": 3,
-          "rightCompetitiveCourseCount": 3,
-          "sharedCourseCount": 0,
-          "differenceCount": 6,
-          "replacementDistance": 3,
-          "jaccardSimilarity": 0
-        }
-      ]
+      "pairs": []
     }
   ]
 }
