@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-20T08:50:29.039Z",
+  "generatedAt": "2026-10-01T10:09:16.561Z",
   "dataSource": "mysql-read-only",
   "activeTerm": {
     "academicYear": 114,
@@ -59,7 +59,7 @@
           "constraintIds": []
         }
       ],
-      "generationMs": 3006.56,
+      "generationMs": 2122.11,
       "planDiversity": {
         "requestedVariants": 4,
         "distinctPlans": 3,
@@ -76,7 +76,20 @@
         "solver": {
           "method": "dinkelbach-milp",
           "status": "generated",
-          "elapsedMs": 2524.5725999999995,
+          "elapsedMs": 1881.2966999999999,
+          "subsetSelection": {
+            "method": "dbin-exact-enumeration",
+            "objective": {
+              "planCount": 3,
+              "dBin": 0.06461086637298091,
+              "pairwiseHammingSum": 44
+            },
+            "b": 227,
+            "evaluated": 16,
+            "feasible": 16,
+            "elapsedMs": 0.682,
+            "rejectedCandidates": []
+          },
           "axes": [
             {
               "archetype": "easy",
@@ -200,7 +213,7 @@
             {
               "archetype": "compact",
               "status": "generated",
-              "reason": "solver-budget-exceeded",
+              "reason": null,
               "candidateCount": 3,
               "candidates": [
                 {
@@ -272,37 +285,33 @@
                   "category": "optimal"
                 },
                 {
-                  "ratio": 48.4581497797357,
+                  "ratio": 54.33186490455214,
                   "qualityRetention": 1,
                   "distanceFromBase": {
                     "removed": [
-                      "code:IECS2027",
-                      "code:IECS3053",
                       "code:IECS2014",
                       "code:IECS2024",
                       "code:IECS3021",
-                      "code:IECS4943",
+                      "code:IECS4073",
                       "code:ATHL2050"
                     ],
                     "added": [
-                      "code:IINE1806",
-                      "code:IECS2041",
-                      "code:IECS3074",
+                      "code:IECS2026",
                       "code:IECS3048",
-                      "code:IECS3061",
-                      "code:IECS4074"
+                      "code:IECS4074",
+                      "code:HSS2008"
                     ],
-                    "hammingDistance": 13,
-                    "replacementDistance": 6
+                    "hammingDistance": 9,
+                    "replacementDistance": 4
                   },
                   "convergence": {
-                    "converged": false,
-                    "reason": "deadline",
-                    "iterations": 0,
-                    "residual": null,
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
                     "initialSolution": "quality-optimal"
                   },
-                  "category": "limit-with-solution"
+                  "category": "optimal"
                 }
               ]
             }
@@ -336,12 +345,12 @@
           "planId": "personalized_easy",
           "totalCredits": 25,
           "qualityRetention": 1,
-          "replacementDistance": 8,
+          "replacementDistance": 7,
           "convergence": {
             "converged": true,
             "reason": null,
             "iterations": 2,
-            "residual": 1.3877787807814457e-17,
+            "residual": 0,
             "initialSolution": "quality-optimal"
           },
           "category": "optimal"
@@ -391,20 +400,20 @@
           "rightPlanId": "personalized_easy",
           "leftCompetitiveCourseCount": 9,
           "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 5,
-          "differenceCount": 8,
-          "replacementDistance": 4,
-          "jaccardSimilarity": 0.3846
+          "sharedCourseCount": 2,
+          "differenceCount": 14,
+          "replacementDistance": 7,
+          "jaccardSimilarity": 0.125
         },
         {
           "leftPlanId": "personalized",
           "rightPlanId": "personalized_easy",
           "leftCompetitiveCourseCount": 10,
           "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 1,
-          "differenceCount": 17,
-          "replacementDistance": 8,
-          "jaccardSimilarity": 0.0556
+          "sharedCourseCount": 2,
+          "differenceCount": 15,
+          "replacementDistance": 7,
+          "jaccardSimilarity": 0.1176
         }
       ]
     },
@@ -438,7 +447,7 @@
           "constraintIds": []
         }
       ],
-      "generationMs": 1832.44,
+      "generationMs": 1064.86,
       "planDiversity": {
         "requestedVariants": 4,
         "distinctPlans": 3,
@@ -455,7 +464,20 @@
         "solver": {
           "method": "dinkelbach-milp",
           "status": "generated",
-          "elapsedMs": 1280.5447000000004,
+          "elapsedMs": 832.8153000000002,
+          "subsetSelection": {
+            "method": "dbin-exact-enumeration",
+            "objective": {
+              "planCount": 3,
+              "dBin": 0.05873715124816446,
+              "pairwiseHammingSum": 40
+            },
+            "b": 227,
+            "evaluated": 16,
+            "feasible": 16,
+            "elapsedMs": 0.133,
+            "rejectedCandidates": []
+          },
           "axes": [
             {
               "archetype": "easy",
@@ -709,7 +731,7 @@
           "planId": "personalized_compact",
           "totalCredits": 25,
           "qualityRetention": 1,
-          "replacementDistance": 7,
+          "replacementDistance": 4,
           "convergence": {
             "converged": true,
             "reason": null,
@@ -764,20 +786,20 @@
           "rightPlanId": "personalized_compact",
           "leftCompetitiveCourseCount": 10,
           "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 2,
-          "differenceCount": 15,
-          "replacementDistance": 7,
-          "jaccardSimilarity": 0.1176
+          "sharedCourseCount": 5,
+          "differenceCount": 9,
+          "replacementDistance": 4,
+          "jaccardSimilarity": 0.3571
         },
         {
           "leftPlanId": "personalized_easy",
           "rightPlanId": "personalized_compact",
           "leftCompetitiveCourseCount": 9,
           "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 5,
-          "differenceCount": 8,
-          "replacementDistance": 4,
-          "jaccardSimilarity": 0.3846
+          "sharedCourseCount": 1,
+          "differenceCount": 16,
+          "replacementDistance": 8,
+          "jaccardSimilarity": 0.0588
         }
       ]
     },
@@ -799,7 +821,7 @@
           "constraintIds": []
         }
       ],
-      "generationMs": 802.62,
+      "generationMs": 464.27,
       "planDiversity": {
         "requestedVariants": 4,
         "distinctPlans": 1,
@@ -827,7 +849,20 @@
         "solver": {
           "method": "dinkelbach-milp",
           "status": "no-signal",
-          "elapsedMs": 496.54320000000007,
+          "elapsedMs": 327.9531999999999,
+          "subsetSelection": {
+            "method": "dbin-exact-enumeration",
+            "objective": {
+              "planCount": 1,
+              "dBin": null,
+              "pairwiseHammingSum": 0
+            },
+            "b": 225,
+            "evaluated": 1,
+            "feasible": 1,
+            "elapsedMs": 0.093,
+            "rejectedCandidates": []
+          },
           "axes": [
             {
               "archetype": "challenge",
@@ -935,7 +970,7 @@
           "constraintIds": []
         }
       ],
-      "generationMs": 2370.71,
+      "generationMs": 1354.62,
       "planDiversity": {
         "requestedVariants": 4,
         "distinctPlans": 3,
@@ -952,7 +987,20 @@
         "solver": {
           "method": "dinkelbach-milp",
           "status": "generated",
-          "elapsedMs": 2232.6755999999987,
+          "elapsedMs": 1286.7594000000026,
+          "subsetSelection": {
+            "method": "dbin-exact-enumeration",
+            "objective": {
+              "planCount": 3,
+              "dBin": 0.04504504504504504,
+              "pairwiseHammingSum": 30
+            },
+            "b": 222,
+            "evaluated": 16,
+            "feasible": 16,
+            "elapsedMs": 0.146,
+            "rejectedCandidates": []
+          },
           "axes": [
             {
               "archetype": "easy",
@@ -961,8 +1009,8 @@
               "candidateCount": 3,
               "candidates": [
                 {
-                  "ratio": 0.4734318862814032,
-                  "qualityRetention": 0.9153687999999991,
+                  "ratio": 0.4763960372996541,
+                  "qualityRetention": 0.9159016000000008,
                   "distanceFromBase": {
                     "removed": [
                       "code:IINE1803",
@@ -975,7 +1023,7 @@
                       "code:IINE2003",
                       "code:IECS2072",
                       "code:IECS2027",
-                      "code:IECS4943"
+                      "code:IECS4942"
                     ],
                     "hammingDistance": 9,
                     "replacementDistance": 4
@@ -990,8 +1038,8 @@
                   "category": "optimal"
                 },
                 {
-                  "ratio": 0.4068917496675719,
-                  "qualityRetention": 0.9290415999999994,
+                  "ratio": 0.409679178596527,
+                  "qualityRetention": 0.9295312000000004,
                   "distanceFromBase": {
                     "removed": [
                       "code:IINE1803",
@@ -1001,7 +1049,7 @@
                     ],
                     "added": [
                       "code:IECS2072",
-                      "code:IECS4942",
+                      "code:IECS4943",
                       "code:IEE6014"
                     ],
                     "hammingDistance": 7,
@@ -1010,15 +1058,15 @@
                   "convergence": {
                     "converged": true,
                     "reason": null,
-                    "iterations": 2,
+                    "iterations": 1,
                     "residual": 0,
                     "initialSolution": "quality-optimal"
                   },
                   "category": "optimal"
                 },
                 {
-                  "ratio": 0.33315577182765405,
-                  "qualityRetention": 0.9153687999999991,
+                  "ratio": 0.33524165587753435,
+                  "qualityRetention": 0.9159016000000008,
                   "distanceFromBase": {
                     "removed": [
                       "code:IINE1803",
@@ -1030,8 +1078,8 @@
                     "added": [
                       "code:IECS2072",
                       "code:IECS3061",
-                      "code:IECS4943",
-                      "code:JAPN1002"
+                      "code:IECS4942",
+                      "code:ELAW1003"
                     ],
                     "hammingDistance": 9,
                     "replacementDistance": 4
@@ -1062,8 +1110,8 @@
               "candidateCount": 3,
               "candidates": [
                 {
-                  "ratio": 0.5711801678934517,
-                  "qualityRetention": 0.9300231999999989,
+                  "ratio": 0.576206984612051,
+                  "qualityRetention": 0.9306424000000005,
                   "distanceFromBase": {
                     "removed": [
                       "code:IINE1803",
@@ -1076,7 +1124,7 @@
                       "code:IECS2011",
                       "code:IECS2027",
                       "code:IECS4943",
-                      "code:KORN1002"
+                      "code:JAPN1002"
                     ],
                     "hammingDistance": 9,
                     "replacementDistance": 4
@@ -1085,14 +1133,14 @@
                     "converged": true,
                     "reason": null,
                     "iterations": 2,
-                    "residual": 0,
+                    "residual": 6.938893903907228e-18,
                     "initialSolution": "quality-optimal"
                   },
                   "category": "optimal"
                 },
                 {
-                  "ratio": 0.48122306113303365,
-                  "qualityRetention": 0.9027143999999991,
+                  "ratio": 0.483418683894569,
+                  "qualityRetention": 0.9031608000000004,
                   "distanceFromBase": {
                     "removed": [
                       "code:IINE1803",
@@ -1120,8 +1168,8 @@
                   "category": "optimal"
                 },
                 {
-                  "ratio": 0.5711801678934517,
-                  "qualityRetention": 0.9300231999999989,
+                  "ratio": 0.5762069846120511,
+                  "qualityRetention": 0.9306424000000005,
                   "distanceFromBase": {
                     "removed": [
                       "code:IINE1803",
@@ -1134,7 +1182,7 @@
                       "code:IECS2011",
                       "code:IECS3061",
                       "code:IECS4942",
-                      "code:JAPN1002"
+                      "code:KORN1002"
                     ],
                     "hammingDistance": 9,
                     "replacementDistance": 4
@@ -1157,7 +1205,7 @@
         {
           "planId": "personalized_easy",
           "totalCredits": 25,
-          "qualityRetention": 0.9153687999999991,
+          "qualityRetention": 0.9159016000000008,
           "replacementDistance": 4,
           "convergence": {
             "converged": true,
@@ -1171,13 +1219,13 @@
         {
           "planId": "personalized_compact",
           "totalCredits": 25,
-          "qualityRetention": 0.9300231999999989,
+          "qualityRetention": 0.9306424000000005,
           "replacementDistance": 4,
           "convergence": {
             "converged": true,
             "reason": null,
             "iterations": 2,
-            "residual": 0,
+            "residual": 6.938893903907228e-18,
             "initialSolution": "quality-optimal"
           },
           "category": "optimal"
@@ -1206,7 +1254,7 @@
       "retentionRate": 1,
       "similarityThreshold": 0.75,
       "qualityRetentionThreshold": 0.87,
-      "minimumQualityRetention": 0.9154,
+      "minimumQualityRetention": 0.9159,
       "minimumReplacementDistance": 2,
       "medianJaccardSimilarity": 0.3571,
       "criteria": {
@@ -1225,10 +1273,10 @@
           "rightPlanId": "personalized_compact",
           "leftCompetitiveCourseCount": 9,
           "rightCompetitiveCourseCount": 9,
-          "sharedCourseCount": 5,
-          "differenceCount": 8,
-          "replacementDistance": 4,
-          "jaccardSimilarity": 0.3846
+          "sharedCourseCount": 3,
+          "differenceCount": 12,
+          "replacementDistance": 6,
+          "jaccardSimilarity": 0.2
         },
         {
           "leftPlanId": "personalized_easy",
@@ -1276,7 +1324,7 @@
           "constraintIds": []
         }
       ],
-      "generationMs": 2465.53,
+      "generationMs": 1133.37,
       "planDiversity": {
         "requestedVariants": 4,
         "distinctPlans": 2,
@@ -1299,7 +1347,20 @@
         "solver": {
           "method": "dinkelbach-milp",
           "status": "generated",
-          "elapsedMs": 181.81330000000162,
+          "elapsedMs": 97.55359999999928,
+          "subsetSelection": {
+            "method": "dbin-exact-enumeration",
+            "objective": {
+              "planCount": 2,
+              "dBin": 0.024489795918367346,
+              "pairwiseHammingSum": 6
+            },
+            "b": 245,
+            "evaluated": 4,
+            "feasible": 4,
+            "elapsedMs": 0.088,
+            "rejectedCandidates": []
+          },
           "axes": [
             {
               "archetype": "easy",

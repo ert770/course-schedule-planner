@@ -22,6 +22,8 @@ function describeCollapse(diversity) {
     'solver-time-limit': '單次求解時間不足',
     'solver-budget-exceeded': '求解時間已達本次上限',
     'solver-unavailable': '求解器目前無法使用',
+    'candidate-check-failed': '產生的候選未通過課表規則檢查',
+    'selection-error': '方案挑選步驟發生錯誤',
     infeasible: '限制組合下沒有可行解',
   };
   // 2026-09-20：no-signal 太籠統。後端會附 detail，說得出更準的話就優先用 detail——
@@ -31,6 +33,12 @@ function describeCollapse(diversity) {
   };
   const details = diversity.collapsed
     .map(item => {
+      // 這條主軸排得出合法方案，只是與已選的方案太像；後端已把對方解析成 { variantId, title }。
+      if (item.detail === 'too-similar-to-selected') {
+        const names = (item.conflictsWith || []).map(other => `「${other.title}」`).join('');
+        return `${item.title}：與${names || '其他方案'}換課不到兩門，幾乎相同`
+          + (names ? '；已保留整組差異較大的組合' : '');
+      }
       const text = detailText[item.detail]
         || reasonText[item.reason] || item.reason || '未產生不同組合';
       return `${item.title}：${text}`;

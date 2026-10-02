@@ -655,6 +655,16 @@ runner 使用目前 MySQL 與正式排課器，報告寫入
 | `schedulerMilpIntegration.test.js` | S₀ 與 `primary-only` 相同；`recommendedPlanId` 與 `plans[0]` 一致；未注入 solver 時只回 S₀ 並揭露原因 |
 | `scheduler.test.js` S4 | 重修低年級必修不受開課年級限制，排課器與驗證器一致 |
 
+### Roadmap #10 任務 2（方案挑選，D_bin 窮舉，2026-10-01）
+
+| 檔案 | 覆蓋內容 |
+| --- | --- |
+| `diverseSubsetSelector.test.js` | DS1：D_bin 與論文 §2.2 公式的手算對照（三份、兩份、四份；`b` 只影響縮放）。DS-B1～B5 邊界：只有 S₀ → `dBin: null`；`b = 0` 且無候選不丟例外；有候選而 `b` 非正數 → `RangeError`；候選為空的主軸不列入 `dropped`；缺 `candidateId` → `TypeError`。DS2：距離限制、方案數優先於 D_bin、S₀ 必在、輸出依 canonical 順序。DS3：衝突時留下使 D_bin 較高的主軸並回報 `conflictsWith`（與被取代的順序挑選器結果相反）；`conflictsWith` 在 200 組隨機案例中永遠非空。DS4：300 組固定 seed 的隨機小池，最佳值與獨立暴力實作一致，`evaluated` 等於搜尋空間大小。DS5：**打亂主軸與候選順序 40 次結果不變**，含 D_bin 平手、比值平手、同課號集合只差班次、D_bin 近似平手（`b = 1e15`，確認用整數比較而非浮點容差）、重複 `candidateId` 去重 |
+| `planSubsetSelectionIntegration.test.js` | 真的用 HiGHS 求解，再以 `diverseCandidatesHook`（測試接縫）改寫候選。SS1：`solver.method` 仍是 `dinkelbach-milp`、挑選方法另記在 `solver.subsetSelection`；無塌縮時 `collapsed[]` 不帶 `conflictsWith` key。SS1b：多一個同課號班次時 `b` 不變（先斷言 `competitive.length` 為 9、`b` 為 8）。SS2：兩條主軸課號集合相同 → `too-similar-to-selected`，`conflictsWith` 是 `{ variantId, title }` 且指向畫面上存在的方案，warning 句子帶對方名稱且不再出現「品質下限」文案。SS3：候選被塞進衝堂課 → `candidate-check-failed`，**不是** `too-similar-to-selected`，且記入 `rejectedCandidates` |
+
+回歸：改動前後以唯讀方式對真實 MySQL 課程重跑 `generateSchedule()`（D1249697 與三位 demo
+persona），K=1 的方案集合與推薦方案必須完全相同——候選之間沒有衝突時，新舊挑法等價。
+
 ### Roadmap #10 任務 3A（Choice Perceptron，shadow）
 
 | 檔案 | 覆蓋內容 |

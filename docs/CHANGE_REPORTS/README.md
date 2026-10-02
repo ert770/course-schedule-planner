@@ -2,6 +2,14 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-01
+
+1. [Roadmap #10 任務 2：以 D_bin 目標取代暫時的方案挑選器](./2026-10-01-roadmap-10-task2-dbin-subset-selection.md)
+
+## 2026-09-22
+
+1. [Roadmap #10 任務 3B-0（第一段）：pilot 的兩個阻塞前提與 CP sufficiency codec](./2026-09-22-roadmap-10-3b0-pilot-prerequisites.md)
+
 ## 2026-09-21
 
 1. [移除課程後的「本次避開清單」＋ Chat Agent 取得規劃狀態](./2026-09-21-session-avoidance-and-planning-context.md)

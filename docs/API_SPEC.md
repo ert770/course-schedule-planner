@@ -932,8 +932,49 @@ metadata」兩節。
 `collapsed[].reason` 可能值：`no-signal`、`rating-coverage-infeasible`、
 `axis-threshold-infeasible`、`insufficient-difference`、`quality-floor`、
 `credit-parity-infeasible`、`hierarchy-parity-infeasible`、`combined-constraints`、`solver-time-limit`、
-`solver-budget-exceeded`、`solver-unavailable`。不可行時 `solver.axes[].diagnosis` 列出
-`resolvedBy`（只放寬哪一組限制就可行）。
+`solver-budget-exceeded`、`solver-unavailable`、`candidate-check-failed`、`selection-error`。
+不可行時 `solver.axes[].diagnosis` 列出 `resolvedBy`（只放寬哪一組限制就可行）。
+
+**2026-10-01 起（Roadmap #10 任務 2）**：方案挑選改採 Danna & Woodruff (2009) 的 D_bin 目標並以
+窮舉精確求解（規則見 `docs/SCHEDULING_LOGIC.md`）。回應新增三件事：
+
+1. `collapsed[]` 的新代碼：
+   - `reason: "candidate-check-failed"`：求解器給了候選，但全部沒通過單一方案檢查。`detail` 為
+     `validator-rejected`、`model-check-rejected` 或 `mixed`。
+   - `reason: "insufficient-difference"` ＋ `detail: "too-similar-to-selected"`：這條主軸排得出
+     合法方案，只是與已選的方案換課不到兩門。此時**另帶** `conflictsWith`。
+     （不帶 `detail` 的 `insufficient-difference` 意義不變：求解器在限制內換不出兩門課。）
+   - `reason: "selection-error"`：挑選步驟的輸入契約被違反，退回只有 S₀；細節在
+     `solver.subsetSelection.error`。
+2. `collapsed[].conflictsWith`：**陣列**，元素是 `{ "variantId", "title" }`，指向畫面上實際顯示、
+   與這條主軸太像的方案（可能包含綜合平衡方案）。只在 `too-similar-to-selected` 時出現，
+   其他情況**沒有這個 key**。前端直接用 `title` 組句子，不需自行對照。
+3. `solver.subsetSelection`：挑選步驟的診斷。`solver.method` 仍是候選的**產生**方法
+   （`dinkelbach-milp`），兩者不混用。
+
+```json
+{
+  "collapsed": [
+    { "variantId": "personalized_compact", "title": "集中排課方案",
+      "reason": "insufficient-difference", "detail": "too-similar-to-selected",
+      "conflictsWith": [{ "variantId": "personalized_interest", "title": "興趣導向方案" }] }
+  ],
+  "solver": {
+    "method": "dinkelbach-milp",
+    "subsetSelection": {
+      "method": "dbin-exact-enumeration",
+      "objective": { "planCount": 3, "dBin": 0.0268, "pairwiseHammingSum": 18 },
+      "b": 224, "evaluated": 4, "feasible": 4, "elapsedMs": 0.5,
+      "rejectedCandidates": [{ "archetype": "easy", "stage": "validator" }]
+    }
+  }
+}
+```
+
+`objective.dBin` 在只有一份方案時為 `null`（公式分母為 0，未定義）。`b` 是不重複的競爭課號數。
+`evaluated` 是搜尋空間大小、`feasible` 是其中滿足距離限制的組合數；兩者相等代表候選之間沒有
+衝突。`rejectedCandidates[].stage` 為 `validator` 或 `model-check`。未注入求解器時沒有
+`subsetSelection`。
 
 `reason` 為 `no-signal` 時另帶 `detail`，說明是哪一項資料條件不成立：
 `no-interest-keywords`、`no-easiness-baseline`、`insufficient-rating`、`flat-scores`、

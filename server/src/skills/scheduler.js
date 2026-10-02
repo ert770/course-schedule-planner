@@ -51,6 +51,7 @@ import {
 } from './scheduleSolver.js';
 import { resolveMinCredits } from '../data/creditPolicy.js';
 import { generateDiverseCandidates } from './optimization/diversePlanSolver.js';
+import { selectDiverseSubset, SUBSET_BASE_ID, SUBSET_SELECTION_METHOD } from './optimization/diverseSubsetSelector.js';
 import { checkMilpPlan } from './optimization/milpPlanChecks.js';
 import { solveLpTextSync } from './optimization/highsRuntime.js';
 
@@ -3026,6 +3027,22 @@ function buildPlanDiversity(allPlans, dedupedPlans, prepared, milpGeneration = n
         title: definition?.title ?? item.archetype,
         reason: item.reason,
         ...(item.detail ? { detail: item.detail } : {}),
+        // 只有「與已選方案太像」才帶這個 key。這裡就把 archetype 解析成方案 id 與顯示名稱，
+        // 前端不必自己維護一份對照。
+        ...(Array.isArray(item.conflictsWith) && item.conflictsWith.length > 0 ? {
+          conflictsWith: item.conflictsWith.map(archetype => {
+            if (archetype === SUBSET_BASE_ID) {
+              return {
+                variantId: milpGeneration.baseVariant?.id ?? 'personalized',
+                title: milpGeneration.baseVariant?.title ?? '綜合平衡方案',
+              };
+            }
+            return {
+              variantId: labels[archetype]?.id ?? archetype,
+              title: labels[archetype]?.title ?? archetype,
+            };
+          }),
+        } : {}),
       };
     });
     return {
@@ -3040,6 +3057,8 @@ function buildPlanDiversity(allPlans, dedupedPlans, prepared, milpGeneration = n
         method: milpGeneration.method ?? 'dinkelbach-milp',
         status: milpGeneration.status,
         elapsedMs: milpGeneration.elapsedMs ?? 0,
+        // `method` 是候選的**產生**方法；從候選中**挑選**的方法另外記在這裡，兩者不混用。
+        ...(milpGeneration.subsetSelection ? { subsetSelection: milpGeneration.subsetSelection } : {}),
         axes: milpGeneration.axes?.map(axis => ({
           archetype: axis.archetype, status: axis.status, reason: axis.reason,
           ...(axis.detail ? { detail: axis.detail } : {}),
@@ -3216,6 +3235,8 @@ const COLLAPSE_REASON_TEXT = {
   'solver-budget-exceeded': '求解時間已達本次上限',
   'solver-unavailable': '求解器目前無法使用',
   'same-course-combination': '排出來的課程組合與其他方案相同',
+  'candidate-check-failed': '產生的候選未通過課表規則檢查',
+  'selection-error': '方案挑選步驟發生錯誤',
   infeasible: '限制組合下沒有可行解',
 };
 
@@ -3224,9 +3245,16 @@ const COLLAPSE_DETAIL_TEXT = {
   'threshold-unreachable': '綜合方案已達目前課程資料可改善的界線，無法再產生有意義的主軸改善',
 };
 
+// 這條主軸其實排得出合法方案，只是與已選的方案太像。文案要帶對方的名稱，所以是函式不是字串。
+function describeTooSimilar(item) {
+  const names = (item.conflictsWith || []).map(other => `「${other.title}」`).join('');
+  return `與${names || '其他方案'}換課不到兩門，幾乎相同${names ? '；已保留整組差異較大的組合' : ''}`;
+}
+
 function describePlanCollapse(diversity) {
   if (!diversity || diversity.collapsed.length === 0) return null;
   const details = diversity.collapsed.map(item => {
+    if (item.detail === 'too-similar-to-selected') return `${item.title}：${describeTooSimilar(item)}`;
     const text = COLLAPSE_DETAIL_TEXT[item.detail]
       || COLLAPSE_REASON_TEXT[item.reason]
       || COLLAPSE_REASON_TEXT['same-course-combination'];
@@ -3457,6 +3485,15 @@ function materializeMilpPlan(candidate, definition, inputs, constraints, prepare
   return plan;
 }
 
+// 穩定的候選識別值：課號集合＋班次 ID 集合。同課號集合、不同班次的候選也分得出來，
+// 而且不依賴候選在陣列中的位置。
+function milpCandidateId(candidate) {
+  const keys = [...candidate.selectedKeys].map(String).sort();
+  const sections = (candidate.selectedSections || [])
+    .map(entry => Number(entry.course?.id)).sort((left, right) => left - right);
+  return `${keys.join(',')}|${sections.join(',')}`;
+}
+
 function generateMilpPlans(basePlan, inputs, constraints, prepared, preferenceProfile, easyIntent, runtimeOptions) {
   const definitions = buildDiverseArchetypes(easyIntent.label);
   if (runtimeOptions.planSet === 'primary-only') {
@@ -3470,32 +3507,28 @@ function generateMilpPlans(basePlan, inputs, constraints, prepared, preferencePr
     })),
   };
   const axes = buildMilpAxes(inputs, basePlan, easyIntent, runtimeOptions.axisMinGain ?? 0.02);
-  const generated = generateDiverseCandidates(inputs, {
+  const solved = generateDiverseCandidates(inputs, {
     axes,
     options: runtimeOptions.diverseSolverOptions,
     solve: (model, options) => solveLpTextSync(runtime, model.lpText, model.columnNames, options),
   });
+  // 測試接縫：讓測試在「求解之後、檢查與挑選之前」改寫候選，用來重現求解器不容易
+  // 剛好產生的情況（兩條主軸太像、候選不通過檢查）。正式路徑不傳這個選項。
+  const generated = typeof runtimeOptions.diverseCandidatesHook === 'function'
+    ? (runtimeOptions.diverseCandidatesHook(solved) ?? solved)
+    : solved;
 
-  const selectedPlans = [];
-  const selectedCourseSets = [generated.baseSelection || new Set()];
-  const collapseReasons = [];
+  // 任務 2：先逐候選做單一方案檢查（與挑選順序無關），再把通過的候選一次交給選擇器。
+  // 舊做法依主軸順序累積選取，兩條主軸的候選太像時永遠捨棄排在後面的那條。
+  const checkedByArchetype = new Map();
+  const rejectedCandidates = [];
   for (const axisResult of generated.axes) {
+    if (axisResult.status === 'no-signal') continue;
     const definition = axes.find(axis => axis.archetype === axisResult.archetype);
-    if (axisResult.status === 'no-signal') {
-      collapseReasons.push({
-        archetype: axisResult.archetype, reason: 'no-signal', detail: axisResult.detail ?? null,
-      });
-      continue;
-    }
-    const ranked = [...axisResult.candidates].sort((left, right) => right.ratio - left.ratio);
-    let accepted = null;
-    for (const candidate of ranked) {
-      if (!selectedCourseSets.every(reference => (
-        Math.min(
-          [...reference].filter(key => !candidate.selectedKeys.has(key)).length,
-          [...candidate.selectedKeys].filter(key => !reference.has(key)).length
-        ) >= 2
-      ))) continue;
+    const valid = new Map();
+    for (const candidate of axisResult.candidates) {
+      const candidateId = milpCandidateId(candidate);
+      if (valid.has(candidateId)) continue;
       const plan = materializeMilpPlan(
         candidate, definition, inputs, constraints, prepared, preferenceProfile
       );
@@ -3508,19 +3541,99 @@ function generateMilpPlans(basePlan, inputs, constraints, prepared, preferencePr
         hierarchyTargets: generated.hierarchyTargets,
       });
       plan.milpChecks = { validator, model: modelCheck };
-      if (validator.valid && modelCheck.valid) {
-        accepted = plan;
-        selectedCourseSets.push(candidate.selectedKeys);
-        break;
+      if (!validator.valid) {
+        rejectedCandidates.push({ archetype: axisResult.archetype, stage: 'validator' });
+      } else if (!modelCheck.valid) {
+        rejectedCandidates.push({ archetype: axisResult.archetype, stage: 'model-check' });
+      } else {
+        valid.set(candidateId, {
+          candidateId, selectedKeys: candidate.selectedKeys, ratio: candidate.ratio, plan,
+        });
       }
     }
-    if (accepted) selectedPlans.push(accepted);
-    else collapseReasons.push({
-      archetype: axisResult.archetype,
-      reason: axisResult.reason || axisResult.status || 'insufficient-difference',
+    checkedByArchetype.set(axisResult.archetype, valid);
+  }
+
+  // D_bin 的分母是不重複的競爭課號數：`inputs.competitive` 按班次列，同課號多班次在 MILP
+  // 裡是同一個 z_k，用 `.length` 會讓多開班的課把 D_bin 稀釋。
+  const b = new Set((inputs.competitive || []).map(entry => entry.courseKey)).size;
+  const selectionStartedAt = performance.now();
+  let selection;
+  let selectionError = null;
+  try {
+    selection = selectDiverseSubset({
+      baseSelection: generated.baseSelection || new Set(),
+      axes: [...checkedByArchetype.entries()].map(([archetype, valid]) => ({
+        archetype, candidates: [...valid.values()],
+      })),
+      b,
+    });
+  } catch (error) {
+    // 選擇器的契約被違反時退回只有 S₀，不讓整個排課請求失敗；原因留在診斷裡。
+    selectionError = error.message;
+    selection = {
+      chosen: [], dropped: [], objective: { planCount: 1, dBin: null, pairwiseHammingSum: 0 },
+      b, evaluated: 0, feasible: 0, method: SUBSET_SELECTION_METHOD,
+    };
+  }
+  const selectedPlans = selection.chosen.map(item => (
+    checkedByArchetype.get(item.archetype).get(item.candidateId).plan
+  ));
+  const chosenArchetypes = new Set(selection.chosen.map(item => item.archetype));
+  const droppedByArchetype = new Map(selection.dropped.map(item => [item.archetype, item]));
+
+  const collapseReasons = [];
+  for (const axisResult of generated.axes) {
+    const { archetype } = axisResult;
+    if (chosenArchetypes.has(archetype)) continue;
+    if (axisResult.status === 'no-signal') {
+      collapseReasons.push({ archetype, reason: 'no-signal', detail: axisResult.detail ?? null });
+      continue;
+    }
+    if (axisResult.candidates.length === 0) {
+      collapseReasons.push({
+        archetype, reason: axisResult.reason || axisResult.status || 'insufficient-difference',
+      });
+      continue;
+    }
+    const dropped = droppedByArchetype.get(archetype);
+    if (dropped) {
+      // 這條主軸有合法方案，只是與已選組合太像——不是「求解不出換兩門課的方案」。
+      collapseReasons.push({
+        archetype, reason: 'insufficient-difference',
+        detail: 'too-similar-to-selected', conflictsWith: dropped.conflictsWith,
+      });
+      continue;
+    }
+    if (selectionError) {
+      collapseReasons.push({ archetype, reason: 'selection-error' });
+      continue;
+    }
+    // 求解器給了候選，但沒有一個通過單一方案檢查。不能說成「與其他方案太像」。
+    const stages = new Set(rejectedCandidates
+      .filter(item => item.archetype === archetype).map(item => item.stage));
+    collapseReasons.push({
+      archetype, reason: 'candidate-check-failed',
+      detail: stages.size > 1 ? 'mixed'
+        : stages.has('validator') ? 'validator-rejected' : 'model-check-rejected',
     });
   }
-  return { ...generated, plans: selectedPlans, collapseReasons };
+  return {
+    ...generated,
+    plans: selectedPlans,
+    collapseReasons,
+    baseVariant: { id: basePlan.id, title: basePlan.title },
+    subsetSelection: {
+      method: selection.method,
+      objective: selection.objective,
+      b: selection.b,
+      evaluated: selection.evaluated,
+      feasible: selection.feasible,
+      elapsedMs: Number((performance.now() - selectionStartedAt).toFixed(3)),
+      rejectedCandidates,
+      ...(selectionError ? { error: selectionError } : {}),
+    },
+  };
 }
 
 // roadmap #21：無解時的結構化 conflict set，取代「只回傳第一個錯誤字串」。

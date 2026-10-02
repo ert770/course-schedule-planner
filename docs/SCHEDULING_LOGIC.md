@@ -1081,11 +1081,63 @@ Hebrard 等（AAAI 2005）；內層由 HiGHS（npm `highs` 1.15.3，第三方 hi
 `model.run()` 為同步、單執行緒，會阻塞 event loop；多人部署前需改 `worker_threads`。
 伺服器啟動時載入 WASM 一次；載入失敗時只回 S₀ 並附 `solver-unavailable`。
 
-**暫時挑選器與推薦方案。** 候選池先放入 S₀；依主軸順序取比值最高、且與所有已選方案
-`replacementDistance ≥ 2` 的候選，並須通過獨立驗證器與 `milpPlanChecks`（學分上下限與
-對齊、固定課覆蓋、共同必修、同課一班、同系列、每日上限、階層配額）。此挑選有順序偏差，任務 2
-（Danna & Woodruff 2009）會取代。挑選完成後仍由 `comparePlans` 決定推薦方案並移到
-`plans[0]`，`recommendedPlanId === plans[0].id`。
+**方案挑選與推薦方案（任務 2，2026-10-01）。** 採用 Danna & Woodruff (2009, ORL 37:255–260)
+的 **D_bin 目標**，並對本系統的小型受限問題**以窮舉精確求解**
+（`optimization/diverseSubsetSelector.js`）。沒有實作論文 §3.1 的線性化整數規劃，也沒有
+§4 的啟發式。流程分三步：
+
+1. **逐候選檢查**：每條主軸的每個候選先 materialize，並須通過獨立驗證器與 `milpPlanChecks`
+   （學分上下限與對齊、固定課覆蓋、共同必修、同課一班、同系列、每日上限、階層配額）。
+   這些都是單一方案的檢查，與挑選順序無關。不通過者記入
+   `solver.subsetSelection.rejectedCandidates`，不進入挑選。
+2. **挑選**：S₀ 必選；每條主軸選 0 或 1 個候選；任兩份方案 `replacementDistance ≥ 2`。
+   在所有可行組合中依下列字典序取最佳。
+3. **推薦**：挑完仍由 `comparePlans` 決定推薦方案並移到 `plans[0]`，
+   `recommendedPlanId === plans[0].id`。
+
+量度（論文 §2.2）：
+
+```text
+D_bin(S) = 2 / (|S|(|S|−1)) · Σ_{j<k} d_bin(x⁽ʲ⁾, x⁽ᵏ⁾)
+d_bin(x, y) = (1/b) · Σ_{i∈B} |xᵢ − yᵢ| = hammingDistance / b
+```
+
+`B` 取競爭課號的二元變數 `z_k`；`b` ＝**不重複的競爭課號數**（`inputs.competitive` 按班次列，
+同課號多班次是同一個 `z_k`，不能用班次數當分母）。
+
+字典序（所有 tie-break 只看固定常數 `CANONICAL_ARCHETYPE_ORDER = easy, challenge, interest,
+compact`，**不看輸入陣列的順序**）：
+
+1. 方案數多者勝。
+2. D_bin 大者勝。方案數相同時 `|S|` 與 `b` 都是常數，所以直接比整數
+   `pairwiseHammingSum = Σ_{j<k} hammingDistance`，不使用浮點容差（容差不具傳遞性）。
+3. 依 canonical 順序比「有沒有選這條主軸」，先出現「有」者勝。
+4. 逐主軸比被選候選的 Dinkelbach 比值，大者勝（只在同一條主軸內互比；各主軸的比值單位
+   不同，不相加）。
+5. 逐主軸比 `candidateId`（排序後的課號集合＋班次 ID 集合），字典序小者勝。
+
+邊界：只有 S₀ 時 D_bin 的分母為 0，`dBin` 回 **`null`**（未定義），不回 0；有候選而 `b` 不是
+正數屬於契約違反，選擇器丟 `RangeError`，`generateMilpPlans()` 接住後退回只有 S₀ 並把原因
+寫進 `solver.subsetSelection.error`，不讓排課請求失敗。
+
+主軸沒有產出方案時的原因：
+
+| 狀況 | `reason` | `detail` |
+| --- | --- | --- |
+| 資料沒有訊號 | `no-signal` | 既有的訊號代碼 |
+| 求解器沒有給候選 | 求解器回報的原因 | — |
+| 有候選但全部沒通過檢查 | `candidate-check-failed` | `validator-rejected`／`model-check-rejected`／`mixed` |
+| 有合法候選，但與已選組合太像 | `insufficient-difference` | `too-similar-to-selected`，另帶 `conflictsWith` |
+
+最後一列的 `conflictsWith` 保證非空：第一順位是方案數，所以被捨棄主軸的每個候選加進已選組合
+都必然違反距離限制。
+
+**K=1 下的退化（照實記錄）。** 論文假設候選池有上百到上千份、從中挑 p ≤ 10 份。線上每主軸只有
+1 個候選，池子最多是 S₀ 加 3 份，「挑選」實際上退化成「候選彼此太像時該捨棄哪一條」；候選之間
+沒有衝突時，結果與被取代的順序挑選器**完全相同**。只有 benchmark 的 K=3（最多 4³ ＝ 64 種組合）
+才會依 D_bin 在同一主軸的多個候選之間做選擇。被取代的挑選器依主軸順序累積選取，兩條主軸的
+候選太像時永遠捨棄排在後面的那條；另外它把「與已選方案太像」回報成
+「無法在品質下限內換進、換出至少兩門課」，那描述的是求解失敗，不是實情。
 
 **距離名稱。** `hammingDistance = |A △ B|`；`replacementDistance = min(|A\B|, |B\A|)`，
 兩者分開記錄，不混用。
@@ -1101,7 +1153,12 @@ Hebrard 等（AAAI 2005）；內層由 HiGHS（npm `highs` 1.15.3，第三方 hi
 | 起點 | T&K 以原問題最佳解起步 | 採 P&T：S₀ 是 greedy 解，不一定最佳 |
 | 品質 | 原目標函數 | greedy 靜態逐課分數（不含集中度的遞增效果） |
 | 集中度 | — | 只用上課日數；「日數相同再比空堂」未實作 |
-| 挑選最終方案 | Danna & Woodruff 由大候選池挑 | 暫時的順序挑選器（任務 2 取代） |
+| 挑選：量度的變數範圍 | D&W 的 D_bin 對模型**全部**二元變數計算 | 只取競爭課號的 `z_k`，不含班次變數 `s_j` 與集中排課的日變數 `y_d`；只差班次的兩份方案 `d_bin = 0`（配合「比較課程集合」的產品需求） |
+| 挑選：方案數 | 固定 `\|S\| = p` | 不固定；先最大化方案數，再最大化 D_bin（D_bin 是平均值，不同 `\|S\|` 不可比） |
+| 挑選：額外限制 | 匿名的解，無分組 | 每個 archetype 至多一份、S₀ 必選、兩兩 `replacementDistance ≥ 2` |
+| 挑選：解法 | 線性化整數規劃（式 (1)–(5)）、局部搜尋、sequential screening | 窮舉（線上 ≤ 8、benchmark ≤ 64 種組合），未實作論文的 IP 與啟發式 |
+| 挑選：候選池大小 | 上百到上千份，挑 p ≤ 10 | 線上最多 S₀ 加 3 份，屬退化情形（見上） |
+| 挑選：量度種類 | D_bin、D_all、D_CV | 只用 D_bin（決策變數全為二元） |
 | 候選數 | 論文設定 K=10 | 線上每主軸 K=1、共用 2.5 秒 deadline；benchmark 覆寫為 K=3 |
 
 ### 多方案量化驗收（Roadmap #10）
