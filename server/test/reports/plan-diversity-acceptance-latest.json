@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-02T04:28:24.067Z",
+  "generatedAt": "2026-10-02T07:08:34.564Z",
   "dataSource": "mysql-read-only",
   "activeTerm": {
     "academicYear": 114,
@@ -31,8 +31,8 @@
   "cases": [
     {
       "caseId": "persona-compact",
-      "candidatePoolSize": 362,
-      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
+      "candidatePoolSize": 365,
+      "candidatePoolHash": "bc2ced006711f4d817b3a939390f45c605d83dab961f45b11c1698534fe85de3",
       "learnedPreference": {
         "applied": true,
         "reason": "applied-read-only-recompute",
@@ -45,20 +45,20 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        },
+        {
+          "planId": "personalized_easy",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
         }
       ],
-      "generationMs": 230.88,
+      "generationMs": 490.13,
       "planDiversity": {
         "requestedVariants": 4,
-        "distinctPlans": 1,
+        "distinctPlans": 2,
         "reason": "milp-candidate-unavailable",
         "collapsed": [
-          {
-            "variantId": "personalized_easy",
-            "title": "輕鬆導向方案",
-            "reason": "no-signal",
-            "detail": "no-easiness-baseline"
-          },
           {
             "variantId": "personalized_interest",
             "title": "興趣導向方案",
@@ -68,35 +68,113 @@
           {
             "variantId": "personalized_compact",
             "title": "集中排課方案",
-            "reason": "credit-parity-infeasible"
+            "reason": "axis-threshold-infeasible"
           }
         ],
         "competablePoolSize": 227,
         "solver": {
           "method": "dinkelbach-milp",
-          "status": "no-signal",
-          "elapsedMs": 203.59999999999945,
+          "status": "generated",
+          "elapsedMs": 439.52900000000045,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
-              "planCount": 1,
-              "dBin": null,
-              "pairwiseHammingSum": 0
+              "planCount": 2,
+              "dBin": 0.02643171806167401,
+              "pairwiseHammingSum": 6
             },
             "b": 227,
-            "evaluated": 1,
-            "feasible": 1,
-            "elapsedMs": 0.497,
+            "evaluated": 4,
+            "feasible": 4,
+            "elapsedMs": 0.652,
             "rejectedCandidates": []
           },
           "axes": [
             {
               "archetype": "easy",
-              "status": "no-signal",
-              "reason": "no-signal",
-              "detail": "no-easiness-baseline",
-              "candidateCount": 0,
-              "candidates": []
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 26.431718061674008,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:IECS3050",
+                      "code:GEG1017"
+                    ],
+                    "added": [
+                      "code:IECS3061",
+                      "code:IECS4074",
+                      "code:GEK1018"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 1,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 26.431718061674008,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:IECS3050",
+                      "code:GEG1017"
+                    ],
+                    "added": [
+                      "code:IECS3071",
+                      "code:IECS3048",
+                      "code:GEW1019"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 26.431718061674005,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:IECS3050",
+                      "code:GEG1017"
+                    ],
+                    "added": [
+                      "code:IECS2024",
+                      "code:IECS3074",
+                      "code:GEK1005"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
             },
             {
               "archetype": "interest",
@@ -108,13 +186,12 @@
             },
             {
               "archetype": "compact",
-              "status": "credit-parity-infeasible",
-              "reason": "credit-parity-infeasible",
+              "status": "axis-threshold-infeasible",
+              "reason": "axis-threshold-infeasible",
               "diagnosis": {
-                "reason": "credit-parity-infeasible",
+                "reason": "axis-threshold-infeasible",
                 "resolvedBy": [
-                  "credit",
-                  "hierarchy"
+                  "axis"
                 ],
                 "complete": true
               },
@@ -127,48 +204,72 @@
       "candidateMetrics": [
         {
           "planId": "personalized",
-          "totalCredits": 10,
+          "totalCredits": 14,
           "qualityRetention": null,
           "replacementDistance": null,
           "convergence": null,
           "category": null
+        },
+        {
+          "planId": "personalized_easy",
+          "totalCredits": 14,
+          "qualityRetention": 1,
+          "replacementDistance": 3,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 1,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
         }
       ],
       "pass": false,
       "hasExpressedPreference": true,
-      "requestedVariants": 2,
+      "requestedVariants": 3,
       "rawRequestedVariants": 4,
       "excludedNoSignalVariants": [
-        "personalized_easy",
         "personalized_interest"
       ],
-      "reportedDistinctPlans": 1,
-      "meaningfulDistinctPlans": 1,
-      "requiredDistinctPlans": 2,
-      "requiredByRetention": 2,
+      "reportedDistinctPlans": 2,
+      "meaningfulDistinctPlans": 2,
+      "requiredDistinctPlans": 3,
+      "requiredByRetention": 3,
       "retentionThreshold": 0.75,
-      "retentionRate": 0.5,
+      "retentionRate": 0.6667,
       "similarityThreshold": 0.75,
       "qualityRetentionThreshold": 0.87,
-      "minimumQualityRetention": null,
+      "minimumQualityRetention": 1,
       "minimumReplacementDistance": 2,
-      "medianJaccardSimilarity": null,
+      "medianJaccardSimilarity": 0.25,
       "criteria": {
         "enoughDistinctPlans": false,
         "retentionRate": false,
-        "medianSimilarity": false,
-        "actualCourseDifference": false,
+        "medianSimilarity": true,
+        "actualCourseDifference": true,
         "qualityFloor": true,
         "creditParity": true,
         "modelChecks": true,
         "safety": true
       },
-      "pairs": []
+      "pairs": [
+        {
+          "leftPlanId": "personalized",
+          "rightPlanId": "personalized_easy",
+          "leftCompetitiveCourseCount": 5,
+          "rightCompetitiveCourseCount": 5,
+          "sharedCourseCount": 2,
+          "differenceCount": 6,
+          "replacementDistance": 3,
+          "jaccardSimilarity": 0.25
+        }
+      ]
     },
     {
       "caseId": "no-preference-control",
-      "candidatePoolSize": 362,
-      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
+      "candidatePoolSize": 365,
+      "candidatePoolHash": "bc2ced006711f4d817b3a939390f45c605d83dab961f45b11c1698534fe85de3",
       "learnedPreference": {
         "applied": false,
         "reason": "control-disabled",
@@ -181,58 +282,137 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        },
+        {
+          "planId": "personalized_easy",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        },
+        {
+          "planId": "personalized_compact",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
         }
       ],
-      "generationMs": 115.19,
+      "generationMs": 477.13,
       "planDiversity": {
         "requestedVariants": 4,
-        "distinctPlans": 1,
+        "distinctPlans": 3,
         "reason": "milp-candidate-unavailable",
         "collapsed": [
-          {
-            "variantId": "personalized_easy",
-            "title": "輕鬆導向方案",
-            "reason": "no-signal",
-            "detail": "no-easiness-baseline"
-          },
           {
             "variantId": "personalized_interest",
             "title": "興趣導向方案",
             "reason": "no-signal",
             "detail": "no-interest-keywords"
-          },
-          {
-            "variantId": "personalized_compact",
-            "title": "集中排課方案",
-            "reason": "credit-parity-infeasible"
           }
         ],
         "competablePoolSize": 227,
         "solver": {
           "method": "dinkelbach-milp",
-          "status": "no-signal",
-          "elapsedMs": 101.22520000000077,
+          "status": "generated",
+          "elapsedMs": 448.7960000000003,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
-              "planCount": 1,
-              "dBin": null,
-              "pairwiseHammingSum": 0
+              "planCount": 3,
+              "dBin": 0.02643171806167401,
+              "pairwiseHammingSum": 18
             },
             "b": 227,
-            "evaluated": 1,
-            "feasible": 1,
-            "elapsedMs": 0.108,
+            "evaluated": 16,
+            "feasible": 16,
+            "elapsedMs": 0.126,
             "rejectedCandidates": []
           },
           "axes": [
             {
               "archetype": "easy",
-              "status": "no-signal",
-              "reason": "no-signal",
-              "detail": "no-easiness-baseline",
-              "candidateCount": 0,
-              "candidates": []
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 26.431718061674008,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:IECS2024",
+                      "code:GEG1021"
+                    ],
+                    "added": [
+                      "code:IECS3071",
+                      "code:IECS4074",
+                      "code:GEK1018"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 1,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 26.431718061674008,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:IECS2024",
+                      "code:GEG1021"
+                    ],
+                    "added": [
+                      "code:IECS3048",
+                      "code:IECS3050",
+                      "code:GEW1019"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 26.431718061674005,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:IECS2024",
+                      "code:GEG1021"
+                    ],
+                    "added": [
+                      "code:IECS3074",
+                      "code:IECS3061",
+                      "code:GEK1005"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
             },
             {
               "archetype": "interest",
@@ -244,18 +424,85 @@
             },
             {
               "archetype": "compact",
-              "status": "credit-parity-infeasible",
-              "reason": "credit-parity-infeasible",
-              "diagnosis": {
-                "reason": "credit-parity-infeasible",
-                "resolvedBy": [
-                  "credit",
-                  "hierarchy"
-                ],
-                "complete": true
-              },
-              "candidateCount": 0,
-              "candidates": []
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 26.431718061674008,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:IECS2024",
+                      "code:GEG1021"
+                    ],
+                    "added": [
+                      "code:IECS3048",
+                      "code:IECS4074",
+                      "code:GEW1005"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 22.026431718061676,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:GEG1021"
+                    ],
+                    "added": [
+                      "code:IECS3074",
+                      "code:GEK1042"
+                    ],
+                    "hammingDistance": 4,
+                    "replacementDistance": 2
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 1,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 23.494860499265783,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2024",
+                      "code:GEG1021"
+                    ],
+                    "added": [
+                      "code:IECS3050",
+                      "code:GEG1025"
+                    ],
+                    "hammingDistance": 4,
+                    "replacementDistance": 2
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
             }
           ]
         }
@@ -263,48 +510,106 @@
       "candidateMetrics": [
         {
           "planId": "personalized",
-          "totalCredits": 10,
+          "totalCredits": 14,
           "qualityRetention": null,
           "replacementDistance": null,
           "convergence": null,
           "category": null
+        },
+        {
+          "planId": "personalized_easy",
+          "totalCredits": 14,
+          "qualityRetention": 1,
+          "replacementDistance": 3,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        },
+        {
+          "planId": "personalized_compact",
+          "totalCredits": 14,
+          "qualityRetention": 1,
+          "replacementDistance": 3,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
         }
       ],
-      "pass": false,
+      "pass": true,
       "hasExpressedPreference": false,
-      "requestedVariants": 2,
+      "requestedVariants": 3,
       "rawRequestedVariants": 4,
       "excludedNoSignalVariants": [
-        "personalized_easy",
         "personalized_interest"
       ],
-      "reportedDistinctPlans": 1,
-      "meaningfulDistinctPlans": 1,
+      "reportedDistinctPlans": 3,
+      "meaningfulDistinctPlans": 3,
       "requiredDistinctPlans": 2,
-      "requiredByRetention": 2,
+      "requiredByRetention": 3,
       "retentionThreshold": 0.75,
-      "retentionRate": 0.5,
+      "retentionRate": 1,
       "similarityThreshold": 0.75,
       "qualityRetentionThreshold": 0.87,
-      "minimumQualityRetention": null,
+      "minimumQualityRetention": 1,
       "minimumReplacementDistance": 2,
-      "medianJaccardSimilarity": null,
+      "medianJaccardSimilarity": 0.25,
       "criteria": {
-        "enoughDistinctPlans": false,
-        "retentionRate": false,
-        "medianSimilarity": false,
-        "actualCourseDifference": false,
+        "enoughDistinctPlans": true,
+        "retentionRate": true,
+        "medianSimilarity": true,
+        "actualCourseDifference": true,
         "qualityFloor": true,
         "creditParity": true,
         "modelChecks": true,
         "safety": true
       },
-      "pairs": []
+      "pairs": [
+        {
+          "leftPlanId": "personalized",
+          "rightPlanId": "personalized_easy",
+          "leftCompetitiveCourseCount": 5,
+          "rightCompetitiveCourseCount": 5,
+          "sharedCourseCount": 2,
+          "differenceCount": 6,
+          "replacementDistance": 3,
+          "jaccardSimilarity": 0.25
+        },
+        {
+          "leftPlanId": "personalized",
+          "rightPlanId": "personalized_compact",
+          "leftCompetitiveCourseCount": 5,
+          "rightCompetitiveCourseCount": 5,
+          "sharedCourseCount": 2,
+          "differenceCount": 6,
+          "replacementDistance": 3,
+          "jaccardSimilarity": 0.25
+        },
+        {
+          "leftPlanId": "personalized_easy",
+          "rightPlanId": "personalized_compact",
+          "leftCompetitiveCourseCount": 5,
+          "rightCompetitiveCourseCount": 5,
+          "sharedCourseCount": 2,
+          "differenceCount": 6,
+          "replacementDistance": 3,
+          "jaccardSimilarity": 0.25
+        }
+      ]
     },
     {
       "caseId": "persona-challenge",
-      "candidatePoolSize": 362,
-      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
+      "candidatePoolSize": 365,
+      "candidatePoolHash": "bc2ced006711f4d817b3a939390f45c605d83dab961f45b11c1698534fe85de3",
       "learnedPreference": {
         "applied": true,
         "reason": "applied-read-only-recompute",
@@ -317,12 +622,18 @@
           "valid": true,
           "violationCount": 0,
           "constraintIds": []
+        },
+        {
+          "planId": "personalized_compact",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
         }
       ],
-      "generationMs": 169.95,
+      "generationMs": 441.36,
       "planDiversity": {
         "requestedVariants": 4,
-        "distinctPlans": 1,
+        "distinctPlans": 2,
         "reason": "milp-candidate-unavailable",
         "collapsed": [
           {
@@ -336,29 +647,24 @@
             "title": "興趣導向方案",
             "reason": "no-signal",
             "detail": "no-interest-keywords"
-          },
-          {
-            "variantId": "personalized_compact",
-            "title": "集中排課方案",
-            "reason": "axis-threshold-infeasible"
           }
         ],
         "competablePoolSize": 225,
         "solver": {
           "method": "dinkelbach-milp",
-          "status": "no-signal",
-          "elapsedMs": 118.95840000000135,
+          "status": "generated",
+          "elapsedMs": 350.8125,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
-              "planCount": 1,
-              "dBin": null,
-              "pairwiseHammingSum": 0
+              "planCount": 2,
+              "dBin": 0.02666666666666667,
+              "pairwiseHammingSum": 6
             },
             "b": 225,
-            "evaluated": 1,
-            "feasible": 1,
-            "elapsedMs": 0.075,
+            "evaluated": 4,
+            "feasible": 4,
+            "elapsedMs": 0.164,
             "rejectedCandidates": []
           },
           "axes": [
@@ -380,13 +686,241 @@
             },
             {
               "archetype": "compact",
-              "status": "axis-threshold-infeasible",
-              "reason": "axis-threshold-infeasible",
+              "status": "generated",
+              "reason": null,
+              "candidateCount": 3,
+              "candidates": [
+                {
+                  "ratio": 17.77777777777778,
+                  "qualityRetention": 1,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS3074",
+                      "code:GEG1002"
+                    ],
+                    "added": [
+                      "code:IECS3021",
+                      "code:HSS1007"
+                    ],
+                    "hammingDistance": 4,
+                    "replacementDistance": 2
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 1,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 3.174603174603175,
+                  "qualityRetention": 0.994,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS3074",
+                      "code:IECS3048",
+                      "code:GEG1002"
+                    ],
+                    "added": [
+                      "code:IECS3050",
+                      "code:IECS3021",
+                      "code:GEK1042"
+                    ],
+                    "hammingDistance": 6,
+                    "replacementDistance": 3
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 2,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                },
+                {
+                  "ratio": 2.9629629629629632,
+                  "qualityRetention": 0.994,
+                  "distanceFromBase": {
+                    "removed": [
+                      "code:IECS2075",
+                      "code:GEG1002"
+                    ],
+                    "added": [
+                      "code:IINE2832",
+                      "code:IECS3021"
+                    ],
+                    "hammingDistance": 4,
+                    "replacementDistance": 2
+                  },
+                  "convergence": {
+                    "converged": true,
+                    "reason": null,
+                    "iterations": 1,
+                    "residual": 0,
+                    "initialSolution": "quality-optimal"
+                  },
+                  "category": "optimal"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "candidateMetrics": [
+        {
+          "planId": "personalized",
+          "totalCredits": 14,
+          "qualityRetention": null,
+          "replacementDistance": null,
+          "convergence": null,
+          "category": null
+        },
+        {
+          "planId": "personalized_compact",
+          "totalCredits": 14,
+          "qualityRetention": 0.994,
+          "replacementDistance": 3,
+          "convergence": {
+            "converged": true,
+            "reason": null,
+            "iterations": 2,
+            "residual": 0,
+            "initialSolution": "quality-optimal"
+          },
+          "category": "optimal"
+        }
+      ],
+      "pass": true,
+      "hasExpressedPreference": true,
+      "requestedVariants": 2,
+      "rawRequestedVariants": 4,
+      "excludedNoSignalVariants": [
+        "personalized_challenge",
+        "personalized_interest"
+      ],
+      "reportedDistinctPlans": 2,
+      "meaningfulDistinctPlans": 2,
+      "requiredDistinctPlans": 2,
+      "requiredByRetention": 2,
+      "retentionThreshold": 0.75,
+      "retentionRate": 1,
+      "similarityThreshold": 0.75,
+      "qualityRetentionThreshold": 0.87,
+      "minimumQualityRetention": 0.994,
+      "minimumReplacementDistance": 2,
+      "medianJaccardSimilarity": 0.25,
+      "criteria": {
+        "enoughDistinctPlans": true,
+        "retentionRate": true,
+        "medianSimilarity": true,
+        "actualCourseDifference": true,
+        "qualityFloor": true,
+        "creditParity": true,
+        "modelChecks": true,
+        "safety": true
+      },
+      "pairs": [
+        {
+          "leftPlanId": "personalized",
+          "rightPlanId": "personalized_compact",
+          "leftCompetitiveCourseCount": 5,
+          "rightCompetitiveCourseCount": 5,
+          "sharedCourseCount": 2,
+          "differenceCount": 6,
+          "replacementDistance": 3,
+          "jaccardSimilarity": 0.25
+        }
+      ]
+    },
+    {
+      "caseId": "persona-easy",
+      "candidatePoolSize": 362,
+      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
+      "learnedPreference": {
+        "applied": true,
+        "reason": "applied-read-only-recompute",
+        "modelVersion": "preference-learning-v2",
+        "sufficiencyStatus": "sufficient"
+      },
+      "safety": [
+        {
+          "planId": "personalized",
+          "valid": true,
+          "violationCount": 0,
+          "constraintIds": []
+        }
+      ],
+      "generationMs": 144.22,
+      "planDiversity": {
+        "requestedVariants": 4,
+        "distinctPlans": 1,
+        "reason": "milp-candidate-unavailable",
+        "collapsed": [
+          {
+            "variantId": "personalized_easy",
+            "title": "輕鬆導向方案",
+            "reason": "no-signal",
+            "detail": "threshold-unreachable"
+          },
+          {
+            "variantId": "personalized_interest",
+            "title": "興趣導向方案",
+            "reason": "no-signal",
+            "detail": "no-interest-keywords"
+          },
+          {
+            "variantId": "personalized_compact",
+            "title": "集中排課方案",
+            "reason": "insufficient-difference"
+          }
+        ],
+        "competablePoolSize": 222,
+        "solver": {
+          "method": "dinkelbach-milp",
+          "status": "no-signal",
+          "elapsedMs": 84.42849999999999,
+          "subsetSelection": {
+            "method": "dbin-exact-enumeration",
+            "objective": {
+              "planCount": 1,
+              "dBin": null,
+              "pairwiseHammingSum": 0
+            },
+            "b": 222,
+            "evaluated": 1,
+            "feasible": 1,
+            "elapsedMs": 0.101,
+            "rejectedCandidates": []
+          },
+          "axes": [
+            {
+              "archetype": "easy",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "threshold-unreachable",
+              "candidateCount": 0,
+              "candidates": []
+            },
+            {
+              "archetype": "interest",
+              "status": "no-signal",
+              "reason": "no-signal",
+              "detail": "no-interest-keywords",
+              "candidateCount": 0,
+              "candidates": []
+            },
+            {
+              "archetype": "compact",
+              "status": "insufficient-difference",
+              "reason": "insufficient-difference",
               "diagnosis": {
-                "reason": "axis-threshold-infeasible",
+                "reason": "insufficient-difference",
                 "resolvedBy": [
-                  "axis",
                   "replacement",
+                  "quality",
                   "hierarchy"
                 ],
                 "complete": true
@@ -400,7 +934,7 @@
       "candidateMetrics": [
         {
           "planId": "personalized",
-          "totalCredits": 10,
+          "totalCredits": 14,
           "qualityRetention": null,
           "replacementDistance": null,
           "convergence": null,
@@ -412,7 +946,7 @@
       "requestedVariants": 2,
       "rawRequestedVariants": 4,
       "excludedNoSignalVariants": [
-        "personalized_challenge",
+        "personalized_easy",
         "personalized_interest"
       ],
       "reportedDistinctPlans": 1,
@@ -439,194 +973,6 @@
       "pairs": []
     },
     {
-      "caseId": "persona-easy",
-      "candidatePoolSize": 362,
-      "candidatePoolHash": "6cb9fe29eb053c88bca3cbeb0613a15022cda453a3b283db594a3a24b1bd379e",
-      "learnedPreference": {
-        "applied": true,
-        "reason": "applied-read-only-recompute",
-        "modelVersion": "preference-learning-v2",
-        "sufficiencyStatus": "sufficient"
-      },
-      "safety": [
-        {
-          "planId": "personalized",
-          "valid": true,
-          "violationCount": 0,
-          "constraintIds": []
-        },
-        {
-          "planId": "personalized_compact",
-          "valid": true,
-          "violationCount": 0,
-          "constraintIds": []
-        }
-      ],
-      "generationMs": 209.42,
-      "planDiversity": {
-        "requestedVariants": 4,
-        "distinctPlans": 2,
-        "reason": "milp-candidate-unavailable",
-        "collapsed": [
-          {
-            "variantId": "personalized_easy",
-            "title": "輕鬆導向方案",
-            "reason": "no-signal",
-            "detail": "threshold-unreachable"
-          },
-          {
-            "variantId": "personalized_interest",
-            "title": "興趣導向方案",
-            "reason": "no-signal",
-            "detail": "no-interest-keywords"
-          }
-        ],
-        "competablePoolSize": 222,
-        "solver": {
-          "method": "dinkelbach-milp",
-          "status": "generated",
-          "elapsedMs": 123.48879999999917,
-          "subsetSelection": {
-            "method": "dbin-exact-enumeration",
-            "objective": {
-              "planCount": 2,
-              "dBin": 0.018018018018018018,
-              "pairwiseHammingSum": 4
-            },
-            "b": 222,
-            "evaluated": 2,
-            "feasible": 2,
-            "elapsedMs": 0.201,
-            "rejectedCandidates": []
-          },
-          "axes": [
-            {
-              "archetype": "easy",
-              "status": "no-signal",
-              "reason": "no-signal",
-              "detail": "threshold-unreachable",
-              "candidateCount": 0,
-              "candidates": []
-            },
-            {
-              "archetype": "interest",
-              "status": "no-signal",
-              "reason": "no-signal",
-              "detail": "no-interest-keywords",
-              "candidateCount": 0,
-              "candidates": []
-            },
-            {
-              "archetype": "compact",
-              "status": "generated",
-              "reason": "axis-threshold-infeasible",
-              "diagnosis": {
-                "reason": "axis-threshold-infeasible",
-                "resolvedBy": [
-                  "axis",
-                  "replacement",
-                  "hierarchy"
-                ],
-                "complete": true
-              },
-              "candidateCount": 1,
-              "candidates": [
-                {
-                  "ratio": 0.31528693949076225,
-                  "qualityRetention": 0.9438520000000002,
-                  "distanceFromBase": {
-                    "removed": [
-                      "code:IECS2041",
-                      "code:IECS4944"
-                    ],
-                    "added": [
-                      "code:IECS2026",
-                      "code:IECS4942"
-                    ],
-                    "hammingDistance": 4,
-                    "replacementDistance": 2
-                  },
-                  "convergence": {
-                    "converged": true,
-                    "reason": null,
-                    "iterations": 1,
-                    "residual": 0,
-                    "initialSolution": "quality-optimal"
-                  },
-                  "category": "optimal"
-                }
-              ]
-            }
-          ]
-        }
-      },
-      "candidateMetrics": [
-        {
-          "planId": "personalized",
-          "totalCredits": 10,
-          "qualityRetention": null,
-          "replacementDistance": null,
-          "convergence": null,
-          "category": null
-        },
-        {
-          "planId": "personalized_compact",
-          "totalCredits": 11,
-          "qualityRetention": 0.9438520000000002,
-          "replacementDistance": 2,
-          "convergence": {
-            "converged": true,
-            "reason": null,
-            "iterations": 1,
-            "residual": 0,
-            "initialSolution": "quality-optimal"
-          },
-          "category": "optimal"
-        }
-      ],
-      "pass": true,
-      "hasExpressedPreference": true,
-      "requestedVariants": 2,
-      "rawRequestedVariants": 4,
-      "excludedNoSignalVariants": [
-        "personalized_easy",
-        "personalized_interest"
-      ],
-      "reportedDistinctPlans": 2,
-      "meaningfulDistinctPlans": 2,
-      "requiredDistinctPlans": 2,
-      "requiredByRetention": 2,
-      "retentionThreshold": 0.75,
-      "retentionRate": 1,
-      "similarityThreshold": 0.75,
-      "qualityRetentionThreshold": 0.87,
-      "minimumQualityRetention": 0.9439,
-      "minimumReplacementDistance": 2,
-      "medianJaccardSimilarity": 0.3333,
-      "criteria": {
-        "enoughDistinctPlans": true,
-        "retentionRate": true,
-        "medianSimilarity": true,
-        "actualCourseDifference": true,
-        "qualityFloor": true,
-        "creditParity": true,
-        "modelChecks": true,
-        "safety": true
-      },
-      "pairs": [
-        {
-          "leftPlanId": "personalized",
-          "rightPlanId": "personalized_compact",
-          "leftCompetitiveCourseCount": 4,
-          "rightCompetitiveCourseCount": 4,
-          "sharedCourseCount": 2,
-          "differenceCount": 4,
-          "replacementDistance": 2,
-          "jaccardSimilarity": 0.3333
-        }
-      ]
-    },
-    {
       "caseId": "fixed-courses-control",
       "candidatePoolSize": 581,
       "candidatePoolHash": "d86e335598fe4662deb4321e79a58271319ce54ce3895b4d6c5a8754ba4eeb12",
@@ -644,7 +990,7 @@
           "constraintIds": []
         }
       ],
-      "generationMs": 95.3,
+      "generationMs": 104.41,
       "planDiversity": {
         "requestedVariants": 4,
         "distinctPlans": 1,
@@ -672,7 +1018,7 @@
         "solver": {
           "method": "dinkelbach-milp",
           "status": "no-signal",
-          "elapsedMs": 56.8666000000012,
+          "elapsedMs": 62.13869999999952,
           "subsetSelection": {
             "method": "dbin-exact-enumeration",
             "objective": {
@@ -683,7 +1029,7 @@
             "b": 245,
             "evaluated": 1,
             "feasible": 1,
-            "elapsedMs": 0.208,
+            "elapsedMs": 0.046,
             "rejectedCandidates": []
           },
           "axes": [
