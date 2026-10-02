@@ -170,8 +170,12 @@ export default function SchedulePage() {
   };
 
   const handleRemoveClick = (course) => {
-    setRemovalCandidate(course);
     setDetailCourse(null);
+    if (!personalizationEnabled) {
+      removeCourse(course.id);
+      return;
+    }
+    setRemovalCandidate(course);
   };
 
   const handleRemoveConfirmed = (feedbackReason) => {

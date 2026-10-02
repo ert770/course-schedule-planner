@@ -21,7 +21,7 @@ export default function SearchPage() {
   const userIdentity = getUserIdentity(user);
   const { theme, toggleTheme } = useTheme();
   const {
-    schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed
+    schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed, personalizationEnabled
   } = useSchedule();
   
   const [activeTab, setActiveTab] = useState('dept');
@@ -171,18 +171,21 @@ export default function SearchPage() {
     });
   };
 
-  // ✅ 修正點：移除 personalizationEnabled 檢查，強制開啟原因詢問，並關閉底層彈窗
   const handleToggleCourse = async (event, course) => {
     if (event) event.stopPropagation();
     const isAdded = schedule.some(item => String(item.id) === String(course.id));
     if (isAdded) {
-      setRemovalCandidate(course); // 開啟退選原因對話框
-      setDetailCourse(null);       // 關閉目前的詳細資訊彈窗，解決圖層遮擋
+      setDetailCourse(null);
+      if (!personalizationEnabled) {
+        removeCourse(course.id);
+        setActionNotice({ level: 'success', text: '已將「' + course.name + '」從課表移除。' });
+        return;
+      }
+      setRemovalCandidate(course);
       return;
     }
     await handleAddCourse(event, course);
   };
-
   const handleOpenDetail = (course) => {
     setDetailCourse(course);
     logCourseViewed(course);

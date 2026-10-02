@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { privacyAPI } from '../services/api';
+import { consentChoicesFromStatus, consentChoicesToPayload } from '../services/privacyConsentAdapter';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 
 export default function OnboardingPage() {
@@ -10,6 +11,8 @@ export default function OnboardingPage() {
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [consentsLoaded, setConsentsLoaded] = useState(false);
   const [consents, setConsents] = useState({
     necessary: true,
     personalized: false,
@@ -19,20 +22,23 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     let cancelled = false;
-    privacyAPI.getPersonalization()
-      .then(data => {
-        if (!cancelled && data) {
-          setPersonalization(data);
-          if (data.consents) {
-            setConsents({
-              necessary: data.consents.necessary ?? true,
-              personalized: data.consents.personalized ?? false,
-              research: data.consents.research ?? false,
-            });
-          }
-        }
+    const consentRequest = privacyAPI.getConsents()
+      .then(status => {
+        if (cancelled) return;
+        setConsents(consentChoicesFromStatus(status?.consents));
+        setConsentsLoaded(true);
       })
-      .catch(() => {})
+      .catch(err => {
+        if (cancelled) return;
+        console.error('Failed to load consents:', err);
+        setSaveError('無法讀取目前的隱私選擇，請重新整理後再試。');
+      });
+    const personalizationRequest = privacyAPI.getPersonalization()
+      .then(data => {
+        if (!cancelled && data) setPersonalization(data);
+      })
+      .catch(() => {});
+    Promise.allSettled([consentRequest, personalizationRequest])
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -46,14 +52,14 @@ export default function OnboardingPage() {
 
   const handleAgreeAndSetup = async () => {
     setSaving(true);
+    setSaveError('');
     try {
-      await privacyAPI.updateConsents(consents);
+      await privacyAPI.updateConsents(consentChoicesToPayload(consents));
       markOnboarded();
       navigate('/setup');
     } catch (err) {
       console.error('Failed to update consents:', err);
-      markOnboarded();
-      navigate('/setup');
+      setSaveError(err.message || '隱私設定儲存失敗，請稍後再試。');
     } finally {
       setSaving(false);
     }
@@ -88,6 +94,12 @@ export default function OnboardingPage() {
             <span style={{ fontSize: '0.8rem', color: '#64748b' }}>政策版本：2026-08-30.v2</span>
           </div>
         </div>
+
+        {saveError && (
+          <div role="alert" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '8px', background: '#fef2f2', color: '#b91c1c', fontSize: '0.9rem' }}>
+            {saveError}
+          </div>
+        )}
 
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '50px' }}>
@@ -157,7 +169,7 @@ export default function OnboardingPage() {
               <button
                 className="onboarding-btn"
                 onClick={handleAgreeAndSetup}
-                disabled={saving}
+                disabled={saving || !consentsLoaded}
                 id="onboarding-agree-btn"
                 style={{ 
                   width: '100%', 
