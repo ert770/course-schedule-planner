@@ -6,8 +6,9 @@ import { useSchedule } from '../contexts/useSchedule';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { coursesAPI, profileAPI } from '../services/api';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
+import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X } from 'lucide-react';
-import '../App.css'; // Reuse some layout styles
+import '../App.css'; 
 import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
 import { formatCourseGradeLevel } from '../utils/courseGradeLevel';
@@ -20,8 +21,7 @@ export default function SearchPage() {
   const userIdentity = getUserIdentity(user);
   const { theme, toggleTheme } = useTheme();
   const {
-    schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed,
-    personalizationEnabled,
+    schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed
   } = useSchedule();
   
   const [activeTab, setActiveTab] = useState('dept');
@@ -42,7 +42,6 @@ export default function SearchPage() {
 
   useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
-  // Form states for Tab 1
   const [deptForm, setDeptForm] = useState({
     department: '',
     gradeLevel: '',
@@ -51,22 +50,12 @@ export default function SearchPage() {
     keyword: ''
   });
 
-  // Form states for Tab 2
   const [condForm, setCondForm] = useState({
-    code: '',
-    dayOfWeek: '',
-    period: '',
-    keyword: '',
-    instructor: '',
-    language: '',
-    isGenEd: false,
-    description: ''
+    code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: ''
   });
 
   useEffect(() => {
     let cancelled = false;
-
-    // 未登入時不退回 `default` 使用者。
     if (userIdentity === null) {
       setSearchError('尚未登入，請重新登入後再操作。');
       setScopeLoading(false);
@@ -137,17 +126,8 @@ export default function SearchPage() {
     setIsSearching(true);
     setSearchError('');
     try {
-      const filters = {
-        ...courseSearchScope,
-        keyword: deptForm.keyword,
-        category: deptForm.category
-      };
-      
-      // Clean up empty filters
-      Object.keys(filters).forEach(k => {
-        if (!filters[k]) delete filters[k];
-      });
-
+      const filters = { ...courseSearchScope, keyword: deptForm.keyword, category: deptForm.category };
+      Object.keys(filters).forEach(k => { if (!filters[k]) delete filters[k]; });
       const data = await coursesAPI.search(filters);
       setSearchResults(data.courses || []);
     } catch (err) {
@@ -167,20 +147,11 @@ export default function SearchPage() {
     setSearchError('');
     try {
       const filters = {
-        ...courseSearchScope,
-        code: condForm.code,
-        keyword: condForm.keyword || condForm.description,
-        instructor: condForm.instructor,
-        dayOfWeek: condForm.dayOfWeek ? parseInt(condForm.dayOfWeek) : null,
-        period: condForm.period,
-        category: condForm.isGenEd ? '通識' : null,
-        language: condForm.language
+        ...courseSearchScope, code: condForm.code, keyword: condForm.keyword || condForm.description,
+        instructor: condForm.instructor, dayOfWeek: condForm.dayOfWeek ? parseInt(condForm.dayOfWeek) : null,
+        period: condForm.period, category: condForm.isGenEd ? '通識' : null, language: condForm.language
       };
-      // Clean up null/empty
-      Object.keys(filters).forEach(k => {
-        if (filters[k] === null || filters[k] === '') delete filters[k];
-      });
-
+      Object.keys(filters).forEach(k => { if (filters[k] === null || filters[k] === '') delete filters[k]; });
       const data = await coursesAPI.search(filters);
       setSearchResults(data.courses || []);
     } catch (err) {
@@ -191,7 +162,7 @@ export default function SearchPage() {
   };
 
   const handleAddCourse = async (event, course) => {
-    event.stopPropagation();
+    if (event) event.stopPropagation();
     setActionNotice(null);
     const result = await addCourse(course);
     setActionNotice({
@@ -200,18 +171,13 @@ export default function SearchPage() {
     });
   };
 
+  // ✅ 修正點：移除 personalizationEnabled 檢查，強制開啟原因詢問，並關閉底層彈窗
   const handleToggleCourse = async (event, course) => {
-    event.stopPropagation();
+    if (event) event.stopPropagation();
     const isAdded = schedule.some(item => String(item.id) === String(course.id));
     if (isAdded) {
-      // roadmap #2：移除前先問原因，`time`／`full` 與「不喜歡內容」才分得開。
-      // 未同意個人化學習時不問——問了也不會記錄。
-      if (!personalizationEnabled) {
-        removeCourse(course.id);
-        setActionNotice({ level: 'success', text: `已將「${course.name}」從課表移除。` });
-        return;
-      }
-      setRemovalCandidate(course);
+      setRemovalCandidate(course); // 開啟退選原因對話框
+      setDetailCourse(null);       // 關閉目前的詳細資訊彈窗，解決圖層遮擋
       return;
     }
     await handleAddCourse(event, course);
@@ -231,7 +197,7 @@ export default function SearchPage() {
   };
 
   const handleToggleWatchlist = async (event, course) => {
-    event.stopPropagation();
+    if (event) event.stopPropagation();
     const id = String(course.id);
     setWatchlistUpdatingId(id);
     setActionNotice(null);
@@ -252,10 +218,7 @@ export default function SearchPage() {
   };
 
   const handleResetCondForm = () => {
-    setCondForm({
-      code: '', dayOfWeek: '', period: '', keyword: '', instructor: '',
-      language: '', isGenEd: false, description: '',
-    });
+    setCondForm({ code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: '' });
     setSearchError(courseSearchScope?.className ? '' : CLASS_REQUIRED_MESSAGE);
     setActionNotice(null);
   };
@@ -265,7 +228,6 @@ export default function SearchPage() {
 
   return (
     <div className="layout-container" id="search-page">
-      {/* Top Navbar */}
       <header className="top-nav">
         <div className="nav-brand">
           <Calendar size={20} className="nav-icon" />
@@ -290,8 +252,7 @@ export default function SearchPage() {
                   <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
                 </button>
                 <button className="user-dropdown-item" onClick={toggleTheme}>
-                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 
-                  切換主題 ({theme === 'dark' ? '淺色' : '深色'})
+                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 切換主題
                 </button>
                 <div style={{height: '1px', background: 'var(--border-color)', margin: '4px 0'}}></div>
                 <button className="user-dropdown-item" onClick={logout}>登出 (Logout)</button>
@@ -305,24 +266,9 @@ export default function SearchPage() {
         <div className="search-sidebar">
           <h2>課程查詢</h2>
           <div className="search-tabs">
-            <button 
-              className={`search-tab ${activeTab === 'dept' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dept')}
-            >
-              依系所查詢
-            </button>
-            <button 
-              className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`}
-              onClick={() => setActiveTab('cond')}
-            >
-              依條件查詢
-            </button>
-            <button
-              className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`}
-              onClick={() => setActiveTab('watchlist')}
-            >
-              ❤️ 我的關注
-            </button>
+            <button className={`search-tab ${activeTab === 'dept' ? 'active' : ''}`} onClick={() => setActiveTab('dept')}>依系所查詢</button>
+            <button className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`} onClick={() => setActiveTab('cond')}>依條件查詢</button>
+            <button className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`} onClick={() => setActiveTab('watchlist')}>❤️ 我的關注</button>
           </div>
 
           {activeTab === 'dept' && (
@@ -364,27 +310,11 @@ export default function SearchPage() {
               </div>
               <div className="form-group">
                 <label>課程關鍵字</label>
-                <input 
-                  type="text" 
-                  placeholder="輸入課名或老師..." 
-                  value={deptForm.keyword}
-                  onChange={e => setDeptForm({...deptForm, keyword: e.target.value})}
-                />
+                <input type="text" placeholder="輸入課名或老師..." value={deptForm.keyword} onChange={e => setDeptForm({...deptForm, keyword: e.target.value})} />
               </div>
               <div className="search-form-actions">
-                <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>
-                  {scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}
-                </button>
-                <button
-                  type="button"
-                  className="search-reset-btn"
-                  onClick={handleResetDeptForm}
-                  disabled={isSearching || scopeLoading}
-                  aria-label="重設依系所查詢條件"
-                  title="重設查詢條件"
-                >
-                  <RotateCcw size={17} />
-                </button>
+                <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>{scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}</button>
+                <button type="button" className="search-reset-btn" onClick={handleResetDeptForm} disabled={isSearching || scopeLoading}><RotateCcw size={17} /></button>
               </div>
             </form>
           )}
@@ -393,14 +323,8 @@ export default function SearchPage() {
             <form className="search-form" onSubmit={handleCondSearch}>
               <div className="form-group">
                 <label>選課代號 (Course ID)</label>
-                <input 
-                  type="text" 
-                  placeholder="[請輸入代號]" 
-                  value={condForm.code}
-                  onChange={e => { setCondForm({...condForm, code: e.target.value}); }}
-                />
+                <input type="text" placeholder="[請輸入代號]" value={condForm.code} onChange={e => setCondForm({...condForm, code: e.target.value})} />
               </div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label>星期 (Day)</label>
@@ -417,33 +341,18 @@ export default function SearchPage() {
                   <label>節次 (Period)</label>
                   <select value={condForm.period} onChange={e => setCondForm({...condForm, period: e.target.value})}>
                     <option value="">全部 (All)</option>
-                    {[...Array(14)].map((_, i) => (
-                      <option key={i+1} value={i+1}>第 {i+1} 節</option>
-                    ))}
+                    {[...Array(14)].map((_, i) => (<option key={i+1} value={i+1}>第 {i+1} 節</option>))}
                   </select>
                 </div>
               </div>
-
               <div className="form-group">
                 <label>科目名稱 (Course Title)</label>
-                <input 
-                  type="text" 
-                  placeholder="[請輸入關鍵字]" 
-                  value={condForm.keyword}
-                  onChange={e => setCondForm({...condForm, keyword: e.target.value})}
-                />
+                <input type="text" placeholder="[請輸入關鍵字]" value={condForm.keyword} onChange={e => setCondForm({...condForm, keyword: e.target.value})} />
               </div>
-              
               <div className="form-group">
                 <label>開課教師姓名 (Instructor)</label>
-                <input 
-                  type="text" 
-                  placeholder="[請輸入姓名]" 
-                  value={condForm.instructor}
-                  onChange={e => setCondForm({...condForm, instructor: e.target.value})}
-                />
+                <input type="text" placeholder="[請輸入姓名]" value={condForm.instructor} onChange={e => setCondForm({...condForm, instructor: e.target.value})} />
               </div>
-
               <div className="form-group">
                 <label>授課語言 (Language)</label>
                 <select value={condForm.language} onChange={e => setCondForm({...condForm, language: e.target.value})}>
@@ -452,42 +361,16 @@ export default function SearchPage() {
                   <option value="English">English</option>
                 </select>
               </div>
-
               <div className="form-group checkbox-group">
-                <label>
-                  <input 
-                    type="checkbox" 
-                    checked={condForm.isGenEd}
-                    onChange={e => setCondForm({...condForm, isGenEd: e.target.checked})}
-                  />
-                  特定科目類別：通識課程
-                </label>
+                <label><input type="checkbox" checked={condForm.isGenEd} onChange={e => setCondForm({...condForm, isGenEd: e.target.checked})} />特定科目類別：通識課程</label>
               </div>
-
               <div className="form-group">
                 <label>課程描述 (Description)</label>
-                <input 
-                  type="text" 
-                  placeholder="[請輸入關鍵字]" 
-                  value={condForm.description}
-                  onChange={e => setCondForm({...condForm, description: e.target.value})}
-                />
+                <input type="text" placeholder="[請輸入關鍵字]" value={condForm.description} onChange={e => setCondForm({...condForm, description: e.target.value})} />
               </div>
-
               <div className="search-form-actions">
-                <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>
-                  {scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}
-                </button>
-                <button
-                  type="button"
-                  className="search-reset-btn"
-                  onClick={handleResetCondForm}
-                  disabled={isSearching || scopeLoading}
-                  aria-label="重設依條件查詢條件"
-                  title="重設查詢條件"
-                >
-                  <RotateCcw size={17} />
-                </button>
+                <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>{scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}</button>
+                <button type="button" className="search-reset-btn" onClick={handleResetCondForm} disabled={isSearching || scopeLoading}><RotateCcw size={17} /></button>
               </div>
             </form>
           )}
@@ -505,27 +388,18 @@ export default function SearchPage() {
           <div className="results-header">
             <h3>{activeTab === 'watchlist' ? '我的關注清單' : '搜尋結果'} ({displayCourses.length} 筆)</h3>
           </div>
-          {actionNotice && (
-            <div className={`search-action-notice ${actionNotice.level}`} role="status">
-              {actionNotice.text}
-            </div>
-          )}
-          {resultError && (
-            <div className="search-action-notice error" role="alert">{resultError}</div>
-          )}
+          {actionNotice && <div className={`search-action-notice ${actionNotice.level}`} role="status">{actionNotice.text}</div>}
+          {resultError && <div className="search-action-notice error" role="alert">{resultError}</div>}
           {watchlistLoading ? (
             <div className="no-results" role="status">正在載入關注課程…</div>
           ) : displayCourses.length === 0 && !resultError ? (
-            <div className="no-results">
-              {activeTab === 'watchlist' ? '目前沒有關注課程。' : '請設定條件並開始搜尋'}
-            </div>
+            <div className="no-results">{activeTab === 'watchlist' ? '目前沒有關注課程。' : '請設定條件並開始搜尋'}</div>
           ) : displayCourses.length > 0 ? (
             <div className="results-grid">
               {displayCourses.map(course => (
                 <div key={course.id} className="course-card" onClick={() => handleOpenDetail(course)}>
                   <div className="course-card-header">
-                    <h4>{course.name}</h4>
-                    <span className="course-code">{course.code}</span>
+                    <h4>{course.name}</h4><span className="course-code">{course.code}</span>
                   </div>
                   <div className="course-card-body">
                     <p>👨‍🏫 {course.instructor} | 🏢 {course.department}</p>
@@ -548,37 +422,17 @@ export default function SearchPage() {
                     )}
                     {course.category === '系外選修' && course.outsideElective && (
                       <span className={`tag ${course.outsideElective.eligible ? '' : 'error-text'}`}>
-                        {course.outsideElective.eligible
-                          ? '須向系辦確認'
-                          : `不可認列：${course.outsideElective.reasons.join('；')}`}
+                        {course.outsideElective.eligible ? '須向系辦確認' : `不可認列：${course.outsideElective.reasons.join('；')}`}
                       </span>
                     )}
                   </div>
                   <div className="course-card-actions">
-                    <button
-                      type="button"
-                      className={`course-card-action ${watchlist.includes(String(course.id)) ? 'active' : ''}`}
-                      onClick={event => handleToggleWatchlist(event, course)}
-                      disabled={watchlistUpdatingId === String(course.id)}
-                      aria-label={watchlist.includes(String(course.id)) ? `取消關注 ${course.name}` : `關注 ${course.name}`}
-                    >
+                    <button type="button" className={`course-card-action ${watchlist.includes(String(course.id)) ? 'active' : ''}`} onClick={event => handleToggleWatchlist(event, course)} disabled={watchlistUpdatingId === String(course.id)}>
                       <Heart size={15} fill={watchlist.includes(String(course.id)) ? 'currentColor' : 'none'} />
-                      {watchlistUpdatingId === String(course.id)
-                        ? '更新中…'
-                        : (watchlist.includes(String(course.id)) ? '已關注' : '關注')}
+                      {watchlistUpdatingId === String(course.id) ? '更新中…' : (watchlist.includes(String(course.id)) ? '已關注' : '關注')}
                     </button>
-                    <button
-                      type="button"
-                      className={`course-card-action ${schedule.some(item => String(item.id) === String(course.id)) ? 'danger' : 'primary'}`}
-                      onClick={event => handleToggleCourse(event, course)}
-                      disabled={validating && !schedule.some(item => String(item.id) === String(course.id))}
-                      aria-label={schedule.some(item => String(item.id) === String(course.id))
-                        ? `取消加選 ${course.name}`
-                        : `加入課表 ${course.name}`}
-                    >
-                      {schedule.some(item => String(item.id) === String(course.id))
-                        ? <><X size={15} /> 取消加選</>
-                        : <><Plus size={15} /> {validating ? '驗證中…' : '加入課表'}</>}
+                    <button type="button" className={`course-card-action ${schedule.some(item => String(item.id) === String(course.id)) ? 'danger' : 'primary'}`} onClick={event => handleToggleCourse(event, course)} disabled={validating && !schedule.some(item => String(item.id) === String(course.id))}>
+                      {schedule.some(item => String(item.id) === String(course.id)) ? <><X size={15} /> 取消加選</> : <><Plus size={15} /> {validating ? '驗證中…' : '加入課表'}</>}
                     </button>
                   </div>
                 </div>
@@ -588,41 +442,22 @@ export default function SearchPage() {
         </div>
       </div>
 
-      {/* Course Detail Modal */}
       <RemoveReasonDialog
         course={removalCandidate}
         onCancel={() => setRemovalCandidate(null)}
         onConfirm={handleRemoveConfirmed}
       />
 
-      {detailCourse && (
-        <div className="modal-overlay" onClick={() => setDetailCourse(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setDetailCourse(null)}>✕</button>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>{detailCourse.name}</h2>
-            <span className="detail-code">{detailCourse.code}</span>
-            <div className="detail-meta">
-              <span>👤 {detailCourse.instructor}</span>
-              <span>📚 {detailCourse.credits} 學分</span>
-              <span>🎓 {formatCourseGradeLevel(detailCourse.gradeLevel)}</span>
-            </div>
-            <div className="detail-desc">
-              <div className="detail-desc-label">先修條件</div>
-              <p>{detailCourse.prerequisites === null
-                ? '尚未取得官方先修資料'
-                : (Array.isArray(detailCourse.prerequisites)
-                  ? detailCourse.prerequisites.join('、') || '無'
-                  : String(detailCourse.prerequisites))}</p>
-            </div>
-            {detailCourse.description && (
-              <div className="detail-desc">
-                <div className="detail-desc-label">課程說明</div>
-                <p>{detailCourse.description}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <CourseDetailModal
+        course={detailCourse}
+        onClose={() => setDetailCourse(null)}
+        isWatched={detailCourse ? watchlist.includes(String(detailCourse.id)) : false}
+        isAdded={detailCourse ? schedule.some(item => String(item.id) === String(detailCourse.id)) : false}
+        onToggleWatchlist={handleToggleWatchlist}
+        onToggleCourse={handleToggleCourse}
+        validating={validating}
+        watchlistUpdating={detailCourse ? watchlistUpdatingId === String(detailCourse.id) : false}
+      />
     </div>
   );
 }

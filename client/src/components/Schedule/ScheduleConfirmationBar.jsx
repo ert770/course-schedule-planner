@@ -1,7 +1,6 @@
 import { X } from 'lucide-react';
 import { describeAcceptOutcome } from '../../services/interactionLog';
 
-// Roadmap #2：排課後的確認列。排課只是推薦，使用者是否覺得符合需求才是最終選擇。
 function adjustHint(personalizationEnabled) {
   return personalizationEnabled
     ? '請點選課表上不適合的課，選擇移除原因——這樣系統才分得出「排不進去」和「你不喜歡」。'
@@ -14,11 +13,12 @@ export default function ScheduleConfirmationBar({
   onConfirmFit,
   onRequestAdjust,
   onDismiss,
+  isFading,
 }) {
   if (!confirmation) return null;
 
   return (
-    <div className="schedule-confirmation" id="schedule-confirmation">
+    <div className={`schedule-confirmation ${isFading ? 'fade-out' : ''}`} id="schedule-confirmation">
       {confirmation.state === 'pending' && (
         <>
           <span>這份課表符合你的需求嗎？</span>
