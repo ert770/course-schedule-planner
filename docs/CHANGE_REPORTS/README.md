@@ -5,10 +5,10 @@
 ## 2026-10-02
 
 1. [三個 demo persona 的年級由四年級更正為三年級](./2026-10-02-demo-persona-grade-correction.md)
-1. [修復互動事件整合測試未關閉 MySQL pool，導致 npm test 延遲退出](./2026-10-02-fix-test-hang-mysql-pool.md)
-2. [設定頁移除避開特定時段的大型時段格](./2026-10-02-remove-avoid-periods-settings-ui.md)
-3. [PR #24 設定頁衝突：保留新版收合介面並整合興趣與剩餘學期](./2026-10-02-pr24-setup-conflict-resolution.md)
-4. [畢業配額排完後補到最低學分；benchmark 載入器對齊線上路徑；修課紀錄分類回填](./2026-10-02-graduation-quota-credit-floor-top-up.md)
+2. [修復互動事件整合測試未關閉 MySQL pool，導致 npm test 延遲退出](./2026-10-02-fix-test-hang-mysql-pool.md)
+3. [設定頁移除避開特定時段的大型時段格](./2026-10-02-remove-avoid-periods-settings-ui.md)
+4. [PR #24 設定頁衝突：保留新版收合介面並整合興趣與剩餘學期](./2026-10-02-pr24-setup-conflict-resolution.md)
+5. [畢業配額排完後補到最低學分；benchmark 載入器對齊線上路徑；修課紀錄分類回填](./2026-10-02-graduation-quota-credit-floor-top-up.md)
 
 ## 2026-10-01
 
