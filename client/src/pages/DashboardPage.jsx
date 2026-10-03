@@ -19,7 +19,7 @@ import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import SkillTreeModal from '../components/Profile/SkillTreeModal';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
-import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award } from 'lucide-react';
+import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award, Compass } from 'lucide-react';
 
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
 //
@@ -370,6 +370,7 @@ export default function DashboardPage() {
           <button className="nav-btn active"><LayoutDashboard size={16}/> 首頁</button>
           <button className="nav-btn" onClick={() => navigate('/schedule')}><Calendar size={16}/> 排課</button>
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
+          <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
         </div>
         <div className="nav-actions">
           <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>

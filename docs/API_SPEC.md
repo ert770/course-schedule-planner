@@ -1420,6 +1420,67 @@ Response：
 `logInteraction()` 回傳的 promise 永不 reject，只在結果裡帶真實狀態
 （確認列會依此決定文案，不會謊報「已記錄」）。
 
+## Exploration
+
+### `GET /api/exploration`（Roadmap #10 任務 4）
+
+系外與通識探索清單。從一門已修過的課出發，依課程說明的文字相似度列出系外選修與通識，
+每個系所／通識領域只出一門（Pardos & Jiang 2020，規則見 `docs/SCHEDULING_LOGIC.md`）。
+**唯讀**：不寫互動事件，也不影響 `POST /api/schedule/generate` 的結果。需登入與 service consent。
+
+Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `available: true` 的課號。
+省略時由系統取成績最高、有說明的本系課。
+
+```json
+{
+  "favorite": { "courseCode": "IECS3059", "name": "人工智慧導論", "source": "user" },
+  "favorites": [
+    { "courseCode": "IECS3059", "name": "人工智慧導論", "score": 80, "available": true },
+    { "courseCode": "CHIN1065", "name": "中文思辨與表達(一)", "score": 79,
+      "available": false, "reason": "no-description" }
+  ],
+  "outside": {
+    "diversification": "department",
+    "items": [{
+      "courseCode": "COME3046", "name": "機器學習", "credits": 3,
+      "unit": "通訊工程學系", "similarity": 0.3637,
+      "sharedTerms": ["機器學習", "醫療", "python"],
+      "recognition": { "status": "needs-office-confirmation", "checked": true,
+        "needsOfficeConfirmation": true, "warnings": [] },
+      "sections": [{ "id": 2031, "catalogCourseCode": "COME3046", "timeBlocks": [] }]
+    }]
+  },
+  "general": { "diversification": "domain", "items": [] },
+  "method": { "representation": "tfidf-char-bigram", "selection": "one-per-unit-cosine", "k": 5 },
+  "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
+}
+```
+
+- `favorite.source`：`user`（使用者指定）或 `system-default`（系統代選）。沒有可用起點時
+  `favorite` 為 `null`，並帶 `emptyReason`：`no-course-history` 或 `no-available-favorite`。
+- `favorites[].available`：這門已修課能不能當起點。`false` 時 `reason` 只有一種：
+  `no-description`——課程資料中任何學期都查不到這個課號的說明。**本學期沒開不是不可用的原因**，
+  只要資料裡有說明就能當起點。
+- `outside`／`general` 各最多 5 門，以**課號**為單位排序。
+- `sections`：該課號在當學期、使用者可修的班次，是**完整的標準班次物件**（與
+  `GET /api/courses` 回傳的相同），可原樣交給 `POST /api/schedule/validate`。加入課表的單位是班次。
+- `recognition.status`：
+  - `needs-office-confirmation`：通過系外選修的機械條件，**仍須向系辦確認是否認列**。
+    這不代表已確認可抵畢業學分。
+  - `unchecked`：使用者的系所不在支援清單，機械條件沒有跑過，無法判定是否認列。
+  - `general-education`：通識；另帶 `ruleVersion` 與 `domain`（115 學年度起 `domain` 為 `null`）。
+
+  機械條件判定**不認列**的系外選修不會出現在清單裡。
+- `general.diversification`：`domain` 表示每個通識領域至多一門；`none` 表示通識沒有領域
+  （115 學年度起），直接取最相似的幾門不同課號。
+- `similarity` 是課程說明 tf-idf 向量的 cosine（0～1）。`sharedTerms` 是兩份說明裡都出現的
+  **字面片段**，不是語意解釋。
+- 候選只含當學期、資格確定（`eligibility` 不是 `unknown`／`ineligible`）、有上課時間、
+  使用者尚未通過的課。
+
+錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課）、`400 FAVORITE_UNAVAILABLE`
+（查不到說明）、`400 CLASS_NAME_REQUIRED`（profile 缺班級）。
+
 ## Graduation
 
 ### `GET /api/graduation/me`

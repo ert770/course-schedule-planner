@@ -10,6 +10,7 @@ import DashboardPage from './pages/DashboardPage';
 import GraduationPage from './pages/GraduationPage';
 import PrivacyPage from './pages/PrivacyPage';
 import SearchPage from './pages/SearchPage';
+import ExplorePage from './pages/ExplorePage';
 import SchedulePage from './pages/SchedulePage';
 import './App.css';
 
@@ -94,6 +95,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <SearchPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/explore"
+        element={
+          <ProtectedRoute>
+            <ExplorePage />
           </ProtectedRoute>
         }
       />

@@ -1266,6 +1266,83 @@ benchmark 另以 `runtimeOptions.includePlanDiagnostics: true` 啟用唯讀診�
 因為 `recommendation_exposed` 事件當時只存了主推方案的 `planId`。修法見
 `docs/DATA_SCHEMA.md` 的 `exposureContext.displayedPlanIds`。
 
+## 系外與通識探索（Roadmap #10 任務 4，2026-10-03）
+
+**探索清單不是排課的一部分。** 它是獨立的唯讀清單（`GET /api/exploration`、前端「探索」頁），
+不改變 `generateSchedule()` 的候選池、排序或結果。使用者自己決定要不要把清單上的課加入課表。
+
+依據：Z. A. Pardos, W. Jiang, *Designing for Serendipity in a University Course Recommendation
+System*, LAK '20, pp. 350–359。採用其 bag-of-words 表示法（§3.3）與挑選方式（§3.4 式 (4)）：
+
+```text
+c*ⱼ = argmax_{c, d(c)=dⱼ} cos(c, cᵢ)        cᵢ：使用者指定的喜歡課程；dⱼ：一個 department
+再把各 department 的 c*ⱼ 依 cos(c*ⱼ, cᵢ) 由大到小排序，取前 k
+```
+
+實作在 `skills/courseExploration.js`（純函式）與 `services/explorationService.js`。
+
+### 兩個集合分開處理
+
+| | 起點（喜歡的課） | 推薦候選 |
+| --- | --- | --- |
+| 來源 | 已通過的修課紀錄 | 課程資料的班次 |
+| 文字 | 課程資料中**任何學期**該課號的說明 | 該課號的說明 |
+| 學期 | 不限。本學期沒開仍可當起點 | 只取當學期（`term.isActiveTerm`） |
+
+tf-idf 的文件集合是課程資料中全部不重複課號（同課號多班次只算一份）。已修課若在資料中
+任何學期都查不到說明，才不能當起點（`reason: no-description`）。
+
+### 候選的條件（本系統的安全規則）
+
+候選取 `filterCategorizedCourses()` 的系外選修與通識（已含當學期、年級、學制過濾），再排除：
+使用者已通過的課號、`eligibility` 為 `unknown` 或 `ineligible` 的班次、機械條件判定不認列的
+系外選修、沒有上課時間的班次。
+
+**這是產品決策，不是論文驗證過的做法。** 論文的推薦不限當學期（§6.1）；§8 只在討論中提到
+未來可嘗試讓學生在有助於完成學位的範圍內探索，沒有實作也沒有評估。我們的依據是 roadmap #9
+既有的約定：探索不得作用於資格不確定的課程。
+
+### 分散單位
+
+- 系外選修：開課系所（`parseClassName().department`），每系一門。
+- 通識：通識領域，每領域一門。**115 學年度起通識不分領域**，`domain` 為 `null`；只要有一門
+  通識沒有領域，整組就不做單位分散，直接依 cosine 取前 k 門不同課號
+  （`general.diversification: 'none'`）。
+- k ＝ 5，系外與通識各一組。cosine 為 0（沒有任何共同 term）的課不列入；平手依課號。
+
+### 認列狀態
+
+通過系外選修的機械條件**不等於**已確認可抵畢業學分——科目表註記仍須向系辦確認。清單對每門
+系外選修標 `needs-office-confirmation`；系所不在支援清單時標 `unchecked`。文件與畫面都不寫
+「可計入畢業學分」。
+
+### 與論文的差異
+
+| 項目 | 論文 | 本系統 |
+| --- | --- | --- |
+| 表示法 | BOW（tf／binary／tf-idf）、course2vec、兩者串接 | 只有 tf-idf BOW。course2vec 需要大量修課序列（論文用 16 萬名學生），本系統沒有 |
+| 斷詞 | 英文：去停用詞、lemmatization、stemming | 中文字元 bigram；英數字串整個當一個 term。bigram 會產生跨詞邊界的碎片，是近似 |
+| 停用詞 | 人工停用詞表、去除常見套語 | 含中文虛詞的 bigram 不計；出現在超過 20% 課程說明的 term 不計；去掉開頭的「課程：○○。」 |
+| department | subject（最小學術單位） | 系外用系所全名；通識用通識領域 |
+| 第二組清單 | 上線版是「同系最相似 5 門」 | 「通識 5 門」。同系課由自動排課負責 |
+| 候選範圍 | 不含研究所課；不限當學期 | 當學期、資格確定、有上課時間、尚未通過（產品決策） |
+| 評估 | 70 人使用者研究，量 unexpectedness／successfulness／novelty 等 | **沒有使用者研究** |
+
+**不能宣稱「提升了 serendipity」。** 論文的 serendipity 是使用者主觀評分（unexpectedness 與
+successfulness 的平均）。本系統只實作了挑選方法，能量的只有離線指標：候選覆蓋率、unit 數、
+相似度分布。論文自己的結果也顯示分散後 successfulness 會下降（Table 3：BOW (div) 2.904，
+不分散的 Equivalency 3.619）。
+
+`sharedTerms`（畫面上的「課程說明都出現」）是兩份說明的字面重疊，用來回應論文 §9 指出的限制
+——學生只能靠課程說明自行判斷關聯。它不是語意解釋，bigram 的碎片有時會出現在裡面。
+
+### 已知限制
+
+- 課程說明的文字相似度在絕對值上偏低（真實資料多數在 0.02～0.4），排序有意義，數值本身不宜
+  解讀成「相似幾成」。
+- 資料庫目前只有一個學期的課程，約三成已修課查不到說明，不能當起點。
+- 自動排課的候選池目前不含系外選修；探索清單是它們唯一的出口（另案處理）。
+
 ## 目前程式差距
 
 目前 `server/src/skills/scheduler.js` 已有：

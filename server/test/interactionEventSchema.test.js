@@ -443,3 +443,23 @@ describe('#10 任務 3A planFeatures 的三態相容規則', () => {
       { randomUUID: () => EVENT_ID_1 }), /planFeatures 含無效方案或特徵值/u);
   });
 });
+
+// roadmap #10 任務 4：探索頁加入課表時，前端把 source 標成 exploration。
+// 這個值在 schema 裡一直存在，但先前沒有任何寫入者；這裡確認它真的能通過驗證與正規化。
+describe('Roadmap #10 任務 4 探索來源', () => {
+  test('EXP1 course_selected 帶 source: exploration 可通過驗證並被保留', () => {
+    const event = createInteractionEvent(
+      IDENTITY,
+      courseEventInput(INTERACTION_EVENT_TYPES.COURSE_SELECTED, {
+        source: INTERACTION_SOURCES.EXPLORATION,
+        plan: null,
+        position: null,
+      }),
+      { randomUUID: () => EVENT_ID_1 }
+    );
+
+    assert.equal(INTERACTION_SOURCES.EXPLORATION, 'exploration');
+    assert.equal(validateInteractionEvent(event).valid, true);
+    assert.equal(event.source, 'exploration');
+  });
+});

@@ -810,6 +810,11 @@ UUID），以及他接著在 Chat 講同一件事（Agent 的 `record_schedule_f
 | `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
 
+`source: exploration`（2026-10-03，Roadmap #10 任務 4）：使用者從「探索」頁把課加入課表時，
+`course_selected` 的 `source` 記為 `exploration`。這個值先前就在 enum 裡，但沒有任何寫入者。
+前端 `addCourse(course, { source })` 只接受這一個覆寫值；排課引擎判定為本人必修的課不會被改標。
+探索清單本身（`GET /api/exploration`）不寫曝光事件，也沒有新增 `surface`。
+
 `planPolicies` 是既有 JSON envelope 的附加欄位，因此事件 `schemaVersion` 維持 1，MySQL
 也不需要 migration。
 

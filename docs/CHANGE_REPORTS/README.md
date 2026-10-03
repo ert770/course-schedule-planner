@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-03
+
+1. [Roadmap #10 任務 4：系外與通識探索清單（Pardos & Jiang 2020）](./2026-10-03-roadmap-10-task4-exploration-list.md)
+
 ## 2026-10-02
 
 1. [把 main 合併進 backend，解決 PR #24 的衝突](./2026-10-02-merge-main-into-backend.md)

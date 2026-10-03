@@ -672,6 +672,19 @@ runner 使用目前 MySQL 與正式排課器，報告寫入
 回歸：改動前後以唯讀方式對真實 MySQL 課程重跑 `generateSchedule()`（D1249697 與三位 demo
 persona），K=1 的方案集合與推薦方案必須完全相同——候選之間沒有衝突時，新舊挑法等價。
 
+### Roadmap #10 任務 4（系外與通識探索，2026-10-03）
+
+| 檔案 | 覆蓋內容 |
+| --- | --- |
+| `courseExploration.test.js` | EX1 斷詞：中文 bigram、英數 term、標點不跨接、去套語、含虛詞的 bigram 不計。EX2 tf-idf：`tf × ln(N/df)` 與 cosine 的手算對照；高 df term 排除；同課號多班次只算一份文件；無說明或無課號不進索引。EX3 式 (4)：每個 unit 只出一門且是 cosine 最大者；cosine 為 0 不列入；k 截斷；`unitOf` 回 `null` 時不分散；**打亂輸入 30 次結果相同**；平手依課號。EX4 共同字詞：只回傳兩份原文都真的出現過的片語；通用句型不列出 |
+| `explorationService.test.js` | 課程與 profile 皆注入，不連 MySQL。XS1 起點與候選分開：本學期沒開的已修課仍可當起點；非當學期班次即使最相似也不推薦；任何學期都查不到說明 → `no-description`；非已通過的課不能當起點。XS2 預設起點取成績最高的本系課並標 `system-default`；無修課紀錄與無可用起點的空狀態。XS3 已通過、無上課時間、機械條件不認列、本系課都不出現。XS4 認列狀態：`needs-office-confirmation`、`unchecked`（不支援的系所）、通識帶領域與規則版本。XS5 同課號多班次合成一筆、班次物件欄位完整、**原樣送進 `validateScheduleAgainstConstraints()` 不因缺欄位被誤判**。XS6 通識有領域時每領域至多一門；沒有領域時不分散。XS7 TTL 快取。XS8 回應不含內部向量 |
+| `interactionEventSchema.test.js` EXP1 | `course_selected` 帶 `source: exploration` 可通過驗證並被保留 |
+| `client/src/services/selectionSource.test.js` | 加入課表的事件來源：只接受 `exploration` 覆寫；其他覆寫值一律忽略；本人必修不被改標 |
+
+115 學年度通識不分領域的情形，因 `ACTIVE_TERM` 目前是 114 學年度，無法放入 115 的當學期班次做
+端到端測試；以「被標為通識、開在學院綜合班（`domain` 為 `null`）」的班次在服務層重現，規則本身
+另由 EX3d 驗證。
+
 ### Roadmap #10 任務 3A（Choice Perceptron，shadow）
 
 | 檔案 | 覆蓋內容 |

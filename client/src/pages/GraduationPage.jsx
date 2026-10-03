@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/useTheme';
 import { graduationAPI } from '../services/api';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { getUserIdentity } from '../utils/userIdentity';
-import { X, Plus, Search, AlertTriangle, Lightbulb, Calendar, LayoutDashboard, Settings, Moon, Sun } from 'lucide-react';
+import { X, Plus, Search, AlertTriangle, Lightbulb, Calendar, LayoutDashboard, Settings, Moon, Sun, Compass } from 'lucide-react';
 
 // `GET /api/graduation/:studentId` 的學分類別 key 對應中文標題。
 // API 依 `server/src/data/graduationRequirements.js` 的欄位回傳英文 key，
@@ -92,6 +92,7 @@ export default function GraduationPage() {
           <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
           <button className="nav-btn" onClick={() => navigate('/schedule')}><Calendar size={16}/> 排課</button>
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
+          <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
         </div>
         <div className="nav-actions">
           <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>

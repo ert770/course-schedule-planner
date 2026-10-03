@@ -125,6 +125,16 @@ export const coursesAPI = {
 };
 
 // Schedule API
+// Roadmap #10 任務 4：系外與通識探索清單（唯讀）。
+export const explorationAPI = {
+  get: (favoriteCourseCode) => {
+    const params = new URLSearchParams();
+    if (favoriteCourseCode) params.set('favoriteCourseCode', favoriteCourseCode);
+    const query = params.toString();
+    return request(`/exploration${query ? `?${query}` : ''}`);
+  },
+};
+
 export const scheduleAPI = {
   generate: (data) =>
     request('/schedule/generate', {

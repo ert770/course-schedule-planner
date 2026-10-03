@@ -1151,3 +1151,25 @@
   gap: 4px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
+/* ===== Explore Page（roadmap #10 任務 4）===== */
+.explore-content { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+.explore-intro { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px 24px; }
+.explore-intro h2 { font-size: 1.2rem; margin-bottom: 8px; }
+.explore-intro p { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.7; }
+.explore-favorite { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 0.88rem; font-weight: 600; }
+.explore-favorite select { flex: 1; max-width: 420px; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); }
+.explore-note { margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); }
+.explore-group { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px 24px; }
+.explore-group h3 { font-size: 1.05rem; margin-bottom: 4px; }
+.explore-group-hint { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px; }
+.explore-empty { height: auto; padding: 24px 0; font-size: 0.9rem; }
+.explore-card { cursor: default; }
+.explore-card:hover { transform: none; }
+.explore-shared-terms { margin: 10px 0 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6; }
+.explore-sections { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.explore-section-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); }
+.explore-section-info { display: flex; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--text-secondary); min-width: 0; }
+.explore-section-time { color: var(--text-muted); }
+.explore-section-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.explore-section-actions .course-card-action { flex: 0 0 auto; padding: 6px 10px; font-size: 0.8rem; }
+.explore-method-note { font-size: 0.78rem; color: var(--text-muted); text-align: center; }
