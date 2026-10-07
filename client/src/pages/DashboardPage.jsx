@@ -120,11 +120,14 @@ export default function DashboardPage() {
       // 偏好的真相來源是 `User_Profiles`，後端排課時自己會讀。前端只送
       // 「這次操作才成立」的條件。
       const constraints = {
-        // 校規上限 25（見 docs/COURSE_SELECTION_RULES.md）。
         // **不送 minCredits**：下限依年級而定（四年級 9、其餘 12），
         // 寫死在這裡會蓋掉後端從 Profile 算出來的正確值
         // （2026-09-10 修正的 bug：四年級下限從未生效過就是這樣造成的）。
-        maxCredits: 25,
+        //
+        // **也不送 maxCredits**（2026-10-07 修正）：這裡原本寫死校規上限 25，
+        // 而後端是 `input.maxCredits ?? prefs.targetCreditsMax`，於是每位使用者
+        // 自己的學分上限都被 25 蓋掉——上限 18 的學生在首頁排出 21 學分。
+        // 沒設個人上限時，後端自己會退回校規上限（見 docs/COURSE_SELECTION_RULES.md）。
         // 本次規劃的避開清單：使用者剛移除的課，這一次重排就不要再出現。
         // 只送 sectionId 與原因代號，課號與教師由後端從 Courses 重查。
         sessionAvoidances: buildAvoidanceConstraints(),
@@ -508,11 +511,12 @@ export default function DashboardPage() {
               onSelectPlan={handleSelectPlan}
             />
 
-            {/* constraints 不送 minCredits：交給後端依年級判斷（2026-09-10 修正）。 */}
+            {/* constraints 不送 minCredits 與 maxCredits：交給後端依年級與個人上限判斷，
+                反事實比較才會與上面的課表用同一組學分範圍。 */}
             <PlanComparison
               plans={plans}
               recommendedPlanId={recommendedPlanId}
-              constraints={{ maxCredits: 25 }}
+              constraints={{}}
               surface="dashboard"
             />
           </div>

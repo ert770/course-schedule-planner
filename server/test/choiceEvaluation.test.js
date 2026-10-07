@@ -14,7 +14,8 @@ import {
 import { REPLAY_PERSONAS, buildPersonaRounds } from '../scripts/lib/choiceReplayFixture.js';
 import { roundsFromEvents } from '../scripts/choicePerceptronEvaluation.js';
 import {
-  buildScenarios, describePlan, explicitDirection, parseChoice, querySignature, shuffled,
+  PERSONA_SETTINGS, buildChoicePrompt, buildScenarios, commonCourses, describePlan, explicitDirection,
+  parseChoice, querySignature, shuffled,
 } from '../scripts/lib/personaScenarios.js';
 import { learnChoicePerceptronWeights } from '../src/skills/preferenceLearning.js';
 
@@ -154,9 +155,40 @@ test('PS3 方案描述不洩漏方案名稱、主軸與系統分數', () => {
       instructor: '王老師', hasMidterm: false, reviewEvidence: { avgCoolness: 4.2, avgWorkload: 1.8 },
     }],
   }, 'A');
-  assert.match(text, /方案 A（共 3 學分，1 天有課）/);
-  assert.match(text, /資料庫系統｜必修｜3 學分｜週二 2-4節｜王老師｜無期中考｜評價（1～5）：涼度 4\.2、負擔 1\.8/);
+  assert.match(text, /方案 A（共 3 學分，1 天有課：週二 1 門）/);
+  assert.match(text, /資料庫系統｜必修｜3 學分｜星期二 第2–4節（09:10–12:00）｜王老師｜無期中考｜評價（1～5）：涼度 4\.2、負擔 1\.8/);
   assert.doesNotMatch(text, /personalized|涼課與高分優先|archetype|0\.9/);
+});
+
+test('PS5 提示把共同課與各方案獨有的課分開，並帶入人物設定、節次對照與主題', () => {
+  const shared = {
+    sectionId: 1, name: '資料庫系統', category: '必修', credits: 3, dayOfWeek: 2, startPeriod: 3, endPeriod: 4,
+    instructor: '甲', ragTag: ['SQL', '資料庫'],
+  };
+  const onlyA = { sectionId: 2, name: '投資學', category: '系外選修', credits: 3, dayOfWeek: 2, startPeriod: 6, endPeriod: 8, instructor: '乙', ragTag: ['金融', '投資'] };
+  const onlyB = { sectionId: 3, name: '組合數學', category: '一般選修', credits: 3, dayOfWeek: 4, startPeriod: 12, endPeriod: 13, instructor: '丙' };
+  const plans = [
+    { totalCredits: 6, schedule: [shared, onlyA] },
+    { totalCredits: 6, schedule: [onlyB, shared] },
+  ];
+  assert.deepEqual(commonCourses(plans).map(course => course.name), ['資料庫系統']);
+  const prompt = buildChoicePrompt({
+    prefs: { mysqlUserId: 9008, gradeLevel: 2, className: '資訊二乙', preferenceTags: ['#盡量集中排課'] },
+    scenario: { notes: ['最近對「管理、金融」有興趣'] },
+    plans,
+  });
+  assert.match(prompt.user, /你是「跨領域商管修程型」的學生。/);
+  assert.match(prompt.user, /修讀金融科技微學程/);
+  assert.match(prompt.user, /第 12 節 19:25 以後算晚上/);
+  assert.match(prompt.user, /每個方案都有的課（選哪個都一樣）：\n- 資料庫系統/);
+  assert.match(prompt.user, /方案 A（共 6 學分，1 天有課：週二 2 門）——只有這個方案才有的課：\n- 投資學[^\n]*主題：金融、投資/);
+  assert.match(prompt.user, /方案 B（共 6 學分，2 天有課：週二 1 門、週四 1 門）——只有這個方案才有的課：\n- 組合數學/);
+  // 共同課只出現一次，不會在各方案底下重複。
+  assert.equal(prompt.user.split('資料庫系統').length - 1, 1);
+  assert.match(prompt.system, /不能拿來當理由/);
+  // 沒有對應人物設定的使用者不會被套上別人的設定。
+  assert.doesNotMatch(buildChoicePrompt({ prefs: { gradeLevel: 1, className: 'x' }, scenario: { notes: [] }, plans }).user, /型」的學生/);
+  assert.equal(Object.keys(PERSONA_SETTINGS).length, 10);
 });
 
 test('PS4 顯式方向、方案簽章與洗牌', () => {

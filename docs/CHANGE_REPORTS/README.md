@@ -4,7 +4,8 @@
 
 ## 2026-10-07
 
-1. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
+1. [首頁排課不再用固定的 25 學分蓋掉個人學分上限](./2026-10-07-dashboard-respects-personal-credit-cap.md)
+2. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
 
 ## 2026-10-03
 
