@@ -56,7 +56,12 @@ function classifyAxisSignal({ prior, effectiveSampleSize, rawWeight }) {
 // 一個人、一段開發測試期間——那個量級拿去學就是把雜訊當成個人化。這個數字
 // 刻意設在明顯高於今天真實量級的地方；等 `#38` 真的有學生開始用，
 // 再用真實資料重新校準，不是現在猜一個好看的數字。
-export const REQUIRED_USABLE_EVENT_COUNT = 50;
+//
+// **2026-10-07 由 50 降為 10（專案負責人決定）。** 50 是在只有一個開發帳號時刻意訂高的數字。
+// 修好 MILP 方案的歸因後實測 10 位測試人物：30 次方案選擇只產生 11～23 票（約一半選的是綜合方案，
+// 不產生票），沒有任何人到得了 50——門檻等於永遠關閉 v2。10 與 Choice Perceptron 的暫定門檻
+// `REQUIRED_CHOICE_COUNT` 同一個量級。**這仍然不是用真實資料校準出來的數字。**
+export const REQUIRED_USABLE_EVENT_COUNT = 10;
 
 // Roadmap #31：時間衰減半衰期，約一個授課學期（18 週 = 126 天）。
 //
@@ -232,6 +237,35 @@ function dominantAxes(acceptedPolicy, allPolicies) {
   });
 }
 
+// Roadmap #10 之後的方案歸因（2026-10-07）。
+//
+// 上面的 `dominantAxes()` 靠「被接受方案的某一軸 policy 權重嚴格大於其他方案」判定。
+// 那是 #7 的 `personalized_<axis>` 方案的特性：每個替代方案把自己那一軸的權重放大。
+// #10 任務 1 改用 HiGHS MILP 產生替代方案後，**所有方案的 policy 權重都相同**，差別只剩
+// `archetype`（balanced／interest／compact／easy／challenge）——替代方案是用同一組權重、
+// 加上「這一軸要比綜合方案好」的限制式解出來的。於是 `dominantAxes()` 對現在的方案永遠回空，
+// 接受替代方案不再產生任何票。10 位測試人物、252 筆模擬選擇實測：v2 全部是 insufficient。
+//
+// 補上以 archetype 判定：被接受方案的 archetype 對應到某一軸，而且這次曝光的其他方案沒有
+// 對應到同一軸，才算這一軸的票。`balanced` 是綜合方案，不對應任何軸。
+// `challenge` 對應 easy 軸：v2 的權重是「這一軸有多重要」的非負加強量，方向由顯式偏好決定；
+// 而排課只在使用者的方向是挑戰時才產生 challenge 方案，所以加強 easy 軸就是加強挑戰方向。
+const ARCHETYPE_AXIS = Object.freeze({
+  interest: 'interest',
+  compact: 'compact',
+  easy: 'easy',
+  challenge: 'easy',
+});
+
+function archetypeAxes(acceptedPolicy, allPolicies) {
+  const axis = ARCHETYPE_AXIS[acceptedPolicy.archetype];
+  if (!axis) return [];
+  const sharedByOthers = allPolicies.some(policy => (
+    policy.planId !== acceptedPolicy.planId && ARCHETYPE_AXIS[policy.archetype] === axis
+  ));
+  return sharedByOthers ? [] : [axis];
+}
+
 function collectVotes(sortedEvents, { now, activeTerm } = {}) {
   const excludedPositiveEventIds = findExcludedPositiveEventIds(sortedEvents);
   const exposureByRequestId = indexExposuresByRequestId(sortedEvents);
@@ -276,9 +310,15 @@ function collectVotes(sortedEvents, { now, activeTerm } = {}) {
       if (acceptedPolicy) {
         // Roadmap #40：真的有這個方案自己的權重可比對，用對照歸因取代舊的
         // 靜態 variantId 表——見上面 `dominantAxes()` 的說明。
-        for (const axis of dominantAxes(acceptedPolicy, policies)) {
+        // 權重對照有結果就用它（#7 的方案與舊事件）；沒有才看 archetype（#10 的 MILP 方案）。
+        // 兩者不疊加，一次接受每一軸最多一票。
+        const weightAxes = dominantAxes(acceptedPolicy, policies);
+        const contrast = weightAxes.length > 0
+          ? { axes: weightAxes, ruleId: 'ACCEPT_VARIANT_CONTRAST' }
+          : { axes: archetypeAxes(acceptedPolicy, policies), ruleId: 'ACCEPT_ARCHETYPE_CONTRAST' };
+        for (const axis of contrast.axes) {
           pushVote(axis, {
-            ruleId: 'ACCEPT_VARIANT_CONTRAST',
+            ruleId: contrast.ruleId,
             eventId: event.eventId,
             occurredAt: event.timestamp,
             strength: 'strong',

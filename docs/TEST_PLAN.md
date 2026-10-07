@@ -72,6 +72,7 @@ node --check src/app.js
 | S19f | 已取得 110／128（距離畢業 18 學分）、`minCredits` 9 | 不套用，照類別配額排 3 門選修＋2 門通識 |
 | S19g | 沒有已取得總學分資料 | `totalGap` 為 `null`，不套用 |
 | HC1–HC3 | 歷史修課的畢業分類（`courseHistoryClassification.test.js`） | 資工必修、外系開課必修（課號列舉）、核心選修／選修、通識基礎必修各自歸類；他系同名課、課號與課名不符、不在科目表上的課一律不猜（回 `null`）；Markdown 匯入套用分類後，已取得學分落在正確類別 |
+| S19h | 系外仍有缺口，且興趣命中系外選修候選 | 兩個通識／系外名額保留一個給系外（`['general','external']`）；只有一個名額時補上系外；系外缺口為 0 或原本就分到系外時不變 |
 | S20 | request 或 profile 夾帶自製 `graduationPlanning` | 一律忽略，只接受 schedule service 由規則與歷史修課建立的 trusted context |
 | S21 | 明確設定 `remainingSemesters` | 1～8 的整數或 `null` 可用；字串、小數、0、9 拒絕；明確值優先於年級推算 |
 | S22 | HiGHS 產生替代方案 | 本系選修／通識／系外門數與 S₀ 相同，模型限制與 `milpPlanChecks` 都要驗證 |
@@ -185,7 +186,12 @@ node --check src/app.js
 | E7 | 大一層級課號 | 認列，但回報難度需自行確認的警告 |
 | E8 | 系統自撿的候選不符合認列條件 | 剔除候選並記錄原因 |
 | E9 | **使用者明確指定**的課程不符合認列條件 | **保留並排入**，標記不計入畢業學分並說明原因 |
-| E10 | 難度警告涉及數十門課 | 彙整成單行，且警告文字不得含 markdown 語法 |
+| E10 | 難度警告涉及數十門課 | 彙整成單行，且警告文字不得含 markdown 語法；對象是**排進課表的**系外選修，文字以「課表中的系外選修」開頭 |
+| E12 | 候選池有系外選修但課表一門都沒排 | 不發任何系外選修的提醒 |
+| E13 | 課表排入部分系外選修 | 提醒須向系辦確認，只列排入的課名，不列沒排入的 |
+| E14 | 排課候選池（`schedulingPool`） | 納入同學制的系外選修（同年級或全年級可修）；外系必修、其他學制、外系他年級不納入；一般搜尋不受影響 |
+| P10-2b | 興趣關鍵字比對 | 課名包含即命中；修課路徑與主題標籤要相同或以關鍵字開頭（「金融」命中「金融科技」，「管理」不命中「系統管理」）；課程說明、教師、系所、分類、課號不比對；英文不分大小寫 |
+| P10-2c | 關鍵字只出現在課程說明的課 | 不會因為興趣而被排進去，也不會被標成興趣命中 |
 | E11 | 非資工系學生 | 不套用這組條件 |
 
 ### 畢業學分與學期學分分離
@@ -691,7 +697,8 @@ persona），K=1 的方案集合與推薦方案必須完全相同——候選之
 | --- | --- |
 | `choicePerceptron.test.js` | CP1–CP12：手算 Δ（query size 2／3／4）、η 線性縮放、平移不變、方案排列不變、可重播與時鐘純度、缺值逐軸遮罩（選中或任一未選方案缺值即該軸不動）、舊事件與覆蓋不全的曝光整筆跳過並記原因、1000 次同向後 `\|w\| ≤ 2` 且寫得進 `DECIMAL(4,3)`、顯式 `compact=1` 持續選分散 → 權重轉負、零 choice 時等於初始值、`evidence` 每軸上限 20 筆 |
 | `choiceReplayFixture.test.js` | 重播素材本身：同 seed 逐位元可重現、φ 完整時系統分數與 `⟨w, φ⟩` 排序一致、`null-easy` persona 不更新 easy 軸、每回合成對產生 `plan_chosen` 與 `recommendation_accepted`、切分不重疊、accuracy 與名次的定義 |
-| `choiceEvaluation.test.js` | CE1–CE9：多使用者評估管線——時間順序 60／20／20 切分且 test 一定最晚、資料不足回報 no-data 並列原因、readiness 門檻（3 位／每位 20／合計 100）、行為與顯式設定相反時 CP 贏過顯式偏好、沒有人落在一致族群時該項為無資料且結論不得為 go、同一份輸入（含打亂順序）得到相同報告、階層式 bootstrap、P75、回合還原的事件可被正式 learner 學習、事件↔回合來回一致。PS1–PS4：Persona 模擬素材——情境可重現且不重複、模型回覆格式不合或選了不存在的方案回 null、方案描述不洩漏方案名稱／主軸／系統分數、顯式方向與方案簽章。PS5：提示把共同課與各方案獨有的課分開，並帶入人物設定、節次對照與課程主題 |
+| `preferenceLearning.test.js` PL41 | MILP 方案的 policy 權重全部相同時改以 archetype 歸因：接受 easy 方案得 easy 軸的票（`ACCEPT_ARCHETYPE_CONTRAST`）、接受綜合方案不產生票、challenge 算在 easy 軸、另一方案對應同一軸時不算、權重對照有結果時沿用舊規則不疊加、沒有 archetype 的舊曝光行為不變 |
+| `choiceEvaluation.test.js` | CE1–CE9：多使用者評估管線——時間順序 60／20／20 切分且 test 一定最晚、資料不足回報 no-data 並列原因、readiness 門檻（3 位／每位 20／合計 100）、行為與顯式設定相反時 CP 贏過顯式偏好、沒有人落在一致族群時該項為無資料且結論不得為 go、同一份輸入（含打亂順序）得到相同報告、階層式 bootstrap、P75、回合還原的事件可被正式 learner 學習、事件↔回合來回一致。PS1–PS4：Persona 模擬素材——情境可重現且不重複、模型回覆格式不合或選了不存在的方案回 null、方案描述不洩漏方案名稱／主軸／系統分數、顯式方向與方案簽章。PS5：提示把共同課與各方案獨有的課分開，並帶入人物設定、節次對照與課程主題。PS6：多次詢問取過半數，沒有過半或有效票不足就不採用 |
 | `interactionEventSchema.test.js`（#10 3A 區塊） | `planFeatures` 三態相容：舊事件無版本 → 合法但不可學；新版本只覆蓋一部分 → 拒絕；一對一相符 → 通過；`easy: null` 合法、`interest: null` 與越界值被拒；`variantId` 與 policy 不一致被拒，但沒有 policy 的 fallback 方案仍可通過 |
 | `interactionEvents.test.js`（#10 3A 區塊） | `plan_chosen` 來源驗證五條；**同 requestId 同方案 → `duplicate`、改選另一方案 → `conflict`**；`actionId` 由伺服器依 `requestId` 推導；`recommendation_accepted` 照舊寫入 |
 | `profileUpdateValidation.test.js` | `POST /api/profile` 的輸入驗證（純函式，規則抽在 `data/profileUpdateValidation.js`）：`useLearnedPreference` 只收布林；**`preferencesJson` 一律拒絕**（否則字串可經這條路徑繞過布林檢查、整包覆寫還會洗掉其他鍵）；既有的陣列、字串與 department 規則不變；只回報第一個錯誤。路由確實接上這些規則由瀏覽器實測證明——在 Windows 上起 `app.js` 的測試檔會留下殘留 handle 而不結束 |

@@ -9,6 +9,7 @@ import {
   generateSchedule,
   validateSchedule,
   checkConflict,
+  matchesInterestKeyword,
 } from '../src/skills/scheduler.js';
 import { validateScheduleAgainstConstraints } from '../src/skills/scheduleValidator.js';
 import { CONSTRAINTS } from '../src/data/constraintSchema.js';
@@ -2507,7 +2508,7 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
 
     test('P10-2 興趣權重會把命中興趣關鍵字的課排進去', () => {
       const pool = widePool();
-      pool.push(at(999, 1, 5, { category: '一般選修', description: '資訊安全與網路防禦' }));
+      pool.push(at(999, 1, 5, { category: '一般選修', ragTag: ['資訊安全', '網路防禦'] }));
 
       const result = generateSchedule(pool, {
         minCredits: 0, maxCredits: 12, interests: ['資訊安全'],
@@ -2519,6 +2520,50 @@ describe('P10 Roadmap #10：方案分化、涼度來源與誠實邊界', () => {
         interestPlan.schedule.some(c => c.id === 999), true,
         '個人化方案應排入命中關鍵字的課'
       );
+    });
+
+    // 2026-10-07 興趣比對改嚴。舊規則把整段課程說明與所有欄位接起來做包含比對，
+    // 「管理」會命中「系統管理」「健康管理」這些與商管無關的課。
+    test('P10-2b 興趣只比對課名、修課路徑與主題標籤；標籤要相同或以關鍵字開頭', () => {
+      const course = extra => ({ name: '某門課', ...extra });
+      // 課名：包含即命中。
+      assert.equal(matchesInterestKeyword(course({ name: '行銷管理' }), '管理'), true);
+      // 主題標籤：相同或以關鍵字開頭。
+      assert.equal(matchesInterestKeyword(course({ ragTag: ['金融科技'] }), '金融'), true);
+      assert.equal(matchesInterestKeyword(course({ ragTag: ['機器學習'] }), '機器學習'), true);
+      // 關鍵字在標籤後半：不算。這正是舊規則的雜訊來源。
+      assert.equal(matchesInterestKeyword(course({ ragTag: ['系統管理'] }), '管理'), false);
+      assert.equal(matchesInterestKeyword(course({ ragTag: ['水資源管理', '健康管理'] }), '管理'), false);
+      // 修課路徑比照標籤。
+      assert.equal(matchesInterestKeyword(course({ track: '網路與安全類' }), '網路與安全類'), true);
+      assert.equal(matchesInterestKeyword(course({ track: '網路與安全類' }), '安全'), false);
+      // 課程說明、教師、系所、分類、課號都不再比對。
+      assert.equal(matchesInterestKeyword(course({
+        description: '本課程介紹專案管理與金融市場', instructor: '管理', department: '企業管理三甲',
+        category: '管理', code: '管理',
+      }), '管理'), false);
+      // 英文不分大小寫；空關鍵字不命中任何課。
+      assert.equal(matchesInterestKeyword(course({ ragTag: ['Web Development'] }), 'web'), true);
+      assert.equal(matchesInterestKeyword(course({ name: 'Web程式設計' }), 'WEB'), true);
+      assert.equal(matchesInterestKeyword(course({ name: '任何課' }), '  '), false);
+    });
+
+    test('P10-2c 只在課程說明提到關鍵字的課，不會因為興趣而被排進去', () => {
+      const pool = widePool();
+      pool.push(at(998, 1, 5, { category: '一般選修', description: '資訊安全與網路防禦' }));
+      pool.push(at(999, 2, 5, { category: '一般選修', ragTag: ['資訊安全'] }));
+
+      const result = generateSchedule(pool, {
+        minCredits: 0, maxCredits: 12, interests: ['資訊安全'],
+      });
+      const hits = id => result.plans[0].schedule.find(c => c.id === id)
+        ?.recommendationReason?.matchedPreferences ?? null;
+
+      assert.equal(result.plans[0].schedule.some(c => c.id === 999), true);
+      const described = result.plans[0].schedule.find(c => c.id === 998);
+      if (described) {
+        assert.equal(JSON.stringify(hits(998)).includes('資訊安全'), false);
+      }
     });
   });
 

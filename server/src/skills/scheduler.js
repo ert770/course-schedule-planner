@@ -219,7 +219,15 @@ function graduationBucketSummary(plan, scope) {
 
 // 通識／系外最多兩門。每次把一個名額分給「本學期尚未覆蓋的需求」較大者，
 // 因而只會得到 1+1、2+0、0+2；若一門就已覆蓋本學期目標，保留一門而不硬塞第二門。
-export function buildBreadthSequence(graduationPlanning) {
+//
+// **保留一個名額給系外（2026-10-07 專案負責人決定）。** 只照「目標較大者」分，通識的本學期
+// 目標幾乎永遠大於系外（實測 4.8 對 1.2、7.33 對 3），兩個名額都會給通識，系外選修即使在
+// 候選池裡也排不進去——修金融科技微學程、說了對管理金融有興趣的學生仍然一門商管課都沒有。
+// 因此在 `reserveExternal` 為 true 且系外仍有缺口時，保證其中一個名額是系外：
+// 原本沒有系外名額就把最後一個換成系外（不足兩個則補上）。
+// `reserveExternal` 由呼叫端判定：這次的興趣關鍵字命中了至少一門可認列的系外選修候選。
+// 沒有興趣、興趣沒命中系外課、或系外缺口為 0 時，分配結果與原規則完全相同。
+export function buildBreadthSequence(graduationPlanning, { reserveExternal = false } = {}) {
   if (!graduationPlanning?.enabled) return [];
   const remaining = {
     general: Math.max(0, Number(graduationPlanning.semesterTargets?.general) || 0),
@@ -238,16 +246,33 @@ export function buildBreadthSequence(graduationPlanning) {
     // 通識常見 2 學分；這裡只負責分配門數，實際學分會在選中課程後計算。
     remaining[chosen] = Math.max(0, remaining[chosen] - 2);
   }
+  if (reserveExternal && Number(gaps.external || 0) > 0 && !sequence.includes('external')) {
+    if (sequence.length >= 2) sequence[sequence.length - 1] = 'external';
+    else sequence.push('external');
+  }
   return sequence;
 }
 
-function createGraduationAllocationState(plan, constraints, scope) {
+// 這次的興趣有沒有命中任何可排的系外選修。候選已經過 prepareCandidates()，
+// 不能認列的系外選修（非使用者指定）不在裡面。
+function interestHitsOutsideElective(candidates, constraints, scope) {
+  if (collectInterestKeywords(constraints).length === 0) return false;
+  return candidates.some(course => (
+    getGraduationBucket(course, scope) === GRADUATION_BUCKET.EXTERNAL
+    && collectInterestHits(course, constraints).length > 0
+  ));
+}
+
+function createGraduationAllocationState(plan, constraints, scope, candidates = []) {
   const planning = constraints.graduationPlanning;
   if (!planning?.enabled) return null;
+  const reserveExternal = Number(planning.gaps?.external || 0) > 0
+    && interestHitsOutsideElective(candidates, constraints, scope);
   const state = {
     planning,
     scope,
-    breadthSequence: buildBreadthSequence(planning),
+    breadthSequence: buildBreadthSequence(planning, { reserveExternal }),
+    reserveExternal,
     unavailable: new Set(),
     topUp: [],
   };
@@ -269,6 +294,7 @@ function createGraduationAllocationState(plan, constraints, scope) {
     gapsBefore: { ...planning.gaps },
     semesterTargets: { ...planning.semesterTargets },
     breadthSequence: [...state.breadthSequence],
+    externalReservedForInterest: reserveExternal,
     selected: graduationBucketSummary(plan, scope),
     totalGap,
     creditFloorOnly: state.creditFloorOnly,
@@ -900,26 +926,44 @@ function collectInterestKeywords(constraints) {
   ].filter(Boolean);
 }
 
+function normalizeInterestText(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+// 一個興趣關鍵字算不算命中這門課。
+//
+// **2026-10-07 以前**是把課名、課號、教師、系所、分類、整段課程說明、修課路徑與主題標籤
+// 接成一個字串做包含比對。實測「管理」命中 101 門課，其中絕大多數與商管無關：
+// 主題標籤「系統管理」「健康管理」「水資源管理」、以及課程說明裡隨手一句「專案管理」
+// 都算數。結果是 UNIX、養生文化與水資源通識在「對管理、金融有興趣」的學生面前拿到最高
+// 的興趣分數，而這個分數同時是方案的興趣軸特徵（Choice Perceptron 的 φ）。
+//
+// 現在只看三個「這門課自己宣告主題」的位置：
+//   - 課名：包含關鍵字。
+//   - 修課路徑、主題標籤：與關鍵字相同，或**以關鍵字開頭**（「金融」命中「金融科技」，
+//     「管理」不命中「系統管理」）。中文複合詞的修飾語在前，以關鍵字開頭才是在講那個領域；
+//     關鍵字在後面通常是「某某的管理」。
+// 英文不分大小寫。不再比對課號、教師、系所、分類與課程說明。
+//
+// 已知的漏網：關鍵字只出現在標籤後半（例如「離散數學」之於「數學」）時，要靠課名命中。
+// 這是字面比對，不是語意判斷——同義詞（「理財」之於「金融」）一樣比不到。
+export function matchesInterestKeyword(course, keyword) {
+  const needle = normalizeInterestText(keyword);
+  if (!needle) return false;
+  if (normalizeInterestText(course?.name).includes(needle)) return true;
+  return [course?.track, ...toArray(course?.ragTag)].some(tag => {
+    const text = normalizeInterestText(tag);
+    return text !== '' && (text === needle || text.startsWith(needle));
+  });
+}
+
 // 回傳這門課實際命中的興趣關鍵字（roadmap #26 的解釋原料）。
 function collectInterestHits(course, constraints) {
   const keywords = collectInterestKeywords(constraints);
 
   if (keywords.length === 0) return [];
 
-  // ragTag 是資料庫 `Course_Sections.rag_tag` 的主題標籤陣列，100% 有值，
-  // 是比課名與課程描述更精準的興趣訊號，必須納入比對。
-  const searchable = [
-    course.name,
-    course.code,
-    course.instructor,
-    course.department,
-    course.category,
-    course.description,
-    course.track,
-    ...toArray(course.ragTag),
-  ].filter(Boolean).join(' ');
-
-  return keywords.filter(keyword => searchable.includes(keyword));
+  return keywords.filter(keyword => matchesInterestKeyword(course, keyword));
 }
 
 // 與 `collectContentPreferenceHits()` 同一個做法：命中明細是解釋的原料，
@@ -1559,8 +1603,6 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   const courses = [];
   const exclusions = [];
   const warnings = [];
-  const officeConfirmationNames = new Set();
-  const difficultyNames = new Set();
   const unrecognizedExplicit = [];
   const unknownEligibilityNames = new Set();
   const unknownEligibilityExplicit = [];
@@ -1575,7 +1617,6 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   const sessionAvoidanceRules = buildSessionAvoidanceRules(constraints);
   const protectedCourseIds = collectProtectedCourseIds(constraints);
   const avoidanceProtectedNames = new Set();
-  let outsideExclusionCount = 0;
   // 有評價卻因資格待確認（#13C）而被排除的課程要單獨統計。使用者看到
   // 「涼課方案沒有通識」時，必須分得出來是「沒抓到評價」還是「抓到了但規則擋住」。
   let unknownEligibilityWithReviews = 0;
@@ -1726,7 +1767,6 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
       // 系統自己撿的候選：不推薦不能認列的課，整個剔除。
       if (!explicitIds.has(Number(course.id))) {
         exclusions.push({ course, reason: outside.reasons[0], constraintId: 'OUTSIDE_ELECTIVE_INELIGIBLE' });
-        outsideExclusionCount += 1;
         continue;
       }
 
@@ -1744,19 +1784,17 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
       continue;
     }
 
-    for (const warning of outside.warnings) {
-      if (warning.type === 'difficulty') difficultyNames.add(warning.name);
-    }
-    if (outside.needsOfficeConfirmation) officeConfirmationNames.add(course.name);
-
-    courses.push(course);
-  }
-
-  if (outsideExclusionCount > 0) {
-    warnings.push(
-      `已排除 ${outsideExclusionCount} 門不符合系外選修認列條件的課程`
-      + '（進修部、與本系課程重複、大一概論性課程）。'
-    );
+    // 系外選修的提醒掛在課程上，等課真的排進某個方案才說（見 outsideElectiveWarnings()）。
+    // 候選池納入系外選修之後，每位學生有一兩百門這類候選；照舊在這裡統計會讓每一次排課
+    // 都出現「候選課程中有 190 門系外選修須向系辦確認」，而課表裡可能一門都沒有。
+    // 不能認列而被剔除的課不再另外發一則統計警告，原因仍逐門記在 excludedCourses。
+    courses.push({
+      ...course,
+      outsideElectiveNotice: {
+        needsOfficeConfirmation: outside.needsOfficeConfirmation,
+        freshmanLevel: outside.warnings.some(warning => warning.type === 'difficulty'),
+      },
+    });
   }
 
   if (gradeMismatchNames.size > 0) {
@@ -1778,21 +1816,6 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     warnings.push(
       `你指定的課程中有 ${unrecognizedExplicit.length} 門不符合系外選修認列條件：`
       + `${detail}${rest}。已排入課表，但學分不計入畢業，請自行決定是否移除。`
-    );
-  }
-
-  // 每門課各一條警告會有數十行，把其他警告全部淹掉。彙整成一行並只列出前幾門。
-  if (difficultyNames.size > 0) {
-    warnings.push(
-      `候選課程中有 ${difficultyNames.size} 門系外選修屬大一層級課程`
-      + `（${summarizeNames([...difficultyNames])}），難度是否不低於本系課程需自行確認。`
-    );
-  }
-
-  if (officeConfirmationNames.size > 0) {
-    warnings.push(
-      `候選課程中有 ${officeConfirmationNames.size} 門系外選修，依系上規定須先向系辦公室`
-      + '確認是否計入畢業學分。'
     );
   }
 
@@ -1930,6 +1953,26 @@ function reconcileAlternatives(plan) {
   }
 }
 
+// 方案裡實際排入的系外選修要提醒的事。greedy／repair 與 MILP 兩條出口共用。
+function outsideElectiveWarnings(plan) {
+  const noticed = scheduledCourses(plan).filter(course => course.outsideElectiveNotice);
+  const names = predicate => [...new Set(noticed.filter(predicate).map(course => course.name))];
+  const warnings = [];
+  const confirm = names(course => course.outsideElectiveNotice.needsOfficeConfirmation);
+  if (confirm.length > 0) {
+    warnings.push(
+      `課表中的 ${summarizeNames(confirm)} 是系外選修，依系上規定須先向系辦公室確認是否計入畢業學分。`
+    );
+  }
+  const freshman = names(course => course.outsideElectiveNotice.freshmanLevel);
+  if (freshman.length > 0) {
+    warnings.push(
+      `課表中的系外選修 ${summarizeNames(freshman)} 屬大一層級課程，難度是否不低於本系課程需自行確認。`
+    );
+  }
+  return warnings;
+}
+
 function finalizePlan(plan, prepared, constraints, otherRequired = []) {
   const candidateCourses = prepared.courses;
   const { scope } = prepared;
@@ -1943,6 +1986,7 @@ function finalizePlan(plan, prepared, constraints, otherRequired = []) {
 
   addScopeWarnings(plan, otherRequired, scope);
   plan.warnings.push(...prepared.warnings);
+  plan.warnings.push(...outsideElectiveWarnings(plan));
 
   if (plan.nonGraduationCredits > 0) {
     const labels = [...new Set(
@@ -2227,7 +2271,7 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
 
   // 正式必修、重補修與使用者明確指定的課排完後，才開始消耗本學期的自動選課配額。
   // 明確指定的選修／通識／系外課也會計入已用配額，避免系統在它們之外又補一整份。
-  const graduationAllocation = createGraduationAllocationState(plan, constraints, scope);
+  const graduationAllocation = createGraduationAllocationState(plan, constraints, scope, prepared.courses);
 
   const placedIds = new Set([
     ...plan.schedule.map(c => Number(c.id)),
@@ -2353,7 +2397,7 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     if (graduationAllocation?.creditFloorOnly && plan.totalCredits >= plan.minCredits) break;
 
     const selectedBuckets = graduationAllocation ? graduationBucketSummary(plan, scope) : null;
-    const phaseCandidates = toppingUp
+    let phaseCandidates = toppingUp
       ? creditFloorTopUpCandidates(remaining, graduationAllocation, selectedBuckets, scope)
       : graduationAllocation
       ? remaining.filter(course => {
@@ -2366,6 +2410,12 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         return selectedBuckets.elective.courses + slots <= 3;
       })
       : remaining;
+    // 系外名額是因為興趣才保留的，就先用命中興趣的系外選修來填；
+    // 命中的都排不進去（衝堂等）才退回其他系外選修。
+    if (!toppingUp && phase === GRADUATION_BUCKET.EXTERNAL && graduationAllocation?.reserveExternal) {
+      const hits = phaseCandidates.filter(course => collectInterestHits(course, constraints).length > 0);
+      if (hits.length > 0) phaseCandidates.splice(0, phaseCandidates.length, ...hits);
+    }
     if (toppingUp && phaseCandidates.length === 0) break;
     if (graduationAllocation && phaseCandidates.length === 0) {
       graduationAllocation.unavailable.add(phase);
@@ -3510,6 +3560,7 @@ function materializeMilpPlan(candidate, definition, inputs, constraints, prepare
   plan.warnings = candidate.approximate
     ? [`方案「${definition.title}」為近似解：${candidate.convergence.reason}`]
     : [];
+  plan.warnings.push(...outsideElectiveWarnings(plan));
   delete plan.placedCourseKeys;
 
   const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);

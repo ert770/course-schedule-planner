@@ -4,8 +4,10 @@
 
 ## 2026-10-07
 
-1. [首頁排課不再用固定的 25 學分蓋掉個人學分上限](./2026-10-07-dashboard-respects-personal-credit-cap.md)
-2. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
+1. [修復 v2 偏好學習對 MILP 方案收不到訊號的問題](./2026-10-07-v2-learner-archetype-attribution.md)
+2. [排課候選池納入系外選修；興趣比對改嚴；保留一個名額給系外](./2026-10-07-outside-electives-in-pool-and-stricter-interest-match.md)
+3. [首頁排課不再用固定的 25 學分蓋掉個人學分上限](./2026-10-07-dashboard-respects-personal-credit-cap.md)
+4. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
 
 ## 2026-10-03
 

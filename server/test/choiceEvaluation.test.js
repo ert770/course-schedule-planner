@@ -15,6 +15,7 @@ import { REPLAY_PERSONAS, buildPersonaRounds } from '../scripts/lib/choiceReplay
 import { roundsFromEvents } from '../scripts/choicePerceptronEvaluation.js';
 import {
   PERSONA_SETTINGS, buildChoicePrompt, buildScenarios, commonCourses, describePlan, explicitDirection,
+  majorityChoice,
   parseChoice, querySignature, shuffled,
 } from '../scripts/lib/personaScenarios.js';
 import { learnChoicePerceptronWeights } from '../src/skills/preferenceLearning.js';
@@ -189,6 +190,17 @@ test('PS5 提示把共同課與各方案獨有的課分開，並帶入人物設�
   // 沒有對應人物設定的使用者不會被套上別人的設定。
   assert.doesNotMatch(buildChoicePrompt({ prefs: { gradeLevel: 1, className: 'x' }, scenario: { notes: [] }, plans }).user, /型」的學生/);
   assert.equal(Object.keys(PERSONA_SETTINGS).length, 10);
+});
+
+test('PS6 多次詢問取過半數：沒有過半或有效票不足就不採用', () => {
+  const vote = index => ({ index, reason: `r${index}` });
+  assert.deepEqual(majorityChoice([vote(1), vote(1), vote(0)]), { choice: vote(1), count: 2, unanimous: false });
+  assert.equal(majorityChoice([vote(2), vote(2), vote(2)]).unanimous, true);
+  assert.equal(majorityChoice([vote(0), vote(1), vote(2)]), null);
+  // 三票裡只有一票有效：不算過半。
+  assert.equal(majorityChoice([vote(0), null, null]), null);
+  assert.deepEqual(majorityChoice([vote(0), vote(0), null]), { choice: vote(0), count: 2, unanimous: false });
+  assert.equal(majorityChoice([null, null, null]), null);
 });
 
 test('PS4 顯式方向、方案簽章與洗牌', () => {

@@ -33,7 +33,7 @@ const {
 } = await import('./lib/demoCaseLoader.js');
 const {
   PLAN_LABELS, SIMULATION_PERSONAS, SIMULATION_PROMPT_VERSION,
-  buildChoicePrompt, buildScenarios, explicitDirection, parseChoice,
+  buildChoicePrompt, buildScenarios, explicitDirection, majorityChoice, parseChoice,
   querySignature, shuffled, v2ExplicitProfile,
 } = await import('./lib/personaScenarios.js');
 
@@ -41,6 +41,9 @@ const args = process.argv.slice(2);
 const argValue = name => args.find(arg => arg.startsWith(`--${name}=`))?.split('=')[1];
 const dryRun = args.includes('--dry-run');
 const limit = Number(argValue('limit') ?? 30);
+// 這個模型不接受 temperature 參數，同一題重問會換答案（試跑時 10 題有 3 題）。
+// 每題問 VOTES 次取過半數；沒有任何方案過半就整題丟掉，不挑一個湊數。
+const VOTES = Number(argValue('votes') ?? 3);
 const personaFilter = argValue('personas')?.split(',').map(Number);
 const personas = SIMULATION_PERSONAS.filter(persona => !personaFilter || personaFilter.includes(persona.userId));
 const MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna';
@@ -118,6 +121,7 @@ async function main() {
     let usable = 0;
     let firstLabelChosen = 0;
     let invalid = 0;
+    let unanimous = 0;
     let tried = 0;
 
     for (const scenario of scenarios) {
@@ -161,21 +165,30 @@ async function main() {
         continue;
       }
 
-      const answer = await askModel(client, prompt);
-      const choice = parseChoice(answer.text, shown.length);
-      if (!choice) {
-        invalid += 1;
-        skipped['invalid-answer'] = (skipped['invalid-answer'] || 0) + 1;
+      const answers = await Promise.all(Array.from({ length: VOTES }, () => askModel(client, prompt)));
+      const parsed = answers.map(item => parseChoice(item.text, shown.length));
+      invalid += parsed.filter(item => !item).length;
+      const decision = majorityChoice(parsed, VOTES);
+      if (!decision) {
+        const reason = parsed.every(item => !item) ? 'invalid-answer' : 'no-majority';
+        skipped[reason] = (skipped[reason] || 0) + 1;
         continue;
       }
+      const choice = decision.choice;
+      const answer = answers[0];
       usable += 1;
+      if (decision.unanimous) unanimous += 1;
       if (choice.index === 0) firstLabelChosen += 1;
       const chosenIndex = order[choice.index];
-      rounds.push({ ...base, chosenIndex, reason: choice.reason, model: answer.model });
+      rounds.push({
+        ...base, chosenIndex, reason: choice.reason, model: answer.model,
+        // 每一票選的系統方案索引（無效回覆為 null）。
+        votes: parsed.map(item => (item ? order[item.index] : null)),
+      });
       transcript.push(
         `## ${persona.userId} 第 ${usable} 題（${scenario.scenarioId}）`, '',
         '```text', prompt.user, '```', '',
-        `**選擇：方案 ${PLAN_LABELS[choice.index]}**（系統方案 \`${query.plans[chosenIndex].variantId}\`，`
+        `**選擇：方案 ${PLAN_LABELS[choice.index]}**（${VOTES} 票中 ${decision.count} 票；系統方案 \`${query.plans[chosenIndex].variantId}\`，`
         + `${chosenIndex === 0 ? '是' : '不是'}系統主推）`, '',
         `理由：${choice.reason}`, '',
         `方案特徵（模型看不到）：${query.features.map(feature => (
@@ -191,6 +204,8 @@ async function main() {
       candidatePool: candidatesCache.size,
       skipped,
       invalidAnswers: invalid,
+      votesPerQuestion: dryRun ? null : VOTES,
+      unanimousRate: dryRun || usable === 0 ? null : Math.round((unanimous / usable) * 100) / 100,
       firstShownChosenRate: dryRun || usable === 0 ? null : Math.round((firstLabelChosen / usable) * 100) / 100,
       systemPrimaryChosenRate: dryRun || usable === 0 ? null : Math.round(
         (rounds.filter(round => round.subject === persona.studentId && round.chosenIndex === 0).length / usable) * 100

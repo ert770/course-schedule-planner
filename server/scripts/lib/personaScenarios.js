@@ -371,6 +371,21 @@ export function parseChoice(text, planCount) {
   return { index, reason: String(parsed.reason ?? '').trim() };
 }
 
+// 多次詢問取過半數。`parsed` 是每一票的解析結果（無效為 null），`total` 是問了幾次。
+// 過半以「問了幾次」為分母：三票裡兩票無效、一票有效不算過半。沒有方案過半回 null。
+export function majorityChoice(parsed, total = parsed.length) {
+  const counts = new Map();
+  for (const item of parsed) {
+    if (item) counts.set(item.index, (counts.get(item.index) ?? 0) + 1);
+  }
+  for (const [index, count] of counts) {
+    if (count * 2 > total) {
+      return { choice: parsed.find(item => item && item.index === index), count, unanimous: count === total };
+    }
+  }
+  return null;
+}
+
 // 兩個情境排出一模一樣的方案組合時只算一題。
 export function querySignature(plans) {
   return plans

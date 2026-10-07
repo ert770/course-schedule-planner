@@ -148,6 +148,13 @@ function categorizeCourses(courseList, scope) {
   });
 }
 
+// 系外選修的搜尋與排課候選共用同一條範圍：其他系所班級、同學制。
+function isSameDegreeOutsideElective(course, scope) {
+  if (course.category !== CATEGORY_OUTSIDE_ELECTIVE) return false;
+  const parsed = parseClassName(course.department);
+  return parsed.isDepartmentClass && parsed.degree === scope.degree;
+}
+
 function isNonDepartmentClass(course) {
   const parsed = parseClassName(course.department);
   return !parsed.isDepartmentClass && Boolean(parsed.classGroup);
@@ -159,6 +166,10 @@ function isNonDepartmentClass(course) {
 //   - 同系任何年級的選修（排序由 scheduler 的跨年級扣分處理，本年級優先）
 //   - B～F 類裡，依適用規則判定為 eligible 的班級（學院綜合班、學分學程等）
 //   - 依規則判定為 ineligible 的 B～F 班級，連通識也不放進來——它們不是候選
+//   - 同學制其他系所班級開的選修（系外選修，2026-10-07）。規格一直把它列為一般候選
+//     （SCHEDULING_LOGIC.md「任何系所的選修：可修」），畢業配額也有系外這一格，但候選池
+//     從來沒放進來，於是系外配額永遠補不到、對商管有興趣的學生也排不到任何一門商管課。
+//     能不能認列由 scheduler 的 prepareCandidates() 依 outsideElective.js 判定，這裡不重做。
 export function filterCategorizedCourses(
   courseList = [],
   filters = {},
@@ -181,11 +192,7 @@ export function filterCategorizedCourses(
     || (schedulingPool && isOwnDepartmentElective(course, scope))
   ));
   if (filters.category === CATEGORY_OUTSIDE_ELECTIVE) {
-    courses = courses.filter(course => {
-      if (course.category !== CATEGORY_OUTSIDE_ELECTIVE) return false;
-      const parsed = parseClassName(course.department);
-      return parsed.isDepartmentClass && parsed.degree === scope.degree;
-    });
+    courses = courses.filter(course => isSameDegreeOutsideElective(course, scope));
   } else if (filters.category === CATEGORY_GENERAL_EDUCATION) {
     courses = courses.filter(course => course.category === CATEGORY_GENERAL_EDUCATION);
   } else {
@@ -196,7 +203,8 @@ export function filterCategorizedCourses(
       }
       return isInStudentClass(course, scope)
         || (includeGeneralEducation && course.category === CATEGORY_GENERAL_EDUCATION)
-        || (schedulingPool && isOwnDepartmentElective(course, scope));
+        || (schedulingPool && isOwnDepartmentElective(course, scope))
+        || (schedulingPool && isSameDegreeOutsideElective(course, scope));
     });
     if (filters.category) {
       courses = courses.filter(course => course.category === filters.category);
