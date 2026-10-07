@@ -48,3 +48,8 @@ server/data/chat_history.json
 # `npm run bench:plan-diversity --prefix server` 重新產生；對外要引用的結論寫進
 # `docs/CHANGE_REPORTS/`，驗收摘要另有 plan-diversity-acceptance-latest.json 會進版控。
 server/test/reports/plan-diversity-diagnostics-latest.json
+
+# Roadmap #10 任務 3B 的 Persona 模擬選擇輸出。是語言模型扮演測試人物產生的模擬資料，
+# 每跑一次就多一個資料夾，而且可由 `node scripts/personaChoiceSimulation.js` 重新產生。
+# 進版控會讓人誤以為那是真實使用者的選擇紀錄；結論寫進 `docs/CHANGE_REPORTS/`。
+server/simulation-runs/

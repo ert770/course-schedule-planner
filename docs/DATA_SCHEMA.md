@@ -25,7 +25,7 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | Table | 主要欄位 | 用途 |
 | --- | --- | --- |
 | `Privacy_Subject_State` | `subject_id`, `last_active_at`, `service_withdrawn_at` | 保存期限與撤回狀態 |
-| `Privacy_Consents` | `recorded_sequence`, `consent_id`, `subject_id`, `purpose`, `granted`, `policy_version`, `decided_at`, `source`, `request_id` | append-only 同意決定；sequence 決定同毫秒寫入的先後 |
+| `Privacy_Consents` | `recorded_sequence`, `consent_id`, `subject_id`, `purpose`, `granted`, `policy_version`, `decided_at`, `source`, `request_id` | append-only 同意決定；sequence 決定同毫秒寫入的先後。`source` 目前有 `privacy_center`（使用者在隱私中心的決定）、`demo_seed`（三位 demo persona）、`persona_seed`（測試人物 9001～9010，由 `personaConsentSeed.js` 寫入）、`ab_test` |
 | `Privacy_Audit_Log` | `audit_id`, `subject_id`, `action`, `resource_type`, `outcome`, `request_id`, `occurred_at`, `metadata_json` | 不含 payload 的稽核紀錄 |
 | `Privacy_Data_Requests` | `request_id`, `subject_id`, `request_type`, `token_hash`, `expires_at`, `completed_at`, `status` | 短效、單次刪除確認；只存 token hash |
 | `Chat_Messages` | `message_id`, `subject_id`, `role`, `ciphertext`, `iv`, `auth_tag`, `key_version`, `created_at`, `expires_at` | AES-256-GCM Raw Chat，30 天到期 |

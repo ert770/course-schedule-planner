@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-07
+
+1. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
+
 ## 2026-10-03
 
 1. [Roadmap #10 任務 4：系外與通識探索清單（Pardos & Jiang 2020）](./2026-10-03-roadmap-10-task4-exploration-list.md)
