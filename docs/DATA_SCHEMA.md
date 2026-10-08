@@ -665,6 +665,28 @@ npm run seed:demo-personas --prefix server -- --apply --confirm-shared-mysql
 
 `Course_Sections.rag_tag` 的 JSON 主題標籤陣列，資料庫中 100% 有值，例如 `["機器學習","圖像處理","物件偵測"]`。排課引擎的興趣比對會使用此欄位。
 
+### rag_tag 興趣分類目錄與資格快照（階段 1／2）
+
+`server/src/data/interestTagCatalog.json` 是版本化本機目錄，不是新增 MySQL 表。`catalogVersion` 表示分類／別名版本；`mainCategories`、`subcategories` 及 `canonicalTags[].categoryAssignments` 保存多對多分類路徑與原始工作表／列號。`canonicalTags[].id` 是穩定的 canonical tag ID；原始課程 `rag_tag` 不被覆寫。
+
+每個 `canonicalTags[].eligibility` 保存：
+
+| 欄位 | 型別 | 意義 |
+| --- | --- | --- |
+| `status` | string | `pending_post_alias_course_recount` 或 `reviewed_post_alias_course_recount` |
+| `interestLearningEligible` | boolean／null | 是否能更新標籤興趣；只有明確 `true` 放行 |
+| `crossCourseMatchEligible` | boolean／null | 是否能參與跨課匹配；只有明確 `true` 放行 |
+| `exclusionReason` | string／null | `explicit_generic`、`too_common`、`single_course`；合格為 `null` |
+| `courseCount` | integer | 別名合併、依穩定課號合併班次、單課 canonical 去重後的出現課數；待重算時可不存在 |
+| `courseRatio` | number | `courseCount / 全部合併後課程數`；待重算時可不存在 |
+| `version` | string | 此標籤資格所屬快照版本；待重算時可不存在 |
+
+頂層 `eligibilityRecount` 記錄 `version`、`source`（`mysql-course-api`）、`computedAt`（UTC ISO 時間）、`reviewedOn`（人工核對日期）、`courseMembershipSha256`（排序後穩定課號及 canonical 標籤集合的 SHA-256）及 `summary`（班次／課程／標籤數、兩種資格數、各原因數、未知標籤數、略過班次數及門檻）。不在快照保存連線憑證或使用者資料。`generatedFrom.frequencySnapshotUsableForEligibility=false` 仍表示 Excel 的合併前頻率不可作資格依據；已核對的資格以 MySQL 快照為準。
+
+2026-10-09 核對快照：3,560 班次合併成 2,004 個穩定課號，6,769 個 canonical tags；6,736 個可學習、2,144 個可跨課匹配。6 個通用、27 個高頻、4,592 個單課標籤。高頻規則是嚴格 `>2%`；單課可學習但不可跨課匹配。必修排除仍須依個別使用者 scope 在事件層實作。重新執行 Excel 匯入工具會重建 pending 目錄，之後需重新執行 MySQL 唯讀報表及人工核對才能寫回資格。
+
+這份目錄尚未接入興趣事件、API、前端或排課器；不是目前線上排序的新資料來源。
+
 排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。
 
 ## Constraint Schema（Roadmap #21）

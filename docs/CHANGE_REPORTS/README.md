@@ -2,6 +2,16 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-09
+
+1. [rag_tag 興趣資格定稿與 MySQL 重算（階段 2 完成）](./2026-10-09-rag-tag-interest-eligibility-finalized.md)
+
+## 2026-10-08
+
+1. [rag_tag 逐課資格計算器與唯讀報表（階段 2）](./2026-10-08-rag-tag-interest-eligibility-stage2.md)
+2. [rag_tag 興趣目錄與多路徑標籤解析（階段 1）](./2026-10-08-rag-tag-interest-catalog-stage1.md)
+3. [rag_tag 語意同義詞合併確認](./2026-10-08-rag-tag-semantic-aliases-approved.md)
+
 ## 2026-10-07
 
 1. [修復 v2 偏好學習對 MILP 方案收不到訊號的問題](./2026-10-07-v2-learner-archetype-attribution.md)
