@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WORKBOOK = ROOT / "docs/CHANGE_REPORTS/2026-10-08-rag-tag-exclusions-semantic-merge-approved.xlsx"
 DEFAULT_ALIASES = ROOT / "server/src/data/interestTagAliases.json"
 DEFAULT_OUTPUT = ROOT / "server/src/data/interestTagCatalog.json"
-CATALOG_VERSION = "rag-tag-catalog-2026-10-08-v1"
+CATALOG_VERSION = "rag-tag-catalog-2026-10-09-v2"
 CLASSIFICATION_SHEET_PREFIX = "分類標籤_"
 EXPECTED_CLASSIFICATION_SHEETS = 31
 EXPECTED_ASSIGNMENT_ROWS = 15113
@@ -104,6 +104,10 @@ def main():
     parser.add_argument("--aliases", type=Path, default=DEFAULT_ALIASES)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
+
+    previous_catalog = None
+    if args.output.exists():
+        previous_catalog = json.loads(args.output.read_text(encoding="utf-8"))
 
     _, alias_index = load_aliases(args.aliases)
     workbook = load_workbook(args.workbook, read_only=True, data_only=True)
@@ -219,6 +223,41 @@ def main():
         })
     serialized_tags.sort(key=lambda item: (item["normalizedName"], item["id"]))
 
+    eligibility_recount = None
+    if previous_catalog is not None:
+        previous_tags = {
+            item.get("id"): item
+            for item in previous_catalog.get("canonicalTags", [])
+            if item.get("id")
+        }
+        current_tag_ids = {item["id"] for item in serialized_tags}
+        if set(previous_tags) != current_tag_ids:
+            raise ValueError(
+                "Canonical tag IDs changed during category-only reclassification; "
+                "refusing to discard the reviewed eligibility snapshot"
+            )
+
+        previous_snapshot = previous_catalog.get("eligibilityRecount")
+        if previous_snapshot is not None:
+            for tag in serialized_tags:
+                previous_tag = previous_tags[tag["id"]]
+                previous_eligibility = previous_tag.get("eligibility")
+                if (
+                    not isinstance(previous_eligibility, dict)
+                    or previous_eligibility.get("status") != "reviewed_post_alias_course_recount"
+                ):
+                    raise ValueError(
+                        f"Reviewed eligibility is missing for canonical tag {tag['id']}"
+                    )
+                tag["eligibility"] = previous_eligibility
+
+            eligibility_recount = json.loads(json.dumps(previous_snapshot))
+            if not isinstance(eligibility_recount.get("summary"), dict):
+                raise ValueError("Existing eligibility recount has no summary")
+            if eligibility_recount["summary"].get("canonicalTagCount") != len(serialized_tags):
+                raise ValueError("Existing eligibility recount tag count does not match catalog")
+            eligibility_recount["summary"]["catalogVersion"] = CATALOG_VERSION
+
     catalog = {
         "schemaVersion": 1,
         "catalogVersion": CATALOG_VERSION,
@@ -226,8 +265,12 @@ def main():
             "workbook": args.workbook.name,
             "aliasFile": args.aliases.name,
             "classificationSheetCount": category_sheet_count,
-            "eligibilityStatus": "pending_post_alias_course_recount",
-            "frequencySnapshotUsableForEligibility": False,
+            "eligibilityStatus": (
+                "reviewed_post_alias_course_recount"
+                if eligibility_recount
+                else "pending_post_alias_course_recount"
+            ),
+            "frequencySnapshotUsableForEligibility": eligibility_recount is not None,
         },
         "summary": {
             "mainCategoryCount": len(main_categories),
@@ -246,6 +289,8 @@ def main():
         "subcategories": sorted(subcategories.values(), key=lambda item: (item["mainCategoryId"], comparison_key(item["name"]), item["id"])),
         "canonicalTags": serialized_tags,
     }
+    if eligibility_recount is not None:
+        catalog["eligibilityRecount"] = eligibility_recount
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

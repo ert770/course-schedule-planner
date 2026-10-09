@@ -4,7 +4,8 @@
 
 ## 2026-10-09
 
-1. [rag_tag 興趣資格定稿與 MySQL 重算（階段 2 完成）](./2026-10-09-rag-tag-interest-eligibility-finalized.md)
+1. [rag_tag「其他／待人工確認」完整重分類](./2026-10-09-rag-tag-pending-reclassification.md)
+2. [rag_tag 興趣資格定稿與 MySQL 重算（階段 2 完成）](./2026-10-09-rag-tag-interest-eligibility-finalized.md)
 
 ## 2026-10-08
 

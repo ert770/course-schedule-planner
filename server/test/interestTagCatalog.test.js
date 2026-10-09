@@ -13,10 +13,13 @@ import { normalizeInterestTag } from '../src/data/interestTagVocabulary.js';
 describe('rag_tag 興趣分類目錄', () => {
   test('匯入核准分類資料並保留多對多分類路徑', () => {
     assert.equal(interestTagCatalog.summary.mainCategoryCount, 19);
-    assert.equal(interestTagCatalog.summary.categoryPathCount, 78);
+    assert.equal(interestTagCatalog.summary.categoryPathCount, 112);
     assert.equal(interestTagCatalog.summary.rawTagCount, 6846);
     assert.equal(interestTagCatalog.summary.categoryAssignmentCount, 15113);
     assert.equal(interestTagCatalog.summary.approvedAliasCount, 13);
+    assert.equal(interestTagCatalog.catalogVersion, 'rag-tag-catalog-2026-10-09-v2');
+    assert.ok(interestTagCatalog.mainCategories.some(category => category.name === '學習階段與課程情境'));
+    assert.ok(!interestTagCatalog.mainCategories.some(category => category.name === '其他／待人工確認'));
     assert.deepEqual(interestTagCatalog.summary.aliasCanonicalTargetsMissingFromCatalog, []);
     assert.ok(interestTagCatalog.summary.rawTagsWithMultipleCategoryPaths > 0);
     assert.ok(interestTagCatalog.summary.canonicalTagsWithMultipleCategoryPaths > 0);
@@ -40,6 +43,12 @@ describe('rag_tag 興趣分類目錄', () => {
       resolved.categoryPaths.map(path => `${path.mainCategoryId}/${path.subcategoryId}`).sort(),
       multiPathTag.categoryAssignments.map(path => `${path.mainCategoryId}/${path.subcategoryId}`).sort(),
     );
+
+    const uml = resolveInterestTag('UML');
+    assert.equal(uml.status, 'resolved');
+    assert.ok(uml.categoryPaths.some(path => (
+      path.mainCategory === '資訊與計算' && path.subcategory === '程式、系統與資料'
+    )));
   });
 
   test('套用核准別名並保留使用者原始標籤寫法', () => {
