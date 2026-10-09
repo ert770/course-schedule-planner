@@ -17,6 +17,8 @@
     "migrate:saved-schedules": "node scripts/savedSchedulesMigration.js",
     "seed:demo-personas": "node scripts/demoPersonasSeed.js",
     "bench:personalization": "node scripts/personalizationBenchmark.js",
+    "eval:tag-interest": "node scripts/tagInterestEvaluation.js",
+    "eval:tag-interest:real-readiness": "node scripts/tagInterestEvaluation.js --check-real-readiness",
     "bench:plan-diversity": "node scripts/planDiversityAcceptanceReport.js",
     "bench:scheduler": "node scripts/schedulerBenchmarkReport.js",
     "eval:golden-set": "node scripts/agentGoldenSetReport.js",
