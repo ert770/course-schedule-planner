@@ -1,5 +1,6 @@
 import { after, before, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +28,7 @@ import { annotateScheduleIdentifiers } from '../src/services/scheduleService.js'
 import { deriveSubjectId } from '../src/services/privacyService.js';
 import { SCORING_POLICY_VERSION } from '../src/skills/scoringPolicy.js';
 import { PLAN_FEATURE_VERSION } from '../src/data/interactionEventSchema.js';
+import { interestTagCatalog } from '../src/data/interestTagCatalog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const demo = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'data', 'users.json'), 'utf8'))[0];
@@ -103,6 +105,13 @@ before(async () => {
   process.env.NODE_ENV = 'test';
   process.env.PRIVACY_STORE = 'memory';
   process.env.PRIVACY_ENFORCEMENT_ENABLED = 'true';
+  // app.js 載入 server/.env；這些測試使用假班次 ID 與記憶體 store，避免
+  // fixture 對到共用 MySQL 的真實班次或碰觸任何外部資料。
+  delete process.env.DB_HOST;
+  delete process.env.DB_USER;
+  delete process.env.DB_NAME;
+  delete process.env.DB_PASSWORD;
+  delete process.env.DB_PORT;
   process.env.ANALYTICS_ID_SECRET = 'interaction-test-analytics-secret-32-chars';
   process.env.PRIVACY_DATA_KEY_V1 = Buffer.alloc(32, 5).toString('base64');
   delete process.env.GEMINI_API_KEY;
@@ -165,6 +174,53 @@ describe('#2 consent boundary', () => {
     assert.equal(serialized.includes(deriveSubjectId(identityA.canonicalId)), false);
     assert.equal(stored[0].versionSnapshot.modelVersion, SCORING_POLICY_VERSION);
     assert.equal(stored[0].versionSnapshot.recommendationReasonVersion, null);
+  });
+
+  test('rag-tag exploration feedback 與評分可匯出，標籤快照由 server 產生', async () => {
+    await grantPersonalization(identityA);
+    const tag = interestTagCatalog.canonicalTags.find(item => (
+      item.eligibility?.interestLearningEligible === true
+    ));
+    const tagInterestContext = {
+      course: {
+        sectionId: 101,
+        catalogCourseCode: 'IECS3002',
+        category: '選修',
+        department: '資訊三甲',
+        ragTag: [tag.name],
+      },
+      profile: { department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲' },
+    };
+    const result = await recordInteractionEvents(identityA, [
+      baseDraft({
+        eventType: 'interest_exploration_feedback',
+        actionId: randomUUID(),
+        source: 'exploration',
+        feedbackReason: null,
+        interestFeedback: { response: 'interested', canonicalTagIds: [tag.id] },
+        // 即使 client 嘗試提供假快照，也只能使用 server 依課程重建的內容。
+        tagInterestSnapshot: { modelVersion: 'forged', evidenceTagIds: [] },
+      }),
+      baseDraft({
+        eventType: 'course_rated',
+        actionId: randomUUID(),
+        source: 'explicit_selection',
+        feedbackReason: null,
+        rating: 5,
+      }),
+    ], { tagInterestContext });
+
+    assert.equal(result.recorded, 2);
+    const exported = await getInteractionEventsForExport(identityA);
+    const exploration = exported.find(event => event.eventType === 'interest_exploration_feedback');
+    const rating = exported.find(event => event.eventType === 'course_rated');
+    assert.deepEqual(exploration.interestFeedback, {
+      response: 'interested', canonicalTagIds: [tag.id],
+    });
+    assert.equal(exploration.tagInterestSnapshot.modelVersion, 'rag-tag-interest-v1');
+    assert.deepEqual(exploration.tagInterestSnapshot.evidenceTagIds, [tag.id]);
+    assert.equal(rating.rating, 5);
+    assert.equal(rating.tagInterestSnapshot.tags[0].canonicalTagId, tag.id);
   });
 
   test('IL-2b 曝光事件的資料一樣完全不含學號（伺服器寫入路徑）', async () => {

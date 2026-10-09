@@ -228,6 +228,35 @@ describe('#12A 先分類再搜尋', () => {
     assert.ok(!ordinary.includes(30) && !ordinary.includes(32));
   });
 
+  test('排課候選池納入同學制的系外選修；外系必修、其他學制與他年級的不納入', () => {
+    const courses = [
+      ...categorizedCourses,
+      { id: 40, name: '投資學', catalogCourseCode: 'FIN3001', department: '財金三甲', category: '選修', gradeLevel: 3 },
+      { id: 41, name: '行銷管理', catalogCourseCode: 'MKT3001', department: '行銷三甲', category: '選修', gradeLevel: 0 },
+      { id: 42, name: '外系必修', catalogCourseCode: 'FIN3002', department: '財金三甲', category: '必修', gradeLevel: 3 },
+      { id: 43, name: '碩班選修', catalogCourseCode: 'FIN6001', department: '財金碩一', category: '選修', gradeLevel: 0 },
+      { id: 44, name: '外系他年級選修', catalogCourseCode: 'ACCT2001', department: '會計二甲', category: '選修', gradeLevel: 2 },
+    ];
+    const ids = options => filterCategorizedCourses(courses, {}, studentScope, options).map(course => course.id);
+
+    const pool = ids({ includeGeneralEducation: true, schedulingPool: true });
+    assert.ok(pool.includes(40), '同年級的系外選修要納入');
+    assert.ok(pool.includes(41), '全年級可修的系外選修要納入');
+    assert.ok(!pool.includes(42), '外系必修不納入');
+    assert.ok(!pool.includes(43), '其他學制的課不納入');
+    assert.ok(!pool.includes(44), '外系他年級選修不納入');
+
+    // 候選池裡的系外選修帶著分類與認列結果，scheduler 才能放進系外配額並決定是否剔除。
+    const investing = filterCategorizedCourses(
+      courses, {}, studentScope, { includeGeneralEducation: true, schedulingPool: true }
+    ).find(course => course.id === 40);
+    assert.equal(investing.category, '系外選修');
+    assert.equal(investing.outsideElective.checked, true);
+
+    // 一般搜尋不帶 schedulingPool：沒有指定系外選修分類時仍看不到外系課。
+    assert.ok(!ids({}).includes(40) && !ids({}).includes(41));
+  });
+
   test('排課候選可在本人班級課程之外納入通識，普通搜尋仍維持 F7', () => {
     const ordinary = filterCategorizedCourses(categorizedCourses, {}, studentScope);
     const scheduling = filterCategorizedCourses(

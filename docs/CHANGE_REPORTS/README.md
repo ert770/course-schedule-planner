@@ -2,6 +2,28 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-09
+
+1. [rag_tag「其他／待人工確認」完整重分類](./2026-10-09-rag-tag-pending-reclassification.md)
+2. [rag_tag 興趣資格定稿與 MySQL 重算（階段 2 完成）](./2026-10-09-rag-tag-interest-eligibility-finalized.md)
+
+## 2026-10-08
+
+1. [rag_tag 逐課資格計算器與唯讀報表（階段 2）](./2026-10-08-rag-tag-interest-eligibility-stage2.md)
+2. [rag_tag 興趣目錄與多路徑標籤解析（階段 1）](./2026-10-08-rag-tag-interest-catalog-stage1.md)
+3. [rag_tag 語意同義詞合併確認](./2026-10-08-rag-tag-semantic-aliases-approved.md)
+
+## 2026-10-07
+
+1. [修復 v2 偏好學習對 MILP 方案收不到訊號的問題](./2026-10-07-v2-learner-archetype-attribution.md)
+2. [排課候選池納入系外選修；興趣比對改嚴；保留一個名額給系外](./2026-10-07-outside-electives-in-pool-and-stricter-interest-match.md)
+3. [首頁排課不再用固定的 25 學分蓋掉個人學分上限](./2026-10-07-dashboard-respects-personal-credit-cap.md)
+4. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
+
+## 2026-10-03
+
+1. [Roadmap #10 任務 4：系外與通識探索清單（Pardos & Jiang 2020）](./2026-10-03-roadmap-10-task4-exploration-list.md)
+
 ## 2026-10-02
 
 1. [把 main 合併進 backend，解決 PR #24 的衝突](./2026-10-02-merge-main-into-backend.md)

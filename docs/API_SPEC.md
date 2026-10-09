@@ -73,9 +73,10 @@ canonical ID 或 pseudonymous subject ID。
 
 ### `GET /api/privacy/export`
 
-以 attachment JSON 串流登入者的可攜 Profile、已存課表、同意決定與**自己的互動事件**
-（`data.interactionEvents`，Roadmap #2）。不包含密碼、內部 subject ID、Raw Chat 明文、
-模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
+以 attachment JSON 串流登入者的可攜 Profile、已存課表、同意決定、**自己的互動事件**
+（`data.interactionEvents`，Roadmap #2）、目前已存的三軸權重與標籤興趣檔案
+（`data.learnedPreferenceWeights`、`data.learnedTagInterests`）。不包含密碼、內部 subject ID、
+Raw Chat 明文、模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
 
 匯出的事件刻意不含 `subject_id` 與 `idempotencyKey`：前者是分析用的內部假名，匯出它
 等於把假名與本人身分綁在同一份檔案裡；後者是去重用的實作細節。
@@ -91,8 +92,9 @@ canonical ID 或 pseudonymous subject ID。
 ### `DELETE /api/privacy/data`
 
 Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: "刪除我的資料"`。
-成功後刪除服務帳號、Profile、修課歷史、已存課表、互動事件與 Raw Chat，清除 session；
-最小同意與稽核記錄依政策保留 365 天。回應的 `deleted` 含 `interactionEventsDeleted`。
+成功後刪除服務帳號、Profile、修課歷史、已存課表、互動事件、三軸權重、標籤興趣檔案與 Raw Chat，清除 session；
+最小同意與稽核記錄依政策保留 365 天。回應的 `deleted` 含 `interactionEventsDeleted`、
+`learnedWeightsDeleted` 與 `tagInterestProfilesDeleted`。
 
 **執行順序：先標記撤回，再刪除。** 同意紀錄依政策保留 365 天，因此刪除後 consent 檢查
 仍會通過；若不先撤回，一個已通過檢查、正在執行中的 `POST /api/interactions` 可以在刪除
@@ -133,9 +135,53 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
 `User_Course_History` 的 MySQL 讀取），CI 因此無法端到端測試這支路由（見
 `docs/TEST_PLAN.md` 的 PL 段落）。
 
+### `GET /api/privacy/tag-interests`（Roadmap #43 階段 3）
+
+讀取登入者自己的 rag-tag 興趣檔案。未同意 `personalization_learning` 時，不讀取互動事件、
+不保存行為 profile；回應仍可列出既有 Profile 中精確對應的明確主題先驗，並以
+`consented: false`／`source: "no-consent"` 表示沒有行為學習資料。
+
+```json
+{
+  "consented": true,
+  "source": "learned",
+  "computedAt": "2026-10-09T04:00:00.000Z",
+  "profile": {
+    "modelVersion": "rag-tag-interest-v1",
+    "catalogVersion": "rag-tag-catalog-2026-10-08-v1",
+    "eligibilityVersion": "rag-tag-eligibility-2026-10-09-v1",
+    "categoryInterests": [],
+    "explicitTopics": [],
+    "unmappedExplicitTopics": [],
+    "tagInterests": [
+      {
+        "canonicalTagId": "tag_ac8bb4d19b34088425b1",
+        "canonicalName": "0365 Copilot",
+        "prior": 0,
+        "positiveEvidence": 1,
+        "negativeEvidence": 0,
+        "score": 0.333333,
+        "crossCourseMatchEligible": false,
+        "hasEvidence": true
+      }
+    ],
+    "summary": {
+      "usableEventCount": 1,
+      "tagCount": 1,
+      "evidenceTagCount": 1,
+      "crossCourseMatchTagCount": 0,
+      "excludedEventCount": 0
+    }
+  }
+}
+```
+
+這個 GET 在已同意且 profile 過期時會重算並覆寫 `Learned_Tag_Interests` 快取。只有跨課配對
+資格為 true 的 tag 才能用於新課程分數；此 API 只提供 profile，階段 3 尚未把分數接進排課。
+
 ### `DELETE /api/privacy/personalization`（Roadmap #31）
 
-只清除學到的權重與作為其輸入的互動事件，**不影響顯式 Profile**（偏好標籤、避開時段、
+只清除學到的三軸權重、標籤興趣檔案與作為其輸入的互動事件，**不影響顯式 Profile**（偏好標籤、避開時段、
 學分上限）。與 `DELETE /api/privacy/data`（整個帳號）不同量級，不需要確認詞，但前端
 一律用 `window.confirm` 講清楚會刪除什麼再送出。
 
@@ -143,6 +189,7 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
 {
   "success": true,
   "learnedWeightsDeleted": 1,
+  "tagInterestProfilesDeleted": 1,
   "interactionEventsDeleted": 92,
   "profilePreserved": true
 }
@@ -259,6 +306,60 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 課程搜尋會保留班級資格資訊。B～F 類（共同／通識、學院綜合班、英語與國際班、
 學分學程及其他特殊班級）的正式適用對象尚未由校方確認，因此仍可被明確搜尋，
 但回應為 `eligibility: "unknown"`，前端顯示「資格待確認」，不得解讀成確定可修。
+
+### `GET /api/interest-exploration/cards`（Roadmap #43 階段 4）
+
+需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳最多 8 張
+真實課程卡片；排除必修、已通過課程、資格未知／不符、沒有時段或沒有符合
+`interest_learning_eligible=true` 的標籤的課程。首輪先依使用者已選主題排序，並盡量分散主／子分類。
+`GET /api/exploration` 是系外／通識相似度清單，與此初始興趣探索流程不同。
+
+```json
+{
+  "term": { "academicYear": 115, "semester": "上學期" },
+  "emptyReason": null,
+  "categoryPrompts": [
+    {
+      "mainCategoryId": "main_...",
+      "mainCategory": "人工智慧",
+      "subcategories": [
+        { "id": "sub_...", "name": "生成式 AI" },
+        { "id": "sub_...", "name": "機器學習" }
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "courseCode": "IECS3002",
+      "sectionId": 801,
+      "name": "課程名稱",
+      "department": "資訊三甲",
+      "credits": 3,
+      "instructor": "授課教師",
+      "schedule": "星期一 1-2 節",
+      "term": { "academicYear": 115, "semester": "first" },
+      "category": "一般選修",
+      "track": "技術應用類",
+      "tags": [
+        {
+          "canonicalTagId": "tag_ac8bb4d19b34088425b1",
+          "canonicalName": "0365 Copilot",
+          "categoryPaths": [
+            { "mainCategoryId": "...", "mainCategory": "人工智慧", "subcategoryId": "...", "subcategory": "生成式 AI" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+若使用者只選廣泛主分類，`categoryPrompts` 會列出目前探索卡片中可用的子分類；已經明確選過子分類時不重複追問。選定的子分類作為明確 Profile 主題先驗保存，不會展開成其下所有細標籤。
+`emptyReason` 為 `student_scope_unavailable` 時代表 Profile 缺少可確認的系所／年級／班級；
+`no_eligible_courses` 代表目前沒有符合條件的卡片。兩種情況都可略過探索並繼續排課。
+課程主題回饋使用既有 `POST /api/interactions` 的
+`interest_exploration_feedback`；未同意選擇性的 `personalization_learning` 時，前端不送出回饋，
+不會阻止使用者繼續操作。
 
 Response:
 
@@ -1361,6 +1462,44 @@ Request：
 { "events": [ { "eventType": "course_withdrawn", "requestId": "...", "actionId": "...", "course": { "catalogCourseCode": "IECS3002", "sectionId": 101 }, "term": { "academicYear": 114, "semester": "下學期" }, "source": "explicit_selection", "feedbackReason": "time" } ] }
 ```
 
+探索回饋和評價也走同一個 consent-first、冪等的事件端點：
+
+```json
+{
+  "events": [
+    {
+      "eventType": "interest_exploration_feedback",
+      "requestId": "...",
+      "actionId": "...",
+      "course": { "catalogCourseCode": "IECS3002", "sectionId": 101 },
+      "term": { "academicYear": 115, "semester": "first" },
+      "source": "exploration",
+      "interestFeedback": { "response": "interested", "canonicalTagIds": [] }
+    },
+    {
+      "eventType": "course_rated",
+      "requestId": "...",
+      "actionId": "...",
+      "course": { "catalogCourseCode": "IECS3002", "sectionId": 101 },
+      "term": { "academicYear": 115, "semester": "first" },
+      "source": "explicit_selection",
+      "rating": 5
+    }
+  ]
+}
+```
+
+`interested` with an empty tag list means all learning-eligible tags on the displayed course; a
+negative response must list at least one tag the user identified as unwanted. `learn_more` records no
+positive or negative evidence. The server resolves the course's current `rag_tag`, validates the
+selected canonical IDs, checks the user's required-course scope, and stores the versioned tag snapshot
+in `Interaction_Events.tag_interest_snapshot_json`. Clients must not supply that server-owned snapshot.
+Events without a tag snapshot (including pre-feature history) are not used in the rag-tag profile.
+For `course_rated`, include an integer `rating` from 1 to 5. For
+`interest_exploration_feedback`, the validated `interestFeedback` payload is retained with the
+event so export and idempotency checks preserve the original response. These columns are added by
+the Stage 3 migration; the migration is not applied automatically.
+
 事件本體為 `InteractionEvent v1`（見 `docs/DATA_SCHEMA.md`）。`userId`、`eventId`、
 `timestamp`、`schemaVersion`、`idempotencyKey` 與 `versionSnapshot` 的
 `profileSchemaVersion`／`modelVersion` 一律由 server 產生，client 送同名欄位會被覆寫。
@@ -1419,6 +1558,67 @@ Response：
 前端 `client/src/services/interactionLog.js` 一律 fire-and-forget 並吞掉錯誤，
 `logInteraction()` 回傳的 promise 永不 reject，只在結果裡帶真實狀態
 （確認列會依此決定文案，不會謊報「已記錄」）。
+
+## Exploration
+
+### `GET /api/exploration`（Roadmap #10 任務 4）
+
+系外與通識探索清單。從一門已修過的課出發，依課程說明的文字相似度列出系外選修與通識，
+每個系所／通識領域只出一門（Pardos & Jiang 2020，規則見 `docs/SCHEDULING_LOGIC.md`）。
+**唯讀**：不寫互動事件，也不影響 `POST /api/schedule/generate` 的結果。需登入與 service consent。
+
+Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `available: true` 的課號。
+省略時由系統取成績最高、有說明的本系課。
+
+```json
+{
+  "favorite": { "courseCode": "IECS3059", "name": "人工智慧導論", "source": "user" },
+  "favorites": [
+    { "courseCode": "IECS3059", "name": "人工智慧導論", "score": 80, "available": true },
+    { "courseCode": "CHIN1065", "name": "中文思辨與表達(一)", "score": 79,
+      "available": false, "reason": "no-description" }
+  ],
+  "outside": {
+    "diversification": "department",
+    "items": [{
+      "courseCode": "COME3046", "name": "機器學習", "credits": 3,
+      "unit": "通訊工程學系", "similarity": 0.3637,
+      "sharedTerms": ["機器學習", "醫療", "python"],
+      "recognition": { "status": "needs-office-confirmation", "checked": true,
+        "needsOfficeConfirmation": true, "warnings": [] },
+      "sections": [{ "id": 2031, "catalogCourseCode": "COME3046", "timeBlocks": [] }]
+    }]
+  },
+  "general": { "diversification": "domain", "items": [] },
+  "method": { "representation": "tfidf-char-bigram", "selection": "one-per-unit-cosine", "k": 5 },
+  "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
+}
+```
+
+- `favorite.source`：`user`（使用者指定）或 `system-default`（系統代選）。沒有可用起點時
+  `favorite` 為 `null`，並帶 `emptyReason`：`no-course-history` 或 `no-available-favorite`。
+- `favorites[].available`：這門已修課能不能當起點。`false` 時 `reason` 只有一種：
+  `no-description`——課程資料中任何學期都查不到這個課號的說明。**本學期沒開不是不可用的原因**，
+  只要資料裡有說明就能當起點。
+- `outside`／`general` 各最多 5 門，以**課號**為單位排序。
+- `sections`：該課號在當學期、使用者可修的班次，是**完整的標準班次物件**（與
+  `GET /api/courses` 回傳的相同），可原樣交給 `POST /api/schedule/validate`。加入課表的單位是班次。
+- `recognition.status`：
+  - `needs-office-confirmation`：通過系外選修的機械條件，**仍須向系辦確認是否認列**。
+    這不代表已確認可抵畢業學分。
+  - `unchecked`：使用者的系所不在支援清單，機械條件沒有跑過，無法判定是否認列。
+  - `general-education`：通識；另帶 `ruleVersion` 與 `domain`（115 學年度起 `domain` 為 `null`）。
+
+  機械條件判定**不認列**的系外選修不會出現在清單裡。
+- `general.diversification`：`domain` 表示每個通識領域至多一門；`none` 表示通識沒有領域
+  （115 學年度起），直接取最相似的幾門不同課號。
+- `similarity` 是課程說明 tf-idf 向量的 cosine（0～1）。`sharedTerms` 是兩份說明裡都出現的
+  **字面片段**，不是語意解釋。
+- 候選只含當學期、資格確定（`eligibility` 不是 `unknown`／`ineligible`）、有上課時間、
+  使用者尚未通過的課。
+
+錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課）、`400 FAVORITE_UNAVAILABLE`
+（查不到說明）、`400 CLASS_NAME_REQUIRED`（profile 缺班級）。
 
 ## Graduation
 

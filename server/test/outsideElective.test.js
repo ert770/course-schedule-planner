@@ -122,7 +122,66 @@ describe('系外選修認列條件', () => {
 
     const difficultyWarnings = result.warnings.filter(warning => warning.includes('難度'));
     assert.equal(difficultyWarnings.length, 1);
-    assert.ok(difficultyWarnings[0].includes('12 門'), difficultyWarnings[0]);
+    // 2026-10-07：提醒的對象從「候選」改成「真的排進課表的課」。12 門同節次的課
+    // 每天只排得進一門，所以課表裡是 7 門，警告講的也是這 7 門。
+    const scheduled = result.schedule.length;
+    assert.equal(scheduled, 7);
+    assert.ok(difficultyWarnings[0].startsWith('課表中的系外選修'), difficultyWarnings[0]);
+    assert.ok(difficultyWarnings[0].includes(`${scheduled} 門`), difficultyWarnings[0]);
+  });
+
+  test('系外選修只是候選、沒有排進課表時，不發任何系外選修的提醒', () => {
+    const own = Array.from({ length: 3 }, (_, index) => makeCourse(index + 1, {
+      name: `本系選修${index + 1}`,
+      department: '資訊三甲',
+      type: '選修',
+      catalogCourseCode: `IECS390${index}`,
+      dayOfWeek: index + 1,
+    }));
+    const outside = Array.from({ length: 5 }, (_, index) => makeCourse(index + 50, {
+      name: `他系課程${index + 1}`,
+      department: '會計三甲',
+      catalogCourseCode: `ACCT300${index}`,
+      dayOfWeek: index + 1,
+      startPeriod: 6,
+      endPeriod: 7,
+    }));
+
+    const result = generateSchedule([...own, ...outside], {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      minCredits: 0,
+      maxCredits: 9,
+    });
+
+    assert.equal(result.schedule.some(course => course.department === '會計三甲'), false);
+    assert.deepEqual(result.warnings.filter(warning => /系外選修/.test(warning)), []);
+  });
+
+  test('排進課表的系外選修會提醒須向系辦確認，並只列排入的那幾門', () => {
+    const outside = Array.from({ length: 4 }, (_, index) => makeCourse(index + 50, {
+      name: `投資學${index + 1}`,
+      department: '財金三甲',
+      catalogCourseCode: `FIN300${index}`,
+      dayOfWeek: index + 1,
+    }));
+
+    const result = generateSchedule(outside, {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      minCredits: 0,
+      maxCredits: 6,
+    });
+
+    const confirm = result.warnings.filter(warning => warning.includes('系辦公室'));
+    assert.equal(confirm.length, 1);
+    assert.ok(confirm[0].startsWith('課表中的'), confirm[0]);
+    for (const course of result.schedule) assert.ok(confirm[0].includes(course.name), confirm[0]);
+    const notScheduled = outside.filter(course => !result.schedule.some(item => item.id === course.id));
+    assert.ok(notScheduled.length > 0);
+    for (const course of notScheduled) assert.equal(confirm[0].includes(course.name), false, confirm[0]);
   });
 
   test('通過條件者仍須向系辦確認', () => {

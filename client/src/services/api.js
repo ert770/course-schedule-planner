@@ -125,6 +125,22 @@ export const coursesAPI = {
 };
 
 // Schedule API
+// Roadmap #10 任務 4：系外與通識探索清單（唯讀）。
+export const explorationAPI = {
+  get: (favoriteCourseCode) => {
+    const params = new URLSearchParams();
+    if (favoriteCourseCode) params.set('favoriteCourseCode', favoriteCourseCode);
+    const query = params.toString();
+    return request(`/exploration${query ? `?${query}` : ''}`);
+  },
+};
+
+// Roadmap #43 stage 4：登入後初始興趣探索卡片。這與系外／通識文字相似度探索
+// (`explorationAPI`) 是不同流程。
+export const interestExplorationAPI = {
+  getCards: () => request('/interest-exploration/cards'),
+};
+
 export const scheduleAPI = {
   generate: (data) =>
     request('/schedule/generate', {

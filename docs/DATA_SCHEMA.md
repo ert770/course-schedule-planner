@@ -25,11 +25,12 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | Table | 主要欄位 | 用途 |
 | --- | --- | --- |
 | `Privacy_Subject_State` | `subject_id`, `last_active_at`, `service_withdrawn_at` | 保存期限與撤回狀態 |
-| `Privacy_Consents` | `recorded_sequence`, `consent_id`, `subject_id`, `purpose`, `granted`, `policy_version`, `decided_at`, `source`, `request_id` | append-only 同意決定；sequence 決定同毫秒寫入的先後 |
+| `Privacy_Consents` | `recorded_sequence`, `consent_id`, `subject_id`, `purpose`, `granted`, `policy_version`, `decided_at`, `source`, `request_id` | append-only 同意決定；sequence 決定同毫秒寫入的先後。`source` 目前有 `privacy_center`（使用者在隱私中心的決定）、`demo_seed`（三位 demo persona）、`persona_seed`（測試人物 9001～9010，由 `personaConsentSeed.js` 寫入）、`ab_test` |
 | `Privacy_Audit_Log` | `audit_id`, `subject_id`, `action`, `resource_type`, `outcome`, `request_id`, `occurred_at`, `metadata_json` | 不含 payload 的稽核紀錄 |
 | `Privacy_Data_Requests` | `request_id`, `subject_id`, `request_type`, `token_hash`, `expires_at`, `completed_at`, `status` | 短效、單次刪除確認；只存 token hash |
 | `Chat_Messages` | `message_id`, `subject_id`, `role`, `ciphertext`, `iv`, `auth_tag`, `key_version`, `created_at`, `expires_at` | AES-256-GCM Raw Chat，30 天到期 |
-| `Interaction_Events` | `event_id`, `subject_id`, `event_type`, `occurred_at`, `expires_at`, `idempotency_key`, `catalog_course_code`, `section_id`, `plan_id`, `variant_id`, `source`, `feedback_reason`, `exposure_json` | Roadmap #2 互動事件，180 天到期 |
+| `Interaction_Events` | `event_id`, `subject_id`, `event_type`, `occurred_at`, `expires_at`, `idempotency_key`, `catalog_course_code`, `section_id`, `plan_id`, `variant_id`, `source`, `feedback_reason`, `rating`, `interest_feedback_json`, `exposure_json`, `tag_interest_snapshot_json` | Roadmap #2 原始互動與 Roadmap #43 當下標籤快照，180 天到期 |
+| `Learned_Tag_Interests` | `subject_id`, `model_version`, `catalog_version`, `eligibility_version`, `prior_signature`, `profile_json`, `computed_at`, `expires_at` | Roadmap #43 可重算的使用者標籤興趣快取，180 天到期 |
 
 `ciphertext`、每筆獨立 96-bit `iv` 與 `auth_tag` 缺一不可；解密驗證失敗必須拒絕資料，
 不得回傳部分內容。`key_version` 讓未來金鑰輪替可辨識資料使用哪一版金鑰。
@@ -50,10 +51,28 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 - `expires_at` = `occurred_at` + `PRIVACY_RETENTION.interactionEventDays`（180 天），
   由 `npm run cleanup:privacy` 一併清理。
 - `exposure_json` 存 `surface`／`trigger`／ordered `candidateSet`／`displayedSet`。
+- `tag_interest_snapshot_json` 由 server 依事件當時的課程 `rag_tag`、標籤目錄版本與該使用者必修 scope 產生；client 不得送入或覆寫。它保存 raw tag、可學習 canonical tag IDs、分類路徑與跨課配對資格。所有必修課都不提供興趣證據；已解析的 scope 用來區分本人必修與其他班級必修，scope 未解析時 fail closed。
+- `rating` 只用於 `course_rated`（1～5）；`interest_feedback_json` 只用於 `interest_exploration_feedback`，保存回應類型與使用者明確選取的 canonical tag IDs。兩者與 server 產生的標籤快照一起保留，讓匯出、冪等比較與重算可重現。
+- 舊事件沒有標籤快照時不回頭依今天的目錄猜測；它們仍是 v2 等既有用途的事件，但不會進入 rag-tag 興趣重算。
+- 初始探索事件使用 `interest_exploration_feedback`，回應為 `interested`／`not_interested`／`learn_more`。明確不感興趣必須列出使用者指定的 `canonicalTagIds`；「想先了解」不產生正負證據。`course_rated` 只把 4～5 分視為正向訊號，低分本身不推定為主題反感。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
 - **Roadmap #31**：`academic_year`／`semester` 從這輪起不再只是來源標記，也是
   `preferenceLearning.js` 時間衰減的**實質輸入**——`learnPreferenceWeights()` 用它們
   判定一筆事件是否屬於舊學期並降權（見下方 `Learned_Preference_Weights` 的說明）。
+
+### `Learned_Tag_Interests`（Roadmap #43 階段 3）
+
+`server/migrations/008_tag-interest-profile.up.sql`，由
+`server/scripts/tagInterestMigration.js` 套用（預設 dry-run；shared MySQL 寫入須同時指定
+`--apply --confirm-shared-mysql`）。`subject_id` 是對 `Privacy_Subject_State` 的 FK，表中
+每個 subject 一列，存可重算的 profile JSON，不存學號。
+
+- `Interaction_Events.tag_interest_snapshot_json` 是 rag-tag 興趣事件的來源快照；它跟原事件一同寫入、冪等及套用 180 天保存期限，分類目錄改版不會改寫新事件的標籤對應。
+- `profile_json` 保存稀疏的 `categoryInterests`、`tagInterests`、正負證據、先驗、分數、來源與版本。它是快取，不是唯一真相；重算以互動事件快照和使用者明確偏好為準。
+- `tag_score = (κ × p₀ + P − N) / (κ + P + N)`；目前原型 `κ=2`。只對精確對應的明確標籤偏好建立 tag prior；廣泛主分類／子分類只保留在 `categoryInterests`，不展開成底下所有標籤。
+- `P`、`N` 是每筆事件先乘 120 天半衰期與舊學期 `0.5` 折減，再把總權重平均分給事件快照中的合格標籤。required scope 未解析時，分類為必修的課程 fail closed，不更新興趣。
+- 新課程興趣分只平均 `crossCourseMatchEligible=true` 的標籤。課程只有單課標籤時沒有跨課興趣分；該標籤仍可保留在個人興趣證據與課程內解釋。
+- `expires_at` 沿用 180 天保存規則，`npm run cleanup:privacy` 同時清理到期標籤興趣快取；撤回 `personalization_learning`、重設個人化、刪除帳號與本人匯出都涵蓋此 profile。
 
 ### `Learned_Preference_Weights`（Roadmap #30）
 
@@ -665,6 +684,28 @@ npm run seed:demo-personas --prefix server -- --apply --confirm-shared-mysql
 
 `Course_Sections.rag_tag` 的 JSON 主題標籤陣列，資料庫中 100% 有值，例如 `["機器學習","圖像處理","物件偵測"]`。排課引擎的興趣比對會使用此欄位。
 
+### rag_tag 興趣分類目錄與資格快照（階段 1／2）
+
+`server/src/data/interestTagCatalog.json` 是版本化本機目錄，不是新增 MySQL 表。`catalogVersion` 表示分類／別名版本；`mainCategories`、`subcategories` 及 `canonicalTags[].categoryAssignments` 保存多對多分類路徑與原始工作表／列號。`canonicalTags[].id` 是穩定的 canonical tag ID；原始課程 `rag_tag` 不被覆寫。
+
+每個 `canonicalTags[].eligibility` 保存：
+
+| 欄位 | 型別 | 意義 |
+| --- | --- | --- |
+| `status` | string | `pending_post_alias_course_recount` 或 `reviewed_post_alias_course_recount` |
+| `interestLearningEligible` | boolean／null | 是否能更新標籤興趣；只有明確 `true` 放行 |
+| `crossCourseMatchEligible` | boolean／null | 是否能參與跨課匹配；只有明確 `true` 放行 |
+| `exclusionReason` | string／null | `explicit_generic`、`too_common`、`single_course`；合格為 `null` |
+| `courseCount` | integer | 別名合併、依穩定課號合併班次、單課 canonical 去重後的出現課數；待重算時可不存在 |
+| `courseRatio` | number | `courseCount / 全部合併後課程數`；待重算時可不存在 |
+| `version` | string | 此標籤資格所屬快照版本；待重算時可不存在 |
+
+頂層 `eligibilityRecount` 記錄 `version`、`source`（`mysql-course-api`）、`computedAt`（UTC ISO 時間）、`reviewedOn`（人工核對日期）、`courseMembershipSha256`（排序後穩定課號及 canonical 標籤集合的 SHA-256）及 `summary`（班次／課程／標籤數、兩種資格數、各原因數、未知標籤數、略過班次數及門檻）。不在快照保存連線憑證或使用者資料。`generatedFrom.frequencySnapshotUsableForEligibility=false` 仍表示 Excel 的合併前頻率不可作資格依據；已核對的資格以 MySQL 快照為準。
+
+2026-10-09 核對快照：3,560 班次合併成 2,004 個穩定課號，6,769 個 canonical tags；6,736 個可學習、2,144 個可跨課匹配。6 個通用、27 個高頻、4,592 個單課標籤。高頻規則是嚴格 `>2%`；單課可學習但不可跨課匹配。必修排除仍須依個別使用者 scope 在事件層實作。重新執行 Excel 匯入工具會重建 pending 目錄，之後需重新執行 MySQL 唯讀報表及人工核對才能寫回資格。
+
+這份目錄尚未接入興趣事件、API、前端或排課器；不是目前線上排序的新資料來源。
+
 排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。
 
 ## Constraint Schema（Roadmap #21）
@@ -809,6 +850,11 @@ UUID），以及他接著在 Chat 講同一件事（Agent 的 `record_schedule_f
 | `versionSnapshot` | object | 當時的 Profile schema、排課模型與推薦理由版本 |
 | `source` | enum \| null | `explicit_selection`／`required`／`system_recommendation`／`exploration` |
 | `feedbackReason` | enum \| null | 只有移除／退選可用；原因為 `time`／`content`／`instructor`／`workload`／`full`／`eligibility`／`other` |
+
+`source: exploration`（2026-10-03，Roadmap #10 任務 4）：使用者從「探索」頁把課加入課表時，
+`course_selected` 的 `source` 記為 `exploration`。這個值先前就在 enum 裡，但沒有任何寫入者。
+前端 `addCourse(course, { source })` 只接受這一個覆寫值；排課引擎判定為本人必修的課不會被改標。
+探索清單本身（`GET /api/exploration`）不寫曝光事件，也沒有新增 `surface`。
 
 `planPolicies` 是既有 JSON envelope 的附加欄位，因此事件 `schemaVersion` 維持 1，MySQL
 也不需要 migration。

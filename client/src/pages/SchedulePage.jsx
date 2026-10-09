@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
 import { useClickOutside } from '../hooks/useClickOutside';
-import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, Sun, Save } from 'lucide-react';
+import { Sparkles, BookOpen, Calendar, LayoutDashboard, Search, Settings, Moon, Sun, Save, Compass } from 'lucide-react';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
@@ -230,6 +230,7 @@ export default function SchedulePage() {
           <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
           <button className="nav-btn active"><Calendar size={16}/> 排課</button>
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
+          <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
         </div>
         <div className="nav-actions">
           <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>

@@ -81,6 +81,7 @@ function policyExposedEvent({ requestId, policies, t }) {
         planId: `${requestId}:${p.variantId}`,
         variantId: p.variantId,
         weights: p.weights,
+        ...(p.archetype ? { archetype: p.archetype } : {}),
       })),
     },
   };
@@ -608,6 +609,71 @@ describe('PL24 computeLearnedBoosts（roadmap #5B）', () => {
   test('省略 explicitProfile 時視為三軸皆為 0', () => {
     const boosts = computeLearnedBoosts({ interest: 0.5, compact: 0, easy: 0 });
     assert.equal(boosts.interest, 0.5);
+  });
+});
+
+describe('PL41 MILP 方案的權重全部相同時，改以 archetype 歸因（2026-10-07）', () => {
+  const same = { interest: 0, compact: 1, easy: 0 };
+  const round = (index, policies, accepted) => {
+    const requestId = `milp-${index}`;
+    const t = `2026-02-01T00:${String(index % 60).padStart(2, '0')}:00.000Z`;
+    return [policyExposedEvent({ requestId, t, policies }), acceptedEvent({ requestId, variantId: accepted, t })];
+  };
+  const milpPolicies = [
+    { variantId: 'personalized', weights: same, archetype: 'balanced' },
+    { variantId: 'personalized_easy', weights: same, archetype: 'easy' },
+    { variantId: 'personalized_compact', weights: same, archetype: 'compact' },
+  ];
+
+  test('接受 easy 方案 50 次：easy 軸得到票，規則為 ACCEPT_ARCHETYPE_CONTRAST', () => {
+    const events = Array.from({ length: 50 }, (_, i) => round(i, milpPolicies, 'personalized_easy')).flat();
+    const result = learnPreferenceWeights(events, { explicitProfile: { interest: 0, compact: 0, easy: 0 } });
+    assert.equal(result.sufficiency.status, SUFFICIENCY_STATUS.SUFFICIENT);
+    assert.equal(result.evidence.easy.length, 50);
+    assert.ok(result.evidence.easy.every(e => e.ruleId === 'ACCEPT_ARCHETYPE_CONTRAST'));
+    assert.equal(result.evidence.compact.length, 0);
+    assert.ok(result.weights.easy > result.weights.compact);
+  });
+
+  test('接受綜合方案（balanced）不產生任何票', () => {
+    const events = Array.from({ length: 10 }, (_, i) => round(i, milpPolicies, 'personalized')).flat();
+    const result = learnPreferenceWeights(events, {});
+    assert.deepEqual(
+      [result.evidence.interest.length, result.evidence.compact.length, result.evidence.easy.length],
+      [0, 0, 0]
+    );
+  });
+
+  test('challenge 方案算在 easy 軸；另一個方案對應同一軸時不算', () => {
+    const challenge = [
+      { variantId: 'personalized', weights: same, archetype: 'balanced' },
+      { variantId: 'personalized_challenge', weights: same, archetype: 'challenge' },
+    ];
+    const hit = learnPreferenceWeights(round(1, challenge, 'personalized_challenge'), {});
+    assert.equal(hit.evidence.easy.length, 1);
+
+    const sharedAxis = [...challenge, { variantId: 'personalized_easy', weights: same, archetype: 'easy' }];
+    const none = learnPreferenceWeights(round(2, sharedAxis, 'personalized_challenge'), {});
+    assert.equal(none.evidence.easy.length, 0);
+  });
+
+  test('權重對照有結果時沿用舊規則，不與 archetype 疊加', () => {
+    const mixed = [
+      { variantId: 'personalized', weights: { interest: 1, compact: 1, easy: 0 }, archetype: 'balanced' },
+      { variantId: 'personalized_compact', weights: { interest: 1, compact: 1.5, easy: 0 }, archetype: 'compact' },
+    ];
+    const result = learnPreferenceWeights(round(3, mixed, 'personalized_compact'), {});
+    assert.equal(result.evidence.compact.length, 1);
+    assert.equal(result.evidence.compact[0].ruleId, 'ACCEPT_VARIANT_CONTRAST');
+  });
+
+  test('沒有 archetype 的舊曝光：權重相同就沒有票（行為不變）', () => {
+    const legacy = [
+      { variantId: 'personalized', weights: same },
+      { variantId: 'personalized_easy', weights: same },
+    ];
+    const result = learnPreferenceWeights(round(4, legacy, 'personalized_easy'), {});
+    assert.equal(result.evidence.easy.length, 0);
   });
 });
 

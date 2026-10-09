@@ -6,10 +6,12 @@ import { ScheduleProvider } from './contexts/ScheduleContext';
 import LoginPage from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SetupPage from './pages/SetupPage';
+import InterestExplorationPage from './pages/InterestExplorationPage';
 import DashboardPage from './pages/DashboardPage';
 import GraduationPage from './pages/GraduationPage';
 import PrivacyPage from './pages/PrivacyPage';
 import SearchPage from './pages/SearchPage';
+import ExplorePage from './pages/ExplorePage';
 import SchedulePage from './pages/SchedulePage';
 import './App.css';
 
@@ -74,6 +76,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/interest-exploration"
+        element={
+          <ProtectedRoute>
+            <InterestExplorationPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/"
         element={
           <ProtectedRoute>
@@ -94,6 +104,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <SearchPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/explore"
+        element={
+          <ProtectedRoute>
+            <ExplorePage />
           </ProtectedRoute>
         }
       />

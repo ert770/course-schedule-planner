@@ -39,7 +39,7 @@ test('PN1 rankingChange reports membership, top-K and Kendall changes', () => {
 });
 
 test('PN2 utilityUnderProfile uses scheduler preference evaluation', () => {
-  const easy = makeCourse(1, { description: '資訊安全與網路防禦' });
+  const easy = makeCourse(1, { ragTag: ['資訊安全', '網路防禦'] });
   const result = utilityUnderProfile({
     schedule: [easy],
     preferenceBreakdown: { interest: 1, compact: 1, easy: 1 },

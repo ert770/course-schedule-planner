@@ -49,7 +49,7 @@
       "personas": [
         { "id": "interest-history", "userId": 201, "signal": { "axis": "interest", "eventType": "course_viewed", "source": "system_recommendation", "feedbackReason": null } },
         { "id": "easy-history", "userId": 202, "signal": { "axis": "easy", "eventType": "course_withdrawn", "source": "explicit_selection", "feedbackReason": "workload" } },
-        { "id": "cold-start", "userId": 203, "eventCount": 10, "signal": { "axis": "interest", "eventType": "course_viewed", "source": "system_recommendation", "feedbackReason": null } }
+        { "id": "cold-start", "userId": 203, "eventCount": 5, "signal": { "axis": "interest", "eventType": "course_viewed", "source": "system_recommendation", "feedbackReason": null } }
       ]
     }
   ]

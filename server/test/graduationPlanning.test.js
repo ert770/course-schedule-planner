@@ -58,6 +58,33 @@ test('歷史修課產生每學期選修／通識／系外目標', () => {
   assert.deepEqual(buildBreadthSequence(planning), ['general', 'general']);
 });
 
+test('S19h 系外仍有缺口且興趣命中系外選修時，保留一個名額給系外', () => {
+  const planning = {
+    enabled: true,
+    gaps: { elective: 6, general: 8, external: 3 },
+    semesterTargets: { elective: 3, general: 4.8, external: 1.2 },
+  };
+  // 原規則：通識目標較大，兩個名額都給通識。
+  assert.deepEqual(buildBreadthSequence(planning), ['general', 'general']);
+  // 保留：最後一個名額換成系外，總數仍是兩個。
+  assert.deepEqual(buildBreadthSequence(planning, { reserveExternal: true }), ['general', 'external']);
+  // 只有一個名額時補上系外。
+  assert.deepEqual(
+    buildBreadthSequence({ ...planning, semesterTargets: { general: 2, external: 0 } }, { reserveExternal: true }),
+    ['general', 'external']
+  );
+  // 系外缺口為 0：不保留。
+  assert.deepEqual(
+    buildBreadthSequence({ ...planning, gaps: { general: 8, external: 0 } }, { reserveExternal: true }),
+    ['general', 'general']
+  );
+  // 原本就分到系外：不重複保留。
+  assert.deepEqual(
+    buildBreadthSequence({ ...planning, semesterTargets: { general: 2, external: 6 } }, { reserveExternal: true }),
+    ['external', 'external']
+  );
+});
+
 test('greedy 先排必修，再以 6 學分選修與兩門通識停止，不填滿 25 學分', () => {
   const planning = {
     enabled: true,

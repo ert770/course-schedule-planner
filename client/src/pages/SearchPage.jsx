@@ -7,7 +7,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { coursesAPI, profileAPI } from '../services/api';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X } from 'lucide-react';
+import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X, Compass } from 'lucide-react';
 import '../App.css'; 
 import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
@@ -240,6 +240,7 @@ export default function SearchPage() {
           <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
           <button className="nav-btn" onClick={() => navigate('/schedule')}><Calendar size={16}/> 排課</button>
           <button className="nav-btn active"><Search size={16}/> 尋找課程</button>
+          <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
         </div>
         <div className="nav-actions">
           <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>

@@ -24,9 +24,11 @@ export const INTERACTION_EVENT_TYPES = Object.freeze({
   COURSE_VIEWED: 'course_viewed',
   COURSE_FAVORITED: 'course_favorited',
   COURSE_UNFAVORITED: 'course_unfavorited',
+  COURSE_RATED: 'course_rated',
   COURSE_SELECTED: 'course_selected',
   COURSE_DESELECTED: 'course_deselected',
   RECOMMENDATION_ACCEPTED: 'recommendation_accepted',
+  INTEREST_EXPLORATION_FEEDBACK: 'interest_exploration_feedback',
   // roadmap #10 任務 3A：真正的 set-wise choice——使用者在**看得到多個方案**的情況下
   // 挑了其中一個。與 `recommendation_accepted` 刻意分成兩個型別而不是加旗標：後者包含
   // 「Agent 只顯示主推方案、使用者說好」這種情況，那只代表接受推薦，不能證明使用者
@@ -79,10 +81,12 @@ const COURSE_REQUIRED_EVENTS = new Set([
   INTERACTION_EVENT_TYPES.COURSE_VIEWED,
   INTERACTION_EVENT_TYPES.COURSE_FAVORITED,
   INTERACTION_EVENT_TYPES.COURSE_UNFAVORITED,
+  INTERACTION_EVENT_TYPES.COURSE_RATED,
   INTERACTION_EVENT_TYPES.COURSE_SELECTED,
   INTERACTION_EVENT_TYPES.COURSE_DESELECTED,
   INTERACTION_EVENT_TYPES.COURSE_REMOVED,
   INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN,
+  INTERACTION_EVENT_TYPES.INTEREST_EXPLORATION_FEEDBACK,
 ]);
 
 const FEEDBACK_EVENTS = new Set([
@@ -95,6 +99,9 @@ const SOURCE_REQUIRED_EVENTS = new Set([
   INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED,
   INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED,
 ]);
+
+const EXPLORATION_RESPONSES = new Set(['interested', 'not_interested', 'learn_more']);
+const CANONICAL_TAG_ID_PATTERN = /^tag_[0-9a-f]{20}$/iu;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const IDEMPOTENCY_KEY_PATTERN = /^sha256:[0-9a-f]{64}$/u;
@@ -285,6 +292,18 @@ function normalizeVersionSnapshot(snapshot) {
 }
 
 export function normalizeInteractionEvent(event = {}) {
+  const rating = event.rating === undefined || event.rating === null || event.rating === ''
+    ? null
+    : Number(event.rating);
+  const interestFeedback = event.interestFeedback && typeof event.interestFeedback === 'object'
+    && !Array.isArray(event.interestFeedback)
+    ? {
+        response: asTrimmedString(event.interestFeedback.response),
+        canonicalTagIds: Array.isArray(event.interestFeedback.canonicalTagIds)
+          ? [...new Set(event.interestFeedback.canonicalTagIds.map(asTrimmedString).filter(Boolean))]
+          : event.interestFeedback.canonicalTagIds,
+      }
+    : event.interestFeedback ?? null;
   return {
     schemaVersion: Number(event.schemaVersion),
     eventId: asTrimmedString(event.eventId),
@@ -302,6 +321,8 @@ export function normalizeInteractionEvent(event = {}) {
     versionSnapshot: normalizeVersionSnapshot(event.versionSnapshot),
     source: asTrimmedString(event.source),
     feedbackReason: asTrimmedString(event.feedbackReason),
+    ...(event.rating !== undefined ? { rating } : {}),
+    ...(event.interestFeedback !== undefined ? { interestFeedback } : {}),
   };
 }
 
@@ -392,6 +413,9 @@ export function validateInteractionEvent(input) {
   }
 
   const event = normalizeInteractionEvent(input);
+  if (Object.hasOwn(input, 'tagInterestSnapshot')) {
+    errors.push('tagInterestSnapshot 由伺服器產生，不接受用戶端提交');
+  }
   if (event.schemaVersion !== INTERACTION_EVENT_SCHEMA_VERSION) {
     errors.push(`schemaVersion 必須是 ${INTERACTION_EVENT_SCHEMA_VERSION}`);
   }
@@ -449,6 +473,46 @@ export function validateInteractionEvent(input) {
   if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED
     && event.course === null && event.plan === null) {
     errors.push('recommendation_accepted 必須指定 course 或 plan');
+  }
+
+  if (event.eventType === INTERACTION_EVENT_TYPES.COURSE_RATED) {
+    if (!Number.isInteger(event.rating) || event.rating < 1 || event.rating > 5) {
+      errors.push('course_rated 必須提供 1～5 的整數 rating');
+    }
+  } else if (event.rating !== undefined && event.rating !== null) {
+    errors.push('只有 course_rated 可提供 rating');
+  }
+
+  if (event.eventType === INTERACTION_EVENT_TYPES.INTEREST_EXPLORATION_FEEDBACK) {
+    const feedback = event.interestFeedback;
+    if (event.source !== INTERACTION_SOURCES.EXPLORATION) {
+      errors.push('interest_exploration_feedback 的 source 必須是 exploration');
+    }
+    if (!feedback || typeof feedback !== 'object' || Array.isArray(feedback)) {
+      errors.push('interest_exploration_feedback 必須提供 interestFeedback');
+    } else {
+      if (!EXPLORATION_RESPONSES.has(feedback.response)) {
+        errors.push('interestFeedback.response 不在允許清單');
+      }
+      if (!Array.isArray(feedback.canonicalTagIds) || feedback.canonicalTagIds.length > 64) {
+        errors.push('interestFeedback.canonicalTagIds 必須是至多 64 個標籤 ID 的陣列');
+      } else {
+        const seen = new Set();
+        for (const id of feedback.canonicalTagIds) {
+          if (!CANONICAL_TAG_ID_PATTERN.test(id)) errors.push('interestFeedback 含無效 canonicalTagId');
+          if (seen.has(id)) errors.push('interestFeedback.canonicalTagIds 不得重複');
+          seen.add(id);
+        }
+        if (feedback.response === 'not_interested' && feedback.canonicalTagIds.length === 0) {
+          errors.push('明確表示不感興趣時必須指定至少一個標籤');
+        }
+        if (feedback.response === 'learn_more' && feedback.canonicalTagIds.length > 0) {
+          errors.push('想先了解不應同時指定正向或負向標籤');
+        }
+      }
+    }
+  } else if (event.interestFeedback !== undefined && event.interestFeedback !== null) {
+    errors.push('只有 interest_exploration_feedback 可提供 interestFeedback');
   }
 
   // `plan_chosen` 的語意是「在這組方案裡選了這一個」，所以方案是必填；
@@ -596,6 +660,8 @@ function canonicalIdempotencyPayload(event) {
           sectionId: event.course.sectionId,
         }
       : null,
+    ...(event.rating === undefined ? {} : { rating: event.rating }),
+    ...(event.interestFeedback === undefined ? {} : { interestFeedback: event.interestFeedback }),
   };
 }
 
@@ -701,6 +767,8 @@ function comparableEvent(event) {
     versionSnapshot: normalized.versionSnapshot,
     source: normalized.source,
     feedbackReason: normalized.feedbackReason,
+    ...(normalized.rating === undefined ? {} : { rating: normalized.rating }),
+    ...(normalized.interestFeedback === undefined ? {} : { interestFeedback: normalized.interestFeedback }),
   };
 }
 

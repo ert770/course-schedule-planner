@@ -15,6 +15,7 @@ import {
   newActionId,
   newUuid,
 } from '../services/interactionLog';
+import { resolveSelectionSource } from '../services/selectionSource';
 
 function courseId(course) {
   return String(course?.id ?? course?.sectionId ?? '');
@@ -300,7 +301,9 @@ export function ScheduleProvider({ children }) {
     return () => { cancelled = true; };
   }, [privacyLoading, privacyStatus?.requiresAction, replaceSchedule, userIdentity, user?.watchlist]);
 
-  const addCourse = useCallback((course) => {
+  // options.source 只接受 exploration（探索頁加入的課），其他值會被忽略——
+  // 見 services/selectionSource.js。
+  const addCourse = useCallback((course, options = {}) => {
     const requestedGeneration = accountGenerationRef.current;
     const operation = addQueueRef.current.then(async () => {
       if (requestedGeneration !== accountGenerationRef.current) {
@@ -341,9 +344,9 @@ export function ScheduleProvider({ children }) {
         setSchedule(proposed);
         emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, course, {
           requestId: requestIdForAction(),
-          source: courseSource(course, {
+          source: resolveSelectionSource(courseSource(course, {
             systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
-          }),
+          }), options?.source),
         }));
         return { success: true, course, validation: result };
       } catch (err) {
