@@ -13,6 +13,7 @@ import graduationRoutes from './routes/graduation.js';
 import privacyRoutes from './routes/privacy.js';
 import interactionRoutes from './routes/interactions.js';
 import explorationRoutes from './routes/exploration.js';
+import interestExplorationRoutes from './routes/interestExploration.js';
 import { assertSessionSecretConfigured } from './services/sessionService.js';
 import { assertPrivacyConfigured } from './services/privacyService.js';
 import { getHighsRuntime } from './skills/optimization/highsRuntime.js';
@@ -44,6 +45,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/interactions', interactionRoutes);
 app.use('/api/exploration', explorationRoutes);
+app.use('/api/interest-exploration', interestExplorationRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

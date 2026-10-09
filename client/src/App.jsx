@@ -6,6 +6,7 @@ import { ScheduleProvider } from './contexts/ScheduleContext';
 import LoginPage from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SetupPage from './pages/SetupPage';
+import InterestExplorationPage from './pages/InterestExplorationPage';
 import DashboardPage from './pages/DashboardPage';
 import GraduationPage from './pages/GraduationPage';
 import PrivacyPage from './pages/PrivacyPage';
@@ -71,6 +72,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <SetupPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/interest-exploration"
+        element={
+          <ProtectedRoute>
+            <InterestExplorationPage />
           </ProtectedRoute>
         }
       />

@@ -307,6 +307,60 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 學分學程及其他特殊班級）的正式適用對象尚未由校方確認，因此仍可被明確搜尋，
 但回應為 `eligibility: "unknown"`，前端顯示「資格待確認」，不得解讀成確定可修。
 
+### `GET /api/interest-exploration/cards`（Roadmap #43 階段 4）
+
+需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳最多 8 張
+真實課程卡片；排除必修、已通過課程、資格未知／不符、沒有時段或沒有符合
+`interest_learning_eligible=true` 的標籤的課程。首輪先依使用者已選主題排序，並盡量分散主／子分類。
+`GET /api/exploration` 是系外／通識相似度清單，與此初始興趣探索流程不同。
+
+```json
+{
+  "term": { "academicYear": 115, "semester": "上學期" },
+  "emptyReason": null,
+  "categoryPrompts": [
+    {
+      "mainCategoryId": "main_...",
+      "mainCategory": "人工智慧",
+      "subcategories": [
+        { "id": "sub_...", "name": "生成式 AI" },
+        { "id": "sub_...", "name": "機器學習" }
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "courseCode": "IECS3002",
+      "sectionId": 801,
+      "name": "課程名稱",
+      "department": "資訊三甲",
+      "credits": 3,
+      "instructor": "授課教師",
+      "schedule": "星期一 1-2 節",
+      "term": { "academicYear": 115, "semester": "first" },
+      "category": "一般選修",
+      "track": "技術應用類",
+      "tags": [
+        {
+          "canonicalTagId": "tag_ac8bb4d19b34088425b1",
+          "canonicalName": "0365 Copilot",
+          "categoryPaths": [
+            { "mainCategoryId": "...", "mainCategory": "人工智慧", "subcategoryId": "...", "subcategory": "生成式 AI" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+若使用者只選廣泛主分類，`categoryPrompts` 會列出目前探索卡片中可用的子分類；已經明確選過子分類時不重複追問。選定的子分類作為明確 Profile 主題先驗保存，不會展開成其下所有細標籤。
+`emptyReason` 為 `student_scope_unavailable` 時代表 Profile 缺少可確認的系所／年級／班級；
+`no_eligible_courses` 代表目前沒有符合條件的卡片。兩種情況都可略過探索並繼續排課。
+課程主題回饋使用既有 `POST /api/interactions` 的
+`interest_exploration_feedback`；未同意選擇性的 `personalization_learning` 時，前端不送出回饋，
+不會阻止使用者繼續操作。
+
 Response:
 
 ```json

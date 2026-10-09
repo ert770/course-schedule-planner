@@ -4,10 +4,14 @@ import { useAuth } from '../contexts/useAuth';
 import { coursesAPI, profileAPI } from '../services/api';
 import { Sparkles, CheckCircle2, Circle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { getUserIdentity } from '../utils/userIdentity';
+import {
+  getInterestExplorationState,
+  startInterestExploration,
+} from '../services/interestExplorationState';
 
 export default function SetupPage() {
   const navigate = useNavigate();
-  const { user, markSetupDone, logout } = useAuth();
+  const { user, markSetupDone, isSetupDone, logout } = useAuth();
   const userIdentity = getUserIdentity(user);
   
   const [department, setDepartment] = useState('資訊工程學系');
@@ -31,6 +35,7 @@ export default function SetupPage() {
   const [interestOptionsLoading, setInterestOptionsLoading] = useState(false);
   const [interestOptionsError, setInterestOptionsError] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const [showPreferencesModal, setShowPreferencesModal] = useState(false);
 
@@ -145,6 +150,8 @@ export default function SetupPage() {
       return;
     }
 
+    const wasSetupDone = isSetupDone();
+    setSaveError('');
     setGenerating(true);
     try {
       const prefData = {
@@ -169,16 +176,29 @@ export default function SetupPage() {
       };
       await profileAPI.update(prefData);
       markSetupDone();
-
-      await new Promise(r => setTimeout(r, 1500));
+      if (!wasSetupDone) {
+        const exploration = getInterestExplorationState(userIdentity);
+        if (exploration.status !== 'completed' && exploration.status !== 'skipped') {
+          startInterestExploration(userIdentity);
+          navigate('/interest-exploration', { replace: true });
+          return;
+        }
+        navigate('/schedule', { replace: true });
+        return;
+      }
       navigate('/');
     } catch (err) {
       console.error('Setup failed:', err);
-      markSetupDone();
-      navigate('/');
+      setSaveError(err.message || '偏好設定儲存失敗，請稍後重試。');
     } finally {
       setGenerating(false);
     }
+  };
+
+  const reopenInterestExploration = () => {
+    if (userIdentity === null) return;
+    startInterestExploration(userIdentity);
+    navigate('/interest-exploration');
   };
 
   return (
@@ -189,8 +209,8 @@ export default function SetupPage() {
             <div className="setup-generating-spinner">
               <Loader2 size={48} className="spin-animation" />
             </div>
-            <h2>🤖 Agent 正在呼叫排課演算法...</h2>
-            <p>正在根據您的偏好生成最佳化課表</p>
+            <h2>正在保存你的偏好設定…</h2>
+            <p>保存完成後，會接著進入初始課程主題探索</p>
           </div>
         ) : (
           <div className="setup-content" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -281,7 +301,7 @@ export default function SetupPage() {
                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#3b82f6' }} /> <span>2. 偏好設定</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#9ca3af', fontSize: '0.85rem' }}>
-                  <Circle size={16} /> <span>3. 生成課表</span>
+                  <Circle size={16} /> <span>3. 主題探索與排課</span>
                 </div>
               </div>
             </div>
@@ -419,6 +439,7 @@ export default function SetupPage() {
 
         {!generating && (
           <div className="setup-footer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginTop: '20px' }}>
+            {saveError && <p className="setup-error" role="alert" style={{ color: 'var(--accent-red)', margin: 0 }}>{saveError}</p>}
             <button
               className="setup-submit-btn"
               onClick={handleSubmit}
@@ -427,8 +448,18 @@ export default function SetupPage() {
               style={{ width: '100%', padding: '12px', borderRadius: '8px', fontSize: '1rem', fontWeight: '600' }}
             >
               <Sparkles size={18} />
-              {profileLoaded ? '完成設定，生成推薦課表 ✨' : '載入設定中...'}
+              {profileLoaded ? '完成並保存偏好設定 ✨' : '載入設定中...'}
             </button>
+
+            {profileLoaded && isSetupDone() && (
+              <button
+                type="button"
+                onClick={reopenInterestExploration}
+                style={{ padding: '7px 0', border: 'none', background: 'transparent', color: '#3b82f6', cursor: 'pointer', fontSize: '0.88rem' }}
+              >
+                重新探索課程主題
+              </button>
+            )}
             
             <button 
               onClick={() => {
