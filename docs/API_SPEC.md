@@ -73,9 +73,10 @@ canonical ID 或 pseudonymous subject ID。
 
 ### `GET /api/privacy/export`
 
-以 attachment JSON 串流登入者的可攜 Profile、已存課表、同意決定與**自己的互動事件**
-（`data.interactionEvents`，Roadmap #2）。不包含密碼、內部 subject ID、Raw Chat 明文、
-模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
+以 attachment JSON 串流登入者的可攜 Profile、已存課表、同意決定、**自己的互動事件**
+（`data.interactionEvents`，Roadmap #2）、目前已存的三軸權重與標籤興趣檔案
+（`data.learnedPreferenceWeights`、`data.learnedTagInterests`）。不包含密碼、內部 subject ID、
+Raw Chat 明文、模型 thought 或研究逐筆事件；回應使用 `Cache-Control: no-store`。
 
 匯出的事件刻意不含 `subject_id` 與 `idempotencyKey`：前者是分析用的內部假名，匯出它
 等於把假名與本人身分綁在同一份檔案裡；後者是去重用的實作細節。
@@ -91,8 +92,9 @@ canonical ID 或 pseudonymous subject ID。
 ### `DELETE /api/privacy/data`
 
 Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: "刪除我的資料"`。
-成功後刪除服務帳號、Profile、修課歷史、已存課表、互動事件與 Raw Chat，清除 session；
-最小同意與稽核記錄依政策保留 365 天。回應的 `deleted` 含 `interactionEventsDeleted`。
+成功後刪除服務帳號、Profile、修課歷史、已存課表、互動事件、三軸權重、標籤興趣檔案與 Raw Chat，清除 session；
+最小同意與稽核記錄依政策保留 365 天。回應的 `deleted` 含 `interactionEventsDeleted`、
+`learnedWeightsDeleted` 與 `tagInterestProfilesDeleted`。
 
 **執行順序：先標記撤回，再刪除。** 同意紀錄依政策保留 365 天，因此刪除後 consent 檢查
 仍會通過；若不先撤回，一個已通過檢查、正在執行中的 `POST /api/interactions` 可以在刪除
@@ -133,9 +135,53 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
 `User_Course_History` 的 MySQL 讀取），CI 因此無法端到端測試這支路由（見
 `docs/TEST_PLAN.md` 的 PL 段落）。
 
+### `GET /api/privacy/tag-interests`（Roadmap #43 階段 3）
+
+讀取登入者自己的 rag-tag 興趣檔案。未同意 `personalization_learning` 時，不讀取互動事件、
+不保存行為 profile；回應仍可列出既有 Profile 中精確對應的明確主題先驗，並以
+`consented: false`／`source: "no-consent"` 表示沒有行為學習資料。
+
+```json
+{
+  "consented": true,
+  "source": "learned",
+  "computedAt": "2026-10-09T04:00:00.000Z",
+  "profile": {
+    "modelVersion": "rag-tag-interest-v1",
+    "catalogVersion": "rag-tag-catalog-2026-10-08-v1",
+    "eligibilityVersion": "rag-tag-eligibility-2026-10-09-v1",
+    "categoryInterests": [],
+    "explicitTopics": [],
+    "unmappedExplicitTopics": [],
+    "tagInterests": [
+      {
+        "canonicalTagId": "tag_ac8bb4d19b34088425b1",
+        "canonicalName": "0365 Copilot",
+        "prior": 0,
+        "positiveEvidence": 1,
+        "negativeEvidence": 0,
+        "score": 0.333333,
+        "crossCourseMatchEligible": false,
+        "hasEvidence": true
+      }
+    ],
+    "summary": {
+      "usableEventCount": 1,
+      "tagCount": 1,
+      "evidenceTagCount": 1,
+      "crossCourseMatchTagCount": 0,
+      "excludedEventCount": 0
+    }
+  }
+}
+```
+
+這個 GET 在已同意且 profile 過期時會重算並覆寫 `Learned_Tag_Interests` 快取。只有跨課配對
+資格為 true 的 tag 才能用於新課程分數；此 API 只提供 profile，階段 3 尚未把分數接進排課。
+
 ### `DELETE /api/privacy/personalization`（Roadmap #31）
 
-只清除學到的權重與作為其輸入的互動事件，**不影響顯式 Profile**（偏好標籤、避開時段、
+只清除學到的三軸權重、標籤興趣檔案與作為其輸入的互動事件，**不影響顯式 Profile**（偏好標籤、避開時段、
 學分上限）。與 `DELETE /api/privacy/data`（整個帳號）不同量級，不需要確認詞，但前端
 一律用 `window.confirm` 講清楚會刪除什麼再送出。
 
@@ -143,6 +189,7 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
 {
   "success": true,
   "learnedWeightsDeleted": 1,
+  "tagInterestProfilesDeleted": 1,
   "interactionEventsDeleted": 92,
   "profilePreserved": true
 }
@@ -1360,6 +1407,44 @@ Request：
 ```json
 { "events": [ { "eventType": "course_withdrawn", "requestId": "...", "actionId": "...", "course": { "catalogCourseCode": "IECS3002", "sectionId": 101 }, "term": { "academicYear": 114, "semester": "下學期" }, "source": "explicit_selection", "feedbackReason": "time" } ] }
 ```
+
+探索回饋和評價也走同一個 consent-first、冪等的事件端點：
+
+```json
+{
+  "events": [
+    {
+      "eventType": "interest_exploration_feedback",
+      "requestId": "...",
+      "actionId": "...",
+      "course": { "catalogCourseCode": "IECS3002", "sectionId": 101 },
+      "term": { "academicYear": 115, "semester": "first" },
+      "source": "exploration",
+      "interestFeedback": { "response": "interested", "canonicalTagIds": [] }
+    },
+    {
+      "eventType": "course_rated",
+      "requestId": "...",
+      "actionId": "...",
+      "course": { "catalogCourseCode": "IECS3002", "sectionId": 101 },
+      "term": { "academicYear": 115, "semester": "first" },
+      "source": "explicit_selection",
+      "rating": 5
+    }
+  ]
+}
+```
+
+`interested` with an empty tag list means all learning-eligible tags on the displayed course; a
+negative response must list at least one tag the user identified as unwanted. `learn_more` records no
+positive or negative evidence. The server resolves the course's current `rag_tag`, validates the
+selected canonical IDs, checks the user's required-course scope, and stores the versioned tag snapshot
+in `Interaction_Events.tag_interest_snapshot_json`. Clients must not supply that server-owned snapshot.
+Events without a tag snapshot (including pre-feature history) are not used in the rag-tag profile.
+For `course_rated`, include an integer `rating` from 1 to 5. For
+`interest_exploration_feedback`, the validated `interestFeedback` payload is retained with the
+event so export and idempotency checks preserve the original response. These columns are added by
+the Stage 3 migration; the migration is not applied automatically.
 
 事件本體為 `InteractionEvent v1`（見 `docs/DATA_SCHEMA.md`）。`userId`、`eventId`、
 `timestamp`、`schemaVersion`、`idempotencyKey` 與 `versionSnapshot` 的

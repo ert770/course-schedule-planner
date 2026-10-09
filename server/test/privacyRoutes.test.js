@@ -12,6 +12,9 @@ import {
 import {
   getStoredLearnedWeights, recomputeLearnedWeights, resetLearnedWeightsStoreForTests,
 } from '../src/services/preferenceLearningService.js';
+import {
+  getStoredTagInterestProfile, recomputeTagInterestProfile, resetTagInterestStoreForTests,
+} from '../src/services/tagInterestService.js';
 import { closePool } from '../src/db/mysql.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +27,12 @@ before(async () => {
   process.env.NODE_ENV = 'test';
   process.env.PRIVACY_STORE = 'memory';
   process.env.PRIVACY_ENFORCEMENT_ENABLED = 'true';
+  // app.js 載入 server/.env；路由測試使用 JSON／memory fixture，不應連共用 DB。
+  delete process.env.DB_HOST;
+  delete process.env.DB_USER;
+  delete process.env.DB_NAME;
+  delete process.env.DB_PASSWORD;
+  delete process.env.DB_PORT;
   process.env.ANALYTICS_ID_SECRET = 'route-test-analytics-secret-32-characters';
   process.env.PRIVACY_DATA_KEY_V1 = Buffer.alloc(32, 9).toString('base64');
   delete process.env.GEMINI_API_KEY;
@@ -102,6 +111,7 @@ function identity() {
 test('#31 PL22 DELETE /api/privacy/personalization 清空學到的權重與互動事件，不動 Profile', async () => {
   resetInteractionEventStoreForTests();
   resetLearnedWeightsStoreForTests();
+  resetTagInterestStoreForTests();
 
   // 前一個測試（#33）把 personalization_learning 設回 false，這裡要先重新
   // 同意，`recordInteractionEvents()`／`recomputeLearnedWeights()` 才不會被
@@ -128,7 +138,9 @@ test('#31 PL22 DELETE /api/privacy/personalization 清空學到的權重與互�
     versionSnapshot: { recommendationReasonVersion: null },
   }]);
   await recomputeLearnedWeights(identity(), { prefs: {} });
+  await recomputeTagInterestProfile(identity(), { prefs: {} });
   assert.ok(await getStoredLearnedWeights(identity()), '前置：重算後應該有已存的權重列');
+  assert.ok(await getStoredTagInterestProfile(identity()), '前置：應該有已存的標籤興趣列');
   assert.ok((await getInteractionEventsForExport(identity())).length > 0, '前置：應該有互動事件');
 
   const response = await fetch(`${baseUrl}/privacy/personalization`, {
@@ -139,15 +151,18 @@ test('#31 PL22 DELETE /api/privacy/personalization 清空學到的權重與互�
   assert.equal(body.success, true);
   assert.equal(body.profilePreserved, true);
   assert.ok(body.learnedWeightsDeleted >= 1);
+  assert.ok(body.tagInterestProfilesDeleted >= 1);
   assert.ok(body.interactionEventsDeleted >= 1);
 
   assert.equal(await getStoredLearnedWeights(identity()), null, '重設後不應該還讀得到權重');
+  assert.equal(await getStoredTagInterestProfile(identity()), null, '重設後不應該還讀得到標籤興趣');
   assert.deepEqual(await getInteractionEventsForExport(identity()), [], '重設後不應該還讀得到事件');
 });
 
 test('#31 PL23 撤回 personalization_learning 同意會連同已學到的權重與互動事件一起刪除', async () => {
   resetInteractionEventStoreForTests();
   resetLearnedWeightsStoreForTests();
+  resetTagInterestStoreForTests();
 
   const grant = await fetch(`${baseUrl}/privacy/consents`, {
     method: 'PUT', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
@@ -169,7 +184,9 @@ test('#31 PL23 撤回 personalization_learning 同意會連同已學到的權重
     versionSnapshot: { recommendationReasonVersion: null },
   }]);
   await recomputeLearnedWeights(identity(), { prefs: {} });
+  await recomputeTagInterestProfile(identity(), { prefs: {} });
   assert.ok(await getStoredLearnedWeights(identity()), '前置：撤回之前應該先有已存的權重列');
+  assert.ok(await getStoredTagInterestProfile(identity()), '前置：撤回之前應該先有已存的標籤興趣列');
   assert.ok((await getInteractionEventsForExport(identity())).length > 0, '前置：撤回之前應該先有互動事件');
 
   const revoke = await fetch(`${baseUrl}/privacy/consents`, {
@@ -182,5 +199,6 @@ test('#31 PL23 撤回 personalization_learning 同意會連同已學到的權重
   assert.equal((await revoke.json()).consents.personalization_learning.granted, false);
 
   assert.equal(await getStoredLearnedWeights(identity()), null, '撤回同意後不應該還讀得到權重');
+  assert.equal(await getStoredTagInterestProfile(identity()), null, '撤回同意後不應該還讀得到標籤興趣');
   assert.deepEqual(await getInteractionEventsForExport(identity()), [], '撤回同意後不應該還讀得到事件');
 });

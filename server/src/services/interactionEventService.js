@@ -13,6 +13,7 @@
 //      判定 append／duplicate／conflict；`(subject_id, idempotency_key)` 的
 //      UNIQUE 索引則擋下並行請求擠過「檢查」與「寫入」之間空隙的那一種重複。
 import { isMysqlConfigured, queryRows, withTransaction } from '../db/mysql.js';
+import { getAll } from '../db/database.js';
 import { PRIVACY_PURPOSES, PRIVACY_RETENTION } from '../data/privacyPolicy.js';
 import { PROFILE_SCHEMA_VERSION } from '../data/profileSchema.js';
 import {
@@ -34,6 +35,8 @@ import {
 import { logger } from '../utils/logger.js';
 import { sha256Hex } from '../utils/hash.js';
 import { SCORING_POLICY_VERSION } from '../skills/scoringPolicy.js';
+import { buildStudentScope } from '../skills/courseScope.js';
+import { buildTagInterestSnapshot } from '../skills/tagInterestLearning.js';
 
 // 產生這批推薦的模型版本。#7 用連續權重向量取代固定 variant 時要一併改這個值，
 // 否則 #30 會把兩種不同模型產生的曝光混為一談。
@@ -57,7 +60,9 @@ function rowToEvent(row, canonicalId) {
   const planId = row.planId ?? row.plan_id ?? null;
   const variantId = row.variantId ?? row.variant_id ?? null;
   const exposure = row.exposureJson ?? row.exposure_json ?? null;
-  return {
+  const tagInterestSnapshot = row.tagInterestSnapshot ?? row.tag_interest_snapshot_json ?? null;
+  const interestFeedbackValue = row.interestFeedback ?? row.interest_feedback_json ?? null;
+  const event = {
     schemaVersion: Number(row.schemaVersion ?? row.schema_version),
     eventId: row.eventId ?? row.event_id,
     eventType: row.eventType ?? row.event_type,
@@ -87,7 +92,19 @@ function rowToEvent(row, canonicalId) {
     },
     source: row.source ?? null,
     feedbackReason: row.feedbackReason ?? row.feedback_reason ?? null,
+    ...(row.rating !== undefined && row.rating !== null ? { rating: Number(row.rating) } : {}),
+    ...(interestFeedbackValue !== null && interestFeedbackValue !== undefined
+      ? { interestFeedback: typeof interestFeedbackValue === 'string'
+        ? JSON.parse(interestFeedbackValue)
+        : interestFeedbackValue }
+      : {}),
   };
+  if (tagInterestSnapshot !== null && tagInterestSnapshot !== undefined) {
+    event.tagInterestSnapshot = typeof tagInterestSnapshot === 'string'
+      ? JSON.parse(tagInterestSnapshot)
+      : tagInterestSnapshot;
+  }
+  return event;
 }
 
 async function loadByIdempotencyKey(subjectId, canonicalId, idempotencyKey) {
@@ -159,11 +176,16 @@ function memoryEventRow(subjectId, event, occurredAt, expiresAt) {
       courseRank: event.position.courseRank,
       source: event.source,
       feedbackReason: event.feedbackReason,
+      ...(event.rating !== undefined ? { rating: event.rating } : {}),
+      ...(event.interestFeedback !== undefined
+        ? { interestFeedback: event.interestFeedback }
+        : {}),
       schemaVersion: event.schemaVersion,
       profileSchemaVersion: event.versionSnapshot.profileSchemaVersion,
       modelVersion: event.versionSnapshot.modelVersion,
     recommendationReasonVersion: event.versionSnapshot.recommendationReasonVersion,
     exposureJson: event.exposureContext,
+    ...(event.tagInterestSnapshot ? { tagInterestSnapshot: event.tagInterestSnapshot } : {}),
   };
 }
 
@@ -171,9 +193,10 @@ const INSERT_EVENT_SQL = `INSERT INTO Interaction_Events
       (event_id, subject_id, event_type, occurred_at, expires_at, request_id, action_id,
        idempotency_key, catalog_course_code, section_id, academic_year, semester,
        plan_id, variant_id, plan_rank, course_rank, source, feedback_reason,
+       rating, interest_feedback_json,
        schema_version, profile_schema_version, model_version, recommendation_reason_version,
-       exposure_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+       exposure_json, tag_interest_snapshot_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 function insertParams(subjectId, event, occurredAt, expiresAt) {
   return [
@@ -184,10 +207,69 @@ function insertParams(subjectId, event, occurredAt, expiresAt) {
     event.plan?.planId ?? null, event.plan?.variantId ?? null,
     event.position.planRank, event.position.courseRank,
     event.source, event.feedbackReason,
+    event.rating ?? null,
+    event.interestFeedback === undefined ? null : JSON.stringify(event.interestFeedback),
     event.schemaVersion, event.versionSnapshot.profileSchemaVersion,
     event.versionSnapshot.modelVersion, event.versionSnapshot.recommendationReasonVersion,
     event.exposureContext === null ? null : JSON.stringify(event.exposureContext),
+    event.tagInterestSnapshot ? JSON.stringify(event.tagInterestSnapshot) : null,
   ];
+}
+
+const TAG_INTEREST_EVENT_TYPES = new Set([
+  INTERACTION_EVENT_TYPES.INTEREST_EXPLORATION_FEEDBACK,
+  INTERACTION_EVENT_TYPES.COURSE_VIEWED,
+  INTERACTION_EVENT_TYPES.COURSE_FAVORITED,
+  INTERACTION_EVENT_TYPES.COURSE_UNFAVORITED,
+  INTERACTION_EVENT_TYPES.COURSE_RATED,
+  INTERACTION_EVENT_TYPES.COURSE_SELECTED,
+  INTERACTION_EVENT_TYPES.COURSE_DESELECTED,
+  INTERACTION_EVENT_TYPES.COURSE_REMOVED,
+  INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN,
+  INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED,
+]);
+
+async function buildServerTagInterestSnapshot(identity, event, options = {}) {
+  if (!TAG_INTEREST_EVENT_TYPES.has(event.eventType) || !event.course) return null;
+  let course = options.tagInterestContext?.course ?? null;
+  let profile = options.tagInterestContext?.profile ?? null;
+
+  if (!course && isMysqlConfigured()) {
+    try {
+      const [row] = await queryRows(`
+        SELECT cs.section_id, cs.rag_tag, c.subid3 AS catalog_course_code,
+               c.dept, c.type AS course_type
+        FROM Course_Sections cs
+        INNER JOIN Courses c ON BINARY c.course_id = BINARY cs.course_id
+        WHERE cs.section_id = ?
+        LIMIT 1
+      `, [event.course.sectionId]);
+      if (row) {
+        course = {
+          sectionId: Number(row.section_id),
+          catalogCourseCode: row.catalog_course_code,
+          department: row.dept,
+          category: row.course_type,
+          ragTag: row.rag_tag,
+        };
+      }
+      const profiles = profile ? [] : await getAll('user_preferences');
+      profile ??= profiles.find(item => String(item.userId) === String(identity.canonicalId)) ?? null;
+    } catch (error) {
+      logger.warn(`無法建立 rag_tag 事件快照：${error.message}`, { label: 'TagInterest' });
+    }
+  }
+
+  const snapshot = buildTagInterestSnapshot(event, course, buildStudentScope(profile ?? {}));
+  if (event.eventType === INTERACTION_EVENT_TYPES.INTEREST_EXPLORATION_FEEDBACK
+    && snapshot.exclusionReason === 'course_not_resolved') {
+    throw new TypeError('找不到探索回饋所屬課程，無法驗證標籤');
+  }
+  if (course && event.course.catalogCourseCode
+    && String(course.catalogCourseCode) !== String(event.course.catalogCourseCode)) {
+    throw new TypeError('課程代碼與班次資料不相符');
+  }
+  return snapshot;
 }
 
 // 「確認未撤回、確認仍同意」與「寫入」必須在同一個交易、同一把列鎖底下完成。
@@ -385,8 +467,9 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
   for (const draft of drafts) {
     let event;
     try {
+      const { tagInterestSnapshot: _clientSnapshot, ...safeDraft } = draft ?? {};
       event = createInteractionEvent(identity, {
-        ...draft,
+        ...safeDraft,
         // roadmap #10 任務 3A：plan_chosen 的 actionId 由伺服器依 requestId 決定，
         // 不採用前端送來的隨機 UUID——一次詢問只對應一次選擇，識別碼就不該由
         // 呼叫端自由指定。冪等性另由專屬 payload 保證（見 schema）。
@@ -442,20 +525,26 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
     }
 
     try {
+      event.tagInterestSnapshot = await buildServerTagInterestSnapshot(identity, event, options);
       await insertEvent(subjectId, event);
       results.push({ actionId: event.actionId, eventType: event.eventType, status: 'append' });
-    } catch (err) {
-      if (isDuplicateKeyError(err)) {
-        // 對抗式審查發現：並行的兩個請求可能用同一個 idempotency key
-        // 但內容不同（例如同一次移除，一個填 time、一個填 content）；
-        // 兩者在上面的 `resolveIdempotentAppend()` 檢查時都可能還沒看到
-        // 對方，於是都嘗試 INSERT，UNIQUE 索引只讓一個成功。先前這裡對
-        // 撞鍵一律回 duplicate，完全沒有重新讀出真正寫進去的那筆比對，
-        // 等於把「內容不同、只是撞在一起」錯報成「跟你送的一樣」。
-        // 現在撞鍵後重新查一次、重新跑一次同一套判定，內容不同才回
-        // duplicate 誤報的問題就不會發生。
+    } catch (snapshotError) {
+      if (snapshotError instanceof TypeError) {
+        results.push({
+          actionId: event.actionId,
+          eventType: event.eventType,
+          status: 'rejected',
+          errors: [snapshotError.message],
+        });
+        continue;
+      }
+      if (isDuplicateKeyError(snapshotError)) {
+        // Concurrent requests can still race after the application idempotency check.
         const winner = await loadByIdempotencyKey(subjectId, identity.canonicalId, event.idempotencyKey);
-        const resolved = resolveIdempotentAppend(winner, event);
+        // 快照已由 server 填入；schema validator 會拒絕任何帶快照的輸入，
+        // 因此做冪等 payload 比較時先移除 server-owned 欄位。
+        const { tagInterestSnapshot: _serverSnapshot, ...comparableInput } = event;
+        const resolved = resolveIdempotentAppend(winner, comparableInput);
         results.push({
           actionId: event.actionId,
           eventType: event.eventType,
@@ -463,16 +552,16 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
         });
         continue;
       }
-      if (err instanceof SubjectWithdrawnError || err instanceof ConsentRevokedError) {
+      if (snapshotError instanceof SubjectWithdrawnError || snapshotError instanceof ConsentRevokedError) {
         results.push({
           actionId: event.actionId,
           eventType: event.eventType,
           status: 'rejected',
-          errors: [err.message],
+          errors: [snapshotError.message],
         });
         continue;
       }
-      throw err;
+      throw snapshotError;
     }
   }
 

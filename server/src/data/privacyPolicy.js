@@ -1,4 +1,4 @@
-export const PRIVACY_POLICY_VERSION = '2026-08-30.v2';
+export const PRIVACY_POLICY_VERSION = '2026-10-09.v3';
 
 export const PRIVACY_PURPOSES = Object.freeze({
   SERVICE_PROCESSING: 'service_processing',
@@ -17,7 +17,7 @@ export const PRIVACY_RETENTION = Object.freeze({
 
 export const PRIVACY_POLICY = Object.freeze({
   version: PRIVACY_POLICY_VERSION,
-  effectiveAt: '2026-08-30T00:00:00+08:00',
+  effectiveAt: '2026-10-09T00:00:00+08:00',
   purposes: [
     {
       id: PRIVACY_PURPOSES.SERVICE_PROCESSING,
@@ -32,8 +32,13 @@ export const PRIVACY_POLICY = Object.freeze({
       required: false,
       defaultGranted: false,
       title: '從互動持續改善個人化',
-      description: '允許未來的 #2 互動事件與 #30 學習權重使用你的操作回饋。Raw Chat 不會成為此用途的輸入。',
-      data: ['pseudonymous_interaction_events', 'learned_preference_weights'],
+      description: '允許系統從課程瀏覽、收藏、評價、選課、退選原因與初始探索回饋，學習你對課程主題標籤的興趣。系統保存去識別化互動事件、事件當下的標籤快照及可重算的個人標籤興趣檔案；Raw Chat 不會成為此用途的輸入。',
+      data: [
+        'pseudonymous_interaction_events',
+        'tag_interest_event_snapshots',
+        'learned_preference_weights',
+        'learned_tag_interests',
+      ],
     },
     {
       id: PRIVACY_PURPOSES.AGGREGATE_RESEARCH,

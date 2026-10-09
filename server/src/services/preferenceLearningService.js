@@ -20,6 +20,7 @@ import {
   deleteInteractionEvents,
 } from './interactionEventService.js';
 import { getUserPreferences } from './memoryService.js';
+import { deleteTagInterestProfile } from './tagInterestService.js';
 import { logger } from '../utils/logger.js';
 import {
   PREFERENCE_AXES,
@@ -481,8 +482,9 @@ export async function cleanupExpiredLearnedWeights({ dryRun = true } = {}) {
 export async function resetPersonalization(identity, { requestId = null } = {}) {
   const subjectId = deriveSubjectId(identity.canonicalId);
   const learned = await deleteLearnedWeights(subjectId);
+  const tagInterest = await deleteTagInterestProfile(subjectId);
   const events = await deleteInteractionEvents(subjectId);
-  const deleted = { ...learned, ...events };
+  const deleted = { ...learned, ...tagInterest, ...events };
   await writeAudit(subjectId, 'delete', 'learned_preference_weights', 'success', deleted, requestId);
   return { ...deleted, profilePreserved: true };
 }
