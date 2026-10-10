@@ -6,11 +6,13 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import {
   assessRealEvaluationReadiness,
+  evaluatePersonaRankingComparisons,
   evaluateSyntheticTagInterestCases,
 } from './lib/tagInterestEvaluation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturePath = path.resolve(__dirname, '..', 'test', 'fixtures', 'tagInterestEvaluationCases.json');
+const personaFixturePath = path.resolve(__dirname, '..', 'test', 'fixtures', 'tagInterestPersonaUxCases.json');
 const checkRealReadiness = process.argv.slice(2).includes('--check-real-readiness');
 let closePool = async () => {};
 
@@ -59,11 +61,14 @@ async function readRealReadiness() {
 
 async function main() {
   const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+  const personaFixture = JSON.parse(fs.readFileSync(personaFixturePath, 'utf8'));
   const synthetic = evaluateSyntheticTagInterestCases(fixture);
+  const personaComparisons = evaluatePersonaRankingComparisons(personaFixture);
   const result = {
     generatedAt: new Date().toISOString(),
     modelVersion: synthetic.modelVersion,
     synthetic,
+    personaComparisons,
     realDataReadiness: checkRealReadiness ? await readRealReadiness() : {
       checked: false,
       note: '使用 --check-real-readiness 才會執行唯讀 aggregate 查詢。',

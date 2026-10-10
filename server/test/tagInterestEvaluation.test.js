@@ -6,6 +6,7 @@ import {
   assessRealEvaluationReadiness,
   computeRankingMetrics,
   courseCatalogCoverage,
+  evaluatePersonaRankingComparisons,
   evaluateSyntheticTagInterestCases,
   explanationTagFaithfulness,
   splitChronologicalEvents,
@@ -14,6 +15,8 @@ import {
 
 const fixtureUrl = new URL('./fixtures/tagInterestEvaluationCases.json', import.meta.url);
 const fixture = JSON.parse(readFileSync(fileURLToPath(fixtureUrl), 'utf8'));
+const personaFixtureUrl = new URL('./fixtures/tagInterestPersonaUxCases.json', import.meta.url);
+const personaFixture = JSON.parse(readFileSync(fileURLToPath(personaFixtureUrl), 'utf8'));
 
 describe('rag-tag-interest-v1 evaluation harness', () => {
   test('synthetic persona scenarios pass without claiming recommendation accuracy', () => {
@@ -30,6 +33,56 @@ describe('rag-tag-interest-v1 evaluation harness', () => {
     assert.throws(
       () => evaluateSyntheticTagInterestCases({ ...fixture, datasetType: 'real' }),
       /datasetType=synthetic/u,
+    );
+  });
+
+  test('10 fixed persona UX cases compare three tag profiles with the current v2 scheduler', () => {
+    const report = evaluatePersonaRankingComparisons(personaFixture);
+    assert.equal(report.datasetType, 'synthetic_persona_ux');
+    assert.equal(report.accuracyClaimAllowed, false);
+    assert.equal(report.personaCount, 10);
+    assert.equal(report.comparisonCount, 4);
+    assert.equal(report.personaResults.every(persona => (
+      persona.models.hybrid_tag_interest_v1.rankedCourseIds.length === report.k
+      && persona.models.current_v2_scheduler.rankedCourseIds.length === report.k
+    )), true);
+    assert.equal(report.personaResults.filter(persona => persona.v2Learning.applied).length, 8);
+    assert.equal(report.personaResults
+      .filter(persona => ['P01', 'P08'].includes(persona.personaId))
+      .every(persona => persona.v2Learning.applied === false && persona.v2Learning.usableEventCount === 0), true);
+    assert.equal(report.personaResults
+      .filter(persona => persona.v2Learning.applied)
+      .every(persona => persona.v2Learning.usableEventCount >= persona.v2Learning.requiredEventCount), true);
+    assert.match(report.roleplayProtocol, /合成課程卡/u);
+    assert.equal(report.personaResults.every(persona => persona.models.hybrid_tag_interest_v1.subcategoryDiversity === 1), true);
+    assert.deepEqual(Object.keys(report.modelSummaries), [
+      'initial_topic_prior',
+      'behavior_tag_profile',
+      'hybrid_tag_interest_v1',
+      'current_v2_scheduler',
+    ]);
+    const broadAi = report.personaResults.find(persona => persona.personaId === 'P08');
+    assert.equal(broadAi.tagProfiles.initial_topic_prior.evidenceTagCount, 0);
+    assert.equal(broadAi.tagProfiles.hybrid_tag_interest_v1.evidenceTagCount, 0);
+    assert.ok(broadAi.models.current_v2_scheduler.topK.includes('ai-foundations'));
+    assert.equal(
+      report.personaResults.find(persona => persona.personaId === 'P02')
+        .models.hybrid_tag_interest_v1.topK[0],
+      'security-course',
+    );
+    assert.equal(
+      report.personaResults.every(persona => persona.models.hybrid_tag_interest_v1.reasonFaithfulness.accuracy === 1
+        || persona.models.hybrid_tag_interest_v1.reasonFaithfulness.accuracy === null),
+      true,
+    );
+    assert.ok(report.modelSummaries.hybrid_tag_interest_v1.meanNdcgAtK >= 0);
+    assert.equal(report.limitations.length, 3);
+  });
+
+  test('persona comparison rejects fixtures without the explicit 10-person synthetic marker', () => {
+    assert.throws(
+      () => evaluatePersonaRankingComparisons({ ...personaFixture, datasetType: 'real' }),
+      /10 位 synthetic persona/u,
     );
   });
 

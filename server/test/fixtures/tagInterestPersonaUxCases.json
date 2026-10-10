@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "datasetType": "synthetic_persona_ux",
+  "roleplayProtocol": "P02-P07、P09、P10 逐一查看同一組 10 張合成課程卡；P01 與 P08 保留無行為資料的冷啟動情境。查看事件只作弱行為訊號，不代表真人互動。",
+  "evaluationTime": "2026-10-09T00:00:00.000Z",
+  "activeTerm": { "academicYear": 115, "semester": "first" },
+  "topK": 3,
+  "candidateCourses": [
+    { "courseId": "ai-foundations", "name": "人工智慧導論", "ragTags": ["人工智慧", "機器學習"], "track": "AI" },
+    { "courseId": "deep-learning", "name": "深度學習應用", "ragTags": ["深度學習", "機器學習"], "track": "AI 與機器學習" },
+    { "courseId": "nlp-course", "name": "自然語言處理", "ragTags": ["自然語言處理", "深度學習"], "track": "AI 與機器學習" },
+    { "courseId": "security-course", "name": "資訊安全實務", "ragTags": ["資訊安全", "網路安全"], "track": "資訊安全與隱私" },
+    { "courseId": "data-science-course", "name": "資料科學與統計", "ragTags": ["資料科學", "統計分析"], "track": "資料與資訊系統" },
+    { "courseId": "database-course", "name": "資料庫設計", "ragTags": ["資料庫", "資料庫設計"], "track": "系統與資料" },
+    { "courseId": "software-course", "name": "軟體工程與物件導向", "ragTags": ["軟體工程", "物件導向"], "track": "程式" },
+    { "courseId": "fintech-course", "name": "金融科技資料應用", "ragTags": ["金融科技", "資料庫"], "track": "金融" },
+    { "courseId": "cloud-security-course", "name": "雲端安全", "ragTags": ["雲端安全", "網路安全"], "track": "資訊安全與隱私" },
+    { "courseId": "hci-course", "name": "人機互動設計", "ragTags": ["人機互動", "互動設計"], "track": "設計" }
+  ],
+  "personas": [
+    {
+      "personaId": "P01",
+      "personaName": "先看主題再選課",
+      "intent": "入門時已明確選擇自然語言處理，還沒有行為紀錄。",
+      "preferences": { "interests": ["自然語言處理"] },
+      "v2Keywords": ["自然語言處理"],
+      "events": [],
+      "relevantCourseIds": ["nlp-course", "deep-learning"]
+    },
+    {
+      "personaId": "P02",
+      "personaName": "資安實作收藏型",
+      "roleplayBrowseAllCandidates": true,
+      "intent": "入門設定只選廣泛資訊領域，後續主動收藏資安與網路安全課。",
+      "preferences": { "interests": ["資訊與計算"] },
+      "v2Keywords": ["資訊安全"],
+      "events": [
+        { "eventType": "course_favorited", "courseTags": ["資訊安全", "網路安全"], "timestamp": "2026-10-04T09:00:00.000Z" },
+        { "eventType": "course_selected", "source": "explicit_selection", "courseTags": ["網路安全"], "timestamp": "2026-10-06T09:00:00.000Z" }
+      ],
+      "relevantCourseIds": ["security-course", "cloud-security-course"]
+    },
+    {
+      "personaId": "P03",
+      "personaName": "資料分析探索型",
+      "roleplayBrowseAllCandidates": true,
+      "intent": "初始主題選資料科學，探索後對統計分析也表達興趣。",
+      "preferences": { "interests": ["資料科學"] },
+      "v2Keywords": ["資料科學", "統計分析"],
+      "events": [
+        { "eventType": "interest_exploration_feedback", "response": "interested", "selectedTags": ["統計分析"], "courseTags": ["資料科學", "統計分析"], "timestamp": "2026-10-05T09:00:00.000Z" },
+        { "eventType": "course_rated", "rating": 5, "courseTags": ["資料科學"], "timestamp": "2026-10-07T09:00:00.000Z" }
+      ],
+      "relevantCourseIds": ["data-science-course", "database-course"]
+    },
+    {
+      "personaId": "P04",
+      "personaName": "資料庫後端偏好型",
+      "roleplayBrowseAllCandidates": true,
+      "intent": "入門時選系統與資料方向，之後自願加選資料庫設計課。",
+      "preferences": { "interests": ["系統與資料"] },
+      "v2Keywords": ["資料庫"],
+      "events": [
+        { "eventType": "course_selected", "source": "explicit_selection", "courseTags": ["資料庫", "資料庫設計"], "timestamp": "2026-10-05T09:00:00.000Z" },
+        { "eventType": "course_favorited", "courseTags": ["資料庫設計"], "timestamp": "2026-10-07T09:00:00.000Z" }
+      ],
+      "relevantCourseIds": ["database-course", "fintech-course"]
+    },
+    {
+      "personaId": "P05",
+      "personaName": "軟體工程轉向型",
+      "roleplayBrowseAllCandidates": true,
+      "intent": "明確選擇軟體工程，並在探索卡片肯定物件導向主題。",
+      "preferences": { "interests": ["軟體工程"] },
+      "v2Keywords": ["軟體工程"],
+      "events": [
+        { "eventType": "interest_exploration_feedback", "response": "interested", "selectedTags": ["物件導向"], "courseTags": ["軟體工程", "物件導向"], "timestamp": "2026-10-06T09:00:00.000Z" }
+      ],
+      "relevantCourseIds": ["software-course", "database-course"]
+    },
+    {
+      "personaId": "P06",
+      "personaName": "金融科技跨域型",
+      "roleplayBrowseAllCandidates": true,
+      "intent": "只設定經濟金融大方向，後續對金融科技課程按收藏。",
+      "preferences": { "interests": ["經濟與金融"] },
+      "v2Keywords": ["金融科技"],
+      "events": [
+        { "eventType": "course_favorited", "courseTags": ["金融科技", "資料庫"], "timestamp": "2026-10-06T09:00:00.000Z" }
+      ],
+      "relevantCourseIds": ["fintech-course", "database-course"]
+    },
+    {
+      "personaId": "P07",
+      "personaName": "雲端安全進階型",
+      "roleplayBrowseAllCandidates": true,
+      "intent": "初始已表達資訊安全興趣，選課後再強化雲端安全與網路安全。",
+      "preferences": { "interests": ["資訊安全"] },
+      "v2Keywords": ["資訊安全"],
+      "events": [
+        { "eventType": "course_selected", "source": "explicit_selection", "courseTags": ["雲端安全", "網路安全"], "timestamp": "2026-10-05T09:00:00.000Z" },
+        { "eventType": "course_favorited", "courseTags": ["雲端安全"], "timestamp": "2026-10-07T09:00:00.000Z" }
+      ],
+      "relevantCourseIds": ["cloud-security-course", "security-course"]
+    },
+    {
+      "personaId": "P08",
+      "personaName": "AI 廣泛主題待澄清型",
+      "intent": "只選 AI 廣泛主題，尚未回答想接觸的細項；系統不應代替本人猜細項。",
+      "preferences": { "interests": ["AI"] },
+      "v2Keywords": ["人工智慧", "機器學習"],
+      "events": [],
+      "relevantCourseIds": ["ai-foundations", "deep-learning", "nlp-course"]
+    },
+    {
+      "personaId": "P09",
+      "personaName": "明確排斥 NLP 的資料型",
+      "roleplayBrowseAllCandidates": true,
+      "intent": "明確指出不喜歡自然語言處理，之後收藏資料庫設計課。",
+      "preferences": { "interests": ["資訊與計算"] },
+      "v2Keywords": ["資料庫"],
+      "events": [
+        { "eventType": "interest_exploration_feedback", "response": "not_interested", "selectedTags": ["自然語言處理"], "courseTags": ["自然語言處理", "深度學習"], "timestamp": "2026-10-04T09:00:00.000Z" },
+        { "eventType": "course_favorited", "courseTags": ["資料庫", "資料庫設計"], "timestamp": "2026-10-07T09:00:00.000Z" }
+      ],
+      "relevantCourseIds": ["database-course", "software-course"]
+    },
+    {
+      "personaId": "P10",
+      "personaName": "多主題交叉探索型",
+      "roleplayBrowseAllCandidates": true,
+      "intent": "明確選擇資料科學與資訊安全，探索後也喜歡自然語言處理。",
+      "preferences": { "interests": ["資料科學", "資訊安全"] },
+      "v2Keywords": ["資料科學", "資訊安全"],
+      "events": [
+        { "eventType": "interest_exploration_feedback", "response": "interested", "selectedTags": ["自然語言處理"], "courseTags": ["自然語言處理", "深度學習"], "timestamp": "2026-10-06T09:00:00.000Z" },
+        { "eventType": "course_favorited", "courseTags": ["資料科學", "統計分析"], "timestamp": "2026-10-08T09:00:00.000Z" }
+      ],
+      "relevantCourseIds": ["data-science-course", "security-course", "nlp-course"]
+    }
+  ]
+}

@@ -82,7 +82,7 @@ if (mysqlOptIn) {
         [event],
         { tagInterestContext }
       );
-      assert.equal(firstWrite.recorded, true);
+      assert.equal(firstWrite.recorded, 1);
       assert.equal(firstWrite.results[0]?.status, 'append');
 
       const duplicateWrite = await interactions.recordInteractionEvents(
