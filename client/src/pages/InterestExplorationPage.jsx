@@ -355,7 +355,7 @@ export default function InterestExplorationPage() {
                   </button>
                   <button type="button" className="interest-button negative" onClick={() => setNegativeMode(true)} disabled={busy}>沒興趣</button>
                   <button type="button" className="interest-button secondary" onClick={() => sendFeedback('learn_more')} disabled={busy}>想先了解</button>
-                  <button type="button" className="interest-button skip-card" onClick={advance} disabled={busy}>略過這張</button>
+                  <button type="button" className="interest-button skip-card" onClick={() => advance()} disabled={busy}>略過這張</button>
                 </div>
               )}
             </article>

@@ -2,10 +2,16 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-10
+
+1. [rag-tag-interest-v1：10 位 Persona 四組排序比較](./2026-10-10-rag-tag-interest-persona-comparison.md)
+2. [rag-tag-interest-v1 MySQL 服務層與探索頁瀏覽器驗收](./2026-10-10-rag-tag-interest-mysql-integration.md)
+
 ## 2026-10-09
 
-1. [rag_tag「其他／待人工確認」完整重分類](./2026-10-09-rag-tag-pending-reclassification.md)
-2. [rag_tag 興趣資格定稿與 MySQL 重算（階段 2 完成）](./2026-10-09-rag-tag-interest-eligibility-finalized.md)
+1. [rag-tag-interest-v1 階段 5：合成情境與離線評估就緒度](./2026-10-09-rag-tag-interest-offline-evaluation-stage5.md)
+2. [rag_tag「其他／待人工確認」完整重分類](./2026-10-09-rag-tag-pending-reclassification.md)
+3. [rag_tag 興趣資格定稿與 MySQL 重算（階段 2 完成）](./2026-10-09-rag-tag-interest-eligibility-finalized.md)
 
 ## 2026-10-08
 
