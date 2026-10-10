@@ -934,16 +934,43 @@ metadata」兩節。
   "stopWhen": "no-credit-progress",
   "preferenceScore": 0.214,
   "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0.68 },
-  "reviewCoverage": { "rated": 5, "total": 8, "ratio": 0.625 }
+  "reviewCoverage": { "rated": 5, "total": 8, "ratio": 0.625 },
+  "planTagScore": 0.35,
+  "tagInterestCoverage": 0.75,
+  "planTagMultiplier": 1.21,
+  "combinedPlanScore": 0.259,
+  "alphaPlan": 0.6,
+  "freeChoiceCourseCount": 8,
+  "evidenceCourseCount": 6
 }
 ```
 
 `generationPolicy` 是實際產生該方案的評分規則。系統先建立個人化綜合方案，再只為使用者
 已表態的軸建立加重比較方案，最後建立較多學分方案，總數上限為 5；因此方案不是固定五種，
 呼叫端不得從 `variantId` 猜測使用者偏好。`stopWhen` 為 `no-credit-progress` 或
-`candidate-exhausted`。`plans` 依 `success` → 是否達最低學分 → `preferenceScore` →
-`totalCredits` 排序，`preferenceScore` 一律用原始使用者權重計算，不讓加重策略替自己評分；
-`plans[0]` 即主推方案，其內容會複製到頂層 `schedule`。
+`candidate-exhausted`。`plans` 先依 `success` 與是否達最低學分排序；標籤排序為 `active` 且 profile
+可用時，再依 `combinedPlanScore`，其餘模式依 `preferenceScore`，最後以 `totalCredits` 排序。
+`preferenceScore` 一律用原始使用者權重計算，不讓加重策略替自己評分；標籤合併分不覆寫它。
+`plans[0]` 即主推方案，其內容會複製到頂層 `schedule`。若主推方案有標籤興趣證據，頂層 `message`
+會以「偏好與標籤興趣合併分」說明排序依據；沒有標籤證據時仍顯示既有偏好或學分依據。
+
+`active` 且標籤 profile 可用時，每個方案會多回傳 `planTagScore`、`tagInterestCoverage`、
+`planTagMultiplier`、`combinedPlanScore`、`alphaPlan`、`freeChoiceCourseCount` 及
+`evidenceCourseCount`。`planTagScore` 是有興趣證據的自由選擇課程分數平均；必修、重補修、使用者
+固定選擇與關注課不納入。`tagInterestCoverage` 是有證據的自由選擇課數除以自由選擇課數；沒有自由
+選擇課時為 `null`。沒有任何可計分課時 `planTagScore` 為 `null`、倍率為 1、合併分等於原
+`preferenceScore`。`shadow` 僅在伺服器 log 記錄方案分布及假想名次變動的彙總，不在 API 回應中暴露
+單一方案分數；`off` 不讀取或計算標籤方案分數。
+
+方案倍率使用獨立的 `alphaPlan`（預設 0.6，範圍 0～1）：
+
+```text
+planTagMultiplier = 1 + alphaPlan × planTagScore
+combinedPlanScore = preferenceScore × planTagMultiplier
+```
+
+例如 `preferenceScore=0.5`、`planTagScore=+0.8` 時，倍率為 1.48、合併分為 0.74；標籤分為
+`−0.8` 時倍率為 0.52、合併分為 0.26。方案硬性成功狀態與最低學分判斷仍排在標籤及偏好軟性分數之前。
 
 `preferenceBreakdown.easy`（Roadmap #4）改為由已排入且**有評價**課程的 `adjustedEasiness` 平均而得，
 不再是課程描述關鍵字命中率。**可能為 `null`**——代表這個方案排入的課全部沒有評價，無法評分，
@@ -972,7 +999,14 @@ metadata」兩節。
   "gapPeriods": 0,
   "preferenceScore": 0.333,
   "preferenceBreakdown": { "interest": 0, "compact": 0.33, "easy": 0.72 },
-  "reviewCoverage": { "rated": 1, "total": 8, "ratio": 0.125 }
+  "reviewCoverage": { "rated": 1, "total": 8, "ratio": 0.125 },
+  "planTagScore": 0.35,
+  "tagInterestCoverage": 0.75,
+  "planTagMultiplier": 1.21,
+  "combinedPlanScore": 0.403,
+  "alphaPlan": 0.6,
+  "freeChoiceCourseCount": 8,
+  "evidenceCourseCount": 6
 }
 ```
 
@@ -982,8 +1016,10 @@ metadata」兩節。
 `gapPeriods` 只算「當天第一節到最後一節之間沒課的節次」，不含上課日之前或之後的空檔——
 「早上沒課」是使用者要的結果，不算空堂。
 
-`preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位完全相同，
-在這裡重複一份是為了讓前端只讀 `planMetrics` 就能組出整張比較表，不必同時讀兩個地方。
+`preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位完全相同；若啟用標籤
+方案排序，`planTagScore`、`tagInterestCoverage`、`planTagMultiplier`、`combinedPlanScore`、
+`alphaPlan`、`freeChoiceCourseCount` 及 `evidenceCourseCount` 也會同步列在 `planMetrics`，讓前端只讀
+`planMetrics` 就能組出方案比較表。
 
 ### `planDiversity`（Roadmap #27）
 

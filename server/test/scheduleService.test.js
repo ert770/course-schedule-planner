@@ -213,6 +213,8 @@ describe('generateScheduleWithTagInterestContext：non-off context 經 server ru
     assert.equal(shadow.schedule[0].id, baseline.schedule[0].id);
     assert.ok(shadow.tagInterestShadowStats.poolComparisons > 0);
     assert.ok(shadow.tagInterestShadowStats.changedPoolComparisons > 0);
+    assert.equal(shadow.tagInterestShadowStats.plans.compared, shadow.plans.length);
+    assert.equal(Object.hasOwn(shadow.plans[0], 'planTagScore'), false);
     assert.equal(Object.keys(shadow).includes('tagInterestShadowStats'), false);
   });
 

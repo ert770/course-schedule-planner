@@ -54,7 +54,11 @@ import { generateDiverseCandidates } from './optimization/diversePlanSolver.js';
 import { selectDiverseSubset, SUBSET_BASE_ID, SUBSET_SELECTION_METHOD } from './optimization/diverseSubsetSelector.js';
 import { checkMilpPlan } from './optimization/milpPlanChecks.js';
 import { solveLpTextSync } from './optimization/highsRuntime.js';
-import { scoreCandidateWithTagInterest } from './tagInterestRanking.js';
+import {
+  DEFAULT_TAG_INTEREST_PLAN_ALPHA,
+  scoreCandidateWithTagInterest,
+  scorePlanTagInterest,
+} from './tagInterestRanking.js';
 
 let configuredHighsRuntime = null;
 
@@ -1084,6 +1088,15 @@ function computePlanMetrics(plan) {
     preferenceScore: plan.preferenceScore,
     preferenceBreakdown: plan.preferenceBreakdown,
     reviewCoverage: plan.reviewCoverage,
+    ...(Object.hasOwn(plan, 'planTagScore') ? {
+      planTagScore: plan.planTagScore,
+      tagInterestCoverage: plan.tagInterestCoverage,
+      planTagMultiplier: plan.planTagMultiplier,
+      combinedPlanScore: plan.combinedPlanScore,
+      alphaPlan: plan.alphaPlan,
+      freeChoiceCourseCount: plan.freeChoiceCourseCount,
+      evidenceCourseCount: plan.evidenceCourseCount,
+    } : {}),
   };
 }
 
@@ -1280,6 +1293,15 @@ function createTagInterestShadowStats(tagInterestContext) {
     changedPoolComparisons: 0,
     comparedCandidates: 0,
     candidates: { positive: 0, neutral: 0, negative: 0, noEligibleTags: 0, unavailable: 0 },
+    plans: {
+      compared: 0,
+      positive: 0,
+      neutral: 0,
+      negative: 0,
+      noEvidence: 0,
+      changedPositions: 0,
+      orderChanged: false,
+    },
   };
   for (const entry of Object.values(tagInterestContext.coursesBySectionId || {})) {
     if (entry.score === null || !Number.isFinite(entry.score)) {
@@ -1300,9 +1322,99 @@ function attachTagInterestShadowStats(result, stats) {
     value: {
       ...stats,
       candidates: { ...stats.candidates },
+      plans: { ...stats.plans },
     },
   });
   return result;
+}
+
+function getFreeChoicePlanCourses(plan, constraints, scope) {
+  const fixedCourseIds = toIdSet([
+    ...toArray(constraints.selectedCourseIds),
+    ...toArray(constraints.mustTakeCourseIds),
+    ...toArray(constraints.mustTakeCourses),
+  ]);
+  const failedRequiredCodes = new Set(getFailedRequiredCourseCodes(constraints.courseHistory));
+  const planCourses = [...(plan.schedule || []), ...(plan.unscheduledCourses || [])];
+
+  return planCourses.filter(course => {
+    const sectionId = Number(course?.sectionId ?? course?.id);
+    const catalogCourseCode = String(course?.catalogCourseCode ?? '').trim();
+    return !isWatching(course, constraints)
+      && course?.scheduleState !== 'watching'
+      && !fixedCourseIds.has(sectionId)
+      && !course?.formallyRequired
+      && !course?.recommendationReason?.formallyRequired
+      && !course?.recommendationReason?.requiredSelection
+      && !isRequiredForStudent(course, scope)
+      && !(catalogCourseCode && failedRequiredCodes.has(catalogCourseCode))
+      && course?.corequisiteRole !== 'internship';
+  });
+}
+
+function calculatePlanTagInterest(plan, tagInterestContext, constraints, scope, alphaPlan) {
+  return scorePlanTagInterest({
+    freeChoiceCourses: getFreeChoicePlanCourses(plan, constraints, scope),
+    coursesBySectionId: tagInterestContext?.coursesBySectionId ?? {},
+    preferenceScore: plan.preferenceScore,
+    alphaPlan,
+  });
+}
+
+function applyPlanTagInterest(plan, tagInterestContext, constraints, scope, alphaPlan) {
+  if (
+    tagInterestContext?.mode !== 'active'
+    || tagInterestContext.profileSource === 'unavailable'
+  ) return plan;
+
+  const metrics = calculatePlanTagInterest(
+    plan, tagInterestContext, constraints, scope, alphaPlan
+  );
+  if (metrics.planTagScore !== null && metrics.alphaPlan === 0) {
+    throw new RangeError('active 模式有方案標籤分時，alphaPlan 必須大於 0');
+  }
+  Object.assign(plan, metrics);
+  plan.planMetrics = computePlanMetrics(plan);
+  return plan;
+}
+
+function updatePlanTagInterestShadowStats(
+  plans, tagInterestContext, constraints, scope, alphaPlan, stats
+) {
+  if (
+    !stats
+    || tagInterestContext?.profileSource === 'unavailable'
+    || !Array.isArray(plans)
+    || plans.length === 0
+  ) return;
+
+  const scoredPlans = plans.map((plan, index) => ({
+    plan,
+    index,
+    metrics: calculatePlanTagInterest(
+      plan, tagInterestContext, constraints, scope, alphaPlan
+    ),
+  }));
+  const planStats = stats.plans;
+  planStats.compared = scoredPlans.length;
+  for (const { metrics } of scoredPlans) {
+    if (metrics.planTagScore === null) planStats.noEvidence += 1;
+    else if (metrics.planTagScore > 0) planStats.positive += 1;
+    else if (metrics.planTagScore < 0) planStats.negative += 1;
+    else planStats.neutral += 1;
+  }
+
+  const shadowOrder = scoredPlans
+    .map(entry => ({
+      ...entry,
+      rankedPlan: { ...entry.plan, combinedPlanScore: entry.metrics.combinedPlanScore },
+    }))
+    .sort((left, right) => comparePlans(left.rankedPlan, right.rankedPlan));
+  planStats.changedPositions = shadowOrder.reduce(
+    (count, entry, rank) => count + (entry.index === rank ? 0 : 1),
+    0
+  );
+  planStats.orderChanged = planStats.changedPositions > 0;
 }
 
 // 單一課程的放置判斷。greedy 與 roadmap #22 repair 必須共用這一個入口，
@@ -3504,13 +3616,19 @@ function uniquePlans(plans) {
   });
 }
 
-function comparePlans(a, b) {
+export function comparePlans(a, b) {
   if (a.success !== b.success) return a.success ? -1 : 1;
   const aMeetsMin = a.totalCredits >= a.minCredits ? 1 : 0;
   const bMeetsMin = b.totalCredits >= b.minCredits ? 1 : 0;
   if (aMeetsMin !== bMeetsMin) return bMeetsMin - aMeetsMin;
-  if (Math.abs(a.preferenceScore - b.preferenceScore) > PREFERENCE_SCORE_EPSILON) {
-    return b.preferenceScore - a.preferenceScore;
+  const aSoftScore = Number.isFinite(a.combinedPlanScore)
+    ? a.combinedPlanScore
+    : a.preferenceScore;
+  const bSoftScore = Number.isFinite(b.combinedPlanScore)
+    ? b.combinedPlanScore
+    : b.preferenceScore;
+  if (Math.abs(aSoftScore - bSoftScore) > PREFERENCE_SCORE_EPSILON) {
+    return bSoftScore - aSoftScore;
   }
   return b.totalCredits - a.totalCredits;
 }
@@ -3996,6 +4114,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   const reviewDataLoaded = Array.isArray(constraints.courseReviews) && constraints.courseReviews.length > 0;
   const tagInterestContext = runtimeOptions.tagInterestContext ?? null;
   const tagInterestMode = tagInterestContext?.mode ?? 'off';
+  const tagInterestPlanAlpha = runtimeOptions.tagInterestPlanAlpha
+    ?? DEFAULT_TAG_INTEREST_PLAN_ALPHA;
   const tagInterestShadowStats = createTagInterestShadowStats(tagInterestContext);
 
   if (!Array.isArray(candidateCourses) || candidateCourses.length === 0) {
@@ -4099,7 +4219,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       plan.reviewCoverage = buildReviewCoverage(plan);
       // roadmap #27：比較用的指標必須在這裡算完，前端只負責呈現。
       plan.planMetrics = computePlanMetrics(plan);
-      return plan;
+      return applyPlanTagInterest(
+        plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
+      );
     })
     .sort(comparePlans);
 
@@ -4112,6 +4234,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     )
     : { plans: [], axes: [], status: 'data-insufficient', collapseReasons: [] };
   if (milpGeneration.plans?.length > 0) {
+    milpGeneration.plans.forEach(plan => applyPlanTagInterest(
+      plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
+    ));
     allVariantPlans = [...allVariantPlans, ...milpGeneration.plans];
     plans = uniquePlans(allVariantPlans).sort(comparePlans);
   }
@@ -4157,6 +4282,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     repair = runRepair(prepared, constraints, preferenceProfile, plans, runtimeOptions);
     repair.solver.baseline = baseline;
     if (repair.plan) {
+      applyPlanTagInterest(
+        repair.plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
+      );
       plans = uniquePlans([repair.plan, ...plans]).sort(comparePlans);
     } else if (baselinePrimary?.success && baselineCheck.valid) {
       repair.solver.resultSource = 'greedy';
@@ -4176,6 +4304,10 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     }
   }
 
+  updatePlanTagInterestShadowStats(
+    plans, tagInterestContext, constraints, prepared.scope,
+    tagInterestPlanAlpha, tagInterestShadowStats
+  );
   let primary = plans[0];
   const solver = repair?.solver || {
     status: primary?.success && baselineCheck.valid ? 'solved' : 'infeasible',
@@ -4218,6 +4350,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
         relaxed.plan.reviewCoverage = buildReviewCoverage(relaxed.plan);
         // roadmap #27：放寬後的方案同樣會進 `plans`，指標不能缺。
         relaxed.plan.planMetrics = computePlanMetrics(relaxed.plan);
+        applyPlanTagInterest(
+          relaxed.plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
+        );
 
         const relaxedWarnings = [...new Set([
           ...relaxed.plan.warnings,
@@ -4225,7 +4360,20 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
         ])];
 
         const relaxedPlans = uniquePlans([relaxed.plan, ...plans]);
-        return {
+        if (
+          tagInterestContext?.mode === 'active'
+          && tagInterestContext.profileSource !== 'unavailable'
+        ) {
+          relaxedPlans.forEach(plan => applyPlanTagInterest(
+            plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
+          ));
+          relaxedPlans.sort(comparePlans);
+        }
+        updatePlanTagInterestShadowStats(
+          relaxedPlans, tagInterestContext, constraints, prepared.scope,
+          tagInterestPlanAlpha, tagInterestShadowStats
+        );
+        const relaxedResult = {
           success: true,
           watchOnly: relaxed.plan.watchOnly,
           schedule: relaxed.plan.schedule,
@@ -4260,6 +4408,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
           message: `已放寬部分時段偏好以產生可行課表：${relaxed.plan.schedule.length} 門課，`
             + `共 ${relaxed.plan.totalCredits} 學分。`,
         };
+        return attachTagInterestShadowStats(relaxedResult, tagInterestShadowStats);
       }
     }
 
@@ -4400,9 +4549,12 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     );
   }
 
-  const selectionReason = hasExpressedPreference
-    ? `偏好符合度 ${Math.round(primary.preferenceScore * 100)}%`
-    : '未表達偏好，改依總學分挑選';
+  const selectionReason = primary.planTagScore !== null
+    && Number.isFinite(primary.combinedPlanScore)
+    ? `偏好與標籤興趣合併分 ${Math.round(primary.combinedPlanScore * 100)}%`
+    : hasExpressedPreference
+      ? `偏好符合度 ${Math.round(primary.preferenceScore * 100)}%`
+      : '未表達偏好，改依總學分挑選';
 
   // 學分含尚未排定時間的課程，因此門數必須一併說明，否則「N 門課共 M 學分」
   // 會出現門數只算課表格、學分卻含表格外課程的矛盾。

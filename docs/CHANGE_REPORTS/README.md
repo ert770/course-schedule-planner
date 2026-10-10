@@ -4,10 +4,16 @@
 
 ## 2026-10-10
 
-1. [rag-tag-interest-v1 階段 6 第二階段：同意感知的 profile shadow 資料流](./2026-10-10-rag-tag-interest-ranking-stage2.md)
-1. [rag-tag-interest-v1 階段 6 第一階段：純候選計分核心](./2026-10-10-rag-tag-interest-ranking-stage1.md)
-2. [rag-tag-interest-v1：10 位 Persona 四組排序比較](./2026-10-10-rag-tag-interest-persona-comparison.md)
-3. [rag-tag-interest-v1 MySQL 服務層與探索頁瀏覽器驗收](./2026-10-10-rag-tag-interest-mysql-integration.md)
+1. [rag-tag-interest-v1 階段 6 第三階段：候選層計分接線](./2026-10-10-rag-tag-interest-candidate-ranking-stage6.md)
+2. [rag-tag-interest-v1 階段 6 第二階段：同意感知的 profile shadow 資料流](./2026-10-10-rag-tag-interest-ranking-stage2.md)
+3. [rag-tag-interest-v1 階段 6 第一階段：純候選計分核心](./2026-10-10-rag-tag-interest-ranking-stage1.md)
+4. [rag-tag-interest-v1 階段 6：三個候選池與候選分數資料流](./2026-10-10-rag-tag-interest-three-pools-score-flow.md)
+5. [rag-tag-interest-v1 階段 6：初始興趣倍率設為 0.6](./2026-10-10-rag-tag-interest-alpha-initial-0-6.md)
+6. [rag-tag-interest-v1 階段 6：對稱可調興趣倍率](./2026-10-10-rag-tag-interest-symmetric-adjustable-multiplier.md)
+7. [rag-tag-interest-v1 階段 6：候選興趣分數方向修訂](./2026-10-10-rag-tag-interest-candidate-score-direction.md)
+8. [rag-tag-interest-v1：10 位 Persona 四組排序比較](./2026-10-10-rag-tag-interest-persona-comparison.md)
+9. [rag-tag-interest-v1 MySQL 服務層與探索頁瀏覽器驗收](./2026-10-10-rag-tag-interest-mysql-integration.md)
+10. [rag-tag-interest-v1 階段 6 排課介接設計稿](../PLANS/2026-10-10-rag-tag-interest-v1-stage6-interface-design.md)
 
 ## 2026-10-09
 
@@ -20,13 +26,18 @@
 1. [rag_tag 逐課資格計算器與唯讀報表（階段 2）](./2026-10-08-rag-tag-interest-eligibility-stage2.md)
 2. [rag_tag 興趣目錄與多路徑標籤解析（階段 1）](./2026-10-08-rag-tag-interest-catalog-stage1.md)
 3. [rag_tag 語意同義詞合併確認](./2026-10-08-rag-tag-semantic-aliases-approved.md)
+4. [rag_tag 排除清單 Excel 修訂：子分類拆分與同義詞對照](./2026-10-08-rag-tag-exclusions-excel-revision.md)
+5. [rag_tag 排除清單 Excel 版與主分類／子分類對照](./2026-10-08-rag-tag-exclusions-excel.md)
+6. [rag_tag 排除清單與保留標籤分類](./2026-10-08-rag-tag-exclusions.md)
 
 ## 2026-10-07
 
-1. [修復 v2 偏好學習對 MILP 方案收不到訊號的問題](./2026-10-07-v2-learner-archetype-attribution.md)
-2. [排課候選池納入系外選修；興趣比對改嚴；保留一個名額給系外](./2026-10-07-outside-electives-in-pool-and-stricter-interest-match.md)
-3. [首頁排課不再用固定的 25 學分蓋掉個人學分上限](./2026-10-07-dashboard-respects-personal-credit-cap.md)
-4. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
+1. [rag_tag 興趣詞彙整理與候選流程（階段 1）](./2026-10-07-rag-tag-vocabulary.md)
+2. [對照組（現行 v2）與實驗組（Choice Perceptron）的詳細比較](./2026-10-07-cp-vs-v2-detailed-comparison.md)
+3. [修復 v2 偏好學習對 MILP 方案收不到訊號的問題](./2026-10-07-v2-learner-archetype-attribution.md)
+4. [排課候選池納入系外選修；興趣比對改嚴；保留一個名額給系外](./2026-10-07-outside-electives-in-pool-and-stricter-interest-match.md)
+5. [首頁排課不再用固定的 25 學分蓋掉個人學分上限](./2026-10-07-dashboard-respects-personal-credit-cap.md)
+6. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
 
 ## 2026-10-03
 

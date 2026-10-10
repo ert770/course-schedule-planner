@@ -4,6 +4,7 @@ import {
 } from './tagInterestLearning.js';
 
 export const DEFAULT_TAG_INTEREST_COURSE_ALPHA = 0.6;
+export const DEFAULT_TAG_INTEREST_PLAN_ALPHA = 0.6;
 
 const ADDITIVE_SCORE_FIELDS = Object.freeze([
   'creditScore',
@@ -133,9 +134,50 @@ export function scoreCandidateWithTagInterest({
   };
 }
 
+/**
+ * 將可自由選擇課程的標籤分數平均成方案分數。
+ * 無使用者證據的課程仍計入 coverage 分母，但不進入分數平均。
+ */
+export function scorePlanTagInterest({
+  freeChoiceCourses = [],
+  coursesBySectionId = {},
+  preferenceScore = 0,
+  alphaPlan = DEFAULT_TAG_INTEREST_PLAN_ALPHA,
+} = {}) {
+  const alpha = requireRange('alphaPlan', alphaPlan, 0, 1);
+  const existingScore = requireFiniteNumber('preferenceScore', preferenceScore);
+  const courses = Array.isArray(freeChoiceCourses) ? freeChoiceCourses : [];
+  const evidenceScores = [];
+
+  for (const course of courses) {
+    const sectionId = String(course?.sectionId ?? course?.id ?? '').trim();
+    const entry = sectionId ? coursesBySectionId?.[sectionId] : null;
+    if (!entry || !Number.isFinite(entry.score) || !(Number(entry.evidenceTagCount) > 0)) continue;
+    evidenceScores.push(requireRange('courseTagScore', entry.score, -1, 1));
+  }
+
+  const planTagScore = evidenceScores.length > 0
+    ? evidenceScores.reduce((sum, value) => sum + value, 0) / evidenceScores.length
+    : null;
+  const tagInterestCoverage = courses.length > 0 ? evidenceScores.length / courses.length : null;
+  const planTagMultiplier = planTagScore === null ? 1 : 1 + alpha * planTagScore;
+
+  return {
+    planTagScore,
+    tagInterestCoverage,
+    planTagMultiplier,
+    combinedPlanScore: existingScore * planTagMultiplier,
+    alphaPlan: alpha,
+    freeChoiceCourseCount: courses.length,
+    evidenceCourseCount: evidenceScores.length,
+  };
+}
+
 export default {
   DEFAULT_TAG_INTEREST_COURSE_ALPHA,
+  DEFAULT_TAG_INTEREST_PLAN_ALPHA,
   resolveTagInterestRankingMode,
   buildTagInterestContext,
   scoreCandidateWithTagInterest,
+  scorePlanTagInterest,
 };

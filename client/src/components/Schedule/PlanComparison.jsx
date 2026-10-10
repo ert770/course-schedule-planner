@@ -18,6 +18,24 @@ const METRICS = [
   { key: 'gapPeriods', label: '空堂節數', path: m => m.gapPeriods },
   { key: 'preferenceScore', label: '偏好符合度', path: m => m.preferenceScore, format: v => (v == null ? '—' : `${Math.round(v * 100)}%`) },
   { key: 'reviewRatio', label: '評價涵蓋率', path: m => m.reviewCoverage?.ratio ?? null, format: v => (v == null ? '—' : `${Math.round(v * 100)}%`) },
+  {
+    key: 'planTagScore',
+    label: '標籤興趣分',
+    path: m => m.planTagScore,
+    format: v => (v == null
+      ? '無有效證據'
+      : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.round(Math.abs(v) * 100)}%`),
+    tagInterest: true,
+    alwaysShow: true,
+  },
+  {
+    key: 'tagInterestCoverage',
+    label: '標籤證據覆蓋率',
+    path: m => m.tagInterestCoverage,
+    format: v => (v == null ? '—' : `${Math.round(v * 100)}%`),
+    tagInterest: true,
+    alwaysShow: true,
+  },
 ];
 
 function courseKey(course) {
@@ -52,14 +70,22 @@ export default function PlanComparison({ plans = [], recommendedPlanId, constrai
 
   const comparableRows = useMemo(() => {
     if (plans.length < 2) return [];
-    return METRICS.map(metric => {
-      const values = plans.map(plan => metric.path(plan.planMetrics || {}));
-      return { ...metric, values, identical: valuesEqual(values) };
-    });
+    const hasTagInterestMetrics = plans.some(plan => (
+      Object.hasOwn(plan.planMetrics || {}, 'planTagScore')
+      || Object.hasOwn(plan.planMetrics || {}, 'tagInterestCoverage')
+    ));
+    return METRICS
+      .filter(metric => !metric.tagInterest || hasTagInterestMetrics)
+      .map(metric => {
+        const values = plans.map(plan => metric.path(plan.planMetrics || {}));
+        return { ...metric, values, identical: valuesEqual(values) };
+      });
   }, [plans]);
 
   const differingRows = comparableRows.filter(row => !row.identical);
   const identicalRows = comparableRows.filter(row => row.identical);
+  const visibleRows = comparableRows.filter(row => !row.identical || row.alwaysShow);
+  const hasTagInterestMetrics = comparableRows.some(row => row.tagInterest);
 
   const courseDiffs = useMemo(() => {
     if (plans.length < 2) return [];
@@ -93,17 +119,24 @@ export default function PlanComparison({ plans = [], recommendedPlanId, constrai
     <div className="plan-comparison" id="plan-comparison">
       <h3 className="plan-comparison-title">方案比較</h3>
 
-      {differingRows.length === 0 ? (
+      {differingRows.length === 0 && !hasTagInterestMetrics ? (
         <p className="plan-comparison-summary">
           這 {plans.length} 個方案在課數、學分、上課天數、早八、空堂、偏好符合度、
           評價涵蓋率上<strong>完全相同</strong>，差別只在課程本身。
         </p>
       ) : (
         <>
-          {identicalRows.length > 0 && (
+          {differingRows.length === 0 ? (
             <p className="plan-comparison-summary">
-              {identicalRows.map(row => row.label).join('、')}在各方案間相同；
-              真正有差異的項目如下：
+              既有課表指標在各方案間<strong>完全相同</strong>；以下另列各方案的標籤興趣分與證據覆蓋率。
+            </p>
+          ) : identicalRows.length > 0 && (
+            <p className="plan-comparison-summary">
+              {identicalRows.filter(row => !row.tagInterest).map(row => row.label).join('、')}
+              {identicalRows.some(row => !row.tagInterest) ? '在各方案間相同；' : ''}
+              {hasTagInterestMetrics
+                ? '下表列出有差異的項目與各方案的標籤興趣資料。'
+                : '真正有差異的項目如下：'}
             </p>
           )}
           <div className="plan-comparison-table-wrapper">
@@ -119,7 +152,7 @@ export default function PlanComparison({ plans = [], recommendedPlanId, constrai
                 </tr>
               </thead>
               <tbody>
-                {differingRows.map(row => (
+                {visibleRows.map(row => (
                   <tr key={row.key}>
                     <td>{row.label}</td>
                     {row.values.map((v, i) => (
@@ -130,6 +163,11 @@ export default function PlanComparison({ plans = [], recommendedPlanId, constrai
               </tbody>
             </table>
           </div>
+          {hasTagInterestMetrics && (
+            <p className="plan-comparison-summary">
+              標籤興趣分為有興趣證據課程的平均分（−100%～+100%）；證據覆蓋率為有興趣證據的自由選擇課占比。
+            </p>
+          )}
         </>
       )}
 

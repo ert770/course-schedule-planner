@@ -513,7 +513,10 @@ export async function generateForUser(identity, input = {}, options = {}) {
         + `候選分布正向 ${stats.candidates.positive}、中性 ${stats.candidates.neutral}、`
         + `負向 ${stats.candidates.negative}、無合格標籤 ${stats.candidates.noEligibleTags}、`
         + `不可用 ${stats.candidates.unavailable}；`
-        + `比較 ${stats.poolComparisons} 個候選排序狀態，${stats.changedPoolComparisons} 個順序不同。`,
+        + `比較 ${stats.poolComparisons} 個候選排序狀態，${stats.changedPoolComparisons} 個順序不同；`
+        + `方案分布正向 ${stats.plans?.positive ?? 0}、中性 ${stats.plans?.neutral ?? 0}、`
+        + `負向 ${stats.plans?.negative ?? 0}、無標籤證據 ${stats.plans?.noEvidence ?? 0}；`
+        + `比較 ${stats.plans?.compared ?? 0} 個方案，${stats.plans?.changedPositions ?? 0} 個名次改變。`,
       { label: 'Schedule' }
     );
   }

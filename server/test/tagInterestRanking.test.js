@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   buildTagInterestContext,
   DEFAULT_TAG_INTEREST_COURSE_ALPHA,
+  DEFAULT_TAG_INTEREST_PLAN_ALPHA,
   resolveTagInterestRankingMode,
   scoreCandidateWithTagInterest,
+  scorePlanTagInterest,
 } from '../src/skills/tagInterestRanking.js';
 import {
   interestTagAliases,
@@ -108,6 +110,65 @@ describe('tag-interest candidate score', () => {
     assert.throws(() => scoreCandidateWithTagInterest({ poolBaseScore: 1, courseTagScore: 1.1 }), /介於/u);
     assert.throws(() => scoreCandidateWithTagInterest({ poolBaseScore: 1, alphaCourse: 1.1 }), /介於/u);
     assert.throws(() => scoreCandidateWithTagInterest({ poolBaseScore: 1, creditScore: Number.NaN }), /有限數字/u);
+  });
+});
+
+describe('tag-interest plan score', () => {
+  test('averages evidence-backed free-choice courses and reports coverage', () => {
+    const result = scorePlanTagInterest({
+      freeChoiceCourses: [{ id: 1 }, { id: 2 }, { id: 3 }],
+      coursesBySectionId: {
+        1: { score: 0.8, evidenceTagCount: 1 },
+        2: { score: -0.4, evidenceTagCount: 2 },
+        3: { score: 0, evidenceTagCount: 0 },
+      },
+      preferenceScore: 0.5,
+    });
+
+    assert.equal(DEFAULT_TAG_INTEREST_PLAN_ALPHA, 0.6);
+    assert.equal(result.planTagScore, 0.2);
+    assert.equal(result.tagInterestCoverage, 2 / 3);
+    assert.equal(result.planTagMultiplier, 1.12);
+    assert.equal(result.combinedPlanScore, 0.56);
+    assert.equal(result.freeChoiceCourseCount, 3);
+    assert.equal(result.evidenceCourseCount, 2);
+  });
+
+  test('keeps no-evidence and empty plans neutral and symmetric', () => {
+    const positive = scorePlanTagInterest({
+      freeChoiceCourses: [{ id: 1 }],
+      coursesBySectionId: { 1: { score: 0.8, evidenceTagCount: 1 } },
+      preferenceScore: 0.5,
+    });
+    const negative = scorePlanTagInterest({
+      freeChoiceCourses: [{ id: 1 }],
+      coursesBySectionId: { 1: { score: -0.8, evidenceTagCount: 1 } },
+      preferenceScore: 0.5,
+    });
+    const noEvidence = scorePlanTagInterest({
+      freeChoiceCourses: [{ id: 1 }],
+      coursesBySectionId: { 1: { score: 0, evidenceTagCount: 0 } },
+      preferenceScore: 0.5,
+    });
+    const empty = scorePlanTagInterest({ preferenceScore: 0.5 });
+
+    assert.equal(positive.planTagMultiplier, 1.48);
+    assert.equal(negative.planTagMultiplier, 0.52);
+    assert.equal(positive.planTagMultiplier + negative.planTagMultiplier, 2);
+    assert.equal(noEvidence.planTagScore, null);
+    assert.equal(noEvidence.tagInterestCoverage, 0);
+    assert.equal(noEvidence.combinedPlanScore, 0.5);
+    assert.equal(empty.planTagScore, null);
+    assert.equal(empty.tagInterestCoverage, null);
+    assert.equal(empty.combinedPlanScore, 0.5);
+  });
+
+  test('validates plan alpha and tag scores', () => {
+    assert.throws(() => scorePlanTagInterest({ alphaPlan: 1.1 }), /介於/u);
+    assert.throws(() => scorePlanTagInterest({
+      freeChoiceCourses: [{ id: 1 }],
+      coursesBySectionId: { 1: { score: -1.1, evidenceTagCount: 1 } },
+    }), /介於/u);
   });
 });
 

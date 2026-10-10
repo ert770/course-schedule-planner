@@ -3,7 +3,7 @@
 ## 文件狀態
 
 - 日期：2026-10-10
-- 狀態：設計已確認；候選層計分已接入程式並完成一次真實瀏覽器 off／active 對照，但該帳號結果未見差異；方案層排序與 Persona 重播尚待完成。
+- 狀態：設計已確認；候選層與方案層計分已接入程式並完成後端測試。一次真實瀏覽器 off／active 對照未見差異；有已知標籤訊號的 Persona 重播與安全瀏覽器 A/B 尚待完成。
 - 範圍：定義標籤興趣檔案與既有多方案排課器之間的資料與評分邊界。
 - 本文件記錄已確認的介接邊界與分段實作狀態；各階段實際程式改動另見 `docs/CHANGE_REPORTS/`。
 
@@ -12,7 +12,9 @@
 - **第一階段：純候選計分核心（已完成）**：新增帶對稱興趣倍率的純函式，α 預設 0.6。
 - **第二階段：profile-to-scheduler shadow 資料流（已完成）**：預設 `off`；`shadow`／`active` 時由伺服器讀取同意感知 profile，建立 request-scoped `sectionId` 分數表並傳入 scheduler runtime options。
 - **第三階段：候選層計分接線（程式與後端測試完成；一次真實瀏覽器 A/B 結果未見差異）**：`active` 將標籤興趣乘數套用到本系選修、通識、系外選修候選池的基礎分；依既有畢業配額階段做池內排序，再由同一 scheduler 全域檢查硬條件。`shadow` 計算假想池內順序並只記錄彙總 log，不改課表。`off` 預設行為不變。依使用者授權，以目前帳號各執行一次 `off`／`active`；都得到 3 個方案、相同預設 4 門課／10 學分及 353 個競爭候選，產生兩筆 recommendation exposure。此對照未證明標籤訊號改變排序；後續需用有已知興趣訊號的 Persona 或隔離測試帳號驗證，不再用同一帳號重跑。
-- **後續階段**：加入方案層 `planTagScore`／`α_plan` 排序、Persona 重播，並用具已知標籤訊號的安全測試資料完成有判別力的 off／active A/B；`counterfactualForUser()` 目前仍不納入標籤分數。
+- **第四階段：方案層計分接線（程式與後端測試完成）**：`active` 平均有興趣證據的自由選擇課分數，回傳方案分數與覆蓋率，並以獨立 `α_plan=0.6` 乘上原始 `preferenceScore` 排序；硬性成功狀態與最低學分仍優先。`shadow` 計算假想方案名次，只記錄彙總 log，不回傳單一方案分數。`counterfactualForUser()` 仍不納入標籤分數。
+- 主推方案有標籤興趣證據時，摘要訊息顯示「偏好與標籤興趣合併分」；無證據時維持既有偏好／學分摘要。
+- **後續階段**：以既有 10 位 synthetic Persona 重播 `off`／`active`，再用具已知標籤訊號的安全測試資料完成有判別力的瀏覽器 A/B；不要重跑會新增目前帳號曝光紀錄的 A/B。
 
 ## 建議決策摘要
 
@@ -35,12 +37,14 @@ flowchart LR
   D --> E[硬條件檢查與可行方案產生]
   E --> F[scoreCourse：active 在分池階段套用標籤倍率]
   E --> G[evaluatePreference：方案層 interest / compact / easy]
-  G --> H[comparePlans：可行度、最低學分、偏好分、學分排序]
+  E --> I[scorePlanTagInterest：自由選擇課標籤平均與覆蓋率]
+  G --> I
+  I --> H[comparePlans：可行度、最低學分、合併偏好分、學分排序]
 ```
 
 - `scheduleService.prepareGenerationInputs()` 載入 v2 權重並建立 `mergedConstraints`；REST 與 Chat 共用 `generateForUser()`。標籤 profile 在候選課準備完成後讀取，避免 `off` 模式增加 profile 查詢。
 - `tagInterestService.getTagInterestProfile()` 處理同意、快取與重算；`tagInterestLearning.scoreCourseTagInterest()` 依 `crossCourseMatchEligible` 計分。`shadow` 建立每個 `sectionId` 的 request-scoped context，計算假想池內排序但維持正式結果；`active` 才把標籤倍率送進候選計分。
-- `scheduler.js` 有兩個不同評分層：`scoreCourse()` 供候選選擇、修補及 solver 相關路徑使用；`evaluatePreference()` 將方案的 `interest / compact / easy` 正規化成 0～1 的 `preferenceScore`，由 `comparePlans()` 選擇方案順序。
+- `scheduler.js` 有三個評分步驟：`scoreCourse()` 供候選選擇、修補及 solver 相關路徑使用；`evaluatePreference()` 將方案的 `interest / compact / easy` 正規化成 0～1 的原始 `preferenceScore`；`scorePlanTagInterest()` 計算自由選擇課程的標籤分與覆蓋率。`comparePlans()` 保留硬性可行度與最低學分優先，再比較合併分數。
 - 曝光事件的 `plan-feature-v1` 固定是三軸 `interest / compact / easy`。這個向量提供給既有選擇學習流程，不能直接加第四軸或重新解讀 `interest`。
 
 ## 2. 目標與界線
@@ -149,6 +153,7 @@ planTagScore = mean(courseTagScore)
 - 平均而非加總，避免選修門數較多的方案只因課多而自動得高分。
 - 沒有可評分課程時 `planTagScore=null`；比較器忽略這一軸，維持原有排序。
 - 回傳 `tagInterestCoverage = 有標籤證據的可自由選擇課程數 / 可自由選擇課程數`，避免把低覆蓋率的平均分包裝成整張課表都有證據。
+- 自由選擇課程包含已選入方案與未排定時間的已選課。有效分數需有非零明確先驗或行為證據；沒有訊號或沒有合格標籤的課仍計入 coverage 分母，但不進入平均。沒有自由選擇課時 coverage 為 `null`；有課但都無證據時 coverage 為 0。
 
 ### 4.3 排序合併點
 
@@ -166,6 +171,8 @@ candidateScore = poolBaseScore × courseTagMultiplier
 planTagMultiplier = 1 + α_plan × planTagScore
 combinedPlanScore = existingPreferenceScore × planTagMultiplier
 ```
+
+`preferenceScore` 保持原始三軸偏好值，不被標籤分覆寫。只有 `active` 且 profile 可用時，每個方案與 `planMetrics` 才帶方案標籤分、覆蓋率、倍率、合併分及自由選擇／有證據課數；`off` 不計算，`shadow` 不在 API 回傳個別方案分數。
 
 `α_course`、`α_plan` 各限制在 `0～1`，分別調整候選層與方案層的影響幅度；正負方向使用同一個 α，不能為正向和負向設定不同係數。初始建議兩層都設為 `0.6`，後續可分開調整；這是待評估的初始設定，不是已校準的上線值。先在 `shadow` 模式只輸出彙總的分數分布與假想順序變動統計，不持久化單一使用者的分數；再以固定 Persona 案例檢查方向、負分、冷啟動與覆蓋率。不得只因合成 NDCG 上升就宣稱真人成效。若最後選擇只在方案層排序，需接受它無法促使生成器構造更符合標籤興趣的新課表；若只改候選分數，方案比較又可能仍把舊 `preferenceScore` 較高的課表排在前面。兩層都要做時，必須用同一份 context，α 分開校準，並評估方案多樣性。
 
@@ -197,11 +204,11 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 | `shadow` | 是 | 否 | 先檢查資料覆蓋、分數分布、例外及假想重排 |
 | `active` | 是 | 是 | 設計審核、測試、瀏覽器 A/B 通過後才啟用 |
 
-候選層目前支援 `off`／`shadow`／`active`，部署預設仍為 `off`。`shadow` 只寫彙總 log（分數正／中／負向筆數、無合格標籤與不可用筆數、候選順序變動統計），不持久化單一使用者的分數或標籤清單。`active` 只在可自由選擇的本系選修、通識、系外選修候選池使用標籤分數；`profileSource=unavailable` 時退回舊分數。方案層目前尚未消費 `planTagScore`。
+候選與方案層共用 `off`／`shadow`／`active`，部署預設仍為 `off`。`shadow` 只寫彙總 log：候選與方案正／中／負／無證據分布、候選池比較數，以及方案名次變動數；不持久化單一使用者分數、標籤清單或身分。`active` 只在 profile 可用時調整可選課與可行方案的軟性排序；`profileSource=unavailable` 時退回舊分數。方案分數只存在此次 API 回應，不寫入互動事件或 `plan-feature-v1` 三軸向量。
 
 - 保持 `plan-feature-v1` 的三軸向量完全不變。若日後要把 tag-interest 納入 `plan_chosen` 的學習特徵，另立版本化 snapshot／feature contract；不得直接擴充既有向量或把它映射成 `interest`。
 - 第二階段的 `shadow` 僅在 request 記憶體內建立及傳遞 context，尚無持久化觀測資料。後續若加入 shadow 觀測，只能保留彙總筆數／分布；不新增互動事件，不持久化單一使用者的分數、完整標籤清單或身分識別值。
-- 候選層啟用時，理由沿用既有 `recommendationReason.scoreBreakdown`，以 `tagInterest` 表示標籤倍率對池內基礎分造成的加減量；已同步記錄於 `docs/API_SPEC.md`，不新增頂層 API 欄位、DB 欄位或 migration。命中標籤與方案層分數尚未加入回應。
+- 候選層啟用時，理由沿用既有 `recommendationReason.scoreBreakdown`，以 `tagInterest` 表示標籤倍率對池內基礎分造成的加減量。方案層啟用時以每個 plan 的 `planTagScore`、coverage、倍率、合併分與證據課數解釋排序輸入。兩者不新增頂層 API 欄位、DB 欄位或 migration；命中標籤清單不加入回應。
 - 若要在 `recommendation_exposed` 保留曝光當下的排名依據，需另設版本化的 tag ranking snapshot（模型、目錄、資格版本與 per-plan score／coverage）。先確認資料最小化與保存期限，再決定使用既有 JSON 欄位或新增 schema；不要混進三軸學習向量。
 
 ## 6. 實作與驗收順序
@@ -209,8 +216,8 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 1. **定稿介面**：確認 profile source、可自由選擇課程範圍、係數位置、曝光快照及 counterfactual 是否納入。
 2. **純函式測試**：跨課資格過濾、同義別名去重、多標籤平均、明確負向、無訊號 `null`、必修／固定課排除於方案平均，以及覆蓋率計算。
 3. **服務整合測試**：同意開／關、profile cache 失效與錯誤 fallback；REST 和 Chat 必須共用同一 `generateForUser()` 路徑。
-4. **scheduler 測試（候選層程式已完成）**：`off` 保持舊排序；`shadow` 不改結果；`active` 只改軟性排序；候選 α=0／0.6／1、正負對稱倍率、同年級扣分、`null` 不加減、明確指定與衝堂硬條件已有單元測試；服務測試驗證 shadow 假想排序及 active 候選變更。全域 pool quota／alternative-plan ranking 仍需後續驗收。
-5. **Persona 重播（待做）**：用既有 10 位 synthetic Persona 擴充相同候選課／硬條件案例，比較 off 與 active 的課表可行性、top plan、tag coverage、理由忠實度及多樣性。結果只作情境檢查，不叫作準確率。
+4. **scheduler 測試**：`off` 保持舊排序；`shadow` 不改結果並只產生彙總名次統計；`active` 只改軟性排序。候選層驗證 α、正負對稱倍率、同年級扣分、`null`、明確指定與衝堂硬條件；方案層驗證自由選擇課過濾、覆蓋率、α 正負對稱、合併排序，以及成功狀態／最低學分仍優先。
+5. **Persona 重播（待做）**：用既有 10 位 synthetic Persona 擴充相同候選課／硬條件案例，比較 off 與 active 的課表可行性、top plan、`planTagScore`、coverage、理由忠實度及多樣性。結果只作情境檢查，不叫作準確率。
 6. **瀏覽器 A/B（真實帳號一次性對照已做，效果仍待確認）**：已依使用者授權以同一帳號跑 `off`／`active` 各一次；結果未見差異，且產生兩筆 recommendation exposure，不能據此確認有標籤興趣訊號時的排序效果。後續用已知有標籤訊號的 Persona／隔離測試資料，固定使用者設定、候選集與 solver seed；檢查課表硬條件、軟性排序理由及 console。避免重複對真實帳號寫入 exposure。
 7. **分段啟用與回復**：預設 off；能以設定即時退回 off。上線資料累積後再做真人的時間切分評估，這不阻止先做受控 Persona／瀏覽器驗收，但不能省略真實成效限制聲明。
 

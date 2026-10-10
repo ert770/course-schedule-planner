@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   generateSchedule,
+  comparePlans,
   validateSchedule,
   checkConflict,
   matchesInterestKeyword,
@@ -330,6 +331,132 @@ describe('rag-tag-interest active：只調整候選軟性排序', () => {
     assert.ok(components.every(item => item.component !== 'tagInterest'));
     assert.equal(result.schedule[0].recommendationReason.scoreTotal,
       baseline.schedule[0].recommendationReason.scoreTotal);
+  });
+
+  test('方案興趣分只平均有證據的自由選修，並排除必修、重補修、指定課與關注課', () => {
+    const required = makeCourse(81531, {
+      name: '本人必修', category: '必修', department: '資訊三甲', gradeLevel: 3, dayOfWeek: 1,
+    });
+    const fixed = makeCourse(81532, {
+      name: '使用者指定選修', category: '選修', department: '資訊三合', dayOfWeek: 2,
+    });
+    const retake = makeCourse(81533, {
+      name: '重補修課', category: '選修', department: '資訊三合',
+      catalogCourseCode: 'IECS3003', dayOfWeek: 3,
+    });
+    const freePositive = makeCourse(81534, {
+      name: '自由選修正向標籤', category: '選修', department: '資訊三合', dayOfWeek: 4,
+    });
+    const freeNegative = makeCourse(81535, {
+      name: '自由選修負向標籤', category: '選修', department: '資訊三合', dayOfWeek: 5,
+    });
+    const watched = makeCourse(81536, {
+      name: '關注課', category: '選修', department: '資訊三合', dayOfWeek: 6,
+    });
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: {
+        81531: { score: 1, evidenceTagCount: 1 },
+        81532: { score: -1, evidenceTagCount: 1 },
+        81533: { score: -1, evidenceTagCount: 1 },
+        81534: { score: 0.8, evidenceTagCount: 1 },
+        81535: { score: -0.4, evidenceTagCount: 1 },
+        81536: { score: -1, evidenceTagCount: 1 },
+      },
+    };
+    const result = generateSchedule([
+      required, fixed, retake, freePositive, freeNegative, watched,
+    ], {
+      ...juniorCs,
+      maxCredits: 25,
+      mustTakeCourseIds: [fixed.id],
+      watchingCourseIds: [watched.id],
+      courseHistory: [{
+        academicYear: 113, semester: 2, courseCode: retake.catalogCourseCode,
+        courseName: retake.name, passed: false, requirementType: '必修',
+      }],
+    }, { tagInterestContext: activeContext, planSet: 'primary-only' });
+    const plan = result.plans[0];
+
+    assert.equal(plan.planTagScore, 0.2);
+    assert.equal(plan.tagInterestCoverage, 1);
+    assert.equal(plan.freeChoiceCourseCount, 2);
+    assert.equal(plan.evidenceCourseCount, 2);
+    assert.equal(plan.planTagMultiplier, 1.12);
+    assert.equal(plan.combinedPlanScore, plan.preferenceScore * 1.12);
+    assert.deepEqual(plan.planMetrics.planTagScore, plan.planTagScore);
+    assert.ok(plan.schedule.some(course => course.id === required.id));
+    assert.ok(plan.schedule.some(course => course.id === fixed.id));
+    assert.ok(plan.schedule.some(course => course.id === retake.id));
+    assert.ok(plan.watchedCourses.some(course => course.id === watched.id));
+  });
+
+  test('有效標籤但沒有使用者證據時，方案標籤分為 null 且保留原偏好分', () => {
+    const elective = makeCourse(81541, {
+      name: '沒有興趣事件的選修', department: '資訊三合', category: '選修',
+    });
+    const result = generateSchedule([elective], juniorCs, {
+      tagInterestContext: {
+        mode: 'active', profileSource: 'explicit-prior',
+        coursesBySectionId: {
+          81541: { score: 0, eligibleTagCount: 1, evidenceTagCount: 0 },
+        },
+      },
+      planSet: 'primary-only',
+    });
+
+    assert.equal(result.plans[0].planTagScore, null);
+    assert.equal(result.plans[0].tagInterestCoverage, 0);
+    assert.equal(result.plans[0].planTagMultiplier, 1);
+    assert.equal(result.plans[0].combinedPlanScore, result.plans[0].preferenceScore);
+  });
+
+  test('active 有標籤證據時 alphaPlan 必須大於 0，摘要顯示合併分', () => {
+    const elective = makeCourse(81542, {
+      name: '有興趣證據的選修', department: '資訊三合', category: '選修',
+    });
+    const context = {
+      mode: 'active', profileSource: 'explicit-prior',
+      coursesBySectionId: {
+        81542: { score: 0.8, eligibleTagCount: 1, evidenceTagCount: 1 },
+      },
+    };
+
+    assert.throws(() => generateSchedule([elective], juniorCs, {
+      tagInterestContext: context,
+      tagInterestPlanAlpha: 0,
+      planSet: 'primary-only',
+    }), /alphaPlan 必須大於 0/u);
+
+    const result = generateSchedule([elective], juniorCs, {
+      tagInterestContext: context,
+      planSet: 'primary-only',
+    });
+    assert.match(result.message, /偏好與標籤興趣合併分/u);
+  });
+
+  test('方案比較用合併分數排序，但成功與最低學分仍優先', () => {
+    const positive = {
+      id: 'positive', success: true, totalCredits: 12, minCredits: 12,
+      preferenceScore: 0.5, combinedPlanScore: 0.5 * 1.48,
+    };
+    const negative = {
+      id: 'negative', success: true, totalCredits: 12, minCredits: 12,
+      preferenceScore: 0.5, combinedPlanScore: 0.5 * 0.52,
+    };
+    const belowMinimum = {
+      id: 'below-minimum', success: true, totalCredits: 9, minCredits: 12,
+      preferenceScore: 0.5, combinedPlanScore: 100,
+    };
+    const failed = {
+      id: 'failed', success: false, totalCredits: 25, minCredits: 12,
+      preferenceScore: 1, combinedPlanScore: 1000,
+    };
+
+    assert.deepEqual(
+      [negative, failed, belowMinimum, positive].sort(comparePlans).map(plan => plan.id),
+      ['positive', 'negative', 'below-minimum', 'failed']
+    );
   });
 });
 
