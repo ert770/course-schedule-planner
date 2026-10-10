@@ -258,6 +258,81 @@ describe('CY1-CY5 同系跨年級選修：可排入，但排在本年級選修�
   });
 });
 
+describe('rag-tag-interest active：只調整候選軟性排序', () => {
+  const juniorCs = {
+    department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲', minCredits: 0, maxCredits: 3,
+  };
+
+  test('同年級優先仍只在本系選修池生效，標籤分不會翻過既定年級規則', () => {
+    const ownYear = makeCourse(81501, {
+      name: '本年級選修', department: '資訊三合', category: '選修', gradeLevel: 3,
+    });
+    const crossYear = makeCourse(81502, {
+      name: '跨年級選修', department: '資訊二合', category: '選修', gradeLevel: 2,
+    });
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: {
+        81501: { score: 0, reason: 'no_user_signal' },
+        81502: { score: 1, reason: 'scored' },
+      },
+    };
+    const result = generateSchedule([crossYear, ownYear], juniorCs, {
+      tagInterestContext: activeContext,
+      planSet: 'primary-only',
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [81501]);
+    assert.ok(result.schedule[0].recommendationReason.scoreBreakdown
+      .every(item => item.component !== 'outsideOwnDepartment' && item.component !== 'category'));
+  });
+
+  test('標籤正分不能取代使用者明確指定課程，也不能繞過衝堂硬條件', () => {
+    const fixed = makeCourse(81511, {
+      name: '明確指定課', department: '資訊三甲', category: '選修', dayOfWeek: 1,
+    });
+    const tagged = makeCourse(81512, {
+      name: '標籤高度符合但衝堂的課', department: '資訊三合', category: '選修', dayOfWeek: 1,
+    });
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: { 81512: { score: 1, reason: 'scored' } },
+    };
+    const result = generateSchedule([tagged, fixed], {
+      ...juniorCs,
+      maxCredits: 6,
+      mustTakeCourseIds: [fixed.id],
+    }, { tagInterestContext: activeContext, planSet: 'primary-only' });
+
+    assert.ok(result.schedule.some(course => course.id === fixed.id));
+    assert.ok(!result.schedule.some(course => course.id === tagged.id));
+    assert.equal(validateScheduleAgainstConstraints(result.schedule, {
+      ...juniorCs, mustTakeCourseIds: [fixed.id],
+    }).valid, true);
+  });
+
+  test('標籤池外課程保留原有類別分，不套用標籤分', () => {
+    const other = makeCourse(81521, {
+      name: '非三個標籤候選池的課', category: '其他', department: '資電學院綜合班',
+    });
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: { 81521: { score: 0.8, reason: 'scored' } },
+    };
+    const baseline = generateSchedule([other], juniorCs, { planSet: 'primary-only' });
+    const result = generateSchedule([other], juniorCs, {
+      tagInterestContext: activeContext,
+      planSet: 'primary-only',
+    });
+
+    assert.equal(result.schedule[0].id, other.id);
+    const components = result.schedule[0].recommendationReason.scoreBreakdown;
+    assert.ok(components.every(item => item.component !== 'tagInterest'));
+    assert.equal(result.schedule[0].recommendationReason.scoreTotal,
+      baseline.schedule[0].recommendationReason.scoreTotal);
+  });
+});
+
 // 2026-09-18 實測：候選池放寬後，涼課偏好讓外語與通識課塞滿資工學生的課表
 // （有評價的課集中在那裡）。專案負責人決定改成本系優先的排序階層。
 describe('DT1-DT3 本系優先的排序階層', () => {

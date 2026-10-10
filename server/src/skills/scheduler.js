@@ -54,6 +54,7 @@ import { generateDiverseCandidates } from './optimization/diversePlanSolver.js';
 import { selectDiverseSubset, SUBSET_BASE_ID, SUBSET_SELECTION_METHOD } from './optimization/diverseSubsetSelector.js';
 import { checkMilpPlan } from './optimization/milpPlanChecks.js';
 import { solveLpTextSync } from './optimization/highsRuntime.js';
+import { scoreCandidateWithTagInterest } from './tagInterestRanking.js';
 
 let configuredHighsRuntime = null;
 
@@ -1139,7 +1140,8 @@ export function evaluatePreference(plan, constraints, profile) {
 // 因此「這門課贏在哪一項」直接讀得出來，也看得出換一個方案為什麼結果不同。
 function computeScoreComponents(
   course, schedule, constraints, variant, requiredIds, scope,
-  neutralEasyScore = EASY_SCORE_MAX / 2
+  neutralEasyScore = EASY_SCORE_MAX / 2,
+  tagInterestScoring = null
 ) {
   const policy = variant.scoringPolicy ?? resolveScoringPolicy(constraints);
   const categoryPriority = getEffectiveCategoryPriority(course, scope);
@@ -1164,6 +1166,50 @@ function computeScoreComponents(
     contentPreference: getContentPreferenceScore(course, constraints),
     ...computePreferenceComponents(features, policy),
   };
+
+  // 標籤模型只改可選課候選的軟性分數。分池後不再跨池套用課程類別／非本系扣分；
+  // 已確認保留的跨年級扣分只在本系選修池內生效。未同意先驗、已學 profile
+  // 都由上游 service 建立；profile unavailable 時整個標籤排序回退舊分數。
+  if (
+    tagInterestScoring?.mode === 'active'
+    && tagInterestScoring.context?.profileSource !== 'unavailable'
+  ) {
+    const bucket = getGraduationBucket(course, scope);
+    const poolCandidate = [
+      GRADUATION_BUCKET.ELECTIVE,
+      GRADUATION_BUCKET.GENERAL,
+      GRADUATION_BUCKET.EXTERNAL,
+    ].includes(bucket);
+    if (!poolCandidate) return components;
+
+    const requiredOrFixed = requiredIds.has(Number(course.id))
+      || isRequiredForStudent(course, scope)
+      || course.corequisiteRole === 'internship';
+    const sectionId = String(course?.id ?? course?.sectionId ?? '').trim();
+    const courseTagScore = poolCandidate && !requiredOrFixed
+      ? tagInterestScoring.context?.coursesBySectionId?.[sectionId]?.score ?? null
+      : null;
+    const candidate = scoreCandidateWithTagInterest({
+      poolBaseScore: components.base,
+      courseTagScore,
+      creditScore: components.credits,
+      textPreferenceMatchScore: components.contentPreference,
+      legacyInterestKeywordScore: components.interest,
+      compactPreferenceScore: components.compact,
+      easePreferenceScore: components.easy,
+    });
+
+    return {
+      ...components,
+      // Same-year priority is a within-own-department-elective rule only.
+      crossYearElective: bucket === GRADUATION_BUCKET.ELECTIVE
+        ? components.crossYearElective
+        : 0,
+      outsideOwnDepartment: 0,
+      category: 0,
+      tagInterest: candidate.tagAdjustedBaseScore - candidate.poolBaseScore,
+    };
+  }
 
   return components;
 }
@@ -1206,10 +1252,57 @@ function recordDiagnosticSkip(plan, course, constraintId, reason) {
   diagnostics.skippedReasons.set(sectionId, { constraintId, reason });
 }
 
-function scoreCourse(course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore = EASY_SCORE_MAX / 2) {
+function scoreCourse(
+  course, schedule, constraints, variant, requiredIds, scope,
+  neutralEasyScore = EASY_SCORE_MAX / 2, tagInterestScoring = null
+) {
   return sumScoreComponents(computeScoreComponents(
-    course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+    course, schedule, constraints, variant, requiredIds, scope, neutralEasyScore, tagInterestScoring
   ));
+}
+
+function recordShadowPoolRanking(stats, candidates, legacyScore, tagScore) {
+  if (!stats || candidates.length < 2) return;
+  const sortBy = score => [...candidates].sort((left, right) => (
+    score(right) - score(left) || Number(left.id) - Number(right.id)
+  ));
+  const legacyOrder = sortBy(legacyScore).map(course => Number(course.id));
+  const tagOrder = sortBy(tagScore).map(course => Number(course.id));
+  stats.poolComparisons += 1;
+  stats.comparedCandidates += candidates.length;
+  if (legacyOrder.some((id, index) => id !== tagOrder[index])) stats.changedPoolComparisons += 1;
+}
+
+function createTagInterestShadowStats(tagInterestContext) {
+  if (tagInterestContext?.mode !== 'shadow') return null;
+  const stats = {
+    poolComparisons: 0,
+    changedPoolComparisons: 0,
+    comparedCandidates: 0,
+    candidates: { positive: 0, neutral: 0, negative: 0, noEligibleTags: 0, unavailable: 0 },
+  };
+  for (const entry of Object.values(tagInterestContext.coursesBySectionId || {})) {
+    if (entry.score === null || !Number.isFinite(entry.score)) {
+      if (entry.reason === 'no_cross_course_match_tags') stats.candidates.noEligibleTags += 1;
+      else stats.candidates.unavailable += 1;
+    } else if (entry.score > 0) stats.candidates.positive += 1;
+    else if (entry.score < 0) stats.candidates.negative += 1;
+    else stats.candidates.neutral += 1;
+  }
+  return stats;
+}
+
+function attachTagInterestShadowStats(result, stats) {
+  if (!result || !stats) return result;
+  Object.defineProperty(result, 'tagInterestShadowStats', {
+    configurable: true,
+    enumerable: false,
+    value: {
+      ...stats,
+      candidates: { ...stats.candidates },
+    },
+  });
+  return result;
 }
 
 // 單一課程的放置判斷。greedy 與 roadmap #22 repair 必須共用這一個入口，
@@ -2082,6 +2175,16 @@ function alreadyTakenRequiredWarning(alreadyTaken) {
 
 function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
   const candidateCourses = prepared.courses;
+  const tagInterestContext = diagnosticOptions.tagInterestContext ?? null;
+  const tagInterestMode = diagnosticOptions.tagInterestMode ?? tagInterestContext?.mode ?? 'off';
+  const activeTagScoring = tagInterestMode === 'active' && tagInterestContext
+    ? { mode: 'active', context: tagInterestContext }
+    : null;
+  const shadowTagScoring = tagInterestMode === 'shadow'
+    && tagInterestContext
+    && tagInterestContext.profileSource !== 'unavailable'
+    ? { mode: 'active', context: tagInterestContext }
+    : null;
   const plan = createEmptyPlan(variant, constraints, diagnosticOptions);
   // 系外選修認列條件的排除結果對每個方案都相同，直接帶進各方案的排除清單，
   // 讓使用者在任何一個方案上都看得到「為什麼這門課不見了」。
@@ -2350,10 +2453,12 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         competitive: remaining.map(course => ({
           ...describe(course),
           scoreComponents: computeScoreComponents(
-            course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+            course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
+            activeTagScoring
           ),
           score: scoreCourse(
-            course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+            course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
+            activeTagScoring
           ),
         })),
         internships: eligible
@@ -2427,16 +2532,31 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
       continue;
     }
 
+    if (shadowTagScoring) {
+      recordShadowPoolRanking(
+        diagnosticOptions.tagInterestShadowStats,
+        phaseCandidates,
+        candidate => scoreCourse(
+          candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+        ),
+        candidate => scoreCourse(
+          candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
+          shadowTagScoring
+        )
+      );
+    }
+
     phaseCandidates.sort((a, b) => (
-      scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
-      - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore)
+      scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore, activeTagScoring)
+      - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore, activeTagScoring)
       || Number(a.id) - Number(b.id)
     ));
 
     const rankedCandidates = plan._generationDiagnostics
       ? phaseCandidates.slice(0, DIAGNOSTIC_TOP_CANDIDATES).map((candidate, index) => {
         const components = computeScoreComponents(
-          candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+          candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
+          activeTagScoring
         );
         return {
           rank: index + 1,
@@ -2459,14 +2579,16 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     // `buildAlternatives()` 會回報 `no-competitors`，而不是給一個分不出
     // 「沒有競爭者」與「還沒算」的空陣列——實測 demo 帳號現況正是 0 個落選者。
     const score = candidate => scoreCourse(
-      candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+      candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
+      activeTagScoring
     );
     const alternatives = buildAlternatives(
       score(course),
       runnerUpCourses.map(c => ({ course: c, score: score(c) }))
     );
     const scoreComponents = computeScoreComponents(
-      course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore
+      course, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
+      activeTagScoring
     );
     const explain = { alternatives, scoreComponents, scoringPolicy: plan.generationPolicy };
 
@@ -2655,9 +2777,12 @@ function optionStableKey(option) {
     .join('|');
 }
 
-function buildDecisionGroups(prepared, constraints, variant, seed) {
+function buildDecisionGroups(prepared, constraints, variant, seed, runtimeOptions = {}) {
   const context = buildRepairCandidateContext(prepared, constraints);
   const { eligible, requiredIds, failedRequiredCodes } = context;
+  const tagInterestScoring = runtimeOptions.tagInterestContext?.mode === 'active'
+    ? { mode: 'active', context: runtimeOptions.tagInterestContext }
+    : null;
   const internshipsByCode = new Map();
   for (const course of eligible) {
     if (course.corequisiteRole !== 'internship') continue;
@@ -2716,10 +2841,12 @@ function buildDecisionGroups(prepared, constraints, variant, seed) {
       options,
     };
 
+    const optionTagScoring = group.required || group.failedRequired ? null : tagInterestScoring;
     for (const option of group.options) {
       option.score = option.courses.reduce((sum, course) => (
         sum + scoreCourse(
-          course, [], constraints, variant, requiredIds, prepared.scope, prepared.neutralEasyScore
+          course, [], constraints, variant, requiredIds, prepared.scope, prepared.neutralEasyScore,
+          optionTagScoring
         )
       ), 0);
       option.stableKey = optionStableKey(option);
@@ -2955,7 +3082,7 @@ function runRepair(prepared, constraints, preferenceProfile, baselinePlans, runt
   const repairStartedAt = clock();
   const repairStrategy = { ...REPAIR_VARIANT, scoringPolicy: resolveScoringPolicy(constraints) };
   const { groups, requiredGroupIds, context } = buildDecisionGroups(
-    prepared, constraints, repairStrategy, seed
+    prepared, constraints, repairStrategy, seed, runtimeOptions
   );
   const initialPlan = createEmptyPlan(repairStrategy, constraints);
   initialPlan.excludedCourses.push(...prepared.exclusions);
@@ -3789,7 +3916,7 @@ function buildConflictSet(plans) {
 // `relaxable:true` 且有對應 `flag` 的條目會真的被放寬——`BLOCKED_PERIODS`
 // 沒有 `relaxable:true`，就算被塞進 timePreferencePriority 也只會被忽略，
 // 結構上不可能被放寬，不是靠執行期判斷擋掉。
-function tryRelaxationLadder(prepared, constraints, variant) {
+function tryRelaxationLadder(prepared, constraints, variant, runtimeOptions = {}) {
   const order = Array.isArray(constraints.timePreferencePriority)
     && constraints.timePreferencePriority.length > 0
     ? constraints.timePreferencePriority
@@ -3818,7 +3945,10 @@ function tryRelaxationLadder(prepared, constraints, variant) {
       order: relaxedConstraints.length + 1,
     });
 
-    const plan = buildPlan(prepared, relaxedFlags, variant);
+    const plan = buildPlan(prepared, relaxedFlags, variant, {
+      tagInterestContext: runtimeOptions.tagInterestContext,
+      tagInterestMode: runtimeOptions.tagInterestContext?.mode,
+    });
     if (plan.success) {
       return { plan, relaxedFlags, relaxedConstraints };
     }
@@ -3864,6 +3994,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
 
   // 接線是否正常的訊號，與是否成功排出課表無關，因此在所有回傳路徑都帶上。
   const reviewDataLoaded = Array.isArray(constraints.courseReviews) && constraints.courseReviews.length > 0;
+  const tagInterestContext = runtimeOptions.tagInterestContext ?? null;
+  const tagInterestMode = tagInterestContext?.mode ?? 'off';
+  const tagInterestShadowStats = createTagInterestShadowStats(tagInterestContext);
 
   if (!Array.isArray(candidateCourses) || candidateCourses.length === 0) {
     const unmetRequirements = [{
@@ -3956,6 +4089,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       const plan = buildPlan(prepared, constraints, variant, {
         includeDiagnostics: includePlanDiagnostics,
         includeMipInputs: needMipInputs,
+        tagInterestContext,
+        tagInterestMode,
+        tagInterestShadowStats,
       });
       const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
       plan.preferenceScore = score;
@@ -4071,7 +4207,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     // 未設定或為 false 時，以下整段不會執行，行為與改動前完全相同）。
     if (constraints.allowRelaxation) {
       const requiredFirstVariant = strategies[0];
-      const relaxed = tryRelaxationLadder(prepared, constraints, requiredFirstVariant);
+      const relaxed = tryRelaxationLadder(prepared, constraints, requiredFirstVariant, runtimeOptions);
 
       if (relaxed) {
         const { score, breakdown } = evaluatePreference(
@@ -4322,7 +4458,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       value: basePlan?._mipInputs ? { ...basePlan._mipInputs, basePlan } : null,
     });
   }
-  return result;
+  return attachTagInterestShadowStats(result, tagInterestShadowStats);
 }
 
 export function validateSchedule(courses = []) {

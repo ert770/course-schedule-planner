@@ -229,11 +229,31 @@ describe('tag-interest request context', () => {
     assert.equal(context.coursesBySectionId['301'].reason, 'profile_unavailable');
   });
 
-  test('off is the default; active stays off until scheduler ranking is implemented', () => {
+  test('off is the default and shadow/active are explicit modes', () => {
     assert.equal(resolveTagInterestRankingMode(), 'off');
     assert.equal(resolveTagInterestRankingMode('shadow'), 'shadow');
-    assert.equal(resolveTagInterestRankingMode('active'), 'off');
+    assert.equal(resolveTagInterestRankingMode('active'), 'active');
     const context = buildTagInterestContext({ mode: 'off', profile: { tagInterests: [] } });
     assert.deepEqual(context.coursesBySectionId, {});
+  });
+
+  test('active builds the same server-owned per-section tag scores as shadow', () => {
+    const context = buildTagInterestContext({
+      mode: 'active',
+      profileSource: 'consented-learned',
+      profile: {
+        tagInterests: [{
+          canonicalTagId: eligibleTag.id,
+          canonicalName: eligibleTag.name,
+          score: 0.6,
+          prior: 0,
+          hasEvidence: true,
+        }],
+      },
+      candidates: [{ id: 204, ragTag: [rawTag] }],
+    });
+
+    assert.equal(context.mode, 'active');
+    assert.equal(context.coursesBySectionId['204'].score, 0.6);
   });
 });

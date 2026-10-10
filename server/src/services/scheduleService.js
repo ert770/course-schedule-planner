@@ -276,7 +276,7 @@ export async function loadLearnedPreferenceSafely(loadWeights) {
   }
 }
 
-/** Load a consent-aware tag profile for shadow scoring; profile failures are fail-open. */
+/** Load a consent-aware tag profile for shadow or active scoring; failures fail open. */
 export async function loadTagInterestContextSafely(
   identity,
   candidates,
@@ -289,7 +289,7 @@ export async function loadTagInterestContextSafely(
   try {
     result = await loadProfile(identity, { prefs });
   } catch (err) {
-    logger.warn(`標籤興趣檔案讀取失敗，本次 shadow 不提供標籤分數：${err.message}`, { label: 'Schedule' });
+    logger.warn(`標籤興趣檔案讀取失敗，本次標籤排序不提供標籤分數：${err.message}`, { label: 'Schedule' });
     return buildTagInterestContext({
       mode: resolvedMode,
       profileSource: 'unavailable',
@@ -312,14 +312,14 @@ export async function loadTagInterestContextSafely(
   });
 }
 
-/** Keep the scheduler call shape unchanged when off; shadow context is request-scoped. */
+/** Keep the scheduler call shape unchanged when off; non-off context is request-scoped. */
 export function generateScheduleWithTagInterestContext(
   candidates,
   constraints,
   tagInterestContext,
   scheduler = generateSchedule
 ) {
-  if (!tagInterestContext || tagInterestContext.mode !== 'shadow') {
+  if (!tagInterestContext || tagInterestContext.mode === 'off') {
     return scheduler(candidates, constraints);
   }
   return scheduler(candidates, constraints, { tagInterestContext });
@@ -497,8 +497,7 @@ export async function generateForUser(identity, input = {}, options = {}) {
     return annotateScheduleIdentifiers(buildNoCandidatesResult(reviewDataLoaded), requestId);
   }
 
-  // `active` 在候選池排序尚未接入前一律視為 `off`；只有明確設為 `shadow`
-  // 才讀 profile 並建立 request-scoped context，而且不改變正式排序。
+  // `off` 完全略過 profile；`shadow` 計算但不套用排序，`active` 才改變可選課候選分數。
   const tagInterestMode = resolveTagInterestRankingMode(
     options.tagInterestMode ?? process.env.TAG_INTEREST_RANKING_MODE
   );
@@ -506,10 +505,19 @@ export async function generateForUser(identity, input = {}, options = {}) {
     mode: tagInterestMode,
     prefs,
   });
-  const result = annotateScheduleIdentifiers(
-    generateScheduleWithTagInterestContext(candidates, mergedConstraints, tagInterestContext),
-    requestId
-  );
+  const scheduled = generateScheduleWithTagInterestContext(candidates, mergedConstraints, tagInterestContext);
+  if (tagInterestContext?.mode === 'shadow' && scheduled?.tagInterestShadowStats) {
+    const stats = scheduled.tagInterestShadowStats;
+    logger.info(
+      '標籤興趣 shadow 彙總：'
+        + `候選分布正向 ${stats.candidates.positive}、中性 ${stats.candidates.neutral}、`
+        + `負向 ${stats.candidates.negative}、無合格標籤 ${stats.candidates.noEligibleTags}、`
+        + `不可用 ${stats.candidates.unavailable}；`
+        + `比較 ${stats.poolComparisons} 個候選排序狀態，${stats.changedPoolComparisons} 個順序不同。`,
+      { label: 'Schedule' }
+    );
+  }
+  const result = annotateScheduleIdentifiers(scheduled, requestId);
   await recordExposureSafely(identity, result, requestId, { surface, trigger });
   return result;
 }

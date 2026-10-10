@@ -28,12 +28,9 @@ function requireRange(name, value, min, max) {
   return number;
 }
 
-/**
- * Stage 6 currently supports a no-op `shadow` data path only. `active` is
- * deliberately treated as `off` until candidate-pool scoring is integrated.
- */
 export function resolveTagInterestRankingMode(value = 'off') {
-  return String(value ?? '').trim().toLowerCase() === 'shadow' ? 'shadow' : 'off';
+  const mode = String(value ?? '').trim().toLowerCase();
+  return ['shadow', 'active'].includes(mode) ? mode : 'off';
 }
 
 /** Build a server-owned per-section score map for one schedule request. */
@@ -49,7 +46,7 @@ export function buildTagInterestContext({
   if (!profile || !Array.isArray(profile.tagInterests)) resolvedSource = 'unavailable';
 
   const coursesBySectionId = {};
-  if (resolvedMode === 'shadow') {
+  if (resolvedMode !== 'off') {
     for (const course of Array.isArray(candidates) ? candidates : []) {
       const sectionId = String(course?.sectionId ?? course?.id ?? '').trim();
       if (!sectionId || Object.hasOwn(coursesBySectionId, sectionId)) continue;

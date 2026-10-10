@@ -3,15 +3,16 @@
 ## 文件狀態
 
 - 日期：2026-10-10
-- 狀態：設計已確認，依核准內容分段實作中。
+- 狀態：設計已確認；候選層計分已接入程式並完成一次真實瀏覽器 off／active 對照，但該帳號結果未見差異；方案層排序與 Persona 重播尚待完成。
 - 範圍：定義標籤興趣檔案與既有多方案排課器之間的資料與評分邊界。
 - 本文件記錄已確認的介接邊界與分段實作狀態；各階段實際程式改動另見 `docs/CHANGE_REPORTS/`。
 
 ## 階段 6 實作進度
 
-- **第一階段：純候選計分核心（已完成）**：新增帶對稱興趣倍率的純函式，尚未讓正式排課使用該分數。
-- **第二階段：profile-to-scheduler shadow 資料流（本次完成）**：預設 `off`；`shadow` 時由伺服器讀取同意感知 profile，建立 request-scoped `sectionId` 分數表並傳入 scheduler runtime options。scheduler 此階段仍不消費該表，因此結果與排序不變；`active` 在候選池計分接入前視為 `off`。
-- **後續階段**：實作三個候選池的候選分數與全域硬條件協作，再接方案層排序、Persona 和瀏覽器 A/B。`counterfactualForUser()` 目前仍不納入標籤分數。
+- **第一階段：純候選計分核心（已完成）**：新增帶對稱興趣倍率的純函式，α 預設 0.6。
+- **第二階段：profile-to-scheduler shadow 資料流（已完成）**：預設 `off`；`shadow`／`active` 時由伺服器讀取同意感知 profile，建立 request-scoped `sectionId` 分數表並傳入 scheduler runtime options。
+- **第三階段：候選層計分接線（程式與後端測試完成；一次真實瀏覽器 A/B 結果未見差異）**：`active` 將標籤興趣乘數套用到本系選修、通識、系外選修候選池的基礎分；依既有畢業配額階段做池內排序，再由同一 scheduler 全域檢查硬條件。`shadow` 計算假想池內順序並只記錄彙總 log，不改課表。`off` 預設行為不變。依使用者授權，以目前帳號各執行一次 `off`／`active`；都得到 3 個方案、相同預設 4 門課／10 學分及 353 個競爭候選，產生兩筆 recommendation exposure。此對照未證明標籤訊號改變排序；後續需用有已知興趣訊號的 Persona 或隔離測試帳號驗證，不再用同一帳號重跑。
+- **後續階段**：加入方案層 `planTagScore`／`α_plan` 排序、Persona 重播，並用具已知標籤訊號的安全測試資料完成有判別力的 off／active A/B；`counterfactualForUser()` 目前仍不納入標籤分數。
 
 ## 建議決策摘要
 
@@ -29,16 +30,16 @@
 flowchart LR
   A[REST 或 Chat 呼叫] --> B[scheduleService.generateForUser]
   B --> C[prepareGenerationInputs：偏好、評價、v2 權重、候選課]
-  C --> C2[off 略過；shadow 建立 tagInterestContext]
-  C2 --> D[scheduler.generateSchedule：目前不消費 tagInterestContext]
+  C --> C2[off 略過；shadow／active 建立 tagInterestContext]
+  C2 --> D[scheduler.generateSchedule：shadow 保持正式排序；active 消費候選 tag 分數]
   D --> E[硬條件檢查與可行方案產生]
-  E --> F[scoreCourse：候選選擇分數]
+  E --> F[scoreCourse：active 在分池階段套用標籤倍率]
   E --> G[evaluatePreference：方案層 interest / compact / easy]
   G --> H[comparePlans：可行度、最低學分、偏好分、學分排序]
 ```
 
 - `scheduleService.prepareGenerationInputs()` 載入 v2 權重並建立 `mergedConstraints`；REST 與 Chat 共用 `generateForUser()`。標籤 profile 在候選課準備完成後讀取，避免 `off` 模式增加 profile 查詢。
-- `tagInterestService.getTagInterestProfile()` 處理同意、快取與重算；`tagInterestLearning.scoreCourseTagInterest()` 依 `crossCourseMatchEligible` 計分。階段 6 第二階段已在 `shadow` 建立每個 `sectionId` 的 request-scoped context 並傳入 runtime options；scheduler 尚未消費它，故不改變排課結果。
+- `tagInterestService.getTagInterestProfile()` 處理同意、快取與重算；`tagInterestLearning.scoreCourseTagInterest()` 依 `crossCourseMatchEligible` 計分。`shadow` 建立每個 `sectionId` 的 request-scoped context，計算假想池內排序但維持正式結果；`active` 才把標籤倍率送進候選計分。
 - `scheduler.js` 有兩個不同評分層：`scoreCourse()` 供候選選擇、修補及 solver 相關路徑使用；`evaluatePreference()` 將方案的 `interest / compact / easy` 正規化成 0～1 的 `preferenceScore`，由 `comparePlans()` 選擇方案順序。
 - 曝光事件的 `plan-feature-v1` 固定是三軸 `interest / compact / easy`。這個向量提供給既有選擇學習流程，不能直接加第四軸或重新解讀 `interest`。
 
@@ -196,11 +197,11 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 | `shadow` | 是 | 否 | 先檢查資料覆蓋、分數分布、例外及假想重排 |
 | `active` | 是 | 是 | 設計審核、測試、瀏覽器 A/B 通過後才啟用 |
 
-目前分段實作只支援 `off`／`shadow`；`active` 在候選池計分尚未接入前安全地視為 `off`，不得因此改變排序。第二階段的 `shadow` 只建立與傳遞 request-scoped 分數 context，尚未產生假想重排或持久化觀測統計；這些工作須在候選池基礎分可比較後完成。
+候選層目前支援 `off`／`shadow`／`active`，部署預設仍為 `off`。`shadow` 只寫彙總 log（分數正／中／負向筆數、無合格標籤與不可用筆數、候選順序變動統計），不持久化單一使用者的分數或標籤清單。`active` 只在可自由選擇的本系選修、通識、系外選修候選池使用標籤分數；`profileSource=unavailable` 時退回舊分數。方案層目前尚未消費 `planTagScore`。
 
 - 保持 `plan-feature-v1` 的三軸向量完全不變。若日後要把 tag-interest 納入 `plan_chosen` 的學習特徵，另立版本化 snapshot／feature contract；不得直接擴充既有向量或把它映射成 `interest`。
 - 第二階段的 `shadow` 僅在 request 記憶體內建立及傳遞 context，尚無持久化觀測資料。後續若加入 shadow 觀測，只能保留彙總筆數／分布；不新增互動事件，不持久化單一使用者的分數、完整標籤清單或身分識別值。
-- 如推薦 API 要顯示命中標籤或方案分，須新增明確、可選的 `tagInterest` 回應欄位，並同步更新 `docs/API_SPEC.md`、`docs/DATA_SCHEMA.md`、曝光快照與驗證器；本設計階段不新增 API 欄位或 migration。
+- 候選層啟用時，理由沿用既有 `recommendationReason.scoreBreakdown`，以 `tagInterest` 表示標籤倍率對池內基礎分造成的加減量；已同步記錄於 `docs/API_SPEC.md`，不新增頂層 API 欄位、DB 欄位或 migration。命中標籤與方案層分數尚未加入回應。
 - 若要在 `recommendation_exposed` 保留曝光當下的排名依據，需另設版本化的 tag ranking snapshot（模型、目錄、資格版本與 per-plan score／coverage）。先確認資料最小化與保存期限，再決定使用既有 JSON 欄位或新增 schema；不要混進三軸學習向量。
 
 ## 6. 實作與驗收順序
@@ -208,9 +209,9 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 1. **定稿介面**：確認 profile source、可自由選擇課程範圍、係數位置、曝光快照及 counterfactual 是否納入。
 2. **純函式測試**：跨課資格過濾、同義別名去重、多標籤平均、明確負向、無訊號 `null`、必修／固定課排除於方案平均，以及覆蓋率計算。
 3. **服務整合測試**：同意開／關、profile cache 失效與錯誤 fallback；REST 和 Chat 必須共用同一 `generateForUser()` 路徑。
-4. **scheduler 測試**：`off` 的排序保持原樣；`shadow` 不改結果；`active` 只改軟性排序；驗證 α=0 時不改分、初始 α=0.6 時 `+0.8/-0.8` 分別乘 `1.48/.52`、α=1 時分別乘 `1.8/.2`，正負倍率對稱；分別驗證六個候選分項只加一次，並在三池內檢查候選排序；驗證池需求／名額由 scheduler 共同安排，衝堂、學分、先修等全域硬條件仍通過；確認類別優先分和非本系扣分不跨池比較，年級扣分若啟用只影響本系選修池；`null` 不改分，無標籤課仍可排入。
-5. **Persona 重播**：用既有 10 位 synthetic Persona 擴充相同候選課／硬條件案例，比較 off 與 active 的課表可行性、top plan、tag coverage、理由忠實度及多樣性。結果只作情境檢查，不叫作準確率。
-6. **瀏覽器 A/B**：固定使用者設定、候選集與 solver seed 比較 flag off／on；逐一操作排課結果、切換方案及推薦理由；檢查兩組硬條件與必修一致、軟性排序差異可解釋、console 無新增錯誤。
+4. **scheduler 測試（候選層程式已完成）**：`off` 保持舊排序；`shadow` 不改結果；`active` 只改軟性排序；候選 α=0／0.6／1、正負對稱倍率、同年級扣分、`null` 不加減、明確指定與衝堂硬條件已有單元測試；服務測試驗證 shadow 假想排序及 active 候選變更。全域 pool quota／alternative-plan ranking 仍需後續驗收。
+5. **Persona 重播（待做）**：用既有 10 位 synthetic Persona 擴充相同候選課／硬條件案例，比較 off 與 active 的課表可行性、top plan、tag coverage、理由忠實度及多樣性。結果只作情境檢查，不叫作準確率。
+6. **瀏覽器 A/B（真實帳號一次性對照已做，效果仍待確認）**：已依使用者授權以同一帳號跑 `off`／`active` 各一次；結果未見差異，且產生兩筆 recommendation exposure，不能據此確認有標籤興趣訊號時的排序效果。後續用已知有標籤訊號的 Persona／隔離測試資料，固定使用者設定、候選集與 solver seed；檢查課表硬條件、軟性排序理由及 console。避免重複對真實帳號寫入 exposure。
 7. **分段啟用與回復**：預設 off；能以設定即時退回 off。上線資料累積後再做真人的時間切分評估，這不阻止先做受控 Persona／瀏覽器驗收，但不能省略真實成效限制聲明。
 
 ## 7. 待確認決策
@@ -220,8 +221,8 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 | 方案平均要算哪些課 | 只算排課器自由選擇的非必修選修；必修、重補修、使用者固定課與關注課不計 | 避免把硬性或使用者已決定的課誤說成推薦 |
 | 未同意行為學習時能用什麼 | 只用明確選的主題先驗，不用事件證據 | 確保模型理由與 consent 範圍一致 |
 | 排名倍率 | 正負使用同一 α，α 範圍 0～1；候選與方案初始建議皆設 0.6，再以 shadow 檢查 | 候選與方案分數量尺不同，後續仍可分開校準；Persona 合成指標不能代表真人校準 |
-| 候選池與同年級優先 | 本系選修、通識、系外選修分池排名，最後由同一 scheduler 全域檢查；類別優先與非本系扣分不跨池使用。`−2500` 若保留，只能是本系選修池內規則 | 是否保留同年級偏好尚未確認；需避免將池內規則誤用到其他課程池 |
+| 候選池與同年級優先 | 本系選修、通識、系外選修依既有畢業配額階段形成候選池，由同一 scheduler 全域檢查；類別優先與非本系扣分不跨池使用。使用者已確認保留 `−2500` 同年級規則，只能套在本系選修池 | 已確認；實作需維持池內範圍，不可套到通識或系外選修 |
 | 曝光時是否存分數 snapshot | active 上線前需要可追溯版本化摘要；具體欄位與保存期限另定 | 現有 `plan-feature-v1` 是不同目的的三軸資料契約 |
 | 反事實比較 | 如納入正式推薦解釋，傳入相同 tag context；否則標示不包含 tag-interest | 避免反事實頁和實際排課用兩套排序語意 |
 
-**確認本稿後才進入程式實作。** 實作若新增 API 欄位或 schema，先更新 API／資料規格；若調整 `scheduler.js`，依 `docs/SCHEDULING_LOGIC.md` 驗證學分與課程狀態規則，並完成 off/on 瀏覽器 A/B。
+本稿已確認並進入分段實作。候選層程式已依 `docs/SCHEDULING_LOGIC.md` 通過後端測試；本次瀏覽器 A/B 的相同結果不等於已驗證模型效果。完成方案層、Persona 及具已知標籤訊號的 A/B 後，才能把階段 6 介接宣告完成。

@@ -110,7 +110,7 @@ describe('loadTagInterestContextSafely：依同意狀態建立 request-scoped sh
   });
 });
 
-describe('generateScheduleWithTagInterestContext：shadow context 只經 server runtime options 傳遞', () => {
+describe('generateScheduleWithTagInterestContext：non-off context 經 server runtime options 傳遞', () => {
   test('shadow 傳入第三個 runtimeOptions，不在 service 層改寫候選或限制', () => {
     const candidates = [{ id: 1 }];
     const constraints = { minCredits: 0 };
@@ -125,6 +125,21 @@ describe('generateScheduleWithTagInterestContext：shadow context 只經 server 
 
     assert.deepEqual(args, [candidates, constraints, { tagInterestContext: context }]);
     assert.deepEqual(result, { success: true });
+  });
+
+  test('active 同樣將 request-scoped context 傳入 scheduler', () => {
+    const candidates = [{ id: 2 }];
+    const constraints = { minCredits: 0 };
+    const context = { mode: 'active', coursesBySectionId: { 2: { score: 0.8 } } };
+    let args;
+    generateScheduleWithTagInterestContext(
+      candidates,
+      constraints,
+      context,
+      (...received) => { args = received; return { success: true }; }
+    );
+
+    assert.deepEqual(args, [candidates, constraints, { tagInterestContext: context }]);
   });
 
   test('off 不附加 runtime options，保留原 scheduler 呼叫形狀', () => {
@@ -172,6 +187,63 @@ describe('generateScheduleWithTagInterestContext：shadow context 只經 server 
     ));
 
     assert.deepEqual(shadow, baseline);
+  });
+
+  test('shadow 產生池內假想排序統計但不改變回應課表', () => {
+    const candidates = [
+      makeCourse(81241, { department: '資訊三合', category: '選修', dayOfWeek: 1 }),
+      makeCourse(81242, { department: '資訊三合', category: '選修', dayOfWeek: 2 }),
+    ];
+    const constraints = {
+      department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲',
+      minCredits: 0, maxCredits: 3, planSet: 'primary-only',
+    };
+    const shadowContext = {
+      mode: 'shadow', profileSource: 'consented-learned',
+      coursesBySectionId: {
+        81241: { score: -0.8, reason: 'scored' },
+        81242: { score: 0.8, reason: 'scored' },
+      },
+    };
+
+    const baseline = generateSchedule(candidates, constraints);
+    const shadow = generateScheduleWithTagInterestContext(candidates, constraints, shadowContext);
+
+    assert.equal(baseline.schedule[0].id, 81241);
+    assert.equal(shadow.schedule[0].id, baseline.schedule[0].id);
+    assert.ok(shadow.tagInterestShadowStats.poolComparisons > 0);
+    assert.ok(shadow.tagInterestShadowStats.changedPoolComparisons > 0);
+    assert.equal(Object.keys(shadow).includes('tagInterestShadowStats'), false);
+  });
+
+  test('active 依標籤興趣改變同池候選順序並列出分數增減', () => {
+    const candidates = [
+      makeCourse(81251, { department: '資訊三合', category: '選修', dayOfWeek: 1, ragTag: ['負向標籤'] }),
+      makeCourse(81252, { department: '資訊三合', category: '選修', dayOfWeek: 2, ragTag: ['正向標籤'] }),
+    ];
+    const constraints = {
+      department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲',
+      minCredits: 0, maxCredits: 3, planSet: 'primary-only',
+    };
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: {
+        81251: { score: -0.8, reason: 'scored' },
+        81252: { score: 0.8, reason: 'scored' },
+      },
+    };
+
+    const baseline = generateSchedule(candidates, constraints);
+    const active = generateScheduleWithTagInterestContext(candidates, constraints, activeContext);
+
+    assert.equal(baseline.schedule[0].id, 81251);
+    assert.equal(active.schedule[0].id, 81252);
+    assert.ok(active.schedule[0].recommendationReason.scoreBreakdown.some(item => (
+      item.component === 'tagInterest' && item.value === 480
+    )));
+    assert.deepEqual(active.schedule[0].recommendationReason.scoreBreakdown.map(item => item.component).sort(), [
+      'base', 'credits', 'tagInterest',
+    ]);
   });
 });
 
