@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, BookOpenCheck, Check, Compass, Loader2, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpenCheck, Check, Compass, Loader2, Sparkles } from 'lucide-react'; // 新增 ArrowLeft
 import { useAuth } from '../contexts/useAuth';
 import { getUserIdentity } from '../utils/userIdentity';
 import { interactionsAPI, interestExplorationAPI, profileAPI } from '../services/api';
@@ -10,6 +10,32 @@ import {
 } from '../services/interestExplorationState';
 import { hasPersonalizationConsent, newUuid } from '../services/interactionLog';
 import './InterestExplorationPage.css';
+
+// 建立英文標籤到中文的翻譯字典
+const tagTranslationDict = {
+  'Imperative languages': '指令式語言',
+  'Functional languages': '函數式語言',
+  'Logical languages': '邏輯式語言',
+  'Object-Oriented languages': '物件導向語言',
+  'Object-Oriented': '物件導向',
+  'Programming Languages': '程式語言',
+  'Algorithms': '演算法',
+  'Data Structures': '資料結構',
+  'Machine Learning': '機器學習',
+  'Deep Learning': '深度學習',
+  'Artificial Intelligence': '人工智慧',
+  'Cloud Computing': '雲端運算',
+  'Cybersecurity': '資訊安全',
+  'Software Engineering': '軟體工程',
+  'Computer Networks': '電腦網路',
+  'Database Systems': '資料庫系統',
+  'Operating Systems': '作業系統',
+  'Web Development': '網頁開發'
+};
+
+const translateTag = (tagName) => {
+  return tagTranslationDict[tagName] || tagName;
+};
 
 function arrangeSavedDeck(cards, courseCodes) {
   if (!courseCodes?.length) return cards;
@@ -211,7 +237,24 @@ export default function InterestExplorationPage() {
 
   return (
     <main className="interest-exploration-page">
-      <section className="interest-exploration-shell" aria-labelledby="interest-exploration-title">
+      <section className="interest-exploration-shell" aria-labelledby="interest-exploration-title" style={{ position: 'relative' }}>
+        
+        {/* 返回鍵 */}
+        <button 
+          onClick={() => navigate('/setup')}
+          style={{
+            position: 'absolute', top: '24px', left: '24px',
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '8px', borderRadius: '50%', transition: 'background 0.2s', zIndex: 10
+          }}
+          onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+          onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+          title="返回偏好設定"
+        >
+          <ArrowLeft size={22} />
+        </button>
+
         <header className="interest-exploration-header">
           <div className="interest-exploration-icon"><Compass size={23} /></div>
           <p className="interest-exploration-eyebrow">排課前的短探索</p>
@@ -225,12 +268,12 @@ export default function InterestExplorationPage() {
         {topics.length > 0 && (
           <div className="interest-exploration-topics">
             <span>你設定的方向</span>
-            <div>{topics.map(topic => <span className="interest-topic-chip" key={topic}>{topic}</span>)}</div>
+            <div>{topics.map(topic => <span className="interest-topic-chip" key={topic}>{translateTag(topic)}</span>)}</div>
           </div>
         )}
         {profile?.preferredTrack && (
           <div className="interest-exploration-track">
-            主要修課路徑（作為選卡情境）：<strong>{profile.preferredTrack}</strong>
+            主要修課路徑（作為選卡情境）：<strong>{translateTag(profile.preferredTrack)}</strong>
           </div>
         )}
 
@@ -254,7 +297,7 @@ export default function InterestExplorationPage() {
             </div>
             {categoryPrompts.map(prompt => (
               <div className="interest-category-prompt-group" key={prompt.mainCategoryId}>
-                <h3>{prompt.mainCategory}</h3>
+                <h3>{translateTag(prompt.mainCategory)}</h3>
                 <div className="interest-negative-tags">
                   {prompt.subcategories.map(item => {
                     const selected = selectedSubcategoryIds.has(item.id);
@@ -271,7 +314,7 @@ export default function InterestExplorationPage() {
                           return next;
                         })}
                       >
-                        {selected && <Check size={14} />}{item.name}
+                        {selected && <Check size={14} />}{translateTag(item.name)}
                       </button>
                     );
                   })}
@@ -305,13 +348,13 @@ export default function InterestExplorationPage() {
                 <span>{card.credits} 學分</span>
                 <span>{card.instructor || '教師資料未提供'}</span>
                 <span>{courseTime(card)}</span>
-                {card.track && <span>修課路徑：{card.track}</span>}
+                {card.track && <span>修課路徑：{translateTag(card.track)}</span>}
               </div>
               <div className="interest-course-tags" aria-label="這門課的可學習主題標籤">
                 {card.tags.map(tag => (
                   <span className="interest-course-tag" key={tag.canonicalTagId}>
-                    <strong>{tag.canonicalName}</strong>
-                    {tag.categoryPaths[0]?.subcategory && <small>{tag.categoryPaths[0].subcategory}</small>}
+                    <strong>{translateTag(tag.canonicalName)}</strong>
+                    {tag.categoryPaths[0]?.subcategory && <small>{translateTag(tag.categoryPaths[0].subcategory)}</small>}
                   </span>
                 ))}
               </div>
@@ -336,7 +379,7 @@ export default function InterestExplorationPage() {
                             return next;
                           })}
                         >
-                          {selected && <Check size={14} />}{tag.canonicalName}
+                          {selected && <Check size={14} />}{translateTag(tag.canonicalName)}
                         </button>
                       );
                     })}

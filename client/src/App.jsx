@@ -12,7 +12,6 @@ import GraduationPage from './pages/GraduationPage';
 import PrivacyPage from './pages/PrivacyPage';
 import SearchPage from './pages/SearchPage';
 import ExplorePage from './pages/ExplorePage';
-import SchedulePage from './pages/SchedulePage';
 import './App.css';
 
 import { useLocation } from 'react-router-dom';
@@ -88,14 +87,6 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <DashboardPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/schedule"
-        element={
-          <ProtectedRoute>
-            <SchedulePage />
           </ProtectedRoute>
         }
       />

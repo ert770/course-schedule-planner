@@ -1,12 +1,6 @@
 import { formatCourseTime } from '../../utils/courseTime';
 import { formatCourseGradeLevel } from '../../utils/courseGradeLevel';
 
-// 課程詳情彈窗（含 roadmap #26 的推薦理由）。
-//
-// **抽成共用元件的理由**：`SchedulePage.jsx` 與 `DashboardPage.jsx` 原本各有一份
-// 幾乎相同的彈窗，兩邊已經開始漂移（Dashboard 少了地點與時間）。推薦理由是一段
-// 有實質規則的 UI（什麼時候能講涼度、什麼時候要說沒有依據），複製兩份必然走樣。
-
 const SELECTION_LABELS = {
   REQUIRED_COURSE: '這是你的必修課',
   RETAKE_REQUIRED: '這是需要重補修的必修',
@@ -23,10 +17,8 @@ const CONFIDENCE_LABELS = {
   low: { text: '依據不足，請自行確認', className: 'reason-confidence-low' },
 };
 
-// 涼度來源決定措辭。這條規則與後端 `resolveEasiness()`／`PROMPT_DESIGN.md`
-// 是同一條：只有 `reviews` 是證據，`proxy` 是推估，`none` 不得提涼度。
 const EASINESS_LABELS = {
-  reviews: null, // 有評價時改為顯示實際評價筆數，不用這裡的文字
+  reviews: null,
   proxy: '涼度為依課程屬性推估，不是實際評價',
   none: '沒有涼度依據',
 };
@@ -52,7 +44,6 @@ function ReasonSection({ reason }) {
           {reason.matchedPreferences.map(item => item.label).join('、')}
         </p>
       ) : (
-        // 沒命中就照實說，不要硬掰一個理由——這是 #26 的核心要求。
         <p className="reason-line reason-muted">它沒有命中你設定的任何偏好。</p>
       )}
 
@@ -73,7 +64,6 @@ function ReasonSection({ reason }) {
         </p>
       )}
 
-      {/* 「沒有競爭者」與「還沒算」必須分得出來，不能都顯示成空白。 */}
       {alternatives?.status === 'no-competitors' && (
         <p className="reason-line reason-muted">同一個時段沒有其他課與它競爭。</p>
       )}
@@ -98,21 +88,51 @@ function ReasonSection({ reason }) {
   );
 }
 
+// 動態美化課程類別標籤的樣式函數
+const getCategoryStyle = (category) => {
+  if (!category) return { bg: '#f1f5f9', text: '#475569', icon: '📌' }; // 預設灰
+  if (category.includes('必修')) return { bg: '#fee2e2', text: '#b91c1c', icon: '🔥' }; // 必修紅
+  if (category.includes('選修')) return { bg: '#e0f2fe', text: '#0369a1', icon: '💡' }; // 選修藍
+  if (category.includes('通識')) return { bg: '#dcfce7', text: '#15803d', icon: '🌍' }; // 通識綠
+  return { bg: '#f1f5f9', text: '#475569', icon: '📌' }; 
+};
+
 export default function CourseDetailModal({ course, onClose, onRemove, showTime = true }) {
   if (!course) return null;
+
+  const catStyle = getCategoryStyle(course.category);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose}>✕</button>
-        <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>{course.name}</h2>
+        <h2 style={{ fontSize: '1.3rem', marginBottom: '6px' }}>{course.name}</h2>
         <span className="detail-code">{course.code}</span>
-        <div className="detail-meta">
-          <span>👤 {course.instructor}</span>
-          <span>📚 {course.credits} 學分</span>
-          <span>🎓 {formatCourseGradeLevel(course.gradeLevel)}</span>
-          {showTime && <span>📍 {course.location}</span>}
-          {showTime && <span>⏰ {formatCourseTime(course)}</span>}
+        
+        {/* 高質感標籤列與地點 */}
+        <div className="detail-meta" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', margin: '16px 0', alignItems: 'center' }}>
+          {/* 美化後的類別標籤 */}
+          <span style={{ 
+            background: catStyle.bg, color: catStyle.text, 
+            padding: '4px 12px', borderRadius: '20px', 
+            fontWeight: '600', fontSize: '0.85rem', 
+            display: 'flex', alignItems: 'center', gap: '6px',
+            border: `1px solid ${catStyle.text}33` // 加入微透明邊框增加質感
+          }}>
+            {catStyle.icon} {course.category || '一般課程'}
+          </span>
+          
+          {/* 加入明確的地點標籤 */}
+          {showTime && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569', fontWeight: '500' }}>
+              📍 {course.location || '地點待排'}
+            </span>
+          )}
+
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569' }}>👤 {course.instructor}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569' }}>📚 {course.credits} 學分</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569' }}>🎓 {formatCourseGradeLevel(course.gradeLevel)}</span>
+          {showTime && <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569' }}>⏰ {formatCourseTime(course)}</span>}
         </div>
 
         <ReasonSection reason={course.recommendationReason} />
