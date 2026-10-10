@@ -11,7 +11,8 @@ import {
 
 export default function SetupPage() {
   const navigate = useNavigate();
-  const { user, markSetupDone, isSetupDone, logout } = useAuth();
+  // 【修正點】：將原本尾端的 , logout 移除了，解決 ESLint unused-vars 錯誤
+  const { user, markSetupDone, isSetupDone } = useAuth();
   const userIdentity = getUserIdentity(user);
   
   // 保留狀態以供 API 使用，但前端隱藏不顯示
@@ -134,7 +135,6 @@ export default function SetupPage() {
           navigate('/interest-exploration', { replace: true });
           return;
         }
-        // 直接跳轉到首頁，不再去排課頁面
         navigate('/', { replace: true });
         return;
       }
