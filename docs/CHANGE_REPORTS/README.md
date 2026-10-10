@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-11
+
+1. [rag-tag-interest-v1 階段 6：Persona scheduler off／active 重播](./2026-10-11-rag-tag-interest-stage6-persona-replay.md)
+
 ## 2026-10-10
 
 1. [rag-tag-interest-v1 階段 6 第三階段：候選層計分接線](./2026-10-10-rag-tag-interest-candidate-ranking-stage6.md)

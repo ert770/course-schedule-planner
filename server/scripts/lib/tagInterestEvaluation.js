@@ -5,7 +5,15 @@ import {
   scoreCourseTagInterest,
 } from '../../src/skills/tagInterestLearning.js';
 import { resolveInterestTag, resolveInterestTags } from '../../src/data/interestTagCatalog.js';
-import { generateSchedule, matchesInterestKeyword } from '../../src/skills/scheduler.js';
+import {
+  generateSchedule,
+  matchesInterestKeyword,
+  validateSchedule,
+} from '../../src/skills/scheduler.js';
+import {
+  buildTagInterestContext,
+  DEFAULT_TAG_INTEREST_COURSE_ALPHA,
+} from '../../src/skills/tagInterestRanking.js';
 import { computeLearnedBoosts, learnPreferenceWeights } from '../../src/skills/preferenceLearning.js';
 
 const SCORE_TOLERANCE = 0.000001;
@@ -356,6 +364,225 @@ function v2ScheduleRanking(persona, candidates, events, { now, activeTerm } = {}
   };
 }
 
+function stage6ScheduleMode(persona, candidates, profile, events, mode, { now, activeTerm } = {}) {
+  const courses = candidates.map(schedulerCourse);
+  // Exercise a real hard-constraint boundary in the fixed synthetic candidate set:
+  // these two distinct electives share one time slot in both modes.
+  const conflictAnchor = courses.find(course => course.courseId === 'ai-foundations');
+  const conflictCandidate = courses.find(course => course.courseId === 'database-course');
+  if (conflictAnchor && conflictCandidate) {
+    conflictCandidate.dayOfWeek = conflictAnchor.dayOfWeek;
+    conflictCandidate.startPeriod = conflictAnchor.startPeriod;
+    conflictCandidate.endPeriod = conflictAnchor.endPeriod;
+  }
+  const interests = Array.isArray(persona.v2Keywords) ? persona.v2Keywords : [];
+  const explicitProfile = {
+    interest: 0,
+    compact: persona.preferences?.preferCompact ? 1 : 0,
+    easy: 0,
+  };
+  const learnedWeights = learnPreferenceWeights(events, { explicitProfile, now, activeTerm });
+  const learnedPreferenceApplied = learnedWeights.sufficiency.status === 'sufficient';
+  const constraints = {
+    department: '資訊工程學系',
+    gradeLevel: 4,
+    className: '資訊四乙',
+    minCredits: 9,
+    maxCredits: 9,
+    interests,
+    learnedPreference: {
+      applied: learnedPreferenceApplied,
+      reason: learnedPreferenceApplied ? 'applied' : 'insufficient',
+      boosts: learnedPreferenceApplied
+        ? computeLearnedBoosts(learnedWeights.weights, explicitProfile)
+        : null,
+      modelVersion: learnedWeights.modelVersion,
+    },
+    courseReviews: [],
+    courseHistory: [],
+  };
+  const tagInterestContext = mode === 'active'
+    ? buildTagInterestContext({
+      mode,
+      // The agreed Persona baseline assumes learning consent; cold-start personas still
+      // use their explicit topic priors because their synthetic event lists are empty.
+      profileSource: 'consented-learned',
+      profile,
+      candidates: courses,
+    })
+    : null;
+  const result = generateSchedule(courses, constraints, {
+    planSet: 'primary-only',
+    seed: 43,
+    timeoutMs: 1000,
+    ...(tagInterestContext ? { tagInterestContext } : {}),
+  });
+  const primary = result.plans?.find(plan => plan.id === result.recommendedPlanId) ?? result.plans?.[0] ?? null;
+  const planCourses = primary
+    ? [...(primary.schedule ?? []), ...(primary.unscheduledCourses ?? [])]
+    : [];
+  const collisionCheck = validateSchedule(planCourses);
+  const selectedCourseIds = planCourses
+    .map(course => String(course.courseId ?? ''))
+    .filter(Boolean)
+    .sort();
+  const relevantIds = new Set(persona.relevantCourseIds ?? []);
+  const relevantSelectedCount = selectedCourseIds.filter(id => relevantIds.has(id)).length;
+  const candidateByCourseId = new Map(candidates.map(candidate => [candidate.courseId, candidate]));
+  const selectedForDiversity = selectedCourseIds.map(courseId => candidateByCourseId.get(courseId)).filter(Boolean);
+
+  let reasonClaimCount = 0;
+  let correctReasonCount = 0;
+  let scoreBreakdownCheckCount = 0;
+  let scoreBreakdownCorrectCount = 0;
+  const tagEvidenceByCourse = planCourses.map(course => {
+    const candidate = candidateByCourseId.get(course.courseId);
+    const sectionId = String(course.sectionId ?? course.id ?? '').trim();
+    const entry = tagInterestContext?.coursesBySectionId?.[sectionId] ?? null;
+    const eligibleTagIds = candidate
+      ? resolveInterestTags(candidate.ragTags).tags
+        .filter(tag => tag.eligibility?.crossCourseMatchEligible === true)
+        .map(tag => tag.canonicalTagId)
+      : [];
+    const matchedTagIds = (entry?.matchedTags ?? []).map(tag => tag.canonicalTagId);
+    const integrity = explanationTagFaithfulness({
+      courseTagIds: eligibleTagIds,
+      reasonTagIds: matchedTagIds,
+    });
+    reasonClaimCount += integrity.claimCount;
+    correctReasonCount += integrity.correctCount;
+
+    const scoreBreakdown = course.recommendationReason?.scoreBreakdown ?? [];
+    const actualTagDelta = scoreBreakdown.find(item => item.component === 'tagInterest')?.value ?? 0;
+    const expectedTagDelta = Number.isFinite(entry?.score)
+      ? 1000 * DEFAULT_TAG_INTEREST_COURSE_ALPHA * entry.score
+      : 0;
+    scoreBreakdownCheckCount += 1;
+    if (near(actualTagDelta, expectedTagDelta)) scoreBreakdownCorrectCount += 1;
+
+    return {
+      courseId: course.courseId,
+      courseTagScore: entry?.score ?? null,
+      matchedTags: (entry?.matchedTags ?? []).map(tag => tag.canonicalName),
+      expectedScoreBreakdownDelta: Number(expectedTagDelta.toFixed(6)),
+      actualScoreBreakdownDelta: Number(actualTagDelta.toFixed(6)),
+    };
+  });
+  const hardConstraintChecks = {
+    schedulerSucceeded: Boolean(result.success && primary?.success),
+    noTimeConflictsOrDuplicateCourses: collisionCheck.valid,
+    minimumCreditsMet: Number(primary?.totalCredits ?? 0) >= constraints.minCredits,
+    maximumCreditsMet: Number(primary?.totalCredits ?? 0) <= constraints.maxCredits,
+  };
+  const hardConstraintsValid = Object.values(hardConstraintChecks).every(Boolean);
+
+  return {
+    mode,
+    profileSource: tagInterestContext?.profileSource ?? 'not-read',
+    primaryPlanId: primary?.id ?? null,
+    primaryPlanTitle: primary?.title ?? null,
+    primaryPlanVariantId: primary?.variantId ?? null,
+    hardConstraintsValid,
+    hardConstraintChecks,
+    totalCredits: primary?.totalCredits ?? 0,
+    selectedCourseIds,
+    relevantSelectedCount,
+    relevancePrecision: selectedCourseIds.length > 0
+      ? relevantSelectedCount / selectedCourseIds.length
+      : null,
+    relevanceRecall: relevantIds.size > 0 ? relevantSelectedCount / relevantIds.size : null,
+    planTagScore: Object.hasOwn(primary ?? {}, 'planTagScore') ? primary.planTagScore : null,
+    tagInterestCoverage: Object.hasOwn(primary ?? {}, 'tagInterestCoverage')
+      ? primary.tagInterestCoverage
+      : null,
+    combinedPlanScore: Object.hasOwn(primary ?? {}, 'combinedPlanScore')
+      ? primary.combinedPlanScore
+      : null,
+    subcategoryDiversity: subcategoryDiversityAtK(selectedForDiversity.map(candidate => ({
+      courseId: candidate.courseId,
+      subcategoryIds: subcategoryIdsFor(candidate),
+    })), { k: selectedForDiversity.length }),
+    reasonFaithfulness: {
+      claimCount: reasonClaimCount,
+      correctCount: correctReasonCount,
+      accuracy: reasonClaimCount === 0 ? null : correctReasonCount / reasonClaimCount,
+      scope: 'server-side matched tags must be eligible tags on the selected synthetic course; tag names are not exposed in the API',
+    },
+    scoreBreakdownFaithfulness: {
+      checkCount: scoreBreakdownCheckCount,
+      correctCount: scoreBreakdownCorrectCount,
+      accuracy: scoreBreakdownCheckCount === 0 ? null : scoreBreakdownCorrectCount / scoreBreakdownCheckCount,
+    },
+    tagEvidenceByCourse,
+  };
+}
+
+function compareStage6ScheduleModes(persona, candidates, profile, events, options = {}) {
+  const off = stage6ScheduleMode(persona, candidates, profile, events, 'off', options);
+  const active = stage6ScheduleMode(persona, candidates, profile, events, 'active', options);
+  const offSelected = new Set(off.selectedCourseIds);
+  const activeSelected = new Set(active.selectedCourseIds);
+  const removedCourseIds = off.selectedCourseIds.filter(courseId => !activeSelected.has(courseId));
+  const addedCourseIds = active.selectedCourseIds.filter(courseId => !offSelected.has(courseId));
+  return {
+    off,
+    active,
+    selectionChanged: removedCourseIds.length > 0 || addedCourseIds.length > 0,
+    removedCourseIds,
+    addedCourseIds,
+    hardConstraintsPreserved: off.hardConstraintsValid && active.hardConstraintsValid,
+  };
+}
+
+function summarizeStage6Mode(rows, mode) {
+  const runs = rows.map(row => row.stage6Scheduler[mode]);
+  const average = getter => averageMetric(runs, getter);
+  const faithfulnessClaims = runs.reduce((sum, run) => sum + run.reasonFaithfulness.claimCount, 0);
+  const faithfulnessCorrect = runs.reduce((sum, run) => sum + run.reasonFaithfulness.correctCount, 0);
+  const breakdownChecks = runs.reduce((sum, run) => sum + run.scoreBreakdownFaithfulness.checkCount, 0);
+  const breakdownCorrect = runs.reduce((sum, run) => sum + run.scoreBreakdownFaithfulness.correctCount, 0);
+  return {
+    mode,
+    feasiblePersonaCount: runs.filter(run => run.hardConstraintsValid).length,
+    meanRelevantSelectedCount: average(run => run.relevantSelectedCount),
+    meanRelevancePrecision: average(run => run.relevancePrecision),
+    meanRelevanceRecall: average(run => run.relevanceRecall),
+    meanPlanTagScore: average(run => run.planTagScore),
+    meanTagInterestCoverage: average(run => run.tagInterestCoverage),
+    meanSubcategoryDiversity: average(run => run.subcategoryDiversity),
+    reasonFaithfulness: {
+      claimCount: faithfulnessClaims,
+      correctCount: faithfulnessCorrect,
+      accuracy: faithfulnessClaims === 0 ? null : faithfulnessCorrect / faithfulnessClaims,
+    },
+    scoreBreakdownFaithfulness: {
+      checkCount: breakdownChecks,
+      correctCount: breakdownCorrect,
+      accuracy: breakdownChecks === 0 ? null : breakdownCorrect / breakdownChecks,
+    },
+  };
+}
+
+function stage6ScheduleSummary(personaResults) {
+  const rows = personaResults;
+  return {
+    datasetType: 'synthetic_persona_ux',
+    comparisonCount: 2,
+    hardConstraintScenario: 'synthetic courses ai-foundations and database-course share one time slot in both modes',
+    modelSummaries: {
+      off: summarizeStage6Mode(rows, 'off'),
+      active: summarizeStage6Mode(rows, 'active'),
+    },
+    changedSelectionCount: rows.filter(row => row.stage6Scheduler.selectionChanged).length,
+    changedSelectionPersonaIds: rows
+      .filter(row => row.stage6Scheduler.selectionChanged)
+      .map(row => row.personaId),
+    hardConstraintsPreservedCount: rows
+      .filter(row => row.stage6Scheduler.hardConstraintsPreserved).length,
+    disclaimer: '合成 Persona 的人工標註只用於檢查排序方向與硬條件，不代表真人準確率或線上成效。',
+  };
+}
+
 function rankingMetricsFor(modelId, ranked, persona, candidates, k) {
   const relevance = Object.fromEntries(candidates.map(candidate => [
     candidate.courseId,
@@ -447,6 +674,13 @@ export function evaluatePersonaRankingComparisons(fixture, { k = 3, now = null, 
       now: evaluationTime,
       activeTerm: term,
     });
+    const stage6Scheduler = compareStage6ScheduleModes(
+      persona,
+      fixture.candidateCourses,
+      profiles.hybrid_tag_interest_v1,
+      events,
+      { now: evaluationTime, activeTerm: term },
+    );
     const rankings = {
       initial_topic_prior: rankByTagProfile(profiles.initial_topic_prior, fixture.candidateCourses),
       behavior_tag_profile: rankByTagProfile(profiles.behavior_tag_profile, fixture.candidateCourses),
@@ -468,6 +702,7 @@ export function evaluatePersonaRankingComparisons(fixture, { k = 3, now = null, 
         usableEventCount: profile.summary.usableEventCount,
       }])),
       v2Learning: v2Ranking.learning,
+      stage6Scheduler,
     };
   });
   const modelSummaries = Object.fromEntries(modelIds.map(modelId => {
@@ -495,6 +730,7 @@ export function evaluatePersonaRankingComparisons(fixture, { k = 3, now = null, 
     candidateCourseCount: fixture.candidateCourses.length,
     k,
     modelSummaries,
+    stage6ScheduleComparison: stage6ScheduleSummary(personaResults),
     personaResults,
     limitations: [
       'Persona 標註由固定情境指定，用於檢查模型是否符合預期，不代表真人行為分布或線上推薦準確率。',
