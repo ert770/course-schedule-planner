@@ -4,8 +4,9 @@
 
 ## 2026-10-10
 
-1. [rag-tag-interest-v1：10 位 Persona 四組排序比較](./2026-10-10-rag-tag-interest-persona-comparison.md)
-2. [rag-tag-interest-v1 MySQL 服務層與探索頁瀏覽器驗收](./2026-10-10-rag-tag-interest-mysql-integration.md)
+1. [rag-tag-interest-v1 階段 6 第一階段：純候選計分核心](./2026-10-10-rag-tag-interest-ranking-stage1.md)
+2. [rag-tag-interest-v1：10 位 Persona 四組排序比較](./2026-10-10-rag-tag-interest-persona-comparison.md)
+3. [rag-tag-interest-v1 MySQL 服務層與探索頁瀏覽器驗收](./2026-10-10-rag-tag-interest-mysql-integration.md)
 
 ## 2026-10-09
 
