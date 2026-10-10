@@ -13,9 +13,167 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  loadCourseReviewsSafely, loadLearnedPreferenceSafely, buildNoCandidatesResult, buildExposureDraft,
+  loadCourseReviewsSafely,
+  loadLearnedPreferenceSafely,
+  loadTagInterestContextSafely,
+  generateScheduleWithTagInterestContext,
+  buildNoCandidatesResult,
+  buildExposureDraft,
 } from '../src/services/scheduleService.js';
 import { PLAN_FEATURE_VERSION } from '../src/data/interactionEventSchema.js';
+import { interestTagCatalog } from '../src/data/interestTagCatalog.js';
+import { generateSchedule } from '../src/skills/scheduler.js';
+import { makeCourse } from './fixtures.js';
+
+const eligibleTag = interestTagCatalog.canonicalTags.find(tag => (
+  tag.eligibility?.crossCourseMatchEligible === true
+  && tag.categoryAssignments?.some(assignment => assignment.sourceRows?.[0]?.rawTag)
+));
+const eligibleRawTag = eligibleTag.categoryAssignments
+  .flatMap(assignment => assignment.sourceRows ?? [])
+  .find(source => source.rawTag)?.rawTag;
+
+describe('loadTagInterestContextSafely：依同意狀態建立 request-scoped shadow context', () => {
+  const identity = { canonicalId: 'tag-context-test-user' };
+  const prefs = { interests: [eligibleTag.name] };
+  const candidates = [{ id: 8123, ragTag: [eligibleRawTag] }];
+  const profile = {
+    modelVersion: 'rag-tag-interest-v1',
+    catalogVersion: 'catalog-test',
+    eligibilityVersion: 'eligibility-test',
+    tagInterests: [{
+      canonicalTagId: eligibleTag.id,
+      canonicalName: eligibleTag.name,
+      score: 0.75,
+      prior: 0,
+      hasEvidence: true,
+    }],
+  };
+
+  test('off 模式不讀取使用者 profile', async () => {
+    let loadCount = 0;
+    const context = await loadTagInterestContextSafely(identity, candidates, {
+      mode: 'off',
+      loadProfile: async () => { loadCount += 1; return {}; },
+    });
+
+    assert.equal(context, null);
+    assert.equal(loadCount, 0);
+  });
+
+  test('已同意時沿用 profile 與 prefs，並為候選班次計分', async () => {
+    let received;
+    const context = await loadTagInterestContextSafely(identity, candidates, {
+      mode: 'shadow',
+      prefs,
+      loadProfile: async (receivedIdentity, options) => {
+        received = { receivedIdentity, options };
+        return { consented: true, source: 'learned', profile };
+      },
+    });
+
+    assert.equal(received.receivedIdentity, identity);
+    assert.deepEqual(received.options, { prefs });
+    assert.equal(context.profileSource, 'consented-learned');
+    assert.equal(context.coursesBySectionId['8123'].score, 0.75);
+  });
+
+  test('未同意時只標示明確先驗來源，採用 service 提供的 prior-only profile', async () => {
+    const priorOnly = {
+      ...profile,
+      tagInterests: [{
+        canonicalTagId: eligibleTag.id,
+        canonicalName: eligibleTag.name,
+        score: 0.5,
+        prior: 1,
+        hasEvidence: false,
+      }],
+    };
+    const context = await loadTagInterestContextSafely(identity, candidates, {
+      mode: 'shadow',
+      loadProfile: async () => ({ consented: false, source: 'no-consent', profile: priorOnly }),
+    });
+
+    assert.equal(context.profileSource, 'explicit-prior');
+    assert.equal(context.coursesBySectionId['8123'].score, 0.5);
+  });
+
+  test('profile 服務失敗時 fail-open，候選標籤分數不可用', async () => {
+    const context = await loadTagInterestContextSafely(identity, candidates, {
+      mode: 'shadow',
+      loadProfile: async () => { throw new Error('profile store unavailable'); },
+    });
+
+    assert.equal(context.profileSource, 'unavailable');
+    assert.equal(context.coursesBySectionId['8123'].score, null);
+    assert.equal(context.coursesBySectionId['8123'].reason, 'profile_unavailable');
+  });
+});
+
+describe('generateScheduleWithTagInterestContext：shadow context 只經 server runtime options 傳遞', () => {
+  test('shadow 傳入第三個 runtimeOptions，不在 service 層改寫候選或限制', () => {
+    const candidates = [{ id: 1 }];
+    const constraints = { minCredits: 0 };
+    const context = { mode: 'shadow', coursesBySectionId: { 1: { score: 0.8 } } };
+    let args;
+    const result = generateScheduleWithTagInterestContext(
+      candidates,
+      constraints,
+      context,
+      (...received) => { args = received; return { success: true }; }
+    );
+
+    assert.deepEqual(args, [candidates, constraints, { tagInterestContext: context }]);
+    assert.deepEqual(result, { success: true });
+  });
+
+  test('off 不附加 runtime options，保留原 scheduler 呼叫形狀', () => {
+    const candidates = [{ id: 1 }];
+    const constraints = { minCredits: 0 };
+    let args;
+    generateScheduleWithTagInterestContext(
+      candidates,
+      constraints,
+      null,
+      (...received) => { args = received; return null; }
+    );
+
+    assert.deepEqual(args, [candidates, constraints]);
+  });
+
+  test('實際 scheduler 在 shadow context 下仍回傳相同課表與方案順序', () => {
+    const candidates = [makeCourse(81231, { ragTag: ['AI'] })];
+    const constraints = {
+      department: '資訊工程學系',
+      gradeLevel: 3,
+      className: '資訊三甲',
+      minCredits: 3,
+      maxCredits: 25,
+    };
+    const shadowContext = {
+      mode: 'shadow',
+      coursesBySectionId: { 81231: { score: 1, eligibleTagCount: 1, evidenceTagCount: 1 } },
+    };
+    const summarize = result => ({
+      success: result.success,
+      scheduleIds: result.schedule.map(course => course.id),
+      plans: result.plans.map(plan => ({
+        id: plan.id,
+        scheduleIds: plan.schedule.map(course => course.id),
+      })),
+      totalCredits: result.totalCredits,
+    });
+
+    const baseline = summarize(generateSchedule(candidates, constraints));
+    const shadow = summarize(generateScheduleWithTagInterestContext(
+      candidates,
+      constraints,
+      shadowContext
+    ));
+
+    assert.deepEqual(shadow, baseline);
+  });
+});
 
 describe('loadCourseReviewsSafely：評價查詢失敗不得讓排課請求整體失敗', () => {
   test('loader 成功時回傳其解析結果', async () => {

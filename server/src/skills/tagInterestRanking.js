@@ -1,3 +1,8 @@
+import {
+  TAG_INTEREST_MODEL_VERSION,
+  scoreCourseTagInterest,
+} from './tagInterestLearning.js';
+
 export const DEFAULT_TAG_INTEREST_COURSE_ALPHA = 0.6;
 
 const ADDITIVE_SCORE_FIELDS = Object.freeze([
@@ -21,6 +26,64 @@ function requireRange(name, value, min, max) {
     throw new RangeError(`${name} 必須介於 ${min}～${max}`);
   }
   return number;
+}
+
+/**
+ * Stage 6 currently supports a no-op `shadow` data path only. `active` is
+ * deliberately treated as `off` until candidate-pool scoring is integrated.
+ */
+export function resolveTagInterestRankingMode(value = 'off') {
+  return String(value ?? '').trim().toLowerCase() === 'shadow' ? 'shadow' : 'off';
+}
+
+/** Build a server-owned per-section score map for one schedule request. */
+export function buildTagInterestContext({
+  mode = 'shadow',
+  profileSource = 'unavailable',
+  profile = null,
+  candidates = [],
+} = {}) {
+  const resolvedMode = resolveTagInterestRankingMode(mode);
+  const allowedSources = new Set(['consented-learned', 'explicit-prior', 'unavailable']);
+  let resolvedSource = allowedSources.has(profileSource) ? profileSource : 'unavailable';
+  if (!profile || !Array.isArray(profile.tagInterests)) resolvedSource = 'unavailable';
+
+  const coursesBySectionId = {};
+  if (resolvedMode === 'shadow') {
+    for (const course of Array.isArray(candidates) ? candidates : []) {
+      const sectionId = String(course?.sectionId ?? course?.id ?? '').trim();
+      if (!sectionId || Object.hasOwn(coursesBySectionId, sectionId)) continue;
+
+      const scored = scoreCourseTagInterest(profile ?? { tagInterests: [] }, course?.ragTag ?? []);
+      const unavailable = resolvedSource === 'unavailable';
+      const reason = scored.eligibleTagCount === 0
+        ? scored.reason
+        : unavailable
+          ? 'profile_unavailable'
+          : scored.evidenceTagCount === 0
+            ? 'no_user_signal'
+            : 'scored';
+
+      coursesBySectionId[sectionId] = {
+        score: unavailable ? null : scored.score,
+        eligibleTagCount: scored.eligibleTagCount,
+        evidenceTagCount: unavailable ? 0 : scored.evidenceTagCount,
+        matchedTags: unavailable ? [] : scored.matchedTags,
+        reason,
+      };
+    }
+  }
+
+  return {
+    mode: resolvedMode,
+    modelVersion: profile && resolvedSource !== 'unavailable'
+      ? profile.modelVersion ?? TAG_INTEREST_MODEL_VERSION
+      : TAG_INTEREST_MODEL_VERSION,
+    catalogVersion: resolvedSource === 'unavailable' ? null : profile.catalogVersion ?? null,
+    eligibilityVersion: resolvedSource === 'unavailable' ? null : profile.eligibilityVersion ?? null,
+    profileSource: resolvedSource,
+    coursesBySectionId,
+  };
 }
 
 /**
@@ -75,5 +138,7 @@ export function scoreCandidateWithTagInterest({
 
 export default {
   DEFAULT_TAG_INTEREST_COURSE_ALPHA,
+  resolveTagInterestRankingMode,
+  buildTagInterestContext,
   scoreCandidateWithTagInterest,
 };

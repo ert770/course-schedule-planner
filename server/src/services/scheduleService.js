@@ -32,8 +32,13 @@ import {
 } from '../data/interactionEventSchema.js';
 import { recordInteractionEvents } from './interactionEventService.js';
 import { getSchedulingPreferenceWeights } from './preferenceLearningService.js';
+import { getTagInterestProfile } from './tagInterestService.js';
 import { RECOMMENDATION_REASON_VERSION } from '../skills/recommendationReason.js';
 import { buildCounterfactuals } from '../skills/planComparison.js';
+import {
+  buildTagInterestContext,
+  resolveTagInterestRankingMode,
+} from '../skills/tagInterestRanking.js';
 import { logger } from '../utils/logger.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
@@ -271,6 +276,55 @@ export async function loadLearnedPreferenceSafely(loadWeights) {
   }
 }
 
+/** Load a consent-aware tag profile for shadow scoring; profile failures are fail-open. */
+export async function loadTagInterestContextSafely(
+  identity,
+  candidates,
+  { mode = 'off', prefs, loadProfile = getTagInterestProfile } = {}
+) {
+  const resolvedMode = resolveTagInterestRankingMode(mode);
+  if (resolvedMode === 'off') return null;
+
+  let result;
+  try {
+    result = await loadProfile(identity, { prefs });
+  } catch (err) {
+    logger.warn(`標籤興趣檔案讀取失敗，本次 shadow 不提供標籤分數：${err.message}`, { label: 'Schedule' });
+    return buildTagInterestContext({
+      mode: resolvedMode,
+      profileSource: 'unavailable',
+      profile: null,
+      candidates,
+    });
+  }
+
+  const profileSource = result?.consented === true && result?.source === 'learned'
+    ? 'consented-learned'
+    : result?.consented === false && result?.source === 'no-consent'
+      ? 'explicit-prior'
+      : 'unavailable';
+
+  return buildTagInterestContext({
+    mode: resolvedMode,
+    profileSource,
+    profile: result?.profile ?? null,
+    candidates,
+  });
+}
+
+/** Keep the scheduler call shape unchanged when off; shadow context is request-scoped. */
+export function generateScheduleWithTagInterestContext(
+  candidates,
+  constraints,
+  tagInterestContext,
+  scheduler = generateSchedule
+) {
+  if (!tagInterestContext || tagInterestContext.mode !== 'shadow') {
+    return scheduler(candidates, constraints);
+  }
+  return scheduler(candidates, constraints, { tagInterestContext });
+}
+
 // 候選池與限制的組裝。
 //
 // roadmap #27 的 counterfactual 需要用**完全相同的候選池與限制**重跑排課，
@@ -443,7 +497,19 @@ export async function generateForUser(identity, input = {}, options = {}) {
     return annotateScheduleIdentifiers(buildNoCandidatesResult(reviewDataLoaded), requestId);
   }
 
-  const result = annotateScheduleIdentifiers(generateSchedule(candidates, mergedConstraints), requestId);
+  // `active` 在候選池排序尚未接入前一律視為 `off`；只有明確設為 `shadow`
+  // 才讀 profile 並建立 request-scoped context，而且不改變正式排序。
+  const tagInterestMode = resolveTagInterestRankingMode(
+    options.tagInterestMode ?? process.env.TAG_INTEREST_RANKING_MODE
+  );
+  const tagInterestContext = await loadTagInterestContextSafely(identity, candidates, {
+    mode: tagInterestMode,
+    prefs,
+  });
+  const result = annotateScheduleIdentifiers(
+    generateScheduleWithTagInterestContext(candidates, mergedConstraints, tagInterestContext),
+    requestId
+  );
   await recordExposureSafely(identity, result, requestId, { surface, trigger });
   return result;
 }
@@ -452,6 +518,8 @@ export default {
   generateForUser,
   counterfactualForUser,
   loadCourseReviewsSafely,
+  loadTagInterestContextSafely,
+  generateScheduleWithTagInterestContext,
   resolveSessionAvoidances,
   buildNoCandidatesResult,
   annotateScheduleIdentifiers,

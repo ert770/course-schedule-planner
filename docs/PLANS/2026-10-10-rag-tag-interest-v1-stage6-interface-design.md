@@ -1,11 +1,17 @@
-# rag-tag-interest-v1：階段 6 排課介接設計稿（草稿）
+# rag-tag-interest-v1：階段 6 排課介接設計稿（確認版）
 
 ## 文件狀態
 
 - 日期：2026-10-10
-- 狀態：設計草稿，待確認；不是程式實作規格的最終核准版。
+- 狀態：設計已確認，依核准內容分段實作中。
 - 範圍：定義標籤興趣檔案與既有多方案排課器之間的資料與評分邊界。
-- 本次沒有修改 scheduler、service、API、資料庫或前端。
+- 本文件記錄已確認的介接邊界與分段實作狀態；各階段實際程式改動另見 `docs/CHANGE_REPORTS/`。
+
+## 階段 6 實作進度
+
+- **第一階段：純候選計分核心（已完成）**：新增帶對稱興趣倍率的純函式，尚未讓正式排課使用該分數。
+- **第二階段：profile-to-scheduler shadow 資料流（本次完成）**：預設 `off`；`shadow` 時由伺服器讀取同意感知 profile，建立 request-scoped `sectionId` 分數表並傳入 scheduler runtime options。scheduler 此階段仍不消費該表，因此結果與排序不變；`active` 在候選池計分接入前視為 `off`。
+- **後續階段**：實作三個候選池的候選分數與全域硬條件協作，再接方案層排序、Persona 和瀏覽器 A/B。`counterfactualForUser()` 目前仍不納入標籤分數。
 
 ## 建議決策摘要
 
@@ -23,15 +29,16 @@
 flowchart LR
   A[REST 或 Chat 呼叫] --> B[scheduleService.generateForUser]
   B --> C[prepareGenerationInputs：偏好、評價、v2 權重、候選課]
-  C --> D[scheduler.generateSchedule]
+  C --> C2[off 略過；shadow 建立 tagInterestContext]
+  C2 --> D[scheduler.generateSchedule：目前不消費 tagInterestContext]
   D --> E[硬條件檢查與可行方案產生]
   E --> F[scoreCourse：候選選擇分數]
   E --> G[evaluatePreference：方案層 interest / compact / easy]
   G --> H[comparePlans：可行度、最低學分、偏好分、學分排序]
 ```
 
-- `scheduleService.prepareGenerationInputs()` 已載入 v2 權重並建立 `mergedConstraints`；REST 與 Chat 共用 `generateForUser()`。
-- `tagInterestService.getTagInterestProfile()` 已處理同意、快取與重算；`tagInterestLearning.scoreCourseTagInterest()` 已依 `crossCourseMatchEligible` 對單課 `rag_tag` 計分。目前排課服務沒有呼叫它。
+- `scheduleService.prepareGenerationInputs()` 載入 v2 權重並建立 `mergedConstraints`；REST 與 Chat 共用 `generateForUser()`。標籤 profile 在候選課準備完成後讀取，避免 `off` 模式增加 profile 查詢。
+- `tagInterestService.getTagInterestProfile()` 處理同意、快取與重算；`tagInterestLearning.scoreCourseTagInterest()` 依 `crossCourseMatchEligible` 計分。階段 6 第二階段已在 `shadow` 建立每個 `sectionId` 的 request-scoped context 並傳入 runtime options；scheduler 尚未消費它，故不改變排課結果。
 - `scheduler.js` 有兩個不同評分層：`scoreCourse()` 供候選選擇、修補及 solver 相關路徑使用；`evaluatePreference()` 將方案的 `interest / compact / easy` 正規化成 0～1 的 `preferenceScore`，由 `comparePlans()` 選擇方案順序。
 - 曝光事件的 `plan-feature-v1` 固定是三軸 `interest / compact / easy`。這個向量提供給既有選擇學習流程，不能直接加第四軸或重新解讀 `interest`。
 
@@ -101,7 +108,7 @@ flowchart LR
       eligibleTagCount: 2,
       evidenceTagCount: 1,
       matchedTags: [{ canonicalTagId: 'tag_…', canonicalName: '自然語言處理', score: -1.0 }],
-      reason: 'scored' | 'no_cross_course_match_tags' | 'no_user_signal'
+      reason: 'scored' | 'no_cross_course_match_tags' | 'no_user_signal' | 'profile_unavailable'
     }
   }
 }
@@ -114,6 +121,7 @@ flowchart LR
 - `consented-learned`：可用明確主題先驗及已同意的探索／修課行為證據。
 - `explicit-prior`：未同意行為學習時，只使用使用者在偏好設定中主動選擇的主題；不得讀取、重算或輸出行為證據。這與現行排課會使用明確偏好一致。
 - `unavailable`：沒有可用主題、profile 版本不支援或服務失敗；標籤軸不參與排序，其他排課結果不受影響。
+- **已確認的 persona／一般流程假設**：角色扮演與一般已同意情境以使用者已同意行為學習作為基準；仍保留未同意分支，該分支只使用明確主題先驗。這不代表前端同意欄位預設勾選；目前 UI 仍由使用者主動勾選。
 
 每個來源要在診斷中分開標示，不能把明確設定說成「從你的行為學到」。
 
@@ -188,8 +196,10 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 | `shadow` | 是 | 否 | 先檢查資料覆蓋、分數分布、例外及假想重排 |
 | `active` | 是 | 是 | 設計審核、測試、瀏覽器 A/B 通過後才啟用 |
 
+目前分段實作只支援 `off`／`shadow`；`active` 在候選池計分尚未接入前安全地視為 `off`，不得因此改變排序。第二階段的 `shadow` 只建立與傳遞 request-scoped 分數 context，尚未產生假想重排或持久化觀測統計；這些工作須在候選池基礎分可比較後完成。
+
 - 保持 `plan-feature-v1` 的三軸向量完全不變。若日後要把 tag-interest 納入 `plan_chosen` 的學習特徵，另立版本化 snapshot／feature contract；不得直接擴充既有向量或把它映射成 `interest`。
-- `shadow` 僅在 request 記憶體內計算，觀測資料只保留彙總筆數／分布；不新增互動事件，不持久化單一使用者的分數、完整標籤清單或身分識別值。
+- 第二階段的 `shadow` 僅在 request 記憶體內建立及傳遞 context，尚無持久化觀測資料。後續若加入 shadow 觀測，只能保留彙總筆數／分布；不新增互動事件，不持久化單一使用者的分數、完整標籤清單或身分識別值。
 - 如推薦 API 要顯示命中標籤或方案分，須新增明確、可選的 `tagInterest` 回應欄位，並同步更新 `docs/API_SPEC.md`、`docs/DATA_SCHEMA.md`、曝光快照與驗證器；本設計階段不新增 API 欄位或 migration。
 - 若要在 `recommendation_exposed` 保留曝光當下的排名依據，需另設版本化的 tag ranking snapshot（模型、目錄、資格版本與 per-plan score／coverage）。先確認資料最小化與保存期限，再決定使用既有 JSON 欄位或新增 schema；不要混進三軸學習向量。
 

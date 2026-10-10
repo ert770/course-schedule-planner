@@ -112,7 +112,7 @@
 | 41 | 修補 #37 回答忠實度閘門的三個實證缺口（Codex adversarial review） | ✅ **已完成（2026-09-07，兩段皆完成）**——第一段：tool retry terminal outcome，operationKey（工具＋參數雜湊）讓同一操作重試成功不再誤判失敗，不同操作的失敗也不會被另一個的成功蓋過（F16-F18）。第二段：課程指涉解析到 section 實體（同名不同班次逐 candidate 一致性，F19-F20）、捏造偵測改抽課名形狀片段（F21-F21b）、evidenceRole 讓被排除的課不能講成推薦（F23-F24b）；瀏覽器 A/B 對真實排課回合誘導捏造課程，audit 攔截並退回安全回答，畫面沒有出現任何捏造內容 | #37（已完成，發現缺口的對象） |
 
 | 42 | 移除課程後的「本次避開清單」＋ Chat Agent 取得規劃狀態 | ✅ **已完成（2026-09-21）**——移除課程原本只寫長期學習事件（要 50 筆才生效），對下一次重排沒有任何作用，同一門課被排回來是必然。新增 request-scoped 的 `constraints.sessionAvoidances`：範圍依退課原因推導（內容／負擔→整個課號、教師→該教師、其餘→該班次），**不需要個人化同意也生效**（未同意的人根本沒有曝光紀錄）；必修、重補修與`selectedCourseIds`／`mustTakeCourseIds` 不得靜默移除，回報 `protected-conflict`；`explicitCourseIds` 則不再被誤當必排。`POST /api/chat` 新增 `planningContext`（目前課表、本次移除、原因），課名／教師一律由後端重查，三態 `planningContextStatus` 讓暫時性錯誤不會清掉使用者仍然有效的避開清單。順手修掉兩個既有缺口：同一次移除會被寫成兩筆 `course_withdrawn`、以及忠實度閘門讓 Agent 問不出它被要求要問的問題。見[變更報告](./2026-09-21-session-avoidance-and-planning-context.md)。**未做**：「其他」原因的自然語言分析（第二段，開工前要先決定 `weak`／`strong` 存在哪裡） | #2、#29、#30、#37（均已完成） |
-| 43 | 從行為學出使用者有興趣的課程主題（rag_tag） | 🟡 階段 1～4 已完成；階段 5 的 10 位 synthetic persona 四組排序比較已完成（2026-10-10）；階段 6 介接設計已於 2026-10-10 確認；第一階段純候選計分函式已完成並通過 5/5 單元測試，但尚未接入正式排課；全後端 npm test 1,468 通過、0 失敗、1 項因未設定隔離 MySQL 測試資料庫而略過，13 個 live model 案例 13/13 通過，詳見[第一階段報告](./2026-10-10-rag-tag-interest-ranking-stage1.md)；三池候選與 profile 資料流仍待後續階段實作。分類目錄、資格重算、後端事件／興趣檔案與登入後探索頁已完成。階段 3 在隔離 rag_tag_interest_test schema 完成 1/1 MySQL 服務層整合驗收，覆蓋同意、事件冪等與持久化、標籤快照匯出、profile 重算／快取、重設及合成 subject 清理；資料庫只保留空 schema 供重跑，未修改 defaultdb 業務資料。階段 4 使用本機 mock API 做 consent-on／off 瀏覽器 A/B：同意時正向回饋送出一筆、略過不送事件；未同意時仍可繼續且不送事件；最後驗收頁面無 console error。瀏覽器 mock 與 MySQL 服務測試分開執行，尚未做真實資料的瀏覽器至 MySQL 端到端測試。階段 5 在相同 10 門候選課上比較初始主題先驗、行為標籤、先驗加行為、現行 v2 排課器；8 位 persona 的角色扮演互動達 v2 的 10 筆門檻，P01／P08 保留冷啟動。合成分數不代表真人成效或準確率；真人時間切分評估依使用者決定列入未來上線規劃。目前只有 1 位使用者的 30 筆標籤快照，且沒有排課結果事件。目錄統計：19 個主分類、112 條路徑、15,113 筆對應、6,846 個原始標籤、6,769 個 canonical tags；可學習 6,736、可跨課匹配 2,144，無未知標籤。詳見[階段 2 定稿報告](./2026-10-09-rag-tag-interest-eligibility-finalized.md)、[階段 3 報告](./2026-10-09-rag-tag-interest-backend-profile-stage3.md)、[階段 4 報告](./2026-10-09-rag-tag-interest-exploration-stage4.md)、[階段 5 評估報告](./2026-10-09-rag-tag-interest-offline-evaluation-stage5.md)、[Persona 四組排序比較報告](./2026-10-10-rag-tag-interest-persona-comparison.md)及[MySQL／瀏覽器驗收報告](./2026-10-10-rag-tag-interest-mysql-integration.md) | #2、#18、#29、#30、#31、#33、#13C、#20（均已完成）；目錄與資格人工核對已完成；執行期依個別 student scope 排除必修課；隔離 MySQL 服務層整合已通過；階段 6 設計已確認、分段實作已開始；真人時間切分是未來成效評估，不是本次 persona 比較的前置條件 |
+| 43 | 從行為學出使用者有興趣的課程主題（rag_tag） | 🟡 階段 1～4 已完成；階段 5 的 10 位 synthetic persona 四組排序比較已完成（2026-10-10）；階段 6 介接設計已於 2026-10-10 確認；第一階段純候選計分函式已完成（5/5 通過）；第二階段 consent-aware profile shadow context 已接上 scheduler runtime options，shadow 不改正式排序；本次全後端 npm test 1,481 通過、0 失敗、1 項因未設定隔離 MySQL 測試資料庫而略過，13 個 live model 案例 13/13 通過；profile shadow 資料流已完成；三池候選計分與方案層排序仍待後續階段實作。分類目錄、資格重算、後端事件／興趣檔案與登入後探索頁已完成。階段 3 在隔離 rag_tag_interest_test schema 完成 1/1 MySQL 服務層整合驗收，覆蓋同意、事件冪等與持久化、標籤快照匯出、profile 重算／快取、重設及合成 subject 清理；資料庫只保留空 schema 供重跑，未修改 defaultdb 業務資料。階段 4 使用本機 mock API 做 consent-on／off 瀏覽器 A/B：同意時正向回饋送出一筆、略過不送事件；未同意時仍可繼續且不送事件；最後驗收頁面無 console error。瀏覽器 mock 與 MySQL 服務測試分開執行，尚未做真實資料的瀏覽器至 MySQL 端到端測試。階段 5 在相同 10 門候選課上比較初始主題先驗、行為標籤、先驗加行為、現行 v2 排課器；8 位 persona 的角色扮演互動達 v2 的 10 筆門檻，P01／P08 保留冷啟動。合成分數不代表真人成效或準確率；真人時間切分評估依使用者決定列入未來上線規劃。目前只有 1 位使用者的 30 筆標籤快照，且沒有排課結果事件。目錄統計：19 個主分類、112 條路徑、15,113 筆對應、6,846 個原始標籤、6,769 個 canonical tags；可學習 6,736、可跨課匹配 2,144，無未知標籤。詳見[階段 2 定稿報告](./2026-10-09-rag-tag-interest-eligibility-finalized.md)、[階段 3 報告](./2026-10-09-rag-tag-interest-backend-profile-stage3.md)、[階段 4 報告](./2026-10-09-rag-tag-interest-exploration-stage4.md)、[階段 5 評估報告](./2026-10-09-rag-tag-interest-offline-evaluation-stage5.md)、[Persona 四組排序比較報告](./2026-10-10-rag-tag-interest-persona-comparison.md)及[MySQL／瀏覽器驗收報告](./2026-10-10-rag-tag-interest-mysql-integration.md) | #2、#18、#29、#30、#31、#33、#13C、#20（均已完成）；目錄與資格人工核對已完成；執行期依個別 student scope 排除必修課；隔離 MySQL 服務層整合已通過；階段 6 設計已確認、分段實作已開始；真人時間切分是未來成效評估，不是本次 persona 比較的前置條件 |
 
 ## 現在可以動工的任務（2026-10-10 盤點，依建議順序排列）
 
@@ -150,7 +150,7 @@
   `#32`（hybrid 比較，卡 #6、#36 與足夠跨使用者樣本，見上一條）、`#38`（學生使用者測試，
   現在只卡 `#36` 一項）。
   `#34`／`#35`／`#37`／`#40`／`#41` 均已完成，不再是任何項目的阻塞；其餘項目要等各自列出的工程任務或外部資料完成。
-- `#43` 的標籤資格與 persona 四組排序比較已完成；真人時間切分成效評估留待上線累積資料。模型尚未接入推薦，排課介接前需先重新設計介面；不能將分類／資格整理或 synthetic 情境通過當成真人個人化推薦成效。
+- `#43` 的標籤資格與 persona 四組排序比較已完成；真人時間切分成效評估留待上線累積資料。模型尚未接入正式推薦；階段 6 設計已確認並正分段實作；不能將分類／資格整理或 synthetic 情境通過當成真人個人化推薦成效。
 
 ## 任務相依的閱讀方式
 
@@ -2967,7 +2967,13 @@ F19／F19b／F20 取代直接重現，並如實記錄這個邊界。
 
 2026-10-10 補上實際持久化驗收：建立並保留獨立 rag_tag_interest_test schema，套用 migration 002、003、006、008；opt-in MySQL 測試 1/1 通過，驗證同意、事件冪等與持久化、快照匯出、profile 重算／快取、重設及合成 subject 清理。沒有修改 defaultdb 業務資料。
 
-#43 階段 6 已可繼續實作，前置依賴均已完成；第一階段純計分核心完成後，後續候選池與資料流仍未接入正式排課。roadmap 狀態／相依總表已重新核對：本次只推進 #43，其他任務及其相依未因本次工作改變。
+#43 階段 6 已可繼續實作，前置依賴均已完成；第一階段純計分核心與第二階段 profile shadow context plumbing 已完成，候選池計分及方案排序仍未接入正式排課。roadmap 狀態／相依總表已重新核對：本次只推進 #43，其他任務及其相依未因本次工作改變。
+
+### 階段 6 第二階段：同意感知的 profile shadow 資料流（2026-10-10，完成）
+
+排課預設 `TAG_INTEREST_RANKING_MODE=off`，不讀取標籤興趣 profile，且維持原本的 scheduler 呼叫形狀。明確設為 `shadow` 時，排課服務重用已載入的 prefs，透過既有 consent-aware profile service 取得資料，為候選班次建立只存在於該 request 記憶體的 `coursesBySectionId` 分數表，並傳入 scheduler runtime options。未同意者只拿明確主題先驗；profile 服務錯誤則把 profile source 標為 unavailable 並 fail-open。現階段 scheduler 尚未消費這份 context，因此 shadow 與 off 的課表及方案順序相同；`active` 尚未開放。未新增 API 回應、資料表或事件，也未做 counterfactual 介接。
+
+同意情境的 Persona 基準已確認為「使用者已同意行為學習」；這不是 UI 同意欄預設勾選。完整檔案清單及驗收見[階段 6 第二階段報告](./2026-10-10-rag-tag-interest-ranking-stage2.md)。
 
 同日以本機 mock API 對探索頁做 consent-on／off 瀏覽器 A/B，驗證正向回饋送出、略過前進但不寫事件，以及未同意仍可前進且不送事件；首頁與探索頁最後重跑均無 console error。前端 mock 與 MySQL 服務層測試分開執行，並非瀏覽器至真實 MySQL 的端到端驗收。
 
@@ -2979,9 +2985,9 @@ roadmap 狀態／相依總表已整體核對：階段 3／4 驗收不改變其�
 - **階段 3：後端事件與使用者興趣檔案（程式完成；隔離 MySQL 服務層驗收通過）**：事件快照、冪等、時間衰減、標籤權重分配、重算、profile API 與隱私生命週期已實作；2026-10-10 在 rag_tag_interest_test 以合成 subject 通過 1/1 持久化整合。瀏覽器至真實 HTTP API／MySQL 的端到端流程尚未驗收。
 - **階段 4：登入後初始探索頁**：新增獨立前端頁面，接在偏好設定儲存後；支援廣泛主題追問、正負回饋、略過與續做。2026-10-10 以本機 mock API 完成 consent-on／off 瀏覽器 A/B；最後驗收無 console error。
 - **階段 5：角色扮演與離線評估（已完成目前約定的 persona 比較）**：新增 10 位 synthetic persona、同一組 10 門候選課及四組排序比較；輸出 NDCG@3、Precision@3、Recall@3、覆蓋率、多樣性及理由標籤忠實度。8 位 persona 的固定角色扮演瀏覽互動使 v2 通過 10 筆門檻，另 2 位維持冷啟動。指標只反映人工設定案例，不代表真人推薦準確率；依使用者決定，真人時間切分列入未來上線規劃。
-- **階段 6：排課介接（分段實作中）**：已確認介接設計稿。第一階段新增獨立純候選計分函式，使用 α=0.6，明列池內基礎分乘標籤興趣倍率，再加學分、文字偏好、舊興趣關鍵字、集中與難易分；`null`／中性分及 α 邊界由 5 項單元測試釘住。這個 helper 尚未接進 scheduler，正式結果不變。後續依序實作三池候選與全域硬條件、profile-to-scheduler 資料流、方案層排序、Persona 與瀏覽器 A/B。見[階段 6 介接設計稿](../PLANS/2026-10-10-rag-tag-interest-v1-stage6-interface-design.md)。
+- **階段 6：排課介接（分段實作中）**：已確認介接設計稿。第一階段新增獨立純候選計分函式，使用 α=0.6，明列池內基礎分乘標籤興趣倍率，再加學分、文字偏好、舊興趣關鍵字、集中與難易分；`null`／中性分及 α 邊界由 5 項單元測試釘住。第二階段新增 consent-aware profile-to-scheduler shadow context，`off` 預設略過 profile 載入，`shadow` 只傳 request-scoped context；實際 scheduler 的 off/shadow 課表與方案順序相同。候選池評分與方案層排序仍未接入，後續再做 Persona 與瀏覽器 A/B。見[階段 6 第二階段報告](./2026-10-10-rag-tag-interest-ranking-stage2.md)及[階段 6 介接設計稿](../PLANS/2026-10-10-rag-tag-interest-v1-stage6-interface-design.md)。
 
-**最新狀態（2026-10-10）**：階段 1～4 已完成；階段 3 在隔離 MySQL schema 通過 1/1 服務層持久化整合，階段 4 以本機 mock API 完成 consent-on／off 瀏覽器驗收。兩者尚未合併為真實課程資料的瀏覽器至 MySQL 端到端流程。階段 5 已完成目前約定的 10 persona 四組 synthetic 排序比較；真人時間切分評估列入未來上線規劃。階段 6 介接設計已確認，分段實作已開始；第一階段新增獨立純計分函式與 5 項單元測試，尚未改動 scheduler、排課服務或正式推薦結果；全後端 npm test 1,468 通過、0 失敗、1 項因未設定隔離 MySQL 測試資料庫而略過，13 個 live model 案例 13/13 通過，詳見第一階段報告。commit `036fd21` 已推送至 `origin backend`。
+**最新狀態（2026-10-10）**：階段 1～4 已完成；階段 3 在隔離 MySQL schema 通過 1/1 服務層持久化整合，階段 4 以本機 mock API 完成 consent-on／off 瀏覽器驗收。兩者尚未合併為真實課程資料的瀏覽器至 MySQL 端到端流程。階段 5 已完成目前約定的 10 persona 四組 synthetic 排序比較；真人時間切分評估列入未來上線規劃。階段 6 介接設計已確認並分段實作：第一階段完成純計分核心；第二階段完成 consent-aware profile shadow context，scheduler 尚未消費該 context，正式排序未改。第二階段全後端 npm test 為 1,481 通過、0 失敗、1 項因未設定隔離 MySQL 測試資料庫而略過，13 個 live model 案例 13/13 通過，詳見[第二階段報告](./2026-10-10-rag-tag-interest-ranking-stage2.md)。上一筆已發布的階段 6 commit `036fd21` 已推送至 `origin backend`；本次第二階段尚未 commit／push。
 ---
 
 ## AI 個人化課程規劃 Agent 的最終完成 Gate
