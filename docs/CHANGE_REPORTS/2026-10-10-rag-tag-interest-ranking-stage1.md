@@ -34,4 +34,5 @@
 
 ## Commit 與 Push
 
-- 未 commit、未 push。
+- 程式與階段文件 commit：`036fd21`（feat: 新增標籤興趣候選計分核心）。
+- 已推送至 origin backend。
