@@ -7,13 +7,19 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { coursesAPI, profileAPI } from '../services/api';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X, Compass } from 'lucide-react';
+import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X, Compass, GripVertical, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import '../App.css'; 
 import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
 import { formatCourseGradeLevel } from '../utils/courseGradeLevel';
 
-const CLASS_REQUIRED_MESSAGE = '缺少班級資料，請先匯入學生班級再搜尋課程。';
+const GRADE_CLASS_MAP = {
+  '1': ['資訊一甲', '資訊一乙', '資訊一丙', '合'],
+  '2': ['資訊二甲', '資訊二乙', '資訊二丙', '資訊二丁', '合'],
+  '3': ['資訊三甲', '資訊三乙', '資訊三丙', '資訊三丁', '合'],
+  '4': ['資訊四甲', '資訊四乙', '資訊四丙', '資訊四丁', '合'],
+  '5': ['合'],
+};
 
 export default function SearchPage() {
   const navigate = useNavigate();
@@ -29,8 +35,6 @@ export default function SearchPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [courseSearchScope, setCourseSearchScope] = useState(null);
-  const [scopeLoading, setScopeLoading] = useState(true);
   const [searchError, setSearchError] = useState('');
   const [actionNotice, setActionNotice] = useState(null);
   const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
@@ -38,14 +42,18 @@ export default function SearchPage() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [watchlistError, setWatchlistError] = useState('');
   const [removalCandidate, setRemovalCandidate] = useState(null);
+  
+  const [sidebarWidth, setSidebarWidth] = useState(340);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  
   const userMenuRef = useRef(null);
-
   useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   const [deptForm, setDeptForm] = useState({
-    department: '',
-    gradeLevel: '',
-    className: '',
+    department: '資訊工程學系',
+    gradeLevel: '4',
+    className: '合',
     category: '',
     keyword: ''
   });
@@ -54,11 +62,58 @@ export default function SearchPage() {
     code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: ''
   });
 
+  const availableClasses = deptForm.gradeLevel 
+    ? GRADE_CLASS_MAP[deptForm.gradeLevel] || ['合']
+    : [...new Set(Object.values(GRADE_CLASS_MAP).flat())];
+
+  const handleGradeChange = (e) => {
+    const newGrade = e.target.value;
+    const validClasses = GRADE_CLASS_MAP[newGrade] || [];
+    setDeptForm(prev => ({
+      ...prev,
+      gradeLevel: newGrade,
+      className: validClasses.includes(prev.className) ? prev.className : '合'
+    }));
+  };
+
+  const startResizing = (e) => {
+    setIsResizing(true);
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizing) return;
+      let newWidth = e.clientX;
+      if (newWidth < 280) newWidth = 280;
+      if (newWidth > 600) newWidth = 600;
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
   useEffect(() => {
     let cancelled = false;
     if (userIdentity === null) {
       setSearchError('尚未登入，請重新登入後再操作。');
-      setScopeLoading(false);
       return () => { cancelled = true; };
     }
 
@@ -66,21 +121,16 @@ export default function SearchPage() {
       .then(profile => {
         if (cancelled) return;
         const scope = profile?.courseSearchScope || null;
-        setCourseSearchScope(scope);
-        setDeptForm(prev => ({
-          ...prev,
-          department: scope?.department || '',
-          gradeLevel: scope?.gradeLevel ? String(scope.gradeLevel) : '',
-          className: scope?.className || '',
-        }));
-        setSearchError(scope?.className ? '' : CLASS_REQUIRED_MESSAGE);
+        if (scope) {
+          setDeptForm(prev => ({
+            ...prev,
+            department: '資訊工程學系',
+            gradeLevel: scope.gradeLevel ? String(scope.gradeLevel) : '4',
+            className: scope.className || '合',
+          }));
+        }
       })
-      .catch(err => {
-        if (!cancelled) setSearchError(err.message || CLASS_REQUIRED_MESSAGE);
-      })
-      .finally(() => {
-        if (!cancelled) setScopeLoading(false);
-      });
+      .catch(() => {});
 
     return () => { cancelled = true; };
   }, [userIdentity]);
@@ -119,14 +169,16 @@ export default function SearchPage() {
 
   const handleDeptSearch = async (e) => {
     e.preventDefault();
-    if (!courseSearchScope?.className) {
-      setSearchError(CLASS_REQUIRED_MESSAGE);
-      return;
-    }
     setIsSearching(true);
     setSearchError('');
     try {
-      const filters = { ...courseSearchScope, keyword: deptForm.keyword, category: deptForm.category };
+      const filters = { 
+        department: '資訊工程學系',
+        gradeLevel: deptForm.gradeLevel ? Number(deptForm.gradeLevel) : undefined,
+        className: deptForm.className,
+        keyword: deptForm.keyword, 
+        category: deptForm.category 
+      };
       Object.keys(filters).forEach(k => { if (!filters[k]) delete filters[k]; });
       const data = await coursesAPI.search(filters);
       setSearchResults(data.courses || []);
@@ -139,19 +191,20 @@ export default function SearchPage() {
 
   const handleCondSearch = async (e) => {
     e.preventDefault();
-    if (!courseSearchScope?.className) {
-      setSearchError(CLASS_REQUIRED_MESSAGE);
-      return;
-    }
     setIsSearching(true);
     setSearchError('');
     try {
       const filters = {
-        ...courseSearchScope, code: condForm.code, keyword: condForm.keyword || condForm.description,
-        instructor: condForm.instructor, dayOfWeek: condForm.dayOfWeek ? parseInt(condForm.dayOfWeek) : null,
-        period: condForm.period, category: condForm.isGenEd ? '通識' : null, language: condForm.language
+        code: condForm.code, 
+        keyword: condForm.keyword || condForm.description,
+        instructor: condForm.instructor, 
+        dayOfWeek: condForm.dayOfWeek ? parseInt(condForm.dayOfWeek) : null,
+        period: condForm.period, 
+        category: condForm.isGenEd ? '通識' : null, 
+        language: condForm.language
       };
       Object.keys(filters).forEach(k => { if (filters[k] === null || filters[k] === '') delete filters[k]; });
+      
       const data = await coursesAPI.search(filters);
       setSearchResults(data.courses || []);
     } catch (err) {
@@ -186,6 +239,7 @@ export default function SearchPage() {
     }
     await handleAddCourse(event, course);
   };
+  
   const handleOpenDetail = (course) => {
     setDetailCourse(course);
     logCourseViewed(course);
@@ -215,14 +269,14 @@ export default function SearchPage() {
   };
 
   const handleResetDeptForm = () => {
-    setDeptForm(prev => ({ ...prev, category: '', keyword: '' }));
-    setSearchError(courseSearchScope?.className ? '' : CLASS_REQUIRED_MESSAGE);
+    setDeptForm({ department: '資訊工程學系', gradeLevel: '', className: '合', category: '', keyword: '' });
+    setSearchError('');
     setActionNotice(null);
   };
 
   const handleResetCondForm = () => {
     setCondForm({ code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: '' });
-    setSearchError(courseSearchScope?.className ? '' : CLASS_REQUIRED_MESSAGE);
+    setSearchError('');
     setActionNotice(null);
   };
 
@@ -238,7 +292,6 @@ export default function SearchPage() {
         </div>
         <div className="nav-links">
           <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
-          <button className="nav-btn" onClick={() => navigate('/schedule')}><Calendar size={16}/> 排課</button>
           <button className="nav-btn active"><Search size={16}/> 尋找課程</button>
           <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
         </div>
@@ -266,12 +319,24 @@ export default function SearchPage() {
         </div>
       </header>
 
-      <div className="search-content">
-        <div className="search-sidebar">
+      <div className="search-content" style={{ display: 'flex', overflow: 'hidden', position: 'relative', height: '100%' }}>
+        
+        <div 
+          className="search-sidebar" 
+          style={{ 
+            width: isSidebarOpen ? `${sidebarWidth}px` : '0px', 
+            minWidth: isSidebarOpen ? `${sidebarWidth}px` : '0px',
+            opacity: isSidebarOpen ? 1 : 0,
+            padding: isSidebarOpen ? undefined : '0',
+            overflowY: 'auto',
+            borderRight: 'none',
+            transition: 'width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease, padding 0.3s ease'
+          }}
+        >
           <h2>課程查詢</h2>
           <div className="search-tabs">
-            <button className={`search-tab ${activeTab === 'dept' ? 'active' : ''}`} onClick={() => setActiveTab('dept')}>依系所查詢</button>
-            <button className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`} onClick={() => setActiveTab('cond')}>依條件查詢</button>
+            <button className={`search-tab ${activeTab === 'dept' ? 'active' : ''}`} onClick={() => setActiveTab('dept')}>查詢本系課程</button>
+            <button className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`} onClick={() => setActiveTab('cond')}>查詢全校課程</button>
             <button className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`} onClick={() => setActiveTab('watchlist')}>❤️ 我的關注</button>
           </div>
 
@@ -279,16 +344,17 @@ export default function SearchPage() {
             <form className="search-form" onSubmit={handleDeptSearch}>
               <div className="form-group">
                 <label>系所 (Department)</label>
-                <select value={deptForm.department} disabled>
-                  <option value="">全部 (All)</option>
+                <select 
+                  value="資訊工程學系" 
+                  disabled 
+                  style={{ backgroundColor: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }}
+                >
                   <option value="資訊工程學系">資訊工程學系</option>
-                  <option value="電機工程學系">電機工程學系</option>
-                  <option value="企業管理學系">企業管理學系</option>
                 </select>
               </div>
               <div className="form-group">
                 <label>年級 (Grade)</label>
-                <select value={deptForm.gradeLevel} disabled>
+                <select value={deptForm.gradeLevel} onChange={handleGradeChange}>
                   <option value="">全部 (All)</option>
                   <option value="1">大一</option>
                   <option value="2">大二</option>
@@ -299,7 +365,12 @@ export default function SearchPage() {
               </div>
               <div className="form-group">
                 <label>班級 (Class)</label>
-                <input value={deptForm.className} readOnly disabled placeholder="尚未匯入班級" />
+                <select value={deptForm.className} onChange={e => setDeptForm({...deptForm, className: e.target.value})}>
+                  <option value="">請選擇班級</option>
+                  {availableClasses.map(cls => (
+                    <option key={cls} value={cls}>{cls}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-group">
                 <label>修別 (Category)</label>
@@ -317,8 +388,8 @@ export default function SearchPage() {
                 <input type="text" placeholder="輸入課名或老師..." value={deptForm.keyword} onChange={e => setDeptForm({...deptForm, keyword: e.target.value})} />
               </div>
               <div className="search-form-actions">
-                <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>{scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}</button>
-                <button type="button" className="search-reset-btn" onClick={handleResetDeptForm} disabled={isSearching || scopeLoading}><RotateCcw size={17} /></button>
+                <button type="submit" className="search-submit-btn" disabled={isSearching}>{isSearching ? '搜尋中...' : '開始搜尋'}</button>
+                <button type="button" className="search-reset-btn" onClick={handleResetDeptForm} disabled={isSearching}><RotateCcw size={17} /></button>
               </div>
             </form>
           )}
@@ -365,16 +436,19 @@ export default function SearchPage() {
                   <option value="English">English</option>
                 </select>
               </div>
-              <div className="form-group checkbox-group">
-                <label><input type="checkbox" checked={condForm.isGenEd} onChange={e => setCondForm({...condForm, isGenEd: e.target.checked})} />特定科目類別：通識課程</label>
+              <div className="form-group checkbox-group" style={{ marginTop: '4px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={condForm.isGenEd} onChange={e => setCondForm({...condForm, isGenEd: e.target.checked})} style={{ marginRight: '8px' }} />
+                  特定科目類別：通識課程
+                </label>
               </div>
               <div className="form-group">
                 <label>課程描述 (Description)</label>
                 <input type="text" placeholder="[請輸入關鍵字]" value={condForm.description} onChange={e => setCondForm({...condForm, description: e.target.value})} />
               </div>
               <div className="search-form-actions">
-                <button type="submit" className="search-submit-btn" disabled={isSearching || scopeLoading}>{scopeLoading ? '讀取班級中...' : isSearching ? '搜尋中...' : '開始搜尋'}</button>
-                <button type="button" className="search-reset-btn" onClick={handleResetCondForm} disabled={isSearching || scopeLoading}><RotateCcw size={17} /></button>
+                <button type="submit" className="search-submit-btn" disabled={isSearching}>{isSearching ? '搜尋中...' : '開始搜尋'}</button>
+                <button type="button" className="search-reset-btn" onClick={handleResetCondForm} disabled={isSearching}><RotateCcw size={17} /></button>
               </div>
             </form>
           )}
@@ -388,16 +462,59 @@ export default function SearchPage() {
           )}
         </div>
 
-        <div className="search-results-area">
-          <div className="results-header">
-            <h3>{activeTab === 'watchlist' ? '我的關注清單' : '搜尋結果'} ({displayCourses.length} 筆)</h3>
+        {isSidebarOpen && (
+          <div
+            onMouseDown={startResizing}
+            style={{
+              width: '16px',
+              cursor: 'col-resize',
+              backgroundColor: isResizing ? '#e0f2fe' : '#f8fafc',
+              borderLeft: '1px solid #cbd5e1',
+              borderRight: '1px solid #cbd5e1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background-color 0.15s ease',
+              zIndex: 10,
+              boxShadow: isResizing ? 'inset 0 0 8px rgba(59, 130, 246, 0.2)' : 'none'
+            }}
+            onMouseOver={(e) => { if (!isResizing) e.currentTarget.style.backgroundColor = '#f1f5f9' }}
+            onMouseOut={(e) => { if (!isResizing) e.currentTarget.style.backgroundColor = '#f8fafc' }}
+            title="左右拖曳以調整版面寬度"
+          >
+            <GripVertical size={20} color={isResizing ? '#3b82f6' : '#94a3b8'} />
           </div>
+        )}
+
+        <div className="search-results-area" style={{ flexGrow: 1, overflowY: 'auto', paddingLeft: '20px' }}>
+          <div className="results-header" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              style={{ 
+                background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', 
+                color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '8px', borderRadius: '8px', transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#3b82f6'; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.color = '#64748b'; }}
+              title={isSidebarOpen ? "收合左側查詢列" : "展開左側查詢列"}
+            >
+              {isSidebarOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
+            </button>
+            <h3 style={{ margin: 0, fontSize: '1.25rem' }}>
+              {activeTab === 'watchlist' ? '我的關注清單' : '搜尋結果'} ({displayCourses.length} 筆)
+            </h3>
+          </div>
+
           {actionNotice && <div className={`search-action-notice ${actionNotice.level}`} role="status">{actionNotice.text}</div>}
           {resultError && <div className="search-action-notice error" role="alert">{resultError}</div>}
+          
           {watchlistLoading ? (
             <div className="no-results" role="status">正在載入關注課程…</div>
           ) : displayCourses.length === 0 && !resultError ? (
-            <div className="no-results">{activeTab === 'watchlist' ? '目前沒有關注課程。' : '請設定條件並開始搜尋'}</div>
+            <div className="no-results" style={{ color: '#64748b' }}>
+              {activeTab === 'watchlist' ? '目前沒有關注課程。' : '請設定條件並開始搜尋'}
+            </div>
           ) : displayCourses.length > 0 ? (
             <div className="results-grid">
               {displayCourses.map(course => (
@@ -417,16 +534,6 @@ export default function SearchPage() {
                     {course.category === '通識' && (
                       <span className="tag">
                         {course.generalEducationDomain || '不分領域'}
-                      </span>
-                    )}
-                    {course.eligibility === 'unknown' && (
-                      <span className="tag error-text">
-                        資格待確認：{course.eligibilityReason}
-                      </span>
-                    )}
-                    {course.category === '系外選修' && course.outsideElective && (
-                      <span className={`tag ${course.outsideElective.eligible ? '' : 'error-text'}`}>
-                        {course.outsideElective.eligible ? '須向系辦確認' : `不可認列：${course.outsideElective.reasons.join('；')}`}
                       </span>
                     )}
                   </div>

@@ -371,7 +371,6 @@ export default function DashboardPage() {
         </div>
         <div className="nav-links">
           <button className="nav-btn active"><LayoutDashboard size={16}/> 首頁</button>
-          <button className="nav-btn" onClick={() => navigate('/schedule')}><Calendar size={16}/> 排課</button>
           <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
           <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
         </div>
