@@ -32,8 +32,13 @@ import {
 } from '../data/interactionEventSchema.js';
 import { recordInteractionEvents } from './interactionEventService.js';
 import { getSchedulingPreferenceWeights } from './preferenceLearningService.js';
+import { getTagInterestProfile } from './tagInterestService.js';
 import { RECOMMENDATION_REASON_VERSION } from '../skills/recommendationReason.js';
 import { buildCounterfactuals } from '../skills/planComparison.js';
+import {
+  buildTagInterestContext,
+  resolveTagInterestRankingMode,
+} from '../skills/tagInterestRanking.js';
 import { logger } from '../utils/logger.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
@@ -271,6 +276,55 @@ export async function loadLearnedPreferenceSafely(loadWeights) {
   }
 }
 
+/** Load a consent-aware tag profile for shadow or active scoring; failures fail open. */
+export async function loadTagInterestContextSafely(
+  identity,
+  candidates,
+  { mode = 'off', prefs, loadProfile = getTagInterestProfile } = {}
+) {
+  const resolvedMode = resolveTagInterestRankingMode(mode);
+  if (resolvedMode === 'off') return null;
+
+  let result;
+  try {
+    result = await loadProfile(identity, { prefs });
+  } catch (err) {
+    logger.warn(`標籤興趣檔案讀取失敗，本次標籤排序不提供標籤分數：${err.message}`, { label: 'Schedule' });
+    return buildTagInterestContext({
+      mode: resolvedMode,
+      profileSource: 'unavailable',
+      profile: null,
+      candidates,
+    });
+  }
+
+  const profileSource = result?.consented === true && result?.source === 'learned'
+    ? 'consented-learned'
+    : result?.consented === false && result?.source === 'no-consent'
+      ? 'explicit-prior'
+      : 'unavailable';
+
+  return buildTagInterestContext({
+    mode: resolvedMode,
+    profileSource,
+    profile: result?.profile ?? null,
+    candidates,
+  });
+}
+
+/** Keep the scheduler call shape unchanged when off; non-off context is request-scoped. */
+export function generateScheduleWithTagInterestContext(
+  candidates,
+  constraints,
+  tagInterestContext,
+  scheduler = generateSchedule
+) {
+  if (!tagInterestContext || tagInterestContext.mode === 'off') {
+    return scheduler(candidates, constraints);
+  }
+  return scheduler(candidates, constraints, { tagInterestContext });
+}
+
 // 候選池與限制的組裝。
 //
 // roadmap #27 的 counterfactual 需要用**完全相同的候選池與限制**重跑排課，
@@ -443,7 +497,30 @@ export async function generateForUser(identity, input = {}, options = {}) {
     return annotateScheduleIdentifiers(buildNoCandidatesResult(reviewDataLoaded), requestId);
   }
 
-  const result = annotateScheduleIdentifiers(generateSchedule(candidates, mergedConstraints), requestId);
+  // `off` 完全略過 profile；`shadow` 計算但不套用排序，`active` 才改變可選課候選分數。
+  const tagInterestMode = resolveTagInterestRankingMode(
+    options.tagInterestMode ?? process.env.TAG_INTEREST_RANKING_MODE
+  );
+  const tagInterestContext = await loadTagInterestContextSafely(identity, candidates, {
+    mode: tagInterestMode,
+    prefs,
+  });
+  const scheduled = generateScheduleWithTagInterestContext(candidates, mergedConstraints, tagInterestContext);
+  if (tagInterestContext?.mode === 'shadow' && scheduled?.tagInterestShadowStats) {
+    const stats = scheduled.tagInterestShadowStats;
+    logger.info(
+      '標籤興趣 shadow 彙總：'
+        + `候選分布正向 ${stats.candidates.positive}、中性 ${stats.candidates.neutral}、`
+        + `負向 ${stats.candidates.negative}、無合格標籤 ${stats.candidates.noEligibleTags}、`
+        + `不可用 ${stats.candidates.unavailable}；`
+        + `比較 ${stats.poolComparisons} 個候選排序狀態，${stats.changedPoolComparisons} 個順序不同；`
+        + `方案分布正向 ${stats.plans?.positive ?? 0}、中性 ${stats.plans?.neutral ?? 0}、`
+        + `負向 ${stats.plans?.negative ?? 0}、無標籤證據 ${stats.plans?.noEvidence ?? 0}；`
+        + `比較 ${stats.plans?.compared ?? 0} 個方案，${stats.plans?.changedPositions ?? 0} 個名次改變。`,
+      { label: 'Schedule' }
+    );
+  }
+  const result = annotateScheduleIdentifiers(scheduled, requestId);
   await recordExposureSafely(identity, result, requestId, { surface, trigger });
   return result;
 }
@@ -452,6 +529,8 @@ export default {
   generateForUser,
   counterfactualForUser,
   loadCourseReviewsSafely,
+  loadTagInterestContextSafely,
+  generateScheduleWithTagInterestContext,
   resolveSessionAvoidances,
   buildNoCandidatesResult,
   annotateScheduleIdentifiers,

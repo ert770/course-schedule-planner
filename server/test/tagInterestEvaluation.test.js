@@ -79,6 +79,46 @@ describe('rag-tag-interest-v1 evaluation harness', () => {
     assert.equal(report.limitations.length, 3);
   });
 
+  test('Stage 6 replays the production scheduler off/active with the same hard constraints', () => {
+    const report = evaluatePersonaRankingComparisons(personaFixture);
+    const comparison = report.stage6ScheduleComparison;
+    assert.equal(comparison.datasetType, 'synthetic_persona_ux');
+    assert.equal(comparison.comparisonCount, 2);
+    assert.equal(comparison.hardConstraintsPreservedCount, 10);
+    assert.ok(comparison.changedSelectionCount > 0);
+    assert.equal(comparison.modelSummaries.off.feasiblePersonaCount, 10);
+    assert.equal(comparison.modelSummaries.active.feasiblePersonaCount, 10);
+    assert.equal(comparison.modelSummaries.off.meanPlanTagScore, null);
+    assert.equal(comparison.modelSummaries.active.scoreBreakdownFaithfulness.accuracy, 1);
+    assert.equal(comparison.modelSummaries.active.reasonFaithfulness.accuracy, 1);
+
+    for (const persona of report.personaResults) {
+      const { off, active, hardConstraintsPreserved } = persona.stage6Scheduler;
+      assert.equal(hardConstraintsPreserved, true, persona.personaId);
+      for (const run of [off, active]) {
+        assert.equal(run.hardConstraintsValid, true, persona.personaId);
+        assert.equal(run.totalCredits, 9, persona.personaId);
+        assert.equal(run.hardConstraintChecks.noTimeConflictsOrDuplicateCourses, true, persona.personaId);
+        assert.equal(run.hardConstraintChecks.minimumCreditsMet, true, persona.personaId);
+        assert.equal(run.hardConstraintChecks.maximumCreditsMet, true, persona.personaId);
+        assert.equal(run.selectedCourseIds.includes('ai-foundations')
+          && run.selectedCourseIds.includes('database-course'), false, persona.personaId);
+        assert.equal(run.scoreBreakdownFaithfulness.accuracy, 1, persona.personaId);
+      }
+      assert.equal(off.mode, 'off');
+      assert.equal(off.planTagScore, null);
+      assert.equal(off.tagInterestCoverage, null);
+      assert.equal(active.mode, 'active');
+      assert.equal(active.profileSource, 'consented-learned');
+      assert.ok(active.planTagScore === null
+        || (active.planTagScore >= -1 && active.planTagScore <= 1));
+      assert.ok(active.tagInterestCoverage >= 0 && active.tagInterestCoverage <= 1);
+      assert.ok(active.reasonFaithfulness.accuracy === null
+        || active.reasonFaithfulness.accuracy === 1);
+      assert.equal(active.reasonFaithfulness.correctCount, active.reasonFaithfulness.claimCount);
+    }
+  });
+
   test('persona comparison rejects fixtures without the explicit 10-person synthetic marker', () => {
     assert.throws(
       () => evaluatePersonaRankingComparisons({ ...personaFixture, datasetType: 'real' }),
