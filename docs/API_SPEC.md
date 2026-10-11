@@ -307,6 +307,27 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 學分學程及其他特殊班級）的正式適用對象尚未由校方確認，因此仍可被明確搜尋，
 但回應為 `eligibility: "unknown"`，前端顯示「資格待確認」，不得解讀成確定可修。
 
+### `GET /api/courses/catalog`
+
+供「查詢全校課程」使用，不要求個人系所、年級或班別。從全校課程中依系統目前
+`ACTIVE_TERM` 篩選，再套用下列條件：
+
+- `keyword`（課名、課號、教師、系所或課程描述）
+- `code`
+- `instructor`
+- `dayOfWeek`
+- `period`
+- `credits`
+- `language`
+- `category`：`通識` 或資料庫原始類別 `必修`
+
+`通識` 會依官方通識分類資料解析；`核心選修`、`一般選修`、`系外選修` 等需要個人
+修課範圍才能判定的分類會回傳 `400 STUDENT_SCOPE_REQUIRED`。端點回傳
+`{ appliedFilters, courses, total }`，課程物件沿用一般搜尋欄位及學期資訊。
+
+這支 API 是全校目錄探索，**不判定目前登入者能否修讀課程，也不承諾課程可計入其畢業
+學分**。加入課表與排課時仍須由既有個人化驗證檢查班級資格、先修、學分及其他規則。
+
 ### `GET /api/interest-exploration/cards`（Roadmap #43 階段 4）
 
 需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳最多 8 張

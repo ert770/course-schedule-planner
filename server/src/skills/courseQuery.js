@@ -214,6 +214,32 @@ export function filterCategorizedCourses(
   return applyCommonFilters(courses, filters, { filterCategory: false });
 }
 
+// 全校課程探索不代表「這位學生能修什麼」，因此不要求也不套用個人班級 scope。
+// 仍沿用相同的課程分類、active term 與條件篩選；個人可修資格留給加選／排課驗證。
+export function filterCatalogCourses(courseList = [], filters = {}) {
+  if (filters.category && !COURSE_SEARCH_CATEGORIES.has(filters.category)) {
+    throw courseSearchError('不支援的課程分類。', 'INVALID_COURSE_CATEGORY');
+  }
+  if ([CATEGORY_CORE_ELECTIVE, CATEGORY_ELECTIVE, CATEGORY_OUTSIDE_ELECTIVE].includes(filters.category)) {
+    throw courseSearchError(
+      '此課程分類需依學生修課範圍判定，請使用個人課程搜尋。',
+      'STUDENT_SCOPE_REQUIRED'
+    );
+  }
+
+  let activeCourses = courseList
+    .map(course => annotateCourseCategory(course, null))
+    .filter(course => course.term.isActiveTerm);
+
+  if (filters.category === CATEGORY_REQUIRED) {
+    activeCourses = activeCourses.filter(course => course.sourceCategory === CATEGORY_REQUIRED);
+  } else if (filters.category === CATEGORY_GENERAL_EDUCATION) {
+    activeCourses = activeCourses.filter(course => course.category === CATEGORY_GENERAL_EDUCATION);
+  }
+
+  return applyCommonFilters(activeCourses, filters, { filterCategory: false });
+}
+
 // 保留純函式供既有測試與內部低階用途使用；REST、排課與 Agent 應使用下方
 // 三個具名入口，避免不同呼叫端的班級規則互相滲透。
 export function filterCourses(courseList = [], filters = {}) {
@@ -243,6 +269,10 @@ async function runCategorizedSearch(filters, scope, options) {
 
 export async function searchCoursesForStudent(filters, scope) {
   return runCategorizedSearch(filters, scope);
+}
+
+export async function searchCoursesAcrossCatalog(filters = {}) {
+  return filterCatalogCourses(await getAll('courses'), filters);
 }
 
 export async function searchCoursesForSchedule(filters, scope) {
@@ -320,6 +350,8 @@ export default {
   searchCoursesForSchedule,
   searchCoursesForAgent,
   filterCategorizedCourses,
+  filterCatalogCourses,
+  searchCoursesAcrossCatalog,
   filterCourses,
   getCourseDetail,
   getDepartments,

@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { filterCategorizedCourses, filterCourses } from '../src/skills/courseQuery.js';
+import { filterCatalogCourses, filterCategorizedCourses, filterCourses } from '../src/skills/courseQuery.js';
 import { buildCourseQueryScope } from '../src/skills/courseScope.js';
 
 const courses = [
@@ -121,6 +121,37 @@ const termMixedCourses = [
   { id: 102, name: '舊學期資料結構', department: '資訊三乙', category: '必修', year: 113, semester: '上學期' },
   { id: 103, name: '未標註學期的選修', department: '資訊三乙', category: '選修' },
 ];
+
+describe('全校課程目錄搜尋', () => {
+  test('不要求個人班級，回傳各系目前學期的課程', () => {
+    const result = filterCatalogCourses(categorizedCourses);
+
+    assert.ok(result.some(course => course.id === 11), '本人系所課程要保留');
+    assert.ok(result.some(course => course.id === 14), '其他系所課程要保留');
+    assert.ok(result.some(course => course.id === 18), '通識課程要保留');
+    assert.ok(result.every(course => course.term.isActiveTerm));
+  });
+
+  test('通識篩選使用官方分類，核心／一般選修拒絕使用全校範圍猜測', () => {
+    const genEd = filterCatalogCourses(categorizedCourses, { category: '通識' });
+    assert.ok(genEd.length > 0);
+    assert.ok(genEd.every(course => course.category === '通識'));
+
+    assert.throws(
+      () => filterCatalogCourses(categorizedCourses, { category: '核心選修' }),
+      error => error.code === 'STUDENT_SCOPE_REQUIRED'
+    );
+    assert.throws(
+      () => filterCatalogCourses(categorizedCourses, { category: '一般選修' }),
+      error => error.code === 'STUDENT_SCOPE_REQUIRED'
+    );
+  });
+
+  test('仍套用學期和共用搜尋條件', () => {
+    const result = filterCatalogCourses(termMixedCourses, { keyword: '資料結構' });
+    assert.deepEqual(result.map(course => course.id), [101]);
+  });
+});
 
 describe('#12A 先分類再搜尋', () => {
   test('未指定分類時維持 F7，只回本人班級與合班', () => {
