@@ -107,6 +107,13 @@ export const coursesAPI = {
     });
     return request(`/courses?${params}`);
   },
+  searchCatalog: (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') params.append(key, value);
+    });
+    return request(`/courses/catalog?${params}`);
+  },
   getDetail: (id) => request(`/courses/${id}`),
   getDepartments: () => request('/courses/departments'),
   // 某系所某年級實際存在的班別（例如 資訊三甲）。必修不得換班，需指定班別。

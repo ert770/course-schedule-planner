@@ -195,7 +195,7 @@ export default function SearchPage() {
     setSearchError('');
     try {
       const filters = {
-        code: condForm.code, 
+        code: condForm.code,
         keyword: condForm.keyword || condForm.description,
         instructor: condForm.instructor, 
         dayOfWeek: condForm.dayOfWeek ? parseInt(condForm.dayOfWeek) : null,
@@ -205,7 +205,7 @@ export default function SearchPage() {
       };
       Object.keys(filters).forEach(k => { if (filters[k] === null || filters[k] === '') delete filters[k]; });
       
-      const data = await coursesAPI.search(filters);
+      const data = await coursesAPI.searchCatalog(filters);
       setSearchResults(data.courses || []);
     } catch (err) {
       setSearchError(err.message || '課程搜尋失敗');
