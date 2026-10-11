@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Download, Trash2, RotateCcw } from 'lucide-react';
+import { ShieldCheck, Download, Trash2, RotateCcw, ArrowLeft } from 'lucide-react';
 import { privacyAPI } from '../services/api';
 import { useAuth } from '../contexts/useAuth';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
@@ -16,9 +16,6 @@ export default function PrivacyPage() {
   const [choices, setChoices] = useState({ [SERVICE]: false, [PERSONALIZATION]: false, [RESEARCH]: false });
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  // roadmap #31：個人化現況——顯式／學習／資料不足／未同意。獨立於
-  // `privacyStatus`（那是 consent 本身），這裡是 consent 之上「系統實際算出
-  // 了什麼」。載入失敗時保持 null，`PreferenceSourceBadge` 對 null 就不渲染。
   const [personalization, setPersonalization] = useState(null);
   const [resetting, setResetting] = useState(false);
 
@@ -31,7 +28,6 @@ export default function PrivacyPage() {
   }, []);
 
   useEffect(() => {
-    // 同意牆還沒過（`requiresAction`）時這支會因為 consent 檢查回錯，不必先打。
     if (privacyStatus?.requiresAction) return;
     loadPersonalization();
   }, [privacyStatus?.requiresAction]);
@@ -47,9 +43,6 @@ export default function PrivacyPage() {
   }, [privacyStatus]);
 
   const save = async () => {
-    // Roadmap #31：撤回「從互動持續改善個人化」是硬性暫停，後端會連同已學到
-    // 的權重與互動事件一起刪除（不是留著不用）——重新勾選後從零開始重新
-    // 累積。這是不可逆的，必須在送出前講清楚，不能等使用者事後才發現。
     const wasGranted = privacyStatus?.consents?.[PERSONALIZATION]?.granted;
     if (wasGranted && !choices[PERSONALIZATION]) {
       const confirmed = window.confirm(
@@ -127,8 +120,33 @@ export default function PrivacyPage() {
 
   return (
     <main className="privacy-page" id="privacy-page">
-      <section className="privacy-card">
-        <div className="privacy-heading"><ShieldCheck size={34} /><div><h1>隱私與資料使用</h1><p>政策版本：{policy?.version || '載入中'}</p></div></div>
+      <section className="privacy-card" style={{ position: 'relative' }}>
+        
+        {/* 將原本在最下方的「返回首頁」改為左上角的返回箭頭圖示 */}
+        {!privacyStatus?.requiresAction && (
+          <button 
+            onClick={() => navigate('/')}
+            style={{
+              position: 'absolute', top: '16px', left: '16px',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '8px', borderRadius: '50%', transition: 'background 0.2s', zIndex: 10
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+            title="返回首頁"
+          >
+            <ArrowLeft size={22} />
+          </button>
+        )}
+
+        <div className="privacy-heading" style={{ paddingLeft: !privacyStatus?.requiresAction ? '40px' : '0' }}>
+          <ShieldCheck size={34} />
+          <div>
+            <h1>隱私與資料使用</h1>
+            <p>政策版本：{policy?.version || '載入中'}</p>
+          </div>
+        </div>
 
         {privacyStatus?.error && <div className="privacy-message" role="alert">{privacyStatus.error}</div>}
 
@@ -177,7 +195,7 @@ export default function PrivacyPage() {
           <button onClick={download}><Download size={16} /> 匯出我的資料</button>
           <button onClick={clearChat}><Trash2 size={16} /> 清除 Raw Chat</button>
           <button className="privacy-danger" onClick={deleteData}><Trash2 size={16} /> 刪除帳號與資料</button>
-          {!privacyStatus?.requiresAction && <button onClick={() => navigate('/')}>返回首頁</button>}
+          {/* 原本最下方的返回首頁按鈕已移除 */}
         </div>
       </section>
     </main>

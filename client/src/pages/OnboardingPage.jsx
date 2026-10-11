@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { privacyAPI } from '../services/api';
 import { consentChoicesFromStatus, consentChoicesToPayload } from '../services/privacyConsentAdapter';
-import { ShieldCheck, Loader2 } from 'lucide-react';
+import { ShieldCheck, Loader2, ArrowLeft } from 'lucide-react'; // 新增 ArrowLeft
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
@@ -65,6 +65,11 @@ export default function OnboardingPage() {
     }
   };
 
+  const handleBack = () => {
+    logout();
+    window.location.href = '/login';
+  };
+
   return (
     <div className="onboarding-page" id="onboarding-page" style={{ 
       minHeight: '100vh', 
@@ -75,6 +80,7 @@ export default function OnboardingPage() {
       padding: '24px'
     }}>
       <div className="onboarding-card animate-fadeInUp" style={{ 
+        position: 'relative', // 新增相對定位供返回鍵使用
         maxWidth: '720px', 
         width: '100%', 
         background: '#ffffff', 
@@ -84,8 +90,24 @@ export default function OnboardingPage() {
         border: '1px solid #e2e8f0'
       }}>
         
+        {/* 返回鍵 */}
+        <button 
+          onClick={handleBack}
+          style={{
+            position: 'absolute', top: '24px', left: '24px',
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '8px', borderRadius: '50%', transition: 'background 0.2s'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+          onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+          title="返回登入"
+        >
+          <ArrowLeft size={22} />
+        </button>
+
         {/* 頂部標題區 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '28px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '28px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', paddingLeft: '40px' /* 讓出版位給返回鍵 */ }}>
           <div style={{ padding: '10px', background: '#eff6ff', borderRadius: '12px', color: '#3b82f6', display: 'flex' }}>
             <ShieldCheck size={26} />
           </div>
@@ -157,14 +179,12 @@ export default function OnboardingPage() {
               </label>
             </div>
 
-            {/* 個人化來源狀態提示 */}
             {personalization && (
               <div style={{ padding: '14px 18px', borderRadius: '12px', background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: '0.85rem', color: '#1e40af', textAlign: 'left' }}>
                 <strong>目前個人化來源：</strong> {personalization.label || '未啟用個人化學習'}
               </div>
             )}
 
-            {/* 底部操作按鈕 */}
             <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '12px', marginTop: '20px' }}>
               <button
                 className="onboarding-btn"
@@ -172,41 +192,13 @@ export default function OnboardingPage() {
                 disabled={saving || !consentsLoaded}
                 id="onboarding-agree-btn"
                 style={{ 
-                  width: '100%', 
-                  margin: 0, 
-                  padding: '14px', 
-                  borderRadius: '10px', 
-                  fontSize: '1rem', 
-                  fontWeight: '600', 
-                  backgroundColor: '#3b82f6', 
-                  color: '#fff', 
-                  border: 'none', 
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
-                  transition: 'background-color 0.2s'
+                  width: '100%', margin: 0, padding: '14px', borderRadius: '10px', 
+                  fontSize: '1rem', fontWeight: '600', backgroundColor: '#3b82f6', 
+                  color: '#fff', border: 'none', cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', transition: 'background-color 0.2s'
                 }}
               >
                 {saving ? '儲存中...' : '同意並開始設定 ✨'}
-              </button>
-
-              <div style={{ height: '1px', backgroundColor: '#e2e8f0', width: '100%', margin: '6px 0' }} />
-
-              <button
-                onClick={() => {
-                  logout();
-                  window.location.href = '/login';
-                }}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#64748b',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  padding: '6px',
-                  textDecoration: 'underline'
-                }}
-              >
-                切換帳號 (重新登入)
               </button>
             </div>
 
