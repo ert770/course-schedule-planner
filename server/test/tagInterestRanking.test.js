@@ -290,8 +290,9 @@ describe('tag-interest request context', () => {
     assert.equal(context.coursesBySectionId['301'].reason, 'profile_unavailable');
   });
 
-  test('off is the default and shadow/active are explicit modes', () => {
-    assert.equal(resolveTagInterestRankingMode(), 'off');
+  test('active is the default and off/shadow remain explicit modes', () => {
+    assert.equal(resolveTagInterestRankingMode(), 'active');
+    assert.equal(resolveTagInterestRankingMode('off'), 'off');
     assert.equal(resolveTagInterestRankingMode('shadow'), 'shadow');
     assert.equal(resolveTagInterestRankingMode('active'), 'active');
     const context = buildTagInterestContext({ mode: 'off', profile: { tagInterests: [] } });

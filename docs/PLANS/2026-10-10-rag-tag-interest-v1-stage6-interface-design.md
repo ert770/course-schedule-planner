@@ -3,26 +3,26 @@
 ## 文件狀態
 
 - 日期：2026-10-10
-- 狀態：設計已確認；候選層與方案層計分已接入程式並完成後端測試。2026-10-11 已完成 10 位 synthetic Persona 的實際 scheduler off／active 重播；下一步是以隔離資料完成具已知標籤訊號的安全瀏覽器 A/B。
+- 狀態：目前約定範圍已完成，`TAG_INTEREST_RANKING_MODE` 專案預設切為 `active`，保留 `shadow` 觀測與 `off` 回復。2026-10-11 已完成 10 位 Persona 的 Chrome `off`／`active` A/B，涵蓋單方案與多方案指標、真實 HTTP API → MySQL 資料流及持久化核對。使用者確認 Persona UX 從此作為本專案正式的代表使用者驗收方式；測試仍標示 Persona 模擬資料，不冒稱為真人事件。詳細續驗結果見[階段 6 瀏覽器 A/B 報告](../CHANGE_REPORTS/2026-10-11-rag-tag-interest-stage6-browser-ab.md)。
 - 範圍：定義標籤興趣檔案與既有多方案排課器之間的資料與評分邊界。
 - 本文件記錄已確認的介接邊界與分段實作狀態；各階段實際程式改動另見 `docs/CHANGE_REPORTS/`。
 
 ## 階段 6 實作進度
 
 - **第一階段：純候選計分核心（已完成）**：新增帶對稱興趣倍率的純函式，α 預設 0.6。
-- **第二階段：profile-to-scheduler shadow 資料流（已完成）**：預設 `off`；`shadow`／`active` 時由伺服器讀取同意感知 profile，建立 request-scoped `sectionId` 分數表並傳入 scheduler runtime options。
-- **第三階段：候選層計分接線（程式與後端測試完成；一次真實瀏覽器 A/B 結果未見差異）**：`active` 將標籤興趣乘數套用到本系選修、通識、系外選修候選池的基礎分；依既有畢業配額階段做池內排序，再由同一 scheduler 全域檢查硬條件。`shadow` 計算假想池內順序並只記錄彙總 log，不改課表。`off` 預設行為不變。依使用者授權，以目前帳號各執行一次 `off`／`active`；都得到 3 個方案、相同預設 4 門課／10 學分及 353 個競爭候選，產生兩筆 recommendation exposure。此對照未證明標籤訊號改變排序；後續需用有已知興趣訊號的 Persona 或隔離測試帳號驗證，不再用同一帳號重跑。
+- **第二階段：profile-to-scheduler shadow 資料流（已完成）**：目前專案預設 `active`；`shadow`／`active` 時由伺服器讀取同意感知 profile，建立 request-scoped `sectionId` 分數表並傳入 scheduler runtime options。明確設為 `off` 時完全略過 profile。
+- **第三階段：候選層計分接線（程式、後端測試與瀏覽器驗收完成）**：`active` 將標籤興趣乘數套用到本系選修、通識、系外選修候選池的基礎分；依既有畢業配額階段做池內排序，再由同一 scheduler 全域檢查硬條件。`shadow` 計算假想池內順序並只記錄彙總 log，不改課表。`off` 明確停用時維持舊結果。先前單一帳號的對照未見差異；本次以 10 位 Persona 完成較完整的 `off`／`active` 流程，資料與限制見 A/B 報告。
 - **第四階段：方案層計分接線（程式與後端測試完成）**：`active` 平均有興趣證據的自由選擇課分數，回傳方案分數與覆蓋率，並以獨立 `α_plan=0.6` 乘上原始 `preferenceScore` 排序；硬性成功狀態與最低學分仍優先。`shadow` 計算假想方案名次，只記錄彙總 log，不回傳單一方案分數。`counterfactualForUser()` 仍不納入標籤分數。
 - 主推方案有標籤興趣證據時，摘要訊息顯示「偏好與標籤興趣合併分」；無證據時維持既有偏好／學分摘要。
-- **第五階段：Persona scheduler 重播（2026-10-11，完成）**：對同一組 10 門固定合成課程及 10 位 Persona，以相同偏好、9 學分上下限、seed 與 scheduler 路徑分別跑 `off`／`active`。兩種模式都通過 10/10 硬條件檢查；5/10 Persona 的選課組合改變。`active` 有證據的 9 位 Persona 平均 `planTagScore=0.257498`，10 位的平均 coverage 為 `0.833333`；選中相關課平均 1.7→1.8，precision `0.566667`→`0.6`，recall `0.766667`→`0.816667`。理由標籤 42/42 忠實、分數明細 30/30 符合計分公式。上述都是人工標註的合成案例檢查，不是準確率或真人成效；P08 冷啟動保持 `planTagScore=null`、coverage 0、選課不變。測試另在兩模式放入同時段候選，驗證排課仍不會同時選入。詳細數據見[階段 6 Persona scheduler 重播報告](../CHANGE_REPORTS/2026-10-11-rag-tag-interest-stage6-persona-replay.md)。
-- **下一階段：安全瀏覽器 A/B（待做）**：用具已知標籤訊號的隔離測試資料，固定使用者設定、候選集與 solver seed，比較 `off`／`active` 的課表、硬條件、標籤分數與前端理由，並檢查 console。不要重跑會新增目前真實帳號曝光紀錄的 A/B。
+- **第五階段：Persona scheduler 重播（2026-10-11，完成）**：對同一組 10 門固定課程及 10 位 Persona，以相同偏好、9 學分上下限、seed 與 scheduler 路徑分別跑 `off`／`active`。兩種模式都通過 10/10 硬條件檢查；5/10 Persona 的選課組合改變。`active` 有證據的 9 位 Persona 平均 `planTagScore=0.257498`，10 位平均 coverage 為 `0.833333`；選中相關課平均 1.7→1.8，precision `0.566667`→`0.6`，recall `0.766667`→`0.816667`。理由標籤 42/42 忠實、分數明細 30/30 符合公式。這些是依使用者指定的 Persona 代表使用者驗收案例；資料仍是模擬資料，不代表已觀測真人事件。P08 冷啟動保持 `planTagScore=null`、coverage 0、選課不變。詳見[Persona scheduler 重播報告](../CHANGE_REPORTS/2026-10-11-rag-tag-interest-stage6-persona-replay.md)。
+- **瀏覽器 A/B（2026-10-11，完成）**：單方案標籤摘要修正後，以 Chrome 對 10 位 Persona 各跑 `off`／`active`，經前端、真實 HTTP API 連 MySQL；畫面包含單方案／多方案標籤分與覆蓋率，並核對資料庫持久化。資料庫彙總與同一帳號先後測試的限制見[階段 6 瀏覽器 A/B 報告](../CHANGE_REPORTS/2026-10-11-rag-tag-interest-stage6-browser-ab.md)。這項驗收採 Persona 為正式代表使用者；不宣稱為真人事件或統計成效。另以未設定 `TAG_INTEREST_RANKING_MODE` 的服務預設驗證 active；本次重啟後瀏覽器連線再次受本機 socket 權限限制，故預設模式另由單元測試驗證，明細見本次變更報告。
 
 ## 建議決策摘要
 
 1. **保留 rag-tag 興趣作為獨立評分軸。** 不把標籤分數塞進現有三軸 `interest / compact / easy`，也不寫入 `Learned_Preference_Weights`。
 2. **由 `scheduleService` 在伺服器端讀取 profile 並逐班次計分。** 把純計分結果當成 request-scoped context 傳給排課器；不接受前端傳入分數或 `canonical_tag_id` 作為權威值。
 3. **候選池、候選評分與方案排序分層處理。** 系上選修、通識、系外選修分成三個候選池，各依自己的需求與名額形成候選；標籤興趣透過可調的對稱乘數影響池內基礎分，其他五項分數再相加。排課器最後共同檢查三池候選的衝堂、學分等全域限制。正分按比例提高、負分按相同比例降低；候選與方案的 α 分開校準。
-4. **預設關閉，先做 shadow。** `off` 完全維持舊結果；`shadow` 計算分數及預期排序但不改回應順序；確認案例和分數尺度後，才由 feature flag 啟用 `active`。
+4. **專案預設使用 active，保留快速回復與 shadow。** 本次 Persona UX 與瀏覽器 A/B 通過後，依使用者確認將預設改為 `active`；`off` 可透過 `TAG_INTEREST_RANKING_MODE=off` 立即回復既有排序，`shadow` 用於只記錄彙總排序差異。active 仍尊重同意狀態，profile 不可用時 fail-open 回到原排序。
 5. **標籤永遠不構成硬性資格。** 沒有合格標籤的課仍可進候選池；標籤分數不得放寬或覆蓋必修、畢業學分、先修、班次資格、衝堂等規則。
 
 ## 1. 目前程式路徑
@@ -61,7 +61,7 @@ flowchart LR
 
 - 不用標籤分數刪除候選課、判定課程能否修、替代畢業審核或改寫硬性限制。
 - 不以「沒有點擊／沒有選到」作負向標籤；負分只來自 profile 中明確負向證據。
-- 不將 synthetic Persona 指標描述成真人準確率，也不以這 10 位 Persona 校準出可宣稱有效的產品參數。
+- 依使用者決定，Persona UX 是本專案正式的代表使用者驗收方式，後續階段一律沿用；報告須標明是 Persona 模擬案例，不得寫成實際真人事件或真人統計成效。
 - 不把 tag-interest 向量混入 v2／Choice Perceptron 的三軸曝光向量。
 
 ## 3. 建議資料流與介面
@@ -197,15 +197,15 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 
 ## 5. Feature flag、輸出與相容性
 
-建議以 server-side 設定 `TAG_INTEREST_RANKING_MODE=off|shadow|active` 控制，預設 `off`：
+以 server-side 設定 `TAG_INTEREST_RANKING_MODE=off|shadow|active` 控制；專案預設為 `active`：
 
 | 模式 | 計算 profile／分數 | 改變候選挑選或方案順序 | 使用情境 |
 | --- | --- | --- | --- |
-| `off` | 否 | 否 | 預設與快速回復；舊流程不變 |
+| `off` | 否 | 否 | 快速回復；舊流程不變 |
 | `shadow` | 是 | 否 | 先檢查資料覆蓋、分數分布、例外及假想重排 |
-| `active` | 是 | 是 | 設計審核、測試、瀏覽器 A/B 通過後才啟用 |
+| `active` | 是 | 是 | 專案預設；以同意感知 profile 調整軟性排序 |
 
-候選與方案層共用 `off`／`shadow`／`active`，部署預設仍為 `off`。`shadow` 只寫彙總 log：候選與方案正／中／負／無證據分布、候選池比較數，以及方案名次變動數；不持久化單一使用者分數、標籤清單或身分。`active` 只在 profile 可用時調整可選課與可行方案的軟性排序；`profileSource=unavailable` 時退回舊分數。方案分數只存在此次 API 回應，不寫入互動事件或 `plan-feature-v1` 三軸向量。
+候選與方案層共用 `off`／`shadow`／`active`，專案預設為 `active`。`shadow` 只寫彙總 log：候選與方案正／中／負／無證據分布、候選池比較數，以及方案名次變動數；不持久化單一使用者分數、標籤清單或身分。`active` 只在 profile 可用時調整可選課與可行方案的軟性排序；`profileSource=unavailable` 時退回舊分數。未同意行為學習者仍只使用明確主題先驗。方案分數只存在此次 API 回應，不寫入互動事件或 `plan-feature-v1` 三軸向量。
 
 - 保持 `plan-feature-v1` 的三軸向量完全不變。若日後要把 tag-interest 納入 `plan_chosen` 的學習特徵，另立版本化 snapshot／feature contract；不得直接擴充既有向量或把它映射成 `interest`。
 - 第二階段的 `shadow` 僅在 request 記憶體內建立及傳遞 context，尚無持久化觀測資料。後續若加入 shadow 觀測，只能保留彙總筆數／分布；不新增互動事件，不持久化單一使用者的分數、完整標籤清單或身分識別值。
@@ -219,8 +219,8 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 3. **服務整合測試**：同意開／關、profile cache 失效與錯誤 fallback；REST 和 Chat 必須共用同一 `generateForUser()` 路徑。
 4. **scheduler 測試**：`off` 保持舊排序；`shadow` 不改結果並只產生彙總名次統計；`active` 只改軟性排序。候選層驗證 α、正負對稱倍率、同年級扣分、`null`、明確指定與衝堂硬條件；方案層驗證自由選擇課過濾、覆蓋率、α 正負對稱、合併排序，以及成功狀態／最低學分仍優先。
 5. **Persona 重播（2026-10-11 完成）**：既有 10 位 synthetic Persona 已走過正式 `generateSchedule()` 的 `off`／`active` 路徑，固定同一候選課、偏好、學分限制與 seed。比較可行性、主推方案、`planTagScore`、coverage、理由忠實度及多樣性；結果只作情境檢查，不叫作準確率。結果與限制見[Persona scheduler 重播報告](../CHANGE_REPORTS/2026-10-11-rag-tag-interest-stage6-persona-replay.md)。
-6. **瀏覽器 A/B（真實帳號一次性對照已做，效果仍待確認）**：已依使用者授權以同一帳號跑 `off`／`active` 各一次；結果未見差異，且產生兩筆 recommendation exposure，不能據此確認有標籤興趣訊號時的排序效果。下一步用具已知標籤訊號的隔離測試資料，固定使用者設定、候選集與 solver seed；檢查課表硬條件、軟性排序理由及 console。避免重複對真實帳號寫入 exposure。
-7. **分段啟用與回復**：預設 off；能以設定即時退回 off。上線資料累積後再做真人的時間切分評估，這不阻止先做受控 Persona／瀏覽器驗收，但不能省略真實成效限制聲明。
+6. **瀏覽器 A/B（2026-10-11 完成）**：以 Chrome 對 10 位 Persona 各跑 `off`／`active`，核對單方案、多方案標籤分與覆蓋率、排課限制、HTTP API 與 MySQL 持久化。資料筆數、測試順序及限制見[階段 6 驗收報告](../CHANGE_REPORTS/2026-10-11-rag-tag-interest-stage6-browser-ab.md)。依使用者決定，Persona 是正式代表使用者驗收案例；評估結果描述 Persona 案例，不冒稱真人事件。此流程未提供完整因果隔離，不能把單一帳號先後執行的結果視為乾淨的統計 A/B。
+7. **啟用與回復（2026-10-11 完成）**：專案預設為 `active`；設定 `TAG_INTEREST_RANKING_MODE=off` 可回復舊排序，`shadow` 可檢查彙總假想變動。真人時間切分不作為目前功能啟用前置；若未來要宣稱真人場域成效，再以實際事件做另外的時間切分評估。
 
 ## 7. 待確認決策
 
@@ -228,9 +228,9 @@ combinedPlanScore = existingPreferenceScore × planTagMultiplier
 | --- | --- | --- |
 | 方案平均要算哪些課 | 只算排課器自由選擇的非必修選修；必修、重補修、使用者固定課與關注課不計 | 避免把硬性或使用者已決定的課誤說成推薦 |
 | 未同意行為學習時能用什麼 | 只用明確選的主題先驗，不用事件證據 | 確保模型理由與 consent 範圍一致 |
-| 排名倍率 | 正負使用同一 α，α 範圍 0～1；候選與方案初始建議皆設 0.6，再以 shadow 檢查 | 候選與方案分數量尺不同，後續仍可分開校準；Persona 合成指標不能代表真人校準 |
+| 排名倍率 | 正負使用同一 α，α 範圍 0～1；候選與方案先採 0.6，專案預設 `active` | α=0.6 是目前採用值，後續可依 Persona 代表使用者案例檢查；Persona 結果仍只描述模擬案例，不代表真人場域統計 |
 | 候選池與同年級優先 | 本系選修、通識、系外選修依既有畢業配額階段形成候選池，由同一 scheduler 全域檢查；類別優先與非本系扣分不跨池使用。使用者已確認保留 `−2500` 同年級規則，只能套在本系選修池 | 已確認；實作需維持池內範圍，不可套到通識或系外選修 |
 | 曝光時是否存分數 snapshot | active 上線前需要可追溯版本化摘要；具體欄位與保存期限另定 | 現有 `plan-feature-v1` 是不同目的的三軸資料契約 |
 | 反事實比較 | 如納入正式推薦解釋，傳入相同 tag context；否則標示不包含 tag-interest | 避免反事實頁和實際排課用兩套排序語意 |
 
-本稿已確認並進入分段實作。候選層程式已依 `docs/SCHEDULING_LOGIC.md` 通過後端測試；Persona scheduler 重播已完成，但合成案例不等於真人成效。先前真實帳號瀏覽器 A/B 結果相同；仍須完成具已知標籤訊號的安全瀏覽器 A/B，才能把階段 6 介接宣告完成。
+本稿目前約定範圍已完成：候選層與方案層程式通過後端測試，10 位 Persona scheduler 重播及 Chrome `off`／`active` 瀏覽器流程完成；單方案標籤分與覆蓋率已顯示。依使用者確認，Persona UX 作為本專案正式代表使用者驗收方式，後續沿用此標準。專案預設已切為 `active`，`off` 保留即時回復；瀏覽器重啟後的 localhost socket 權限限制及其替代單元測試紀錄見本次變更報告。Persona 結果仍以模擬案例描述，不冒稱實際真人事件。

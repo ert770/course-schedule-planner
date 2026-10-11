@@ -29,7 +29,7 @@ function requireRange(name, value, min, max) {
   return number;
 }
 
-export function resolveTagInterestRankingMode(value = 'off') {
+export function resolveTagInterestRankingMode(value = 'active') {
   const mode = String(value ?? '').trim().toLowerCase();
   return ['shadow', 'active'].includes(mode) ? mode : 'off';
 }
