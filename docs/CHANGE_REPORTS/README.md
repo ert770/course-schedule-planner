@@ -4,7 +4,8 @@
 
 ## 2026-10-11
 
-1. [rag-tag-interest-v1 階段 6：Persona scheduler off／active 重播](./2026-10-11-rag-tag-interest-stage6-persona-replay.md)
+1. [把 main（PR #27）合併進 backend；修正搜尋頁切換分頁後殘留舊結果](./2026-10-11-merge-main-pr27-and-search-stale-results.md)
+2. [rag-tag-interest-v1 階段 6：Persona scheduler off／active 重播](./2026-10-11-rag-tag-interest-stage6-persona-replay.md)
 
 ## 2026-10-10
 
