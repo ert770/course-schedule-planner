@@ -27,6 +27,8 @@ import {
 import { getUserPreferences } from './memoryService.js';
 import { loadUserTagVectorContext } from './userTagVectorService.js';
 import { scoreCoursesForUser, explainCourseForUser } from '../skills/userTagVector.js';
+import { loadCourseTextEmbeddingIndex } from './courseTextEmbeddingService.js';
+import { denseCosine } from '../skills/courseTextVector.js';
 
 export const EXPLORATION_RESULT_LIMIT = 5;
 export const EXPLORATION_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -84,7 +86,9 @@ async function loadCatalog({ loadCourses = () => getAll('courses'), now = Date.n
 }
 
 // 已通過的課，每個課號取最近一次修課紀錄；標出哪些有說明可以當起點。
-function buildFavorites(courseHistory, index) {
+const hasVector = vector => Boolean(vector && (vector.norm > 0 || (ArrayBuffer.isView(vector) && vector.length > 0)));
+
+function buildFavorites(courseHistory, index, unavailableReason = 'no-description') {
   const passed = new Set(getPassedCourseCodes(courseHistory).map(normalizeCode));
   const latest = getLatestAttemptsByCourseCode(courseHistory);
   const attempts = latest instanceof Map ? [...latest.values()] : Object.values(latest ?? {});
@@ -93,7 +97,7 @@ function buildFavorites(courseHistory, index) {
     .map(entry => {
       const courseCode = normalizeCode(entry.courseCode);
       const vector = index.vectors.get(courseCode);
-      const available = Boolean(vector && vector.norm > 0);
+      const available = hasVector(vector);
       return {
         courseCode,
         name: entry.courseName,
@@ -102,7 +106,7 @@ function buildFavorites(courseHistory, index) {
         available,
         // 唯一的不可用原因：課程資料中任何學期都查不到這個課號的說明。
         // 「本學期沒開」不是原因——有說明就能當起點。
-        ...(available ? {} : { reason: 'no-description' }),
+        ...(available ? {} : { reason: unavailableReason }),
       };
     })
     .sort((a, b) => (
@@ -193,7 +197,7 @@ function buildCandidates(courses, category, scope, passedCodes, index, { require
         vector: index.vectors.get(group.courseCode) ?? null,
       };
     })
-    .filter(candidate => !requireDescription || (candidate.vector && candidate.vector.norm > 0));
+    .filter(candidate => !requireDescription || hasVector(candidate.vector));
 }
 
 // sharedTerms 是兩份課程說明裡都出現的字面片段，讓使用者看得出「為什麼是這門」。
@@ -222,17 +226,33 @@ function unitCount(candidates) {
  * @param deps 測試用注入：`{ loadCourses, loadProfile, now }`。
  */
 export async function exploreForUser(identity, input = {}, deps = {}) {
+  const representation = input.representation ?? 'tfidf';
+  if (!['tfidf', 'embedding'].includes(representation)) {
+    throw explorationError('不支援的課程內容比較方式。', 'INVALID_EXPLORATION_REPRESENTATION');
+  }
   const profile = deps.loadProfile ? await deps.loadProfile(identity) : await getUserPreferences(identity);
   const scope = buildStudentScope(profile);
-  const { courses, index } = await loadCatalog(deps);
+  const { courses, index: lexicalIndex } = await loadCatalog(deps);
+  const semantic = representation === 'embedding';
+  const textContext = semantic
+    ? await (deps.loadTextEmbeddings ?? loadCourseTextEmbeddingIndex)(courses) : null;
+  const index = semantic && textContext.available ? textContext.index : lexicalIndex;
 
   const courseHistory = Array.isArray(profile.courseHistory) ? profile.courseHistory : [];
-  const favorites = buildFavorites(courseHistory, index);
+  const favorites = buildFavorites(courseHistory, index, semantic ? 'no-text-embedding' : 'no-description');
   const base = {
     mode: 'favorite',
     favorites: favorites.map(({ graduationCategory, ...item }) => item),
-    method: EXPLORATION_METHOD,
+    method: semantic
+      ? (textContext.index?.method ?? { representation: 'course-text-embedding-v1', selection: 'one-per-unit-cosine', k: EXPLORATION_RESULT_LIMIT })
+      : EXPLORATION_METHOD,
   };
+  const empty = emptyReason => ({ ...base, favorite: null, emptyReason,
+    outside: { diversification: 'department', items: [] },
+    general: { diversification: 'domain', items: [] },
+    poolSize: { outsideCourses: 0, outsideUnits: 0, generalCourses: 0, generalUnits: 0 },
+  });
+  if (semantic && !textContext.available) return empty(textContext.reason);
 
   const requested = normalizeCode(input.favoriteCourseCode);
   let favorite;
@@ -243,6 +263,7 @@ export async function exploreForUser(identity, input = {}, deps = {}) {
       throw explorationError('起點必須是你已修過並通過的課程。', 'FAVORITE_NOT_IN_HISTORY');
     }
     if (!favorite.available) {
+      if (semantic) return empty('no-text-embedding-favorite');
       throw explorationError('課程資料中沒有這門課的說明，無法當作探索起點。', 'FAVORITE_UNAVAILABLE');
     }
     source = FAVORITE_SOURCE.USER;
@@ -252,6 +273,7 @@ export async function exploreForUser(identity, input = {}, deps = {}) {
   }
 
   if (!favorite) {
+    if (semantic) return empty(favorites.length === 0 ? 'no-course-history' : 'no-text-embedding-favorite');
     return {
       ...base,
       favorite: null,
@@ -272,18 +294,26 @@ export async function exploreForUser(identity, input = {}, deps = {}) {
     candidates,
     unitOf: candidate => candidate.unit,
     k: EXPLORATION_RESULT_LIMIT,
+    ...(semantic ? { similarityOf: denseCosine } : {}),
   });
   const outside = rank(outsideCandidates);
   const general = rank(generalCandidates);
+  const present = ranked => semantic ? ranked.items.map(({ vector: _vector, similarity, ...item }) => {
+    const leftTags = new Set(index.documents.get(favorite.courseCode)?.tags ?? []);
+    return { ...item, similarity: Number(similarity.toFixed(4)),
+      semanticMatch: { sourceCourseCode: favorite.courseCode,
+        commonTags: (index.documents.get(item.courseCode)?.tags ?? []).filter(tag => leftTags.has(tag)).slice(0, 5) },
+    };
+  }) : presentItems(ranked, { courseCode: favorite.courseCode, vector: favoriteVector }, index);
 
   return {
     ...base,
     favorite: { courseCode: favorite.courseCode, name: favorite.name, source },
-    outside: { diversification: 'department', items: presentItems(outside, { courseCode: favorite.courseCode, vector: favoriteVector }, index) },
+    outside: { diversification: 'department', items: present(outside) },
     general: {
       // 任何一門通識沒有領域（115 學年度起）時整組不分散，直接取最相似的 k 門不同課號。
       diversification: general.diversified || generalCandidates.length === 0 ? 'domain' : 'none',
-      items: presentItems(general, { courseCode: favorite.courseCode, vector: favoriteVector }, index),
+      items: present(general),
     },
     poolSize: {
       outsideCourses: outsideCandidates.length,

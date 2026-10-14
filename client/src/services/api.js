@@ -135,10 +135,13 @@ export const coursesAPI = {
 // Roadmap #10 任務 4：系外與通識探索清單（唯讀）。
 export const explorationAPI = {
   // mode：'profile' 依你的修課與興趣（標籤空間使用者向量）；省略為從一門課出發。
-  get: (favoriteCourseCode, mode) => {
+  get: (favoriteCourseCode, mode, representation = 'tfidf') => {
     const params = new URLSearchParams();
     if (mode === 'profile') params.set('mode', 'profile');
-    else if (favoriteCourseCode) params.set('favoriteCourseCode', favoriteCourseCode);
+    else {
+      if (favoriteCourseCode) params.set('favoriteCourseCode', favoriteCourseCode);
+      params.set('representation', representation);
+    }
     const query = params.toString();
     return request(`/exploration${query ? `?${query}` : ''}`);
   },

@@ -17,6 +17,8 @@ import {
   resetExplorationCache,
 } from '../src/services/explorationService.js';
 import { validateScheduleAgainstConstraints } from '../src/skills/scheduleValidator.js';
+import { buildCourseTextDocuments, buildCourseTextEmbeddingIndex, COURSE_TEXT_VECTOR_VERSION } from '../src/skills/courseTextVector.js';
+import { interestTagCatalog as textCatalog } from '../src/data/interestTagCatalog.js';
 
 const ACTIVE = { year: 114, semester: '下學期' };
 const PAST = { year: 113, semester: '上學期' };
@@ -453,5 +455,55 @@ describe('XS9 依修課與興趣探索', async () => {
     assert.equal(result.mode, 'favorite');
     assert.deepEqual(result.outside.items.map(item => item.courseCode), ['COME3046']);
     assert.equal(result.outside.items[0].sections.length, 2);
+  });
+});
+
+describe('XS10 課程文字 embedding 本機原型', () => {
+  const vectorLoader = (courses, vectors) => {
+    const artifact = { schemaVersion: 1, textVersion: COURSE_TEXT_VECTOR_VERSION,
+      catalogVersion: textCatalog.catalogVersion, embeddingModel: 'fixture-only', dimension: 2,
+      generatedAt: '2026-10-14T00:00:00Z', courses: buildCourseTextDocuments(courses).map(doc => ({
+        courseCode: doc.courseCode, contentHash: doc.contentHash, vector: vectors[doc.courseCode] ?? [0, 1],
+      })) };
+    return async () => ({ available: true, index: buildCourseTextEmbeddingIndex(courses, artifact) });
+  };
+
+  test('XS10 同一起點不同表示法改變排序，但仍排除舊學期、已修與沒有時間的課', async () => {
+    const courses = [
+      section('IECS3059', '人工智慧導論', '資訊三合', AI),
+      section('COMEWORD', '字面重疊課', '通訊三甲', AI),
+      section('COMEMEAN', '語意相近課', '通訊三甲', '模型預測與資料分析', { ragTag: ['人工智慧'] }),
+      section('OLD', '舊課', '通訊三甲', AI, PAST),
+      section('NOTIME', '沒時間的課', '機電三甲', AI, { timeBlocks: [], dayOfWeek: null }),
+      ...fillers(),
+    ];
+    const fav = [history('IECS3059', '人工智慧導論', 90)];
+    const loadTextEmbeddings = vectorLoader(courses, { IECS3059: [1, 0], COMEWORD: [0.1, 1], COMEMEAN: [1, 0], OLD: [1, 0], NOTIME: [1, 0] });
+    const lexical = await run(courses, fav, { favoriteCourseCode: 'IECS3059', representation: 'tfidf' });
+    const semantic = await run(courses, fav, { favoriteCourseCode: 'IECS3059', representation: 'embedding' }, { loadTextEmbeddings });
+    assert.equal(lexical.outside.items[0].courseCode, 'COMEWORD');
+    assert.equal(semantic.outside.items[0].courseCode, 'COMEMEAN');
+    assert.deepEqual(semantic.favorite, lexical.favorite);
+    assert.equal(semantic.method.representation, 'course-text-embedding-v1');
+    assert.equal(semantic.outside.items.some(item => ['OLD', 'NOTIME', 'IECS3059'].includes(item.courseCode)), false);
+    assert.equal('vector' in semantic.outside.items[0], false);
+    assert.ok(semantic.outside.items[0].semanticMatch);
+    assert.equal('sharedTerms' in semantic.outside.items[0], false);
+    assert.equal(new Set(semantic.outside.items.map(item => item.unit)).size, semantic.outside.items.length);
+  });
+
+  test('XS10b 沒有產物或起點向量時提供空狀態，不暗中使用 TF-IDF', async () => {
+    const courses = [section('IECS3059', '人工智慧導論', '資訊三合', AI), ...fillers()];
+    const fav = [history('IECS3059', '人工智慧導論', 90)];
+    const missing = await run(courses, fav, { representation: 'embedding' }, {
+      loadTextEmbeddings: async () => ({ available: false, reason: 'text-embeddings-unavailable' }),
+    });
+    assert.equal(missing.emptyReason, 'text-embeddings-unavailable');
+    assert.deepEqual(missing.outside.items, []);
+    const noStart = await run(courses, fav, { representation: 'embedding' }, {
+      loadTextEmbeddings: async () => ({ available: true, index: { vectors: new Map(), documents: new Map() } }),
+    });
+    assert.equal(noStart.emptyReason, 'no-text-embedding-favorite');
+    await assert.rejects(run(courses, fav, { representation: 'unknown' }), error => error.code === 'INVALID_EXPLORATION_REPRESENTATION');
   });
 });

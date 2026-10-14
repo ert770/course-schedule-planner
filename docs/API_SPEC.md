@@ -1680,6 +1680,30 @@ Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `av
 回應另帶 `mode: "favorite"`。同一課號的講課與實習課（課號多一個 `P`，例：`ACCT2031` 與
 `ACCT2031P`）合併成一個項目，以講課課號為準，兩者的班次都在 `sections`。
 
+#### `GET /api/exploration?representation=embedding`（階段 4 本機文字向量原型）
+
+「從一門課出發」另可選 `representation=tfidf|embedding`（省略為 `tfidf`）。`mode=profile`
+仍使用使用者標籤向量，不使用此參數。未知的 representation 回 `400 INVALID_EXPLORATION_REPRESENTATION`。
+前端「共同用詞／語意相似」切換會保留同一個 `favoriteCourseCode`，兩種方法共用候選與單位分散規則。
+
+`embedding` 讀取本機離線產物，以「課名＋正規標籤名稱＋課程簡介」的文字向量算餘弦相似度。
+請求當下不呼叫外部 API，不寫入 MySQL。起點仍須為使用者已通過的課；候選仍須當學期、資格確定、
+有上課時間、尚未通過。只列正相似的候選，每組最多 5 門，講課與實習課沿用合併規則。
+
+- `method.representation="course-text-embedding-v1"`，有產物時另帶 `embeddingModel`、`dimension`、
+  `catalogVersion`、`generatedAt`，數值為產物實際版本。沒有產物時不填不存在的模型資料。
+- `items[].similarity` 是文字 embedding 餘弦值；與 TF-IDF 值尺度不同，不可解讀為喜歡機率或直接比較高低。
+- `items[].semanticMatch={sourceCourseCode,commonTags}`：`commonTags` 只列兩門課 canonical 標籤的實際交集，
+  最多 5 個。它是附加內容事實，不宣稱為向量分數的因果解釋；此模式不產生 `sharedTerms` 或內部向量。
+- `favorites[].reason="no-text-embedding"`：該課沒有可用且文件雜湊一致的向量；本學期未開不會單獨使起點失效。
+- `emptyReason="text-embeddings-unavailable"`：本機產物不存在。
+- `emptyReason="text-embeddings-invalid"`：產物格式、目錄版本或讀取狀態不相容。
+- `emptyReason="no-text-embedding-favorite"`：指定起點或所有起點的向量缺少／內容已更新。
+  上述狀態回 `200`、`favorite=null`、清單為空；前端提供「改用共同用詞」。不偷偷改用 TF-IDF。
+
+產物路徑與重算方式見 `docs/DATA_SCHEMA.md` 的「課程文字向量本機產物」。這是本機原型，沒有建立
+`Course_Text_Embeddings` MySQL 表。只驗證探索流程與輸出差異，不代表已驗證推薦成效。
+
 #### `GET /api/exploration?mode=profile`（協同過濾與 User Embedding 構想階段 4）
 
 「依你的修課與興趣」探索。以標籤空間使用者向量（`server/src/skills/userTagVector.js`）排序系外選修與
