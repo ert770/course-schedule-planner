@@ -360,12 +360,20 @@ B～F 適用對象（#13C）與學制／學程（#13D）已於 2026-09-18 依專
 （`buildBreadthSequence()` 的 `reserveExternal`）：
 
 1. 系外學分仍有缺口。
-2. 這次的興趣關鍵字命中至少一門可認列的系外選修候選。
+2. 伺服器建立的使用者向量在可認列、未修過、有時間的系外候選中，有至少一門正向 `s_vec`（2026-10-14 階段 4）。
 
-原本沒有系外名額就把最後一個換成系外，不足兩個則補上；總數仍不超過兩門。這個名額先用命中興趣的
-系外選修來填，命中的都排不進去（衝堂等）才退回其他系外選修。沒有興趣、興趣沒命中系外課、或系外
-缺口為 0 時，分配結果與原規則相同。方案的 `graduationPlanning.externalReservedForInterest`
-標示這次是否保留。
+原本沒有系外名額就把最後一個換成系外，不足兩個則補上；總數仍不超過兩門。正向候選依 `s_vec`
+降冪取前 5 個穩定課號，每系最多一門；同一課號各班次仍可嘗試。該名額先從這份清單依 `s_vec` 挑課，
+平手沿用既有候選分；清單內班次都排不進去（衝堂等）才退回其他系外候選。必修、指定課、認列、
+已修排除、時間與學分限制仍生效。沒有同意、沒有正向訊號、讀取失敗或系外缺口為 0，不額外保留，
+仍按畢業目標分配；`null`、0、負分不視為正向，也不因此刪掉一般候選。
+
+`scheduleService` 使用完整課程目錄建立歷史向量，在本次候選課號上沿用階段 3 的正負 P95 縮放。
+context 只經 server runtime options 傳給 scheduler，REST 與 Chat 共用；反事實重排沿用同一政策。
+`EXTERNAL_INTEREST_RESERVATION_MODE=keyword` 可重現舊關鍵字政策，預設 `vector`。
+方案的 `graduationPlanning.externalReservedForInterest` 標示是否保留，`externalInterestReservation`
+揭露來源與前五門清單。這是 greedy 初始方案的候選優先機制，不是 `candidateScore` 或 `preferenceScore`
+的新計分項；MILP 替代方案維持類別門數與硬條件，仍可選不同系外課。向量混合計分屬後續階段 6。
 
 核心選修與修課路徑資料來自 `server/src/data/csCurriculum.js`（114 必選修科目表 + 113 課程地圖），
 比對條件為**課程物件的 `catalogCourseCode` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的

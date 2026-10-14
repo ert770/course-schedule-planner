@@ -15,6 +15,7 @@ import {
   isOwnDepartmentElective,
   isRequiredForStudent,
   isOtherStudentsRequiredCourse,
+  parseClassName,
 } from './courseScope.js';
 import { annotateCourseCategory, refineOutsideElectiveScopeReason } from './courseCategory.js';
 import { evaluateOutsideElective } from './outsideElective.js';
@@ -230,8 +231,8 @@ function graduationBucketSummary(plan, scope) {
 // 候選池裡也排不進去——修金融科技微學程、說了對管理金融有興趣的學生仍然一門商管課都沒有。
 // 因此在 `reserveExternal` 為 true 且系外仍有缺口時，保證其中一個名額是系外：
 // 原本沒有系外名額就把最後一個換成系外（不足兩個則補上）。
-// `reserveExternal` 由呼叫端判定：這次的興趣關鍵字命中了至少一門可認列的系外選修候選。
-// 沒有興趣、興趣沒命中系外課、或系外缺口為 0 時，分配結果與原規則完全相同。
+// 正式 service 以正向 s_vec 的系外保留清單判定；keyword A/B 與純函式舊呼叫仍可用關鍵字。
+// 沒有正向訊號或系外缺口為 0 時，不額外保留名額。
 export function buildBreadthSequence(graduationPlanning, { reserveExternal = false } = {}) {
   if (!graduationPlanning?.enabled) return [];
   const remaining = {
@@ -268,16 +269,44 @@ function interestHitsOutsideElective(candidates, constraints, scope) {
   ));
 }
 
-function createGraduationAllocationState(plan, constraints, scope, candidates = []) {
+const EXTERNAL_INTEREST_RESERVATION_LIMIT = 5;
+
+// 名額優先清單不是計分項。只從已通過資格／時間／已修排除的候選取正 s_vec，
+// 課號去重、每系一門；同一課號的不同班次仍可逐一嘗試。
+export function rankExternalReservationCandidates(candidates, scope, context) {
+  const ranked = candidates.filter(course => getGraduationBucket(course, scope) === GRADUATION_BUCKET.EXTERNAL
+    && course.countsTowardGraduation !== false
+    && Number.isFinite(context?.scores?.get(course.catalogCourseCode)?.score)
+    && context.scores.get(course.catalogCourseCode).score > 0)
+    .sort((a, b) => context.scores.get(b.catalogCourseCode).score - context.scores.get(a.catalogCourseCode).score
+      || String(a.catalogCourseCode).localeCompare(String(b.catalogCourseCode)) || Number(a.id) - Number(b.id));
+  const codes = new Set();
+  const departments = new Set();
+  const selected = [];
+  for (const course of ranked) {
+    const unit = parseClassName(course.department).department ?? course.department;
+    if (codes.has(course.catalogCourseCode) || departments.has(unit)) continue;
+    selected.push({ courseCode: course.catalogCourseCode, score: context.scores.get(course.catalogCourseCode).score });
+    codes.add(course.catalogCourseCode);
+    departments.add(unit);
+    if (selected.length >= EXTERNAL_INTEREST_RESERVATION_LIMIT) break;
+  }
+  return selected;
+}
+
+function createGraduationAllocationState(plan, constraints, scope, candidates = [], reservation = null) {
   const planning = constraints.graduationPlanning;
   if (!planning?.enabled) return null;
+  const preferred = reservation?.source === 's_vec'
+    ? rankExternalReservationCandidates(candidates, scope, reservation) : [];
   const reserveExternal = Number(planning.gaps?.external || 0) > 0
-    && interestHitsOutsideElective(candidates, constraints, scope);
+    && (reservation ? preferred.length > 0 : interestHitsOutsideElective(candidates, constraints, scope));
   const state = {
     planning,
     scope,
     breadthSequence: buildBreadthSequence(planning, { reserveExternal }),
     reserveExternal,
+    preferred,
     unavailable: new Set(),
     topUp: [],
   };
@@ -300,6 +329,11 @@ function createGraduationAllocationState(plan, constraints, scope, candidates = 
     semesterTargets: { ...planning.semesterTargets },
     breadthSequence: [...state.breadthSequence],
     externalReservedForInterest: reserveExternal,
+    externalInterestReservation: {
+      source: reservation?.source ?? 'keyword',
+      candidateLimit: EXTERNAL_INTEREST_RESERVATION_LIMIT,
+      preferredCourses: preferred,
+    },
     selected: graduationBucketSummary(plan, scope),
     totalGap,
     creditFloorOnly: state.creditFloorOnly,
@@ -2486,8 +2520,6 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
 
   // 正式必修、重補修與使用者明確指定的課排完後，才開始消耗本學期的自動選課配額。
   // 明確指定的選修／通識／系外課也會計入已用配額，避免系統在它們之外又補一整份。
-  const graduationAllocation = createGraduationAllocationState(plan, constraints, scope, prepared.courses);
-
   const placedIds = new Set([
     ...plan.schedule.map(c => Number(c.id)),
     ...plan.unscheduledCourses.map(c => Number(c.id)),
@@ -2506,6 +2538,9 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     && hasScheduledTime(course)
     && course.corequisiteRole !== 'internship'
   ));
+  const graduationAllocation = createGraduationAllocationState(
+    plan, constraints, scope, remaining, diagnosticOptions.externalInterestReservation
+  );
 
   for (const course of optional) {
     if (!hasScheduledTime(course)) {
@@ -2627,10 +2662,12 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         return selectedBuckets.elective.courses + slots <= 3;
       })
       : remaining;
-    // 系外名額是因為興趣才保留的，就先用命中興趣的系外選修來填；
-    // 命中的都排不進去（衝堂等）才退回其他系外選修。
+    // 保留名額先用 s_vec 前五門清單（舊 A/B 為關鍵字）；都排不進去才退回一般系外候選。
     if (!toppingUp && phase === GRADUATION_BUCKET.EXTERNAL && graduationAllocation?.reserveExternal) {
-      const hits = phaseCandidates.filter(course => collectInterestHits(course, constraints).length > 0);
+      const preferredCodes = new Set(graduationAllocation.preferred.map(item => item.courseCode));
+      const hits = phaseCandidates.filter(course => diagnosticOptions.externalInterestReservation
+        ? preferredCodes.has(course.catalogCourseCode)
+        : collectInterestHits(course, constraints).length > 0);
       if (hits.length > 0) phaseCandidates.splice(0, phaseCandidates.length, ...hits);
     }
     if (toppingUp && phaseCandidates.length === 0) break;
@@ -2659,6 +2696,11 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     }
 
     phaseCandidates.sort((a, b) => (
+      (!toppingUp && phase === GRADUATION_BUCKET.EXTERNAL && graduationAllocation?.reserveExternal
+        ? (graduationAllocation.preferred.find(item => item.courseCode === b.catalogCourseCode)?.score ?? 0)
+          - (graduationAllocation.preferred.find(item => item.courseCode === a.catalogCourseCode)?.score ?? 0)
+        : 0)
+      ||
       scoreCourse(b, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore, activeTagScoring)
       - scoreCourse(a, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore, activeTagScoring)
       || Number(a.id) - Number(b.id)
@@ -4066,6 +4108,7 @@ function tryRelaxationLadder(prepared, constraints, variant, runtimeOptions = {}
     const plan = buildPlan(prepared, relaxedFlags, variant, {
       tagInterestContext: runtimeOptions.tagInterestContext,
       tagInterestMode: runtimeOptions.tagInterestContext?.mode,
+      externalInterestReservation: runtimeOptions.externalInterestReservation,
     });
     if (plan.success) {
       return { plan, relaxedFlags, relaxedConstraints };
@@ -4212,6 +4255,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
         tagInterestContext,
         tagInterestMode,
         tagInterestShadowStats,
+        externalInterestReservation: runtimeOptions.externalInterestReservation,
       });
       const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
       plan.preferenceScore = score;

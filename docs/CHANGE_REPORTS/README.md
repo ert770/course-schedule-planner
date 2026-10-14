@@ -4,6 +4,8 @@
 
 ## 2026-10-14
 
+- [階段 4：系外保留候選改用 s_vec](./2026-10-14-external-reservation-stage4.md)
+
 1. [階段 4：課程文字向量本機原型與探索 A/B](./2026-10-14-course-text-exploration-stage4.md)
 2. [rag_tag 同義詞合併（標籤目錄 v3）](./2026-10-14-tag-synonym-merge.md)
 3. [標籤相近表：中英對照重算（試驗，不採用）](./2026-10-14-tag-neighbors-bilingual-trial.md)

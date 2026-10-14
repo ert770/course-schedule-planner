@@ -851,6 +851,16 @@ Response:
 實際排入的類別門數／學分。`enabled:false` 代表歷史修課、畢業規則或剩餘學期不足，系統
 不會假裝有配額。它也會出現在每個方案中；多方案的類別門數必須與 S₀ 一致。
 
+`graduationPlanning.externalInterestReservation`（2026-10-14 階段 4）：
+`{source,candidateLimit:5,preferredCourses:[{courseCode,score}]}`。
+`source` 為 `s_vec`、`no-consent`、`no-positive-signal`、`unavailable` 或舊政策 `keyword`。
+清單為 greedy 可用系外候選中正 `s_vec` 的前五個不同課號，每系最多一門，班次不重複計數。
+它表示優先嘗試清單，不保證全排入；`externalReservedForInterest` 表示有沒有額外保留系外名額，
+最終排入仍看 `selected`。分數不加入候選／方案的既有計分。
+context 僅由 server 建立，request body 不能指定政策、向量或分數；REST 與 Chat 共用。
+`EXTERNAL_INTEREST_RESERVATION_MODE` 預設 `vector`，設 `keyword` 重現原關鍵字 A/B。
+未同意、沒有正向證據或讀取失敗時不額外保留，但不刪除原有系外候選。
+
 `graduationPlanning.totalGap`／`creditFloorOnly`（2026-10-02，出現在各方案的
 `graduationPlanning`）：`totalGap` 是畢業門檻總學分減已取得總學分（沒有資料時為 `null`）；
 `creditFloorOnly: true` 代表 `totalGap < minCredits`，本學期排到最低學分就停，不再照類別配額往上排。

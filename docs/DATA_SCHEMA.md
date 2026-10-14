@@ -976,3 +976,11 @@ node scripts/courseTextEmbeddingStage4.js --apply  # 已取得公開課程傳送
 2,004 門都有簡介，0 門截斷；首次建立實際消耗 658,197 tokens，固定字串排序後補算 1 門消耗 337 tokens，
 兩次合計 658,534 tokens。此處記錄的是產物與管線狀態，
 不是推薦成效指標。缺檔、版本不合或文件內容變動時的 API 行為見 `API_SPEC.md`。
+
+### 階段 4 系外保留候選 context（2026-10-14）
+
+`externalInterestReservation={source,modelVersion?,scores:Map<catalogCourseCode,{score,raw,positive,negative}>}`
+是 request 期間的 server runtime 資料，不是 MySQL 表，不接受前端提交。
+使用完整課程目錄與同意有效的本人歷史／事件建立向量，再對本次候選算 `s_vec`；未同意或失敗為空 Map。
+回應只保留 `graduationPlanning.externalInterestReservation` 的來源、上限 5 與可用前五門 `{courseCode,score}`；
+不傳出本人原始事件、歷史證據或向量。清單不代表實際入選，需看 `selected`；替代方案可能選別的系外課。
