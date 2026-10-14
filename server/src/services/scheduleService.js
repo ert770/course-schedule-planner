@@ -30,7 +30,7 @@ import {
   INTERACTION_EVENT_TYPES,
   INTERACTION_SOURCES,
 } from '../data/interactionEventSchema.js';
-import { recordInteractionEvents } from './interactionEventService.js';
+import { getInteractionEventsForExport, hasPersonalizationConsent, recordInteractionEvents } from './interactionEventService.js';
 import { getSchedulingPreferenceWeights } from './preferenceLearningService.js';
 import { getTagInterestProfile } from './tagInterestService.js';
 import { RECOMMENDATION_REASON_VERSION } from '../skills/recommendationReason.js';
@@ -41,8 +41,11 @@ import {
 } from '../skills/tagInterestRanking.js';
 import { logger } from '../utils/logger.js';
 import { loadCandidateVectorScores, loadExternalInterestReservation } from './externalInterestReservationService.js';
-import { resolveInterestAlphas, resolveVectorInterestMode } from '../skills/interestAlphas.js';
+import { resolveCfInterestMode, resolveInterestAlphas, resolveVectorInterestMode } from '../skills/interestAlphas.js';
 import { buildVectorInterestContext } from '../skills/vectorInterestShadow.js';
+import { CF_MODEL_VERSION, buildUserCourseSignals, scoreCoursesWithCf } from '../skills/itemItemCf.js';
+import { loadLatestCourseNeighbors } from './courseNeighborService.js';
+import { PRIVACY_RETENTION } from '../data/privacyPolicy.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
 //
@@ -322,7 +325,8 @@ export function generateScheduleWithTagInterestContext(
   tagInterestContext,
   scheduler = generateSchedule,
   externalInterestReservation = null,
-  vectorInterestContext = null
+  vectorInterestContext = null,
+  cfInterestContext = null
 ) {
   const runtimeOptions = {};
   if (externalInterestReservation) {
@@ -333,6 +337,9 @@ export function generateScheduleWithTagInterestContext(
   }
   if (vectorInterestContext && vectorInterestContext.mode !== 'off') {
     runtimeOptions.vectorInterestContext = vectorInterestContext;
+  }
+  if (cfInterestContext && cfInterestContext.mode !== 'off') {
+    runtimeOptions.cfInterestContext = cfInterestContext;
   }
   return Object.keys(runtimeOptions).length === 0
     ? scheduler(candidates, constraints)
@@ -490,6 +497,67 @@ export async function loadVectorInterestContext(identity, prefs, candidates, {
 }
 
 /**
+ * 階段 7：協同過濾 s_cf 的 shadow context。
+ * 「接收」只需要本人的 personalization_learning：用本人的課程訊號查已彙總的共現表，
+ * 不讀其他人的資料。共現表不存在、還沒建、或本人沒有訊號時記為不可用，不影響排課。
+ */
+export async function loadCfInterestContext(identity, prefs, candidates, {
+  mode,
+  loadNeighbors = loadLatestCourseNeighbors,
+  loadEvents = null,
+  now = new Date(),
+} = {}) {
+  if (mode === 'off' || candidates.length === 0) return null;
+  let source = 'unavailable';
+  let scores = null;
+  let gateMet = null;
+  try {
+    const consented = loadEvents ? true : await hasPersonalizationConsent(identity);
+    if (!consented) {
+      source = 'no-consent';
+    } else {
+      const table = await loadNeighbors();
+      gateMet = table.gateMet ?? null;
+      if (!table.available) {
+        source = table.reason ?? 'unavailable';
+      } else if (table.neighbors.size === 0) {
+        source = 'empty_table';
+      } else {
+        const retentionMs = PRIVACY_RETENTION.interactionEventDays * 86400000;
+        const events = (await (loadEvents ?? getInteractionEventsForExport)(identity)).filter(event => {
+          const time = Date.parse(event.timestamp ?? '');
+          return Number.isFinite(time) && now.getTime() - time <= retentionMs;
+        });
+        const signals = buildUserCourseSignals({
+          courseHistory: prefs?.courseHistory ?? [], events, now: now.toISOString(), activeTerm: ACTIVE_TERM,
+        });
+        if (signals.size === 0) {
+          source = 'no-user-signal';
+        } else {
+          scores = scoreCoursesWithCf(signals, table.neighbors, candidates.map(course => course.catalogCourseCode));
+          source = 'cf';
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn(`協同過濾 shadow 無法計算：${error.message}`, { label: 'Schedule' });
+  }
+  return {
+    ...buildVectorInterestContext({
+      mode,
+      source,
+      modelVersion: CF_MODEL_VERSION,
+      alpha: resolveInterestAlphas().cf,
+      candidates,
+      scores,
+      scoredSource: 'cf',
+      noScoreReason: 'no_neighbor_overlap',
+    }),
+    gateMet,
+  };
+}
+
+/**
  * Roadmap #27：counterfactual——「取消某項偏好，課表會怎麼變」。
  *
  * **刻意不併進 `/generate`**：一次 counterfactual 是一次完整重排，實測候選池
@@ -515,12 +583,15 @@ export async function counterfactualForUser(identity, input = {}, options = {}) 
   };
 }
 
-// 階段 6：s_vec shadow 的彙總只寫進日誌，不回傳給前端、不改變排序。
-function logVectorInterestShadow(stats) {
+// 階段 6、7：s_vec／s_cf shadow 的彙總只寫進日誌，不回傳給前端、不改變排序。
+function logInterestShadow(label, stats) {
   if (!stats) return;
   const percent = value => (value === null ? '無' : `${Math.round(value * 100)}%`);
+  const gate = stats.gateMet === null || stats.gateMet === undefined
+    ? ''
+    : `，啟用門檻${stats.gateMet ? '已達到' : '未達到'}`;
   logger.info(
-    `s_vec shadow 彙總（α_vec ${stats.alphaVec}，來源 ${stats.source}）：`
+    `${label} shadow 彙總（α ${stats.alphaVec}，來源 ${stats.source}${gate}）：`
       + `候選正向 ${stats.candidates.positive}、中性 ${stats.candidates.neutral}、`
       + `負向 ${stats.candidates.negative}、無分數 ${stats.candidates.noScore}；`
       + `與 s_tag 相關係數 ${stats.correlation.pearson === null ? '無法計算' : stats.correlation.pearson.toFixed(2)}`
@@ -567,18 +638,23 @@ export async function generateForUser(identity, input = {}, options = {}) {
   const vectorInterestMode = resolveVectorInterestMode(
     options.vectorInterestMode ?? process.env.VECTOR_INTEREST_MODE
   );
-  // 兩者都要讀互動事件，並行讀取，shadow 不讓排課多等一輪。
-  const [tagInterestContext, vectorInterestContext] = await Promise.all([
+  const cfInterestMode = resolveCfInterestMode(options.cfInterestMode ?? process.env.CF_INTEREST_MODE);
+  // 三者都要讀互動事件，並行讀取，shadow 不讓排課多等一輪。
+  const [tagInterestContext, vectorInterestContext, cfInterestContext] = await Promise.all([
     loadTagInterestContextSafely(identity, candidates, { mode: tagInterestMode, prefs }),
     loadVectorInterestContext(identity, prefs, candidates, {
       mode: vectorInterestMode,
       externalInterestReservation,
       loadScores: options.loadCandidateVectorScores,
     }),
+    loadCfInterestContext(identity, prefs, candidates, {
+      mode: cfInterestMode,
+      ...(options.loadCourseNeighbors ? { loadNeighbors: options.loadCourseNeighbors } : {}),
+    }),
   ]);
   const scheduled = generateScheduleWithTagInterestContext(
     candidates, mergedConstraints, tagInterestContext, generateSchedule, externalInterestReservation,
-    vectorInterestContext
+    vectorInterestContext, cfInterestContext
   );
   if (tagInterestContext?.mode === 'shadow' && scheduled?.tagInterestShadowStats) {
     const stats = scheduled.tagInterestShadowStats;
@@ -594,7 +670,8 @@ export async function generateForUser(identity, input = {}, options = {}) {
       { label: 'Schedule' }
     );
   }
-  logVectorInterestShadow(scheduled?.vectorInterestShadowStats);
+  logInterestShadow('s_vec', scheduled?.vectorInterestShadowStats);
+  logInterestShadow('s_cf', scheduled?.cfInterestShadowStats);
   const result = annotateScheduleIdentifiers(scheduled, requestId);
   await recordExposureSafely(identity, result, requestId, { surface, trigger });
   return result;

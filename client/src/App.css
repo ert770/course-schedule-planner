@@ -1003,6 +1003,7 @@
 .privacy-purpose { display: flex; gap: 12px; padding: 16px; margin: 10px 0; border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; }
 .privacy-purpose input { width: 20px; height: 20px; accent-color: var(--accent-blue); flex: 0 0 auto; }
 .privacy-purpose span { display: flex; flex-direction: column; gap: 6px; }
+.privacy-purpose.disabled { cursor: not-allowed; opacity: 0.6; }
 .privacy-purpose small, .privacy-facts { color: var(--text-secondary); line-height: 1.55; }
 .privacy-facts { margin: 18px 0; padding: 14px 18px; background: var(--bg-primary); border-radius: var(--radius-md); font-size: .9rem; }
 .privacy-facts p { margin: 6px 0; }

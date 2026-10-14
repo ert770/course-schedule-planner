@@ -49,10 +49,23 @@ export function resolveVectorInterestMode(value = DEFAULT_VECTOR_INTEREST_MODE) 
   throw new RangeError(`VECTOR_INTEREST_MODE 只接受 off 或 shadow（目前是「${value}」）`);
 }
 
+// 階段 7：協同過濾 s_cf 只能 off／shadow；active 要等構想 4.6 的門檻達到後（階段 8）才開放。
+export const DEFAULT_CF_INTEREST_MODE = 'shadow';
+
+export function resolveCfInterestMode(value = DEFAULT_CF_INTEREST_MODE) {
+  const mode = String(value ?? DEFAULT_CF_INTEREST_MODE).trim().toLowerCase() || DEFAULT_CF_INTEREST_MODE;
+  if (mode === 'off' || mode === 'shadow') return mode;
+  if (mode === 'active') {
+    throw new RangeError('CF_INTEREST_MODE=active 尚未開放：協同過濾達到啟用門檻前只能 off 或 shadow');
+  }
+  throw new RangeError(`CF_INTEREST_MODE 只接受 off 或 shadow（目前是「${value}」）`);
+}
+
 /** 啟動時檢查；設定錯誤就拒絕啟動。 */
 export function assertInterestConfig(env = process.env) {
   resolveInterestAlphas(env);
   resolveVectorInterestMode(env.VECTOR_INTEREST_MODE);
+  resolveCfInterestMode(env.CF_INTEREST_MODE);
 }
 
 export default {
@@ -60,7 +73,9 @@ export default {
   DEFAULT_VECTOR_INTEREST_ALPHA,
   DEFAULT_CF_INTEREST_ALPHA,
   DEFAULT_VECTOR_INTEREST_MODE,
+  DEFAULT_CF_INTEREST_MODE,
   resolveInterestAlphas,
   resolveVectorInterestMode,
+  resolveCfInterestMode,
   assertInterestConfig,
 };

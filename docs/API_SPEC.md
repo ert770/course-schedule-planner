@@ -40,12 +40,16 @@ watchlist 等個人資料端點除了 session，還需要目前政策版本的 `
 { "error": "尚未同意目前版本所需的資料用途", "code": "CONSENT_REQUIRED" }
 ```
 
-政策版本過期時 `code` 為 `CONSENT_VERSION_OUTDATED`。`personalization_learning` 與
+政策版本過期時 `code` 為 `CONSENT_VERSION_OUTDATED`。`personalization_learning`、`collaborative_learning` 與
 `aggregate_research` 都是選擇性且預設 false，不影響核心服務。
+
+**2026-10-14 政策升版為 `2026-10-14.v4`**（新增 `collaborative_learning`）：所有人在舊版下的同意都不再有效，
+登入後 `requiresAction: true`、需在隱私中心重新確認一次；確認前個人化學習與排課的個人化訊號都停用。
 
 ### `GET /api/privacy/policy`
 
-公開回傳政策版本、三種用途、processor 與保存期限，不需要登入。
+公開回傳政策版本、四種用途、processor 與保存期限，不需要登入。`collaborative_learning` 另有
+`requires: ["personalization_learning"]`；`retention.collaborativeMinimumCooccurrence` 為 3。
 
 ### `GET /api/privacy/consents`
 
@@ -59,12 +63,18 @@ canonical ID 或 pseudonymous subject ID。
   "consents": {
     "service_processing": true,
     "personalization_learning": false,
+    "collaborative_learning": false,
     "aggregate_research": false
   }
 }
 ```
 
-必要用途必須為 true 才能開始服務；三個值會以同一時間點原子寫入。
+必要用途必須為 true 才能開始服務；各用途的值會以同一時間點原子寫入。
+
+**協同過濾（2026-10-14 階段 7）**：`collaborative_learning` 是「貢獻」——讓本人的修課與課程互動進入課程共現表，
+協助推薦給其他同學。以 `personalization_learning` 為前提：後者為 `false` 時伺服器一律把前者記為 `false`。
+從 `true` 改為 `false` 時，伺服器約 5 秒後重建共現表，新表不含他的資料（不等每日排程）。
+「接收」協同過濾分數只需要 `personalization_learning`。
 
 **Roadmap #31**：`personalization_learning` 從 `true` 改為 `false`（撤回）時，
 本次請求會**連同已學到的權重與作為其輸入的互動事件一起刪除**（等同呼叫下方的

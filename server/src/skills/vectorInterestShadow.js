@@ -5,8 +5,12 @@
 //   - 候選池：每個決策點的候選順序、第一名是否會不同（候選分 + α_vec × 基礎分 × s_vec）。
 //   - 方案：方案分 + 方案偏好分 × α_vec × 平均 s_vec 後，方案名次與推薦方案是否會不同。
 //   - s_tag 與 s_vec 的相關係數：兩者都來自 rag_tag，相關太高代表同一個訊號會被算兩次。
+// 階段 7 的協同過濾 s_cf 用同一套 shadow（context 結構相同，scheduler 分開記錄）。
 
-/** 從課號分數（scoreCoursesForUser 的結果）建立以班次為鍵的 context。 */
+/**
+ * 從課號分數建立以班次為鍵的 context。
+ * `scoredSource` 是「有分數」時的來源名稱（s_vec 或 cf）；其他來源代表整體不可用，原因即來源本身。
+ */
 export function buildVectorInterestContext({
   mode = 'off',
   source = 'unavailable',
@@ -14,6 +18,8 @@ export function buildVectorInterestContext({
   alpha = 0,
   candidates = [],
   scores = null,
+  scoredSource = 's_vec',
+  noScoreReason = 'no_similarity',
 } = {}) {
   const coursesBySectionId = {};
   if (mode !== 'off') {
@@ -21,11 +27,11 @@ export function buildVectorInterestContext({
       const sectionId = String(course?.sectionId ?? course?.id ?? '').trim();
       if (!sectionId || Object.hasOwn(coursesBySectionId, sectionId)) continue;
       const code = String(course?.catalogCourseCode ?? '').trim().toUpperCase();
-      const scored = source === 's_vec' ? scores?.get(code) : null;
+      const scored = source === scoredSource ? scores?.get(code) : null;
       const score = Number.isFinite(scored?.score) ? scored.score : null;
       coursesBySectionId[sectionId] = {
         score,
-        reason: source !== 's_vec' ? source : score === null ? 'no_similarity' : 'scored',
+        reason: source !== scoredSource ? source : score === null ? noScoreReason : 'scored',
       };
     }
   }
@@ -54,6 +60,7 @@ export function createVectorInterestShadowStats(vectorContext, tagInterestContex
     source: vectorContext.source,
     modelVersion: vectorContext.modelVersion,
     alphaVec: vectorContext.alpha,
+    gateMet: vectorContext.gateMet ?? null,
     candidates: { positive: 0, neutral: 0, negative: 0, noScore: 0 },
     correlation: { pairs: 0, pearson: null },
     poolComparisons: 0,
@@ -116,9 +123,9 @@ export function scorePlanVectorInterest(freeChoiceCourses, vectorContext) {
   };
 }
 
-export function attachVectorInterestShadowStats(result, stats) {
+export function attachVectorInterestShadowStats(result, stats, name = 'vectorInterestShadowStats') {
   if (!result || !stats) return result;
-  Object.defineProperty(result, 'vectorInterestShadowStats', {
+  Object.defineProperty(result, name, {
     configurable: true,
     enumerable: false,
     value: {

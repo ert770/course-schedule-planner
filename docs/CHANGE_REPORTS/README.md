@@ -4,6 +4,7 @@
 
 ## 2026-10-14
 
+- [協同過濾與 User Embedding：階段 7 協同過濾同意、課程共現表與 s_cf shadow](./2026-10-14-collaborative-filtering-stage7.md)
 - [協同過濾與 User Embedding：階段 6 s_vec 以 shadow 接入排課與 α 總和檢查](./2026-10-14-vector-interest-shadow-stage6.md)
 - [協同過濾與 User Embedding：階段 5 歷史修課回饋視窗（含 Codex 階段 4 審查）](./2026-10-14-history-feedback-stage5.md)
 - [階段 4：系外保留候選改用 s_vec](./2026-10-14-external-reservation-stage4.md)

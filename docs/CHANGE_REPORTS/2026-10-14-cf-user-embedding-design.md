@@ -551,7 +551,9 @@ OpenAI `text-embedding-3-large`。新增離線腳本與本機產物讀取路徑�
 3.7 的「系外選修保留名額改用 `s_vec`」已由同日接續工作實作；只改 greedy 保留清單與名額政策，
 尚未把向量加入候選／方案計分，見[保留候選報告](./2026-10-14-external-reservation-stage4.md)。
 階段 5 的歷史修課回饋視窗與階段 6 的排課 shadow 已完成（見[階段 5](./2026-10-14-history-feedback-stage5.md)、
-[階段 6](./2026-10-14-vector-interest-shadow-stage6.md) 報告）；階段 7～8 的 CF 管線與試行尚未開始。
+[階段 6](./2026-10-14-vector-interest-shadow-stage6.md) 報告）；階段 7 的同意、共現表與 s_cf shadow 已完成
+（見[階段 7 報告](./2026-10-14-collaborative-filtering-stage7.md)；4.5 的顯示文字依使用者確認採用、政策升版為 v4、
+第 6 節只建了 `Course_Neighbors` 與其建立紀錄表）；階段 8 的試行等真實樣本。
 
 ---
 

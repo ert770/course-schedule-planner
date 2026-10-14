@@ -383,6 +383,13 @@ context 只經 server runtime options 傳給 scheduler，REST 與 Chat 共用；
 興趣模型 α：`α_tag` 0.6、`α_vec` 0.2（`VECTOR_INTEREST_ALPHA`）、`α_cf` 0.1（`CF_INTEREST_ALPHA`），
 總和超過 0.9 時伺服器拒絕啟動，不靜默截斷。
 
+**s_cf shadow（2026-10-14 階段 7）**：`CF_INTEREST_MODE`（預設 `shadow`，可設 `off`）。item-item 協同過濾：
+用本人（需同意 `personalization_learning`）的課程訊號查課程共現表 `Course_Neighbors`，
+`s_cf(u, c) = Σ sim(c, j) × w_u(j) / max(1, Σ sim(c, j))`，j 為 c 的前 20 門相近課中本人有訊號的。
+與 `s_vec` 用同一套 shadow，但**分開記錄**（`cfInterestShadowStats`），同樣以 0 計入、不改變排序；
+日誌另記共現表的啟用門檻是否達到。共現表不存在、為空或本人沒有訊號時記為不可用。
+`active` 要等構想 4.6 的門檻達到（階段 8）才開放，設定會拒絕啟動。
+
 核心選修與修課路徑資料來自 `server/src/data/csCurriculum.js`（114 必選修科目表 + 113 課程地圖），
 比對條件為**課程物件的 `catalogCourseCode` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的
 `網路程式設計 COME3016`、機電系的 `電子學 MCAE3103` 誤判為資工系核心選修。

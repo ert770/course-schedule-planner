@@ -12,6 +12,7 @@ import {
 } from '../services/preferenceLearningService.js';
 import { deleteTagInterestProfile, getStoredTagInterestProfile, getTagInterestProfile } from '../services/tagInterestService.js';
 import { buildClearSessionCookie } from '../services/sessionService.js';
+import { requestCourseNeighborRebuild } from '../services/courseNeighborService.js';
 
 const router = Router();
 const requestId = req => String(req.get('x-request-id') || '').slice(0, 128) || null;
@@ -37,7 +38,15 @@ router.put('/consents', requireIdentity, async (req, res) => {
     // 路由註解）：先寫入撤回，並行中的 `POST /api/interactions` 就只剩「搶在
     // 撤回前落地並被下面刪掉」或「看到已撤回而被拒絕」兩種結局，不會在刪除
     // 跑完之後補寫。
+    const isCurrentGrant = consent => Boolean(consent?.granted && consent.policyVersion === PRIVACY_POLICY_VERSION);
+    const before = await getConsentStatus(req.identity);
     const status = await recordConsentChoices(req.identity, req.body?.consents, { requestId: requestId(req) });
+
+    // 階段 7：撤回「協助推薦課程給其他同學」時提前重建共現表，不等每日排程。
+    const collaborative = PRIVACY_PURPOSES.COLLABORATIVE_LEARNING;
+    if (isCurrentGrant(before.consents?.[collaborative]) && !isCurrentGrant(status.consents?.[collaborative])) {
+      requestCourseNeighborRebuild();
+    }
 
     // roadmap #31：撤回「從互動持續改善個人化」等於硬性暫停——連同已學到的
     // 權重與作為輸入的互動事件一起刪除，不是留著不用。判定用**寫入後的權威
