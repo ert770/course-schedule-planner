@@ -126,3 +126,15 @@
 
 - 外部 API：無（embedding 全部來自快取）。對資料庫只讀課程與事件，未寫入。
 - 未 commit。
+
+---
+
+## 8. 追加：106 個新向量標籤的降權審核（2026-10-14）
+
+- 使用者審核 `2026-10-14-formal-tag-candidates-v3-new.xlsx`：14 個降權（報告技巧、互聯網、文獻搜集、任務型教學、
+  個人化學習、專題式學習、產業經驗、產業實務、設計技能、Social Science，以及改判的物理模式、教學法、透明性、環保意識）；
+  SQL Server、InDesign 未填，依表格預設保留。
+- 降權名單 374 → 388 個。新增 `server/scripts/lib/readFormalTagDecisions.py`（讀審核表）；`formalTagClassify.js` 新增
+  `--reviewed`（只分類未審核的標籤）與 `--xlsx`（輸出檔名）。
+- 影響：真實帳號留一驗證維持 0.751、前 10 名不變；Persona 變動在 ±0.004 內。重啟後端後探索頁正常。
+- 相關測試 36 項通過；未 commit。

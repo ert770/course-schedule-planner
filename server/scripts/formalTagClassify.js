@@ -65,7 +65,11 @@ async function ask(names) {
 }
 
 async function main() {
-  const tags = interestTagCatalog.canonicalTags.filter(isVectorEligibleTag);
+  // --reviewed=<檔案>：已審核過的標籤（readDecisions 輸出的 JSON，含 id）不再列入，只分類與輸出其餘的。
+  const reviewedFile = args.find(arg => arg.startsWith('--reviewed='))?.split('=')[1];
+  const reviewed = new Set(reviewedFile ? JSON.parse(fs.readFileSync(path.resolve(reviewedFile), 'utf8')).map(row => row.id) : []);
+  const tags = interestTagCatalog.canonicalTags.filter(tag => isVectorEligibleTag(tag) && !reviewed.has(tag.id));
+  if (reviewed.size) console.log(`排除已審核 ${reviewed.size} 個，剩 ${tags.length} 個向量標籤待分類`);
   const cache = fs.existsSync(cacheFile) ? JSON.parse(fs.readFileSync(cacheFile, 'utf8')) : {};
   fs.mkdirSync(outDir, { recursive: true });
   for (let vote = 0; vote < VOTES; vote += 1) {
@@ -135,7 +139,7 @@ function writeReviewPayload(tags, cache, meta) {
   const rows = tags.map(rowOf).sort((a, b) => b.courses - a.courses || String(a.cells[0]).localeCompare(String(b.cells[0]), 'zh-Hant'));
   const sheet = (name, filter) => ({ name, columns, rows: rows.filter(filter).map(row => row.cells) });
   const payload = {
-    output: path.resolve(scriptDir, '..', '..', 'docs', 'CHANGE_REPORTS', '2026-10-14-formal-tag-candidates.xlsx'),
+    output: path.resolve(scriptDir, '..', '..', 'docs', 'CHANGE_REPORTS', args.find(arg => arg.startsWith('--xlsx='))?.split('=')[1] ?? '2026-10-14-formal-tag-candidates.xlsx'),
     decisionColumn: 4,
     decisionOptions: ['降權', '保留'],
     widths: [18, 16, 10, 10, 9, 8, 9, 22, 70, 26],
