@@ -111,6 +111,65 @@ export function cosineWithContributions(left, right) {
   return { similarity, contributions };
 }
 
+/**
+ * 把標籤相近表（tagVectorNeighbors.json）轉成對稱的相似度查表：A 列了 B 或 B 列了 A 都算，取較大值。
+ * 傳 null 時回傳空表，softCosine 因此退回一般餘弦（純標籤空間）。
+ */
+export function buildTagSimilarity(table = null) {
+  const similarity = new Map();
+  const set = (a, b, value) => {
+    const row = similarity.get(a) ?? new Map();
+    if (!(row.get(b) >= value)) row.set(b, value);
+    similarity.set(a, row);
+  };
+  for (const [id, neighbors] of Object.entries(table?.neighbors ?? {})) {
+    for (const item of neighbors) {
+      if (item.canonicalTagId === id || !(item.similarity > 0)) continue;
+      set(id, item.canonicalTagId, item.similarity);
+      set(item.canonicalTagId, id, item.similarity);
+    }
+  }
+  return similarity;
+}
+
+// aᵀ S b，S = 單位矩陣 ＋ 相近表。逐項回傳貢獻：同一標籤記為 left = right。
+function softDot(left, right, similarity, collect = null) {
+  let total = 0;
+  for (const [id, value] of left) {
+    const same = right.get(id);
+    if (same !== undefined) {
+      total += value * same;
+      collect?.push({ left: id, right: id, value: value * same });
+    }
+    for (const [other, weight] of similarity?.get(id) ?? []) {
+      const match = right.get(other);
+      if (match === undefined) continue;
+      total += value * match * weight;
+      collect?.push({ left: id, right: other, value: value * match * weight });
+    }
+  }
+  return total;
+}
+
+/**
+ * Soft cosine：uᵀSv / sqrt(uᵀSu · vᵀSv)。輸入是「標籤 ID → 權重」的 Map。
+ * similarity 為空表時等於一般餘弦。貢獻加總等於相似度，推薦理由可引用
+ * 「同一標籤」或「相近標籤」兩種配對。任一方為零向量時回傳 similarity = null。
+ */
+export function softCosine(left, right, similarity = null, { withContributions = false } = {}) {
+  if (!left?.size || !right?.size) return { similarity: null, contributions: [] };
+  const leftNorm = Math.sqrt(softDot(left, left, similarity));
+  const rightNorm = Math.sqrt(softDot(right, right, similarity));
+  if (!(leftNorm > 0) || !(rightNorm > 0)) return { similarity: null, contributions: [] };
+  const collect = withContributions ? [] : null;
+  const dot = softDot(left, right, similarity, collect);
+  const denominator = leftNorm * rightNorm;
+  const contributions = (collect ?? [])
+    .map(item => ({ ...item, contribution: item.value / denominator }))
+    .sort((a, b) => b.contribution - a.contribution);
+  return { similarity: dot / denominator, contributions };
+}
+
 /** 找出與某課號最相近的 k 門課（不含自己；相似度為 0 的不列）。 */
 export function nearestCourses(index, courseCode, { k = 5, filter = null } = {}) {
   const code = normalizeCode(courseCode);
@@ -142,5 +201,7 @@ export default {
   vectorTagsOf,
   buildCourseTagVectors,
   cosineWithContributions,
+  buildTagSimilarity,
+  softCosine,
   nearestCourses,
 };
