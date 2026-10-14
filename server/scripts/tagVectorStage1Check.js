@@ -25,6 +25,8 @@ const args = process.argv.slice(2);
 const outName = args.find(arg => arg.startsWith('--out='))?.split('=')[1];
 if (!outName) { console.error('請指定 --out=<名稱>'); process.exit(1); }
 const outDir = path.resolve(scriptDir, '..', 'simulation-runs', outName);
+// --no-downweights：不套用審核過的降權名單（對照用）。
+const NO_DOWNWEIGHTS = args.includes('--no-downweights');
 
 const KEYWORDS = ['機器學習', '人工智慧', '資料庫', '網路', '程式設計', '金融', '管理', '設計', '英文', '物聯網'];
 const RANDOM_COUNT = 10;
@@ -68,11 +70,12 @@ function describe(index, code) {
 async function main() {
   if (!isMysqlConfigured()) throw new Error('未設定 MySQL（DB_*），無法量測。');
   const courses = await getAll('courses');
-  const index = buildCourseTagVectors(courses);
+  const vectorOptions = NO_DOWNWEIGHTS ? { downweights: null } : {};
+  const index = buildCourseTagVectors(courses, vectorOptions);
   const withoutCommon = buildCourseTagVectors(courses.map(course => ({
     ...course,
     ragTag: (Array.isArray(course.ragTag) ? course.ragTag : []).filter(raw => !tooCommonNames.has(String(raw).trim())),
-  })));
+  })), vectorOptions);
 
   const zero = [...index.vectors.values()].filter(vector => !(vector.norm > 0)).length;
   const sizes = [...index.vectors.values()].map(vector => vector.weights.size).sort((a, b) => a - b);

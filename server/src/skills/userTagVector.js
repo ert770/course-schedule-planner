@@ -48,11 +48,12 @@ function addScaled(target, vector, scale) {
   for (const [id, value] of vector) target.set(id, (target.get(id) ?? 0) + value * scale);
 }
 
+// 與課程向量同一套權重（idf × 降權係數），明確興趣與回饋標籤才不會繞過降權。
 function vectorFromTagIds(tagIds, index) {
   const vector = new Map();
   for (const id of tagIds) {
-    const idf = index.idf.get(id);
-    if (idf > 0) vector.set(id, idf);
+    const weight = (index.tagWeights ?? index.idf).get(id);
+    if (weight > 0) vector.set(id, weight);
   }
   return vector;
 }

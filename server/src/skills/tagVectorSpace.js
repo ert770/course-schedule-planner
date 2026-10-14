@@ -12,9 +12,15 @@
 //
 // 純函式，不碰資料庫，也還沒接進排課或探索。
 
+import fs from 'node:fs';
 import { resolveInterestTags } from '../data/interestTagCatalog.js';
 
 export const TAG_VECTOR_MODEL_VERSION = 'tag-vector-v1';
+
+// 使用者審核過的降權名單（形式、對象、通用能力、泛用詞與工具標籤）。只影響向量，s_tag 不受影響。
+export const DEFAULT_TAG_DOWNWEIGHTS = JSON.parse(
+  fs.readFileSync(new URL('../data/tagVectorDownweights.json', import.meta.url), 'utf8'),
+);
 
 // single_course 與 explicit_generic 的 crossCourseMatchEligible 都是 false、原因也不是 too_common，
 // 所以由下面兩條規則自然排除。
@@ -43,8 +49,10 @@ export function vectorTagsOf(rawTags) {
 /**
  * 建立課程向量索引。同一課號的多個班次取標籤聯集。
  * idf 由這批課程本身計算，所以索引只對建立它的那批課程（例如當學期）有意義。
+ * 向量的值 = idf × 降權係數（名單上的標籤乘 downweights.factor，其餘乘 1），存在 tagWeights；
+ * idf 本身保留原值。傳 `downweights: null` 可關閉降權（評估對照用）。
  */
-export function buildCourseTagVectors(courses = []) {
+export function buildCourseTagVectors(courses = [], { downweights = DEFAULT_TAG_DOWNWEIGHTS } = {}) {
   const tagsByCode = new Map();
   const names = new Map();
   const tagNames = new Map();
@@ -67,12 +75,16 @@ export function buildCourseTagVectors(courses = []) {
   }
   const idf = new Map();
   for (const [id, df] of documentFrequency) idf.set(id, Math.log(courseCount / df));
+  const factor = Number(downweights?.factor);
+  const downweighted = downweights && factor >= 0 && factor <= 1 ? new Set(Object.keys(downweights.tags ?? {})) : new Set();
+  const tagWeights = new Map();
+  for (const [id, value] of idf) tagWeights.set(id, downweighted.has(id) ? value * factor : value);
 
   const vectors = new Map();
   for (const [code, tags] of tagsByCode) {
     const weights = new Map();
     for (const id of tags) {
-      const value = idf.get(id);
+      const value = tagWeights.get(id);
       if (value > 0) weights.set(id, value);
     }
     const norm = Math.sqrt([...weights.values()].reduce((sum, value) => sum + value * value, 0));
@@ -83,6 +95,8 @@ export function buildCourseTagVectors(courses = []) {
     modelVersion: TAG_VECTOR_MODEL_VERSION,
     courseCount,
     idf,
+    tagWeights,
+    downweightedTagCount: [...downweighted].filter(id => idf.has(id)).length,
     documentFrequency,
     tagNames,
     courseNames: names,
