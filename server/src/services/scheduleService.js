@@ -40,7 +40,9 @@ import {
   resolveTagInterestRankingMode,
 } from '../skills/tagInterestRanking.js';
 import { logger } from '../utils/logger.js';
-import { loadExternalInterestReservation } from './externalInterestReservationService.js';
+import { loadCandidateVectorScores, loadExternalInterestReservation } from './externalInterestReservationService.js';
+import { resolveInterestAlphas, resolveVectorInterestMode } from '../skills/interestAlphas.js';
+import { buildVectorInterestContext } from '../skills/vectorInterestShadow.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
 //
@@ -319,15 +321,22 @@ export function generateScheduleWithTagInterestContext(
   constraints,
   tagInterestContext,
   scheduler = generateSchedule,
-  externalInterestReservation = null
+  externalInterestReservation = null,
+  vectorInterestContext = null
 ) {
+  const runtimeOptions = {};
   if (externalInterestReservation) {
-    return scheduler(candidates, constraints, { tagInterestContext, externalInterestReservation });
+    runtimeOptions.tagInterestContext = tagInterestContext;
+    runtimeOptions.externalInterestReservation = externalInterestReservation;
+  } else if (tagInterestContext && tagInterestContext.mode !== 'off') {
+    runtimeOptions.tagInterestContext = tagInterestContext;
   }
-  if (!tagInterestContext || tagInterestContext.mode === 'off') {
-    return scheduler(candidates, constraints);
+  if (vectorInterestContext && vectorInterestContext.mode !== 'off') {
+    runtimeOptions.vectorInterestContext = vectorInterestContext;
   }
-  return scheduler(candidates, constraints, { tagInterestContext });
+  return Object.keys(runtimeOptions).length === 0
+    ? scheduler(candidates, constraints)
+    : scheduler(candidates, constraints, runtimeOptions);
 }
 
 // 候選池與限制的組裝。
@@ -457,6 +466,30 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
 }
 
 /**
+ * 階段 6：s_vec shadow 用的 context。系外保留名額已經算過同一批候選的 s_vec 時直接沿用。
+ * 計算失敗只讓 shadow 記為不可用，不影響排課。
+ */
+export async function loadVectorInterestContext(identity, prefs, candidates, {
+  mode,
+  externalInterestReservation = null,
+  loadScores = loadCandidateVectorScores,
+} = {}) {
+  if (mode === 'off' || candidates.length === 0) return null;
+  const reused = ['s_vec', 'no-consent', 'no-positive-signal'].includes(externalInterestReservation?.source)
+    ? externalInterestReservation
+    : null;
+  const scored = reused ?? await loadScores(identity, prefs, candidates);
+  return buildVectorInterestContext({
+    mode,
+    source: scored?.source ?? 'unavailable',
+    modelVersion: scored?.modelVersion ?? null,
+    alpha: resolveInterestAlphas().vec,
+    candidates,
+    scores: scored?.scores ?? null,
+  });
+}
+
+/**
  * Roadmap #27：counterfactual——「取消某項偏好，課表會怎麼變」。
  *
  * **刻意不併進 `/generate`**：一次 counterfactual 是一次完整重排，實測候選池
@@ -480,6 +513,24 @@ export async function counterfactualForUser(identity, input = {}, options = {}) 
     }),
     reviewDataLoaded,
   };
+}
+
+// 階段 6：s_vec shadow 的彙總只寫進日誌，不回傳給前端、不改變排序。
+function logVectorInterestShadow(stats) {
+  if (!stats) return;
+  const percent = value => (value === null ? '無' : `${Math.round(value * 100)}%`);
+  logger.info(
+    `s_vec shadow 彙總（α_vec ${stats.alphaVec}，來源 ${stats.source}）：`
+      + `候選正向 ${stats.candidates.positive}、中性 ${stats.candidates.neutral}、`
+      + `負向 ${stats.candidates.negative}、無分數 ${stats.candidates.noScore}；`
+      + `與 s_tag 相關係數 ${stats.correlation.pearson === null ? '無法計算' : stats.correlation.pearson.toFixed(2)}`
+      + `（${stats.correlation.pairs} 門）；`
+      + `比較 ${stats.poolComparisons} 個決策點，${stats.changedPoolComparisons} 個順序不同、`
+      + `${stats.changedTopChoices} 個第一名不同；`
+      + `方案 ${stats.plans.compared} 個、有分數 ${stats.plans.withEvidence} 個、平均涵蓋 ${percent(stats.plans.meanCoverage)}，`
+      + `${stats.plans.changedPositions} 個名次改變、推薦方案${stats.plans.recommendedChanged ? '會改變' : '不變'}。`,
+    { label: 'Schedule' }
+  );
 }
 
 /**
@@ -513,12 +564,21 @@ export async function generateForUser(identity, input = {}, options = {}) {
   const tagInterestMode = resolveTagInterestRankingMode(
     options.tagInterestMode ?? process.env.TAG_INTEREST_RANKING_MODE
   );
-  const tagInterestContext = await loadTagInterestContextSafely(identity, candidates, {
-    mode: tagInterestMode,
-    prefs,
-  });
+  const vectorInterestMode = resolveVectorInterestMode(
+    options.vectorInterestMode ?? process.env.VECTOR_INTEREST_MODE
+  );
+  // 兩者都要讀互動事件，並行讀取，shadow 不讓排課多等一輪。
+  const [tagInterestContext, vectorInterestContext] = await Promise.all([
+    loadTagInterestContextSafely(identity, candidates, { mode: tagInterestMode, prefs }),
+    loadVectorInterestContext(identity, prefs, candidates, {
+      mode: vectorInterestMode,
+      externalInterestReservation,
+      loadScores: options.loadCandidateVectorScores,
+    }),
+  ]);
   const scheduled = generateScheduleWithTagInterestContext(
-    candidates, mergedConstraints, tagInterestContext, generateSchedule, externalInterestReservation
+    candidates, mergedConstraints, tagInterestContext, generateSchedule, externalInterestReservation,
+    vectorInterestContext
   );
   if (tagInterestContext?.mode === 'shadow' && scheduled?.tagInterestShadowStats) {
     const stats = scheduled.tagInterestShadowStats;
@@ -534,6 +594,7 @@ export async function generateForUser(identity, input = {}, options = {}) {
       { label: 'Schedule' }
     );
   }
+  logVectorInterestShadow(scheduled?.vectorInterestShadowStats);
   const result = annotateScheduleIdentifiers(scheduled, requestId);
   await recordExposureSafely(identity, result, requestId, { surface, trigger });
   return result;

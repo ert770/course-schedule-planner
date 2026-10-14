@@ -60,6 +60,12 @@ import {
   scoreCandidateWithTagInterest,
   scorePlanTagInterest,
 } from './tagInterestRanking.js';
+import {
+  attachVectorInterestShadowStats,
+  createVectorInterestShadowStats,
+  recordVectorShadowPoolRanking,
+  scorePlanVectorInterest,
+} from './vectorInterestShadow.js';
 
 let configuredHighsRuntime = null;
 
@@ -1451,6 +1457,47 @@ function updatePlanTagInterestShadowStats(
   planStats.orderChanged = planStats.changedPositions > 0;
 }
 
+// 階段 6：s_vec 若啟用時會加的分數（構想 5.1 的 α_vec × 基礎分 × s_vec）。shadow 只用來比較順序，
+// 不進入實際計分。適用範圍與標籤興趣相同：只有可選課池的非必修、非指定、非實習課。
+function vectorInterestShadowDelta(course, vectorContext, requiredIds, scope) {
+  const sectionId = String(course?.id ?? course?.sectionId ?? '').trim();
+  const score = vectorContext?.coursesBySectionId?.[sectionId]?.score;
+  if (!Number.isFinite(score)) return 0;
+  const bucket = getGraduationBucket(course, scope);
+  if (![GRADUATION_BUCKET.ELECTIVE, GRADUATION_BUCKET.GENERAL, GRADUATION_BUCKET.EXTERNAL].includes(bucket)) return 0;
+  if (requiredIds.has(Number(course.id)) || isRequiredForStudent(course, scope)
+    || course.corequisiteRole === 'internship') return 0;
+  // 1000 是 computeScoreComponents() 的池內基礎分 `base`。
+  return vectorContext.alpha * 1000 * score;
+}
+
+// 方案層 shadow：方案分 + 方案偏好分 × α_vec × 平均 s_vec，與實際名次比較。
+function updatePlanVectorInterestShadowStats(plans, vectorContext, constraints, scope, stats) {
+  if (!stats || !Array.isArray(plans) || plans.length === 0) return;
+  const scored = plans.map((plan, index) => {
+    const metrics = scorePlanVectorInterest(getFreeChoicePlanCourses(plan, constraints, scope), vectorContext);
+    const current = Number.isFinite(plan.combinedPlanScore) ? plan.combinedPlanScore : plan.preferenceScore;
+    const shadowScore = metrics.planVecScore === null
+      ? current
+      : current + (Number(plan.preferenceScore) || 0) * vectorContext.alpha * metrics.planVecScore;
+    return { index, metrics, rankedPlan: { ...plan, combinedPlanScore: shadowScore } };
+  });
+  const planStats = stats.plans;
+  planStats.compared = scored.length;
+  planStats.withEvidence = scored.filter(entry => entry.metrics.planVecScore !== null).length;
+  const coverages = scored.map(entry => entry.metrics.vectorInterestCoverage).filter(Number.isFinite);
+  planStats.meanCoverage = coverages.length > 0
+    ? coverages.reduce((sum, value) => sum + value, 0) / coverages.length
+    : null;
+  const shadowOrder = [...scored].sort((left, right) => comparePlans(left.rankedPlan, right.rankedPlan));
+  planStats.changedPositions = shadowOrder.reduce(
+    (count, entry, rank) => count + (entry.index === rank ? 0 : 1),
+    0
+  );
+  planStats.orderChanged = planStats.changedPositions > 0;
+  planStats.recommendedChanged = shadowOrder[0]?.index !== 0;
+}
+
 // 單一課程的放置判斷。greedy 與 roadmap #22 repair 必須共用這一個入口，
 // 否則新增限制時很容易只改到其中一邊，最後 solver 找到一份自己認為合法、
 // final validator 卻拒絕的課表。
@@ -2691,6 +2738,22 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         candidate => scoreCourse(
           candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
           shadowTagScoring
+        )
+      );
+    }
+    // 系外保留名額已經依 s_vec 排序（08e4b3a），那個決策點不再比較。
+    const reservationOrdered = !toppingUp && phase === GRADUATION_BUCKET.EXTERNAL
+      && graduationAllocation?.reserveExternal;
+    if (diagnosticOptions.vectorInterestShadowStats && !reservationOrdered) {
+      recordVectorShadowPoolRanking(
+        diagnosticOptions.vectorInterestShadowStats,
+        phaseCandidates,
+        candidate => scoreCourse(
+          candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
+          activeTagScoring
+        ),
+        candidate => vectorInterestShadowDelta(
+          candidate, diagnosticOptions.vectorInterestContext, requiredIds, scope
         )
       );
     }
@@ -4160,6 +4223,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   const tagInterestPlanAlpha = runtimeOptions.tagInterestPlanAlpha
     ?? DEFAULT_TAG_INTEREST_PLAN_ALPHA;
   const tagInterestShadowStats = createTagInterestShadowStats(tagInterestContext);
+  const vectorInterestContext = runtimeOptions.vectorInterestContext ?? null;
+  const vectorInterestShadowStats = createVectorInterestShadowStats(vectorInterestContext, tagInterestContext);
 
   if (!Array.isArray(candidateCourses) || candidateCourses.length === 0) {
     const unmetRequirements = [{
@@ -4255,6 +4320,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
         tagInterestContext,
         tagInterestMode,
         tagInterestShadowStats,
+        vectorInterestContext,
+        vectorInterestShadowStats,
         externalInterestReservation: runtimeOptions.externalInterestReservation,
       });
       const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
@@ -4351,6 +4418,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   updatePlanTagInterestShadowStats(
     plans, tagInterestContext, constraints, prepared.scope,
     tagInterestPlanAlpha, tagInterestShadowStats
+  );
+  updatePlanVectorInterestShadowStats(
+    plans, vectorInterestContext, constraints, prepared.scope, vectorInterestShadowStats
   );
   let primary = plans[0];
   const solver = repair?.solver || {
@@ -4452,7 +4522,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
           message: `已放寬部分時段偏好以產生可行課表：${relaxed.plan.schedule.length} 門課，`
             + `共 ${relaxed.plan.totalCredits} 學分。`,
         };
-        return attachTagInterestShadowStats(relaxedResult, tagInterestShadowStats);
+        return attachVectorInterestShadowStats(
+          attachTagInterestShadowStats(relaxedResult, tagInterestShadowStats), vectorInterestShadowStats
+        );
       }
     }
 
@@ -4654,7 +4726,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       value: basePlan?._mipInputs ? { ...basePlan._mipInputs, basePlan } : null,
     });
   }
-  return attachTagInterestShadowStats(result, tagInterestShadowStats);
+  return attachVectorInterestShadowStats(
+    attachTagInterestShadowStats(result, tagInterestShadowStats), vectorInterestShadowStats
+  );
 }
 
 export function validateSchedule(courses = []) {
