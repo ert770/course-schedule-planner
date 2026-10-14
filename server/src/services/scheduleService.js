@@ -40,6 +40,7 @@ import {
   resolveTagInterestRankingMode,
 } from '../skills/tagInterestRanking.js';
 import { logger } from '../utils/logger.js';
+import { loadExternalInterestReservation } from './externalInterestReservationService.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
 //
@@ -317,8 +318,12 @@ export function generateScheduleWithTagInterestContext(
   candidates,
   constraints,
   tagInterestContext,
-  scheduler = generateSchedule
+  scheduler = generateSchedule,
+  externalInterestReservation = null
 ) {
+  if (externalInterestReservation) {
+    return scheduler(candidates, constraints, { tagInterestContext, externalInterestReservation });
+  }
   if (!tagInterestContext || tagInterestContext.mode === 'off') {
     return scheduler(candidates, constraints);
   }
@@ -443,7 +448,12 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
     }
   }
 
-  return { candidates, mergedConstraints, reviewDataLoaded };
+  const externalInterestReservation = candidates.length > 0 && graduationPlanning?.enabled
+    && Number(graduationPlanning.gaps?.external) > 0
+    ? await loadExternalInterestReservation(identity, prefs, candidates, {
+      mode: options.externalInterestReservationMode ?? process.env.EXTERNAL_INTEREST_RESERVATION_MODE,
+    }) : null;
+  return { candidates, mergedConstraints, reviewDataLoaded, externalInterestReservation };
 }
 
 /**
@@ -457,7 +467,7 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
  * 把它記成曝光會汙染 #2 的訓練資料。
  */
 export async function counterfactualForUser(identity, input = {}, options = {}) {
-  const { candidates, mergedConstraints, reviewDataLoaded } =
+  const { candidates, mergedConstraints, reviewDataLoaded, externalInterestReservation } =
     await prepareGenerationInputs(identity, input, options);
 
   if (candidates.length === 0) {
@@ -465,7 +475,9 @@ export async function counterfactualForUser(identity, input = {}, options = {}) 
   }
 
   return {
-    ...buildCounterfactuals(candidates, mergedConstraints),
+    ...buildCounterfactuals(candidates, mergedConstraints, {
+      runtimeOptions: { externalInterestReservation },
+    }),
     reviewDataLoaded,
   };
 }
@@ -487,7 +499,7 @@ export async function generateForUser(identity, input = {}, options = {}) {
 
   const prefs = options.prefs ?? await getUserPreferences(identity);
 
-  const { candidates, mergedConstraints, reviewDataLoaded } = await prepareGenerationInputs(
+  const { candidates, mergedConstraints, reviewDataLoaded, externalInterestReservation } = await prepareGenerationInputs(
     identity,
     { courseIds, filters, constraints },
     { ...options, prefs }
@@ -505,7 +517,9 @@ export async function generateForUser(identity, input = {}, options = {}) {
     mode: tagInterestMode,
     prefs,
   });
-  const scheduled = generateScheduleWithTagInterestContext(candidates, mergedConstraints, tagInterestContext);
+  const scheduled = generateScheduleWithTagInterestContext(
+    candidates, mergedConstraints, tagInterestContext, generateSchedule, externalInterestReservation
+  );
   if (tagInterestContext?.mode === 'shadow' && scheduled?.tagInterestShadowStats) {
     const stats = scheduled.tagInterestShadowStats;
     logger.info(

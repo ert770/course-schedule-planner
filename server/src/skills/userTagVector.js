@@ -8,6 +8,7 @@
 //   - 歷史修課：最新一次已通過、畢業分類為選修／通識／系外；必修與不計學分課不算。
 //     權重 historyWeight × historyTermDecay^(距今學期數)。歷史修課不用 120 天半衰期，
 //     否則大一修的課到大四幾乎歸零。
+//   - 歷史修課回饋（階段 5）：喜歡 +1、不喜歡 −1（並取消該課的 historyWeight）、普通 0。
 //   - 互動事件：沿用 rag-tag-interest-v1 的權重、衰減、失效與瀏覽上限
 //     （collectWeightedTagInterestEvents）。興趣探索回饋只用使用者勾選的標籤；
 //     其他事件用整門課的向量。
@@ -16,7 +17,7 @@
 // 純函式，不碰資料庫，也還沒接進排課。
 
 import { normalizeSemesterLabel } from '../data/activeTerm.js';
-import { getLatestAttemptsByCourseCode } from '../data/courseHistory.js';
+import { getPassedNonRequiredAttempts } from '../data/courseHistory.js';
 import { resolveInterestTags } from '../data/interestTagCatalog.js';
 import { buildExplicitTagInterest, collectWeightedTagInterestEvents } from './tagInterestLearning.js';
 import { isVectorEligibleTag, softCosine } from './tagVectorSpace.js';
@@ -30,7 +31,6 @@ export const USER_TAG_VECTOR_DEFAULTS = Object.freeze({
   // 以池內正向（負向）相似度的這個百分位為 1，超過的截到 1。
   referencePercentile: 0.95,
 });
-const NON_REQUIRED_HISTORY = new Set(['elective', 'general', 'external']);
 
 function normalizeCode(value) {
   return String(value ?? '').trim().toUpperCase();
@@ -48,11 +48,12 @@ function addScaled(target, vector, scale) {
   for (const [id, value] of vector) target.set(id, (target.get(id) ?? 0) + value * scale);
 }
 
+// 與課程向量同一套權重（idf × 降權係數），明確興趣與回饋標籤才不會繞過降權。
 function vectorFromTagIds(tagIds, index) {
   const vector = new Map();
   for (const id of tagIds) {
-    const idf = index.idf.get(id);
-    if (idf > 0) vector.set(id, idf);
+    const weight = (index.tagWeights ?? index.idf).get(id);
+    if (weight > 0) vector.set(id, weight);
   }
   return vector;
 }
@@ -82,7 +83,7 @@ export function buildUserTagVector({
   const negative = new Map();
   const evidence = [];
   const sources = {
-    explicitTags: 0, unmappedTopics: [], historyCourses: 0, historyWithoutVector: 0,
+    explicitTags: 0, unmappedTopics: [], historyCourses: 0, historyWithoutVector: 0, historyDisliked: 0,
     positiveEvents: 0, negativeEvents: 0,
   };
 
@@ -100,12 +101,18 @@ export function buildUserTagVector({
     sources.explicitTags = explicitVector.size;
   }
 
+  // 互動事件（含歷史修課回饋）先算好：回答「不喜歡」的歷史課不再給 +historyWeight。
+  const weightedEvents = collectWeightedTagInterestEvents(events, { now, activeTerm }).items;
+  const dislikedHistory = new Set(weightedEvents
+    .filter(item => item.event.eventType === 'history_course_feedback' && item.weight < 0)
+    .map(item => normalizeCode(item.snapshot?.course?.catalogCourseCode ?? item.event?.course?.catalogCourseCode)));
+
   // 歷史修課。
   const activeOrdinal = termOrdinal(activeTerm?.academicYear, activeTerm?.semester);
-  for (const entry of getLatestAttemptsByCourseCode(courseHistory).values()) {
-    if (!entry?.passed || !NON_REQUIRED_HISTORY.has(entry.graduationCategory)) continue;
+  for (const entry of getPassedNonRequiredAttempts(courseHistory)) {
     const code = normalizeCode(entry.courseCode);
     if (excluded.has(code)) continue;
+    if (dislikedHistory.has(code)) { sources.historyDisliked += 1; continue; }
     const vector = unit(index.vectors.get(code)?.weights ?? new Map());
     if (!vector) {
       sources.historyWithoutVector += 1;
@@ -120,7 +127,7 @@ export function buildUserTagVector({
   }
 
   // 互動事件。
-  for (const item of collectWeightedTagInterestEvents(events, { now, activeTerm }).items) {
+  for (const item of weightedEvents) {
     const code = normalizeCode(item.snapshot?.course?.catalogCourseCode ?? item.event?.course?.catalogCourseCode);
     if (code && excluded.has(code)) continue;
     const courseVector = item.event.eventType === 'interest_exploration_feedback'
@@ -198,12 +205,17 @@ export function explainCourseForUser(user, index, courseCode, { similarity = nul
     }
   }
   return {
-    tags: contributions.slice(0, topTags).map(item => ({
-      userTag: name(item.left),
-      courseTag: name(item.right),
-      viaNeighbor: item.left !== item.right,
-      contribution: item.contribution,
-    })),
+    // 同一個課程標籤可能和使用者的好幾個標籤相近；理由只列一次，取貢獻最大的那組配對
+    // （contributions 已依貢獻由大到小排序）。
+    tags: contributions
+      .filter((item, i) => contributions.findIndex(other => other.right === item.right) === i)
+      .slice(0, topTags)
+      .map(item => ({
+        userTag: name(item.left),
+        courseTag: name(item.right),
+        viaNeighbor: item.left !== item.right,
+        contribution: item.contribution,
+      })),
     closestEvidence: closest,
   };
 }

@@ -35,19 +35,30 @@ const cacheDir = path.resolve(scriptDir, '..', 'simulation-runs', 'tag-embedding
 // 2026-10-14 比較後採用 large：small 對短中文詞偏重字面（機器學習最近的是機構學）。
 const EMBEDDING_MODEL = argValue('model') ?? 'text-embedding-3-large';
 const TAU = argValue('tau') ? Number(argValue('tau')) : null;
-// name：只送標籤名稱（預設）；path：名稱加上分類路徑。2026-10-14 實測 path 會讓分類路徑主導相似度。
+// name：只送標籤名稱（預設）；path：名稱加上分類路徑（2026-10-14 實測會讓分類路徑主導相似度）；bilingual：中英對照。
 const TEXT_MODE = argValue('text') ?? 'name';
+// bilingual：「中文（English）」，英文對照由 scripts/tagEnglishGloss.js 產生（只送標籤名稱）。
+const glossFile = path.resolve(scriptDir, '..', 'simulation-runs', 'tag-english-gloss', 'glosses.json');
+const GLOSSES = TEXT_MODE === 'bilingual' ? JSON.parse(fs.readFileSync(glossFile, 'utf8')) : {};
 const TOP_K = 5;
 const BATCH = 256;
 const BANDS = [[0.9, 1.01], [0.85, 0.9], [0.8, 0.85], [0.75, 0.8], [0.7, 0.75]];
 const PER_BAND = 10;
-const neighborsUrl = new URL('../src/data/tagVectorNeighbors.json', import.meta.url);
+// --table-out=<檔案>：正式相近表改寫到別的檔案（評估對照用，不覆蓋 src/data）。
+const neighborsUrl = argValue('table-out')
+  ? path.resolve(argValue('table-out'))
+  : new URL('../src/data/tagVectorNeighbors.json', import.meta.url);
 
 const mainName = new Map(interestTagCatalog.mainCategories.map(item => [item.id, item.name]));
 const subName = new Map(interestTagCatalog.subcategories.map(item => [item.id, item.name]));
 
 function tagText(tag) {
   if (TEXT_MODE === 'name') return tag.name;
+  if (TEXT_MODE === 'bilingual') {
+    const gloss = GLOSSES[tag.id];
+    if (!gloss) throw new Error(`缺少英文對照：${tag.name}（先執行 scripts/tagEnglishGloss.js）`);
+    return gloss.toLowerCase() === tag.name.toLowerCase() ? tag.name : `${tag.name}（${gloss}）`;
+  }
   const paths = [...new Set((tag.categoryAssignments ?? []).map(item => (
     `${mainName.get(item.mainCategoryId) ?? ''}／${subName.get(item.subcategoryId) ?? ''}`
   )))].sort();
@@ -207,7 +218,7 @@ async function main() {
       neighbors: table,
     };
     fs.writeFileSync(neighborsUrl, `${JSON.stringify(output, null, 1)}\n`);
-    console.log(`已寫出 src/data/tagVectorNeighbors.json：${Object.keys(table).length} 個標籤有相近標籤`);
+    console.log(`已寫出 ${neighborsUrl}：${Object.keys(table).length} 個標籤有相近標籤`);
   }
 }
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { interestTagCatalog } from '../src/data/interestTagCatalog.js';
 import {
   buildCourseTagVectors,
+  DEFAULT_TAG_DOWNWEIGHTS,
   cosineWithContributions,
   isVectorEligibleTag,
   nearestCourses,
@@ -81,4 +82,27 @@ test('TV4 nearest courses exclude itself, skip unrelated courses and honour the 
   assert.equal(near[0].sharedTags.length, 2);
   assert.deepEqual(nearestCourses(index, 'A', { filter: code => code !== 'B' }).map(item => item.courseCode), ['C']);
   assert.deepEqual(nearestCourses(index, 'missing'), []);
+});
+
+test('TV6 reviewed downweights scale only listed tags; null turns them off; the list matches the catalog', () => {
+  const table = DEFAULT_TAG_DOWNWEIGHTS;
+  assert.equal(table.catalogVersion, interestTagCatalog.catalogVersion);
+  assert.ok(table.factor > 0 && table.factor < 1);
+  const byId = new Map(interestTagCatalog.canonicalTags.map(tag => [tag.id, tag]));
+  for (const [id, name] of Object.entries(table.tags)) {
+    assert.equal(byId.get(id)?.name, name);
+    assert.ok(isVectorEligibleTag(byId.get(id)), `${name} must be a vector tag`);
+  }
+  const [downId, downName] = Object.entries(table.tags)[0];
+  const courses = [
+    { catalogCourseCode: 'A', ragTag: [downName, crossA] },
+    { catalogCourseCode: 'B', ragTag: [crossB] },
+  ];
+  const on = buildCourseTagVectors(courses);
+  const off = buildCourseTagVectors(courses, { downweights: null });
+  assert.ok(Math.abs(on.tagWeights.get(downId) - on.idf.get(downId) * table.factor) < 1e-12);
+  assert.equal(off.tagWeights.get(downId), off.idf.get(downId));
+  assert.equal(on.vectors.get('A').weights.get(downId), on.tagWeights.get(downId));
+  assert.equal(on.downweightedTagCount, 1);
+  assert.equal(off.downweightedTagCount, 0);
 });

@@ -29,6 +29,9 @@ export const INTERACTION_EVENT_TYPES = Object.freeze({
   COURSE_DESELECTED: 'course_deselected',
   RECOMMENDATION_ACCEPTED: 'recommendation_accepted',
   INTEREST_EXPLORATION_FEEDBACK: 'interest_exploration_feedback',
+  // 歷史修課回饋（協同過濾與 User Embedding 構想階段 5）：使用者對自己已通過的非必修課
+  // 表示喜歡／普通／不喜歡。針對整門課，不選標籤；伺服器另驗證那門課確實在本人歷史修課中。
+  HISTORY_COURSE_FEEDBACK: 'history_course_feedback',
   // roadmap #10 任務 3A：真正的 set-wise choice——使用者在**看得到多個方案**的情況下
   // 挑了其中一個。與 `recommendation_accepted` 刻意分成兩個型別而不是加旗標：後者包含
   // 「Agent 只顯示主推方案、使用者說好」這種情況，那只代表接受推薦，不能證明使用者
@@ -44,6 +47,7 @@ export const INTERACTION_SOURCES = Object.freeze({
   REQUIRED: 'required',
   SYSTEM_RECOMMENDATION: 'system_recommendation',
   EXPLORATION: 'exploration',
+  HISTORY_REVIEW: 'history_review',
 });
 
 export const INTERACTION_FEEDBACK_REASONS = Object.freeze({
@@ -87,6 +91,7 @@ const COURSE_REQUIRED_EVENTS = new Set([
   INTERACTION_EVENT_TYPES.COURSE_REMOVED,
   INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN,
   INTERACTION_EVENT_TYPES.INTEREST_EXPLORATION_FEEDBACK,
+  INTERACTION_EVENT_TYPES.HISTORY_COURSE_FEEDBACK,
 ]);
 
 const FEEDBACK_EVENTS = new Set([
@@ -101,6 +106,8 @@ const SOURCE_REQUIRED_EVENTS = new Set([
 ]);
 
 const EXPLORATION_RESPONSES = new Set(['interested', 'not_interested', 'learn_more']);
+export const HISTORY_FEEDBACK_RESPONSES = Object.freeze(['liked', 'neutral', 'disliked']);
+const HISTORY_RESPONSE_SET = new Set(HISTORY_FEEDBACK_RESPONSES);
 const CANONICAL_TAG_ID_PATTERN = /^tag_[0-9a-f]{20}$/iu;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -511,8 +518,24 @@ export function validateInteractionEvent(input) {
         }
       }
     }
+  } else if (event.eventType === INTERACTION_EVENT_TYPES.HISTORY_COURSE_FEEDBACK) {
+    const feedback = event.interestFeedback;
+    if (event.source !== INTERACTION_SOURCES.HISTORY_REVIEW) {
+      errors.push('history_course_feedback 的 source 必須是 history_review');
+    }
+    if (!feedback || typeof feedback !== 'object' || Array.isArray(feedback)) {
+      errors.push('history_course_feedback 必須提供 interestFeedback');
+    } else {
+      if (!HISTORY_RESPONSE_SET.has(feedback.response)) {
+        errors.push('history_course_feedback 的 response 只能是 liked、neutral 或 disliked');
+      }
+      // 針對整門課回饋，不由使用者挑標籤；證據標籤由伺服器的快照決定。
+      if (!Array.isArray(feedback.canonicalTagIds) || feedback.canonicalTagIds.length > 0) {
+        errors.push('history_course_feedback 的 canonicalTagIds 必須是空陣列');
+      }
+    }
   } else if (event.interestFeedback !== undefined && event.interestFeedback !== null) {
-    errors.push('只有 interest_exploration_feedback 可提供 interestFeedback');
+    errors.push('只有 interest_exploration_feedback／history_course_feedback 可提供 interestFeedback');
   }
 
   // `plan_chosen` 的語意是「在這組方案裡選了這一個」，所以方案是必填；

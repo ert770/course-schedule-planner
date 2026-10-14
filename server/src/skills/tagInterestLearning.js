@@ -1,5 +1,5 @@
 import { normalizeSemesterLabel } from '../data/activeTerm.js';
-import { interestTagCatalog, resolveInterestTags } from '../data/interestTagCatalog.js';
+import { interestTagCatalog, resolveInterestTag, resolveInterestTags } from '../data/interestTagCatalog.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
 import { isRequiredForStudent } from './courseScope.js';
 
@@ -17,6 +17,9 @@ export const TAG_INTEREST_EVENT_WEIGHTS = Object.freeze({
   browsePerCourseCap: 0.15,
   explicitNotInterested: -1,
   contentWithdrawal: -1,
+  // 歷史修課回饋（階段 5）：對修過的課表示喜歡／不喜歡；普通為 0。
+  historyLiked: 1,
+  historyDisliked: -1,
 });
 
 const catalogVersion = interestTagCatalog.catalogVersion;
@@ -266,8 +269,43 @@ function snapshotFor(event) {
     : null;
 }
 
+// 事件快照保存的是事件當時的標籤 ID。目錄合併同義詞後（例：2026-10-14 合併 480 個標籤），
+// 被併掉的 ID 不再存在；依快照中的標籤名稱解析到目前的標準標籤，避免使用者的互動證據流失。
+// 目前目錄仍有的 ID 一律不變，所以沒有合併時行為完全相同。
+const currentCatalogTagIds = new Set(interestTagCatalog.canonicalTags.map(tag => tag.id));
+const remappedTagCache = new Map();
+function currentTagFor(tag) {
+  if (!tag?.canonicalTagId || currentCatalogTagIds.has(tag.canonicalTagId)) return tag;
+  if (!remappedTagCache.has(tag.canonicalTagId)) {
+    const resolved = resolveInterestTag(tag.canonicalName);
+    remappedTagCache.set(tag.canonicalTagId, resolved.status === 'resolved'
+      ? {
+        ...tag,
+        canonicalTagId: resolved.canonicalTagId,
+        canonicalName: resolved.canonicalName,
+        categoryPaths: resolved.categoryPaths.map(path => ({ mainCategoryId: path.mainCategoryId, subcategoryId: path.subcategoryId })),
+        crossCourseMatchEligible: resolved.eligibility?.crossCourseMatchEligible === true,
+      }
+      : tag);
+  }
+  return remappedTagCache.get(tag.canonicalTagId);
+}
+
+function currentSnapshot(snapshot) {
+  if (snapshot.tags.every(tag => currentCatalogTagIds.has(tag.canonicalTagId))) return snapshot;
+  const mapping = new Map(snapshot.tags.map(tag => [tag.canonicalTagId, currentTagFor(tag)]));
+  const tags = [...new Map([...mapping.values()].map(tag => [tag.canonicalTagId, tag])).values()];
+  const evidenceTagIds = normalizeTagIds(snapshot.evidenceTagIds.map(id => mapping.get(id)?.canonicalTagId ?? id));
+  return { ...snapshot, tags, evidenceTagIds };
+}
+
 function eventWeight(event) {
   const feedback = event?.interestFeedback?.response ?? event?.tagInterestSnapshot?.feedbackResponse;
+  if (event?.eventType === 'history_course_feedback') {
+    if (feedback === 'liked') return TAG_INTEREST_EVENT_WEIGHTS.historyLiked;
+    if (feedback === 'disliked') return TAG_INTEREST_EVENT_WEIGHTS.historyDisliked;
+    return 0;
+  }
   if (event?.eventType === 'interest_exploration_feedback') {
     if (feedback === 'interested') return TAG_INTEREST_EVENT_WEIGHTS.explorationInterested;
     if (feedback === 'not_interested') return TAG_INTEREST_EVENT_WEIGHTS.explicitNotInterested;
@@ -331,16 +369,24 @@ export function collectWeightedTagInterestEvents(events = [], options = {}) {
   const activeTerm = options.activeTerm ?? null;
   const sorted = sortEvents(Array.isArray(events) ? events : []);
   const invalidated = invalidatedPositiveEvents(sorted);
+  // 歷史修課回饋以每門課最後一次回答為準（使用者改主意時，舊回答不再計入）。
+  const latestHistoryFeedback = new Map();
+  for (const event of sorted) {
+    if (event.eventType === 'history_course_feedback') latestHistoryFeedback.set(courseKey(event), event.eventId);
+  }
   const browseTotals = new Map();
   const items = [];
   let excludedEventCount = 0;
 
   for (const event of sorted) {
-    const snapshot = snapshotFor(event);
-    if (!snapshot) {
+    if (event.eventType === 'history_course_feedback'
+      && latestHistoryFeedback.get(courseKey(event)) !== event.eventId) continue;
+    const original = snapshotFor(event);
+    if (!original) {
       if (event.tagInterestSnapshot) excludedEventCount += 1;
       continue; // historical events without an immutable tag snapshot are not guessed
     }
+    const snapshot = currentSnapshot(original);
     if (invalidated.has(event.eventId)) continue;
     const weight = eventWeight(event);
     if (weight === 0) continue;
@@ -348,7 +394,11 @@ export function collectWeightedTagInterestEvents(events = [], options = {}) {
     const tagIds = normalizeTagIds(snapshot.evidenceTagIds);
     if (tagIds.length === 0) continue;
 
-    const factor = tagInterestDecay(event, { now, activeTerm }).factor;
+    // 對修過的課的看法不會像瀏覽紀錄一樣隨時間淡化，歷史修課回饋不套用時間衰減；
+    // 事件到期（180 天）後該課退回歷史修課的預設權重。
+    const factor = event.eventType === 'history_course_feedback'
+      ? 1
+      : tagInterestDecay(event, { now, activeTerm }).factor;
     let effectiveWeight = weight * factor;
     if (event.eventType === 'course_viewed') {
       const used = browseTotals.get(course) ?? 0;

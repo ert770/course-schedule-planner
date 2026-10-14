@@ -42,7 +42,12 @@ const args = process.argv.slice(2);
 const outName = args.find(arg => arg.startsWith('--out='))?.split('=')[1];
 if (!outName) { console.error('請指定 --out=<名稱>'); process.exit(1); }
 const outDir = path.resolve(scriptDir, '..', 'simulation-runs', outName);
-const neighborTable = JSON.parse(fs.readFileSync(new URL('../src/data/tagVectorNeighbors.json', import.meta.url), 'utf8'));
+// --no-downweights：不套用審核過的降權名單；--downweights=<檔案>：改用另一份名單（皆為對照用）。
+const NO_DOWNWEIGHTS = args.includes('--no-downweights');
+// --neighbors=<檔案>：改用另一份標籤相近表（評估對照用）。
+const neighborFile = args.find(arg => arg.startsWith('--neighbors='))?.split('=')[1];
+const neighborTable = JSON.parse(fs.readFileSync(
+  neighborFile ? path.resolve(neighborFile) : new URL('../src/data/tagVectorNeighbors.json', import.meta.url), 'utf8'));
 
 const ACCOUNTS = [
   { studentId: 'D1249697', numericId: '1', persona: false },
@@ -122,7 +127,10 @@ function leaveOneOut({ prefs, events, index, pool, similarity, decay }) {
 async function main() {
   if (!isMysqlConfigured()) throw new Error('未設定 MySQL（DB_*），無法量測。');
   const allCourses = await getAll('courses');
-  const index = buildCourseTagVectors(allCourses);
+  const downweightFile = args.find(arg => arg.startsWith('--downweights='))?.split('=')[1];
+  const index = buildCourseTagVectors(allCourses, NO_DOWNWEIGHTS
+    ? { downweights: null }
+    : downweightFile ? { downweights: JSON.parse(fs.readFileSync(downweightFile, 'utf8')) } : {});
   const variants = { identity: buildTagSimilarity(null), neighbors: buildTagSimilarity(neighborTable) };
   const results = [];
   let realTop = null;

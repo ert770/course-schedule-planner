@@ -3,6 +3,9 @@
 // 從一門修過、喜歡的課出發，列出課程說明最相近的系外選修與通識，每個系所／通識領域
 // 只出一門（Pardos & Jiang 2020）。這份清單不影響自動排課，只是讓使用者看見平常不會
 // 被排進來的課；要不要加入課表由使用者自己決定。
+//
+// 另有「依你的修課與興趣」模式（預設）：以標籤空間使用者向量（修過的非必修課、收藏、加選、
+// 表示有興趣）排序，卡片附上共同主題與最接近的那門課當理由。需同意個人化學習。
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Compass, LayoutDashboard, Moon, Plus, Search, Settings, Sun } from 'lucide-react';
@@ -25,7 +28,41 @@ const RECOGNITION_TEXT = {
 const EMPTY_REASON_TEXT = {
   'no-course-history': '目前沒有你的修課紀錄，無法從已修課程出發探索。',
   'no-available-favorite': '你修過的課在課程資料中都查不到說明，暫時無法當作探索起點。',
+  'no-personalization-consent': '你尚未同意「個人化學習」，所以無法依你的修課與興趣推薦。可以到隱私設定開啟，或改用「從一門課出發」。',
+  'no-profile-signal': '目前還沒有可用的選修、通識修課紀錄或興趣紀錄（必修不列入）。可以先收藏或加選幾門課，或改用「從一門課出發」。',
+  'text-embeddings-unavailable': '課程內容的語意比較尚未準備好，可以先使用「共同用詞」。',
+  'text-embeddings-invalid': '課程內容的語意比較資料需要更新，可以先使用「共同用詞」。',
+  'no-text-embedding-favorite': '這門已修課目前沒有可用的語意比較資料，請換一門課或使用「共同用詞」。',
 };
+
+// 推薦理由中「最接近的證據」的來源。
+const EVIDENCE_SOURCE_TEXT = {
+  history: '修過',
+  course_favorited: '收藏',
+  interest_exploration_feedback: '表示有興趣',
+  course_selected: '加選過',
+  recommendation_accepted: '加選過',
+  course_viewed: '看過',
+  course_rated: '給過高分',
+};
+
+const MODE = { PROFILE: 'profile', FAVORITE: 'favorite' };
+
+function ProfileReasons({ reasons }) {
+  if (!reasons) return null;
+  const tags = reasons.tags.map(tag => (
+    tag.viaNeighbor ? `${tag.courseTag}（近似你的「${tag.userTag}」）` : tag.courseTag
+  ));
+  const evidence = reasons.closestEvidence;
+  return (
+    <p className="explore-shared-terms">
+      {tags.length > 0 && <>共同主題：{tags.join('、')}</>}
+      {evidence?.name && (
+        <>{tags.length > 0 ? '。' : ''}和你{EVIDENCE_SOURCE_TEXT[evidence.source] || '互動過'}的「{evidence.name}」相近</>
+      )}
+    </p>
+  );
+}
 
 function ExploreCard({ item, favoriteName, schedule, validating, onAdd, onOpenDetail }) {
   const inSchedule = section => schedule.some(course => String(course.id) === String(section.id));
@@ -46,11 +83,18 @@ function ExploreCard({ item, favoriteName, schedule, validating, onAdd, onOpenDe
           <span className="tag">{RECOGNITION_TEXT[item.recognition.status]}</span>
         )}
       </div>
-      {item.sharedTerms.length > 0 && (
+      {item.semanticMatch ? (
         <p className="explore-shared-terms">
-          與「{favoriteName}」的課程說明都出現：{item.sharedTerms.join('、')}
+          與「{favoriteName}」的課名、主題與簡介語意相近。
+          {item.semanticMatch.commonTags.length > 0 && <>兩門課都有的標籤：{item.semanticMatch.commonTags.join('、')}。</>}
         </p>
-      )}
+      ) : item.reasons
+        ? <ProfileReasons reasons={item.reasons} />
+        : item.sharedTerms?.length > 0 && (
+          <p className="explore-shared-terms">
+            與「{favoriteName}」的課程說明都出現：{item.sharedTerms.join('、')}
+          </p>
+        )}
       <div className="explore-sections">
         {item.sections.map(section => (
           <div key={section.id} className="explore-section-row">
@@ -101,6 +145,8 @@ export default function ExplorePage() {
   const { schedule, validating, addCourse } = useSchedule();
 
   const [data, setData] = useState(null);
+  const [mode, setMode] = useState(MODE.PROFILE);
+  const [representation, setRepresentation] = useState('tfidf');
   const [favoriteCode, setFavoriteCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -113,12 +159,33 @@ export default function ExplorePage() {
 
   useEffect(() => {
     let cancelled = false;
-    explorationAPI.get(favoriteCode || undefined)
+    explorationAPI.get(favoriteCode || undefined, mode, representation)
       .then(result => { if (!cancelled) setData(result); })
       .catch(err => { if (!cancelled) setError(err.message || '載入探索清單失敗，請稍後再試。'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [favoriteCode]);
+  }, [favoriteCode, mode, representation]);
+
+  const handleRepresentationChange = (next) => {
+    if (next === representation) return;
+    // 固定起點再比較兩種方法，避免系統各自代選不同起點造成假 A/B。
+    if (data?.favorite?.courseCode) setFavoriteCode(data.favorite.courseCode);
+    setLoading(true);
+    setError('');
+    setNotice(null);
+    setData(null);
+    setRepresentation(next);
+  };
+
+  // 切換探索方式：與換起點相同，載入狀態在事件處理裡設定。
+  const handleModeChange = (nextMode) => {
+    if (nextMode === mode) return;
+    setLoading(true);
+    setError('');
+    setNotice(null);
+    setData(null);
+    setMode(nextMode);
+  };
 
   // 換起點：載入狀態在這裡設定，而不是在 effect 裡同步 setState。
   const handleFavoriteChange = (courseCode) => {
@@ -137,7 +204,10 @@ export default function ExplorePage() {
       : { type: 'error', message: result.message || '無法加入課表。' });
   };
 
+  const profileMode = mode === MODE.PROFILE;
   const favorite = data?.favorite ?? null;
+  const hasStart = profileMode ? Boolean(data && !data.emptyReason) : Boolean(favorite);
+  const startName = profileMode ? '你的修課與興趣' : '起點';
   const cardProps = {
     favoriteName: favorite?.name ?? '',
     schedule,
@@ -186,29 +256,60 @@ export default function ExplorePage() {
       <div className="explore-content">
         <div className="explore-intro">
           <h2>探索系外與通識</h2>
+          <div className="explore-mode-switch" role="tablist" aria-label="探索方式">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={profileMode}
+              className={`explore-mode-btn${profileMode ? ' active' : ''}`}
+              onClick={() => handleModeChange(MODE.PROFILE)}
+            >
+              依你的修課與興趣
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!profileMode}
+              className={`explore-mode-btn${profileMode ? '' : ' active'}`}
+              onClick={() => handleModeChange(MODE.FAVORITE)}
+            >
+              從一門課出發
+            </button>
+          </div>
           <p>
-            挑一門你修過、喜歡的課，系統會比對課程說明的文字，找出其他系所與通識裡內容相近的課。
+            {profileMode
+              ? '依你修過的選修、通識、系外課，以及收藏、加選、表示有興趣的課，比對課程的主題標籤，找出其他系所與通識裡主題相近的課（必修不列入）。'
+              : '挑一門你修過、喜歡的課，系統會比對課程說明的文字，找出其他系所與通識裡內容相近的課。'}
             每個系所或通識領域只列一門，讓你看到平常不會注意到的選擇。這份清單不會改變自動排課的結果。
           </p>
 
-          {data && data.favorites.length > 0 && (
+          {!profileMode && (
+            <div className="explore-mode-switch" role="group" aria-label="課程內容比較方式">
+              <button type="button" className={`explore-mode-btn${representation === 'tfidf' ? ' active' : ''}`}
+                aria-pressed={representation === 'tfidf'} onClick={() => handleRepresentationChange('tfidf')}>共同用詞</button>
+              <button type="button" className={`explore-mode-btn${representation === 'embedding' ? ' active' : ''}`}
+                aria-pressed={representation === 'embedding'} onClick={() => handleRepresentationChange('embedding')}>語意相似</button>
+            </div>
+          )}
+
+          {!profileMode && data?.favorites?.length > 0 && (
             <label className="explore-favorite">
               <span>從這門課出發</span>
               <select
                 className="input-field"
-                value={favorite?.courseCode ?? ''}
+                value={favorite?.courseCode ?? favoriteCode}
                 onChange={event => handleFavoriteChange(event.target.value)}
                 disabled={loading}
               >
                 {data.favorites.map(item => (
                   <option key={item.courseCode} value={item.courseCode} disabled={!item.available}>
-                    {item.name}{item.available ? '' : '（課程資料中沒有這門課的說明）'}
+                    {item.name}{item.available ? '' : (item.reason === 'no-text-embedding' ? '（語意比較資料未備妥）' : '（課程資料中沒有這門課的說明）')}
                   </option>
                 ))}
               </select>
             </label>
           )}
-          {favorite?.source === 'system-default' && (
+          {!profileMode && favorite?.source === 'system-default' && (
             <p className="explore-note">系統先以你成績最高的本系課「{favorite.name}」當起點，可自行更換。</p>
           )}
         </div>
@@ -219,29 +320,56 @@ export default function ExplorePage() {
         {error && <div className="search-action-notice error">{error}</div>}
 
         {loading ? (
-          <div className="no-results">正在比對課程說明…</div>
-        ) : data && !favorite ? (
-          <div className="no-results">{EMPTY_REASON_TEXT[data.emptyReason] || '目前沒有可用的探索起點。'}</div>
+          <div className="no-results">{profileMode ? '正在比對你的修課與興趣…' : '正在比對課程說明…'}</div>
+        ) : data && !hasStart ? (
+          <div className="no-results">
+            {EMPTY_REASON_TEXT[data.emptyReason] || '目前沒有可用的探索起點。'}
+            {profileMode && (
+              <div className="explore-empty-actions">
+                <button type="button" className="course-card-action" onClick={() => handleModeChange(MODE.FAVORITE)}>
+                  改用「從一門課出發」
+                </button>
+                {data.emptyReason === 'no-personalization-consent' && (
+                  <button type="button" className="course-card-action" onClick={() => navigate('/privacy')}>
+                    前往隱私設定
+                  </button>
+                )}
+              </div>
+            )}
+            {!profileMode && representation === 'embedding' && (
+              <div className="explore-empty-actions">
+                <button type="button" className="course-card-action" onClick={() => handleRepresentationChange('tfidf')}>改用「共同用詞」</button>
+              </div>
+            )}
+          </div>
         ) : data ? (
           <>
             <ExploreGroup
               title="跨系探索"
-              hint="每個系所只列與起點最相近的一門。系外選修是否認列為畢業學分，仍須向系辦確認。"
+              hint={`每個系所只列與${startName}最相近的一門。系外選修是否認列為畢業學分，仍須向系辦確認。`}
               group={data.outside}
-              emptyText="本學期沒有與這門課說明相近、且你可以修的系外選修。"
+              emptyText={profileMode
+                ? '本學期沒有與你的修課與興趣主題相近、且你可以修的系外選修。'
+                : '本學期沒有與這門課說明相近、且你可以修的系外選修。'}
               {...cardProps}
             />
             <ExploreGroup
               title="通識探索"
               hint={data.general.diversification === 'domain'
-                ? '每個通識領域只列與起點最相近的一門。'
-                : '依與起點的相近程度排列。'}
+                ? `每個通識領域只列與${startName}最相近的一門。`
+                : `依與${startName}的相近程度排列。`}
               group={data.general}
-              emptyText="本學期沒有與這門課說明相近、且你可以修的通識課。"
+              emptyText={profileMode
+                ? '本學期沒有與你的修課與興趣主題相近、且你可以修的通識課。'
+                : '本學期沒有與這門課說明相近、且你可以修的通識課。'}
               {...cardProps}
             />
             <p className="explore-method-note">
-              相近程度是比對課程說明的字面用詞算出來的，不代表課程內容相同，也不代表你一定會喜歡。
+              {profileMode
+                ? '相近程度是比對課程的主題標籤算出來的（含意思相近的標籤），不代表課程內容相同，也不代表你一定會喜歡。'
+                : representation === 'embedding'
+                  ? '語意相似是比對課名、主題標籤與簡介的文字向量；列出的共同標籤只表示兩門課確實都有，不是向量分數的完整解釋。相近程度不代表你一定會喜歡。'
+                  : '相近程度是比對課程說明的字面用詞算出來的，不代表課程內容相同，也不代表你一定會喜歡。'}
             </p>
           </>
         ) : null}

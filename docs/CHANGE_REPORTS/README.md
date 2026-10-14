@@ -4,11 +4,19 @@
 
 ## 2026-10-14
 
-1. [協同過濾與 User Embedding：階段 3 使用者向量與 s_vec（離線）](./2026-10-14-user-tag-vector-stage3.md)
-2. [協同過濾與 User Embedding：階段 2 標籤相近表（文字 embedding）](./2026-10-14-tag-embedding-stage2.md)
-3. [協同過濾與 User Embedding：階段 1 標籤空間課程向量](./2026-10-14-tag-vector-stage1.md)
-4. [協同過濾與 User Embedding：階段 0 現況量測](./2026-10-14-cf-embedding-stage0-baseline.md)
-5. [構想：協同過濾與 User Embedding 的搭建方式，以及如何接進排課流程](./2026-10-14-cf-user-embedding-design.md)
+- [協同過濾與 User Embedding：階段 5 歷史修課回饋視窗（含 Codex 階段 4 審查）](./2026-10-14-history-feedback-stage5.md)
+- [階段 4：系外保留候選改用 s_vec](./2026-10-14-external-reservation-stage4.md)
+
+1. [階段 4：課程文字向量本機原型與探索 A/B](./2026-10-14-course-text-exploration-stage4.md)
+2. [rag_tag 同義詞合併（標籤目錄 v3）](./2026-10-14-tag-synonym-merge.md)
+3. [標籤相近表：中英對照重算（試驗，不採用）](./2026-10-14-tag-neighbors-bilingual-trial.md)
+4. [協同過濾與 User Embedding：階段 4 探索功能改用 s_vec](./2026-10-14-explore-by-profile-stage4.md)
+5. [標籤向量降權套用與同義詞合併候選](./2026-10-14-tag-downweights-and-synonym-candidates.md)
+6. [協同過濾與 User Embedding：階段 3 使用者向量與 s_vec（離線）](./2026-10-14-user-tag-vector-stage3.md)
+7. [協同過濾與 User Embedding：階段 2 標籤相近表（文字 embedding）](./2026-10-14-tag-embedding-stage2.md)
+8. [協同過濾與 User Embedding：階段 1 標籤空間課程向量](./2026-10-14-tag-vector-stage1.md)
+9. [協同過濾與 User Embedding：階段 0 現況量測](./2026-10-14-cf-embedding-stage0-baseline.md)
+10. [構想：協同過濾與 User Embedding 的搭建方式，以及如何接進排課流程](./2026-10-14-cf-user-embedding-design.md)
 
 ## 2026-10-11
 

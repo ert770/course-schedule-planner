@@ -1,12 +1,12 @@
 {
  "schemaVersion": 1,
  "vectorModelVersion": "tag-vector-v1",
- "catalogVersion": "rag-tag-catalog-2026-10-09-v2",
+ "catalogVersion": "rag-tag-catalog-2026-10-14-v3",
  "embeddingModel": "text-embedding-3-large",
  "textMode": "name",
  "tau": 0.7,
  "topK": 5,
- "generatedAt": "2026-10-14T07:31:47.667Z",
+ "generatedAt": "2026-10-14T09:37:46.315Z",
  "neighbors": {
   "tag_2a69cf197a90c9477313": [
    {
@@ -18,6 +18,48 @@
    {
     "canonicalTagId": "tag_2a69cf197a90c9477313",
     "similarity": 0.7069
+   },
+   {
+    "canonicalTagId": "tag_550fc13879cb7e2271f0",
+    "similarity": 0.7014
+   }
+  ],
+  "tag_7c8809a6b161c7b5fb64": [
+   {
+    "canonicalTagId": "tag_fd06218149fc68d78058",
+    "similarity": 0.8214
+   },
+   {
+    "canonicalTagId": "tag_550fc13879cb7e2271f0",
+    "similarity": 0.8146
+   }
+  ],
+  "tag_fd06218149fc68d78058": [
+   {
+    "canonicalTagId": "tag_7c8809a6b161c7b5fb64",
+    "similarity": 0.8214
+   },
+   {
+    "canonicalTagId": "tag_550fc13879cb7e2271f0",
+    "similarity": 0.747
+   }
+  ],
+  "tag_550fc13879cb7e2271f0": [
+   {
+    "canonicalTagId": "tag_7c8809a6b161c7b5fb64",
+    "similarity": 0.8146
+   },
+   {
+    "canonicalTagId": "tag_fd06218149fc68d78058",
+    "similarity": 0.747
+   },
+   {
+    "canonicalTagId": "tag_206c9a242f6e379e4884",
+    "similarity": 0.7218
+   },
+   {
+    "canonicalTagId": "tag_6ce4d9d2fc5db6033fc5",
+    "similarity": 0.7014
    }
   ],
   "tag_2afd39e184dda08e43ab": [
@@ -116,46 +158,20 @@
   ],
   "tag_991d0abc29f0927968db": [
    {
-    "canonicalTagId": "tag_161332dd5ba244f14566",
-    "similarity": 0.7618
-   },
-   {
     "canonicalTagId": "tag_5d9fadf6e0fab838a0e6",
     "similarity": 0.7053
-   }
-  ],
-  "tag_5cedd0783478355a780b": [
-   {
-    "canonicalTagId": "tag_de4e9e60784006b24278",
-    "similarity": 0.8493
    }
   ],
   "tag_853ce66cefcdd76dc079": [
    {
     "canonicalTagId": "tag_52cb2a8d59576aa4c8bc",
     "similarity": 0.7387
-   },
-   {
-    "canonicalTagId": "tag_12ff933e7c0fb1d28d7d",
-    "similarity": 0.7176
    }
   ],
   "tag_4b7166f6a39c93e30a90": [
    {
     "canonicalTagId": "tag_570628e81eee6bbcf16a",
     "similarity": 0.7248
-   }
-  ],
-  "tag_286d38c2f3a80cffaf2a": [
-   {
-    "canonicalTagId": "tag_60965168ce762e949600",
-    "similarity": 0.9057
-   }
-  ],
-  "tag_60965168ce762e949600": [
-   {
-    "canonicalTagId": "tag_286d38c2f3a80cffaf2a",
-    "similarity": 0.9057
    }
   ],
   "tag_07a5930874167df96956": [
@@ -180,22 +196,6 @@
    {
     "canonicalTagId": "tag_aeb01fc9057574e67b8e",
     "similarity": 0.7398
-   }
-  ],
-  "tag_1c7ed7db63641bd51e6e": [
-   {
-    "canonicalTagId": "tag_93f88b3044937e4bdb32",
-    "similarity": 0.8625
-   }
-  ],
-  "tag_93f88b3044937e4bdb32": [
-   {
-    "canonicalTagId": "tag_1c7ed7db63641bd51e6e",
-    "similarity": 0.8625
-   },
-   {
-    "canonicalTagId": "tag_faedc55d8aad505f8e43",
-    "similarity": 0.701
    }
   ],
   "tag_0d676ed982b41120d43b": [
@@ -336,18 +336,8 @@
   ],
   "tag_613c37eafd59a1bf8c47": [
    {
-    "canonicalTagId": "tag_28566af03495a9a5ee1c",
-    "similarity": 0.8762
-   },
-   {
     "canonicalTagId": "tag_bbb937f922376cb81167",
     "similarity": 0.7237
-   }
-  ],
-  "tag_28566af03495a9a5ee1c": [
-   {
-    "canonicalTagId": "tag_613c37eafd59a1bf8c47",
-    "similarity": 0.8762
    }
   ],
   "tag_ff3d7d9e4c824480a121": [
@@ -360,24 +350,6 @@
    {
     "canonicalTagId": "tag_ad7eb7faab132627a18d",
     "similarity": 0.724
-   }
-  ],
-  "tag_9e720e53885580b1e0c5": [
-   {
-    "canonicalTagId": "tag_fa10af31983ba2c5fb7b",
-    "similarity": 0.7069
-   }
-  ],
-  "tag_55ea09e5715d0a8d9d94": [
-   {
-    "canonicalTagId": "tag_8a46fd6fc3d79d419361",
-    "similarity": 0.9089
-   }
-  ],
-  "tag_8a46fd6fc3d79d419361": [
-   {
-    "canonicalTagId": "tag_55ea09e5715d0a8d9d94",
-    "similarity": 0.9089
    }
   ],
   "tag_caf90169eefa5f807d57": [
@@ -424,50 +396,12 @@
    {
     "canonicalTagId": "tag_197a693255d5fe0617e8",
     "similarity": 0.7693
-   },
-   {
-    "canonicalTagId": "tag_e7ffee462df140070106",
-    "similarity": 0.7099
-   }
-  ],
-  "tag_c65d41d62aeb314b968c": [
-   {
-    "canonicalTagId": "tag_2e2c6b2f5ad98d7d8d22",
-    "similarity": 0.8658
-   }
-  ],
-  "tag_e7ffee462df140070106": [
-   {
-    "canonicalTagId": "tag_750fda7b74e35f2168cc",
-    "similarity": 0.8947
-   },
-   {
-    "canonicalTagId": "tag_197a693255d5fe0617e8",
-    "similarity": 0.7308
-   },
-   {
-    "canonicalTagId": "tag_fd17c22aa1b67d24e239",
-    "similarity": 0.7142
-   },
-   {
-    "canonicalTagId": "tag_3abe8752b2c0434d3bde",
-    "similarity": 0.7099
-   }
-  ],
-  "tag_4d3a79a2e10118cb7f7c": [
-   {
-    "canonicalTagId": "tag_a507059d7560668bcbc9",
-    "similarity": 0.8962
    }
   ],
   "tag_197a693255d5fe0617e8": [
    {
     "canonicalTagId": "tag_3abe8752b2c0434d3bde",
     "similarity": 0.7693
-   },
-   {
-    "canonicalTagId": "tag_e7ffee462df140070106",
-    "similarity": 0.7308
    }
   ],
   "tag_25dfc749740c900a823c": [
@@ -486,29 +420,13 @@
     "similarity": 0.7107
    }
   ],
-  "tag_faedc55d8aad505f8e43": [
-   {
-    "canonicalTagId": "tag_93f88b3044937e4bdb32",
-    "similarity": 0.701
-   }
-  ],
   "tag_f6b8e1d309fe074e6877": [
    {
     "canonicalTagId": "tag_11e1452cc33c1c895235",
     "similarity": 0.7534
    }
   ],
-  "tag_2e2c6b2f5ad98d7d8d22": [
-   {
-    "canonicalTagId": "tag_c65d41d62aeb314b968c",
-    "similarity": 0.8658
-   }
-  ],
   "tag_750fda7b74e35f2168cc": [
-   {
-    "canonicalTagId": "tag_e7ffee462df140070106",
-    "similarity": 0.8947
-   },
    {
     "canonicalTagId": "tag_fd17c22aa1b67d24e239",
     "similarity": 0.7841
@@ -518,10 +436,6 @@
    {
     "canonicalTagId": "tag_750fda7b74e35f2168cc",
     "similarity": 0.7841
-   },
-   {
-    "canonicalTagId": "tag_e7ffee462df140070106",
-    "similarity": 0.7142
    }
   ],
   "tag_340455fbac2578217261": [
@@ -542,12 +456,6 @@
     "similarity": 0.7286
    }
   ],
-  "tag_de4e9e60784006b24278": [
-   {
-    "canonicalTagId": "tag_5cedd0783478355a780b",
-    "similarity": 0.8493
-   }
-  ],
   "tag_bf110c6cc51094b6f42e": [
    {
     "canonicalTagId": "tag_831961e07d572a52859e",
@@ -564,6 +472,12 @@
    {
     "canonicalTagId": "tag_2552a9843c49f92bc323",
     "similarity": 0.7095
+   }
+  ],
+  "tag_7791596493c62dfdb8cb": [
+   {
+    "canonicalTagId": "tag_c7035becb71b203a8d54",
+    "similarity": 0.7204
    }
   ],
   "tag_43029a964b518f9c8281": [
@@ -598,33 +512,11 @@
   ],
   "tag_a507059d7560668bcbc9": [
    {
-    "canonicalTagId": "tag_4d3a79a2e10118cb7f7c",
-    "similarity": 0.8962
-   },
-   {
-    "canonicalTagId": "tag_ecc0a2c070530c51ff50",
-    "similarity": 0.7858
-   },
-   {
     "canonicalTagId": "tag_c600edf6ce0739a94a59",
     "similarity": 0.7135
    }
   ],
-  "tag_ecc0a2c070530c51ff50": [
-   {
-    "canonicalTagId": "tag_c600edf6ce0739a94a59",
-    "similarity": 0.9033
-   },
-   {
-    "canonicalTagId": "tag_a507059d7560668bcbc9",
-    "similarity": 0.7858
-   }
-  ],
   "tag_c600edf6ce0739a94a59": [
-   {
-    "canonicalTagId": "tag_ecc0a2c070530c51ff50",
-    "similarity": 0.9033
-   },
    {
     "canonicalTagId": "tag_a507059d7560668bcbc9",
     "similarity": 0.7135
@@ -746,12 +638,6 @@
    {
     "canonicalTagId": "tag_0e887debb10159ab36a1",
     "similarity": 0.7531
-   }
-  ],
-  "tag_4e4c2f6efabd5fb07e41": [
-   {
-    "canonicalTagId": "tag_7727c2dc9de579cfbeab",
-    "similarity": 0.8181
    }
   ],
   "tag_75e69392284016e9dd77": [
@@ -880,29 +766,11 @@
   ],
   "tag_a6ed18489d5477271a3f": [
    {
-    "canonicalTagId": "tag_eceacd11a5ca88694648",
-    "similarity": 0.7811
-   },
-   {
     "canonicalTagId": "tag_0b154921040813b2a16d",
     "similarity": 0.7765
    }
   ],
-  "tag_eceacd11a5ca88694648": [
-   {
-    "canonicalTagId": "tag_0b154921040813b2a16d",
-    "similarity": 0.9118
-   },
-   {
-    "canonicalTagId": "tag_a6ed18489d5477271a3f",
-    "similarity": 0.7811
-   }
-  ],
   "tag_0b154921040813b2a16d": [
-   {
-    "canonicalTagId": "tag_eceacd11a5ca88694648",
-    "similarity": 0.9118
-   },
    {
     "canonicalTagId": "tag_a6ed18489d5477271a3f",
     "similarity": 0.7765
@@ -1008,10 +876,6 @@
   ],
   "tag_7a03c3208eabc79a5a6a": [
    {
-    "canonicalTagId": "tag_a29c671732fc278df609",
-    "similarity": 0.7948
-   },
-   {
     "canonicalTagId": "tag_9d2db9e0132e3be6c3b9",
     "similarity": 0.7804
    },
@@ -1026,6 +890,10 @@
    {
     "canonicalTagId": "tag_8de80029043e3fa6bd83",
     "similarity": 0.7303
+   },
+   {
+    "canonicalTagId": "tag_20f3f33a005bb82460aa",
+    "similarity": 0.7251
    }
   ],
   "tag_ad8dccbedf210f235b2e": [
@@ -1054,41 +922,13 @@
     "similarity": 0.7064
    }
   ],
-  "tag_91cba55eebc8a9928018": [
-   {
-    "canonicalTagId": "tag_570ddbf9da0f370f45f0",
-    "similarity": 0.8133
-   }
-  ],
   "tag_5d9fadf6e0fab838a0e6": [
-   {
-    "canonicalTagId": "tag_161332dd5ba244f14566",
-    "similarity": 0.9024
-   },
    {
     "canonicalTagId": "tag_991d0abc29f0927968db",
     "similarity": 0.7053
    }
   ],
-  "tag_161332dd5ba244f14566": [
-   {
-    "canonicalTagId": "tag_5d9fadf6e0fab838a0e6",
-    "similarity": 0.9024
-   },
-   {
-    "canonicalTagId": "tag_991d0abc29f0927968db",
-    "similarity": 0.7618
-   }
-  ],
   "tag_d6631c3402cbd33e9e14": [
-   {
-    "canonicalTagId": "tag_7603af3ff1f6dc55385d",
-    "similarity": 0.7951
-   },
-   {
-    "canonicalTagId": "tag_638457baa4d01d9323ff",
-    "similarity": 0.7813
-   },
    {
     "canonicalTagId": "tag_278b3ccc7566c3a6b9e6",
     "similarity": 0.7673
@@ -1100,23 +940,23 @@
    {
     "canonicalTagId": "tag_566f86545bf9edb38fad",
     "similarity": 0.7531
+   },
+   {
+    "canonicalTagId": "tag_49fc8b73642cdc61fe39",
+    "similarity": 0.7475
+   },
+   {
+    "canonicalTagId": "tag_e62ebbf3576c5f5e8c8a",
+    "similarity": 0.7383
    }
   ],
   "tag_278b3ccc7566c3a6b9e6": [
    {
     "canonicalTagId": "tag_d6631c3402cbd33e9e14",
     "similarity": 0.7673
-   },
-   {
-    "canonicalTagId": "tag_7603af3ff1f6dc55385d",
-    "similarity": 0.7183
    }
   ],
   "tag_e62ebbf3576c5f5e8c8a": [
-   {
-    "canonicalTagId": "tag_638457baa4d01d9323ff",
-    "similarity": 0.8484
-   },
    {
     "canonicalTagId": "tag_566f86545bf9edb38fad",
     "similarity": 0.8095
@@ -1130,44 +970,18 @@
     "similarity": 0.7383
    },
    {
-    "canonicalTagId": "tag_7603af3ff1f6dc55385d",
-    "similarity": 0.7339
-   }
-  ],
-  "tag_7603af3ff1f6dc55385d": [
-   {
-    "canonicalTagId": "tag_1c1018b6a04a3ebcf681",
-    "similarity": 0.9025
+    "canonicalTagId": "tag_5e3bca81a038582b95c2",
+    "similarity": 0.7198
    },
    {
     "canonicalTagId": "tag_40fedb209d62301ff88d",
-    "similarity": 0.8482
-   },
-   {
-    "canonicalTagId": "tag_638457baa4d01d9323ff",
-    "similarity": 0.8186
-   },
-   {
-    "canonicalTagId": "tag_d6631c3402cbd33e9e14",
-    "similarity": 0.7951
-   },
-   {
-    "canonicalTagId": "tag_9dad1f4a0739244456b9",
-    "similarity": 0.7515
+    "similarity": 0.707
    }
   ],
   "tag_40fedb209d62301ff88d": [
    {
-    "canonicalTagId": "tag_7603af3ff1f6dc55385d",
-    "similarity": 0.8482
-   },
-   {
     "canonicalTagId": "tag_1c1018b6a04a3ebcf681",
     "similarity": 0.8414
-   },
-   {
-    "canonicalTagId": "tag_638457baa4d01d9323ff",
-    "similarity": 0.8001
    },
    {
     "canonicalTagId": "tag_ad0490b92a0ceffb90e8",
@@ -1176,17 +990,17 @@
    {
     "canonicalTagId": "tag_9dad1f4a0739244456b9",
     "similarity": 0.7268
+   },
+   {
+    "canonicalTagId": "tag_c7035becb71b203a8d54",
+    "similarity": 0.7264
+   },
+   {
+    "canonicalTagId": "tag_e62ebbf3576c5f5e8c8a",
+    "similarity": 0.707
    }
   ],
   "tag_1c1018b6a04a3ebcf681": [
-   {
-    "canonicalTagId": "tag_7603af3ff1f6dc55385d",
-    "similarity": 0.9025
-   },
-   {
-    "canonicalTagId": "tag_638457baa4d01d9323ff",
-    "similarity": 0.9002
-   },
    {
     "canonicalTagId": "tag_40fedb209d62301ff88d",
     "similarity": 0.8414
@@ -1198,28 +1012,14 @@
    {
     "canonicalTagId": "tag_e62ebbf3576c5f5e8c8a",
     "similarity": 0.7919
-   }
-  ],
-  "tag_638457baa4d01d9323ff": [
-   {
-    "canonicalTagId": "tag_1c1018b6a04a3ebcf681",
-    "similarity": 0.9002
    },
    {
-    "canonicalTagId": "tag_e62ebbf3576c5f5e8c8a",
-    "similarity": 0.8484
-   },
-   {
-    "canonicalTagId": "tag_7603af3ff1f6dc55385d",
-    "similarity": 0.8186
-   },
-   {
-    "canonicalTagId": "tag_40fedb209d62301ff88d",
-    "similarity": 0.8001
+    "canonicalTagId": "tag_d6631c3402cbd33e9e14",
+    "similarity": 0.7231
    },
    {
     "canonicalTagId": "tag_566f86545bf9edb38fad",
-    "similarity": 0.7883
+    "similarity": 0.7203
    }
   ],
   "tag_5e3bca81a038582b95c2": [
@@ -1238,20 +1038,12 @@
    {
     "canonicalTagId": "tag_49fc8b73642cdc61fe39",
     "similarity": 0.7115
-   },
-   {
-    "canonicalTagId": "tag_638457baa4d01d9323ff",
-    "similarity": 0.7035
    }
   ],
   "tag_566f86545bf9edb38fad": [
    {
     "canonicalTagId": "tag_e62ebbf3576c5f5e8c8a",
     "similarity": 0.8095
-   },
-   {
-    "canonicalTagId": "tag_638457baa4d01d9323ff",
-    "similarity": 0.7883
    },
    {
     "canonicalTagId": "tag_d6631c3402cbd33e9e14",
@@ -1274,6 +1066,18 @@
    {
     "canonicalTagId": "tag_5e3bca81a038582b95c2",
     "similarity": 0.7115
+   }
+  ],
+  "tag_928cc7367471d47b3666": [
+   {
+    "canonicalTagId": "tag_20d69ec22eb8446092ee",
+    "similarity": 0.7454
+   }
+  ],
+  "tag_20d69ec22eb8446092ee": [
+   {
+    "canonicalTagId": "tag_928cc7367471d47b3666",
+    "similarity": 0.7454
    }
   ],
   "tag_ba1844dc01d86aeabe67": [
@@ -1312,10 +1116,6 @@
   ],
   "tag_4c5b3b8c4467b8d41ef0": [
    {
-    "canonicalTagId": "tag_3d47052f408c0a04629c",
-    "similarity": 0.8194
-   },
-   {
     "canonicalTagId": "tag_20aef7cad704726c8947",
     "similarity": 0.7906
    }
@@ -1344,6 +1144,10 @@
   ],
   "tag_f0439a8490625005cd0e": [
    {
+    "canonicalTagId": "tag_994ad68003467b335893",
+    "similarity": 0.7837
+   },
+   {
     "canonicalTagId": "tag_83add8ae58c10922ef4f",
     "similarity": 0.7688
    },
@@ -1361,10 +1165,6 @@
    }
   ],
   "tag_83add8ae58c10922ef4f": [
-   {
-    "canonicalTagId": "tag_fe778d0b9abac907ffd7",
-    "similarity": 0.8496
-   },
    {
     "canonicalTagId": "tag_f0439a8490625005cd0e",
     "similarity": 0.7688
@@ -1516,10 +1316,6 @@
     "similarity": 0.8848
    },
    {
-    "canonicalTagId": "tag_93698542e834924cea31",
-    "similarity": 0.848
-   },
-   {
     "canonicalTagId": "tag_7914fb42525167852dc6",
     "similarity": 0.749
    },
@@ -1530,6 +1326,10 @@
    {
     "canonicalTagId": "tag_77a03115f3dbf7518f69",
     "similarity": 0.7401
+   },
+   {
+    "canonicalTagId": "tag_9acad596674e1564988b",
+    "similarity": 0.7145
    }
   ],
   "tag_cfcf43874b86f405c3a7": [
@@ -1546,12 +1346,12 @@
     "similarity": 0.7803
    },
    {
-    "canonicalTagId": "tag_93698542e834924cea31",
-    "similarity": 0.7664
-   },
-   {
     "canonicalTagId": "tag_137680dd3b398d890deb",
     "similarity": 0.7425
+   },
+   {
+    "canonicalTagId": "tag_7914fb42525167852dc6",
+    "similarity": 0.7286
    }
   ],
   "tag_59b8793ecb05c8a693c9": [
@@ -1598,6 +1398,12 @@
     "similarity": 0.7004
    }
   ],
+  "tag_3de28da27904a763462a": [
+   {
+    "canonicalTagId": "tag_98ddbb57bf4c46cd98e8",
+    "similarity": 0.7756
+   }
+  ],
   "tag_9025a287c8f94ac7edb5": [
    {
     "canonicalTagId": "tag_a9d425330b7bbb704096",
@@ -1630,10 +1436,6 @@
    {
     "canonicalTagId": "tag_596b8cd11d2ac833f74d",
     "similarity": 0.7277
-   },
-   {
-    "canonicalTagId": "tag_470fb521aad85a3f60d4",
-    "similarity": 0.7231
    }
   ],
   "tag_c191b6895e5c120c2036": [
@@ -1643,10 +1445,6 @@
    }
   ],
   "tag_ae08a42c423201ec53f5": [
-   {
-    "canonicalTagId": "tag_570ddbf9da0f370f45f0",
-    "similarity": 0.7156
-   },
    {
     "canonicalTagId": "tag_24c36f58ac082644b466",
     "similarity": 0.7023
@@ -1680,56 +1478,10 @@
     "similarity": 0.8153
    }
   ],
-  "tag_ba6d24c578008ea3aa7c": [
+  "tag_03f90fe7ce20ea3dab43": [
    {
-    "canonicalTagId": "tag_64f299236c2d3a3b46ce",
-    "similarity": 0.7459
-   },
-   {
-    "canonicalTagId": "tag_8c5b0f0ee52c5240a1a0",
-    "similarity": 0.7286
-   }
-  ],
-  "tag_fa264622290729fb67c7": [
-   {
-    "canonicalTagId": "tag_932e7a198241e3b50103",
-    "similarity": 0.7099
-   }
-  ],
-  "tag_cc91e573e7d8a0baecac": [
-   {
-    "canonicalTagId": "tag_8e4456c74cc73ae30cdf",
-    "similarity": 0.8389
-   },
-   {
-    "canonicalTagId": "tag_aa7d5bd3ffb8726b4314",
-    "similarity": 0.809
-   },
-   {
-    "canonicalTagId": "tag_b61129ee99cc6ffb471a",
-    "similarity": 0.7699
-   },
-   {
-    "canonicalTagId": "tag_862e718f03f97323c49b",
-    "similarity": 0.7615
-   },
-   {
-    "canonicalTagId": "tag_9ce13fa52f7323bdcf78",
-    "similarity": 0.7204
-   }
-  ],
-  "tag_8e4456c74cc73ae30cdf": [
-   {
-    "canonicalTagId": "tag_862e718f03f97323c49b",
-    "similarity": 0.8522
-   },
-   {
-    "canonicalTagId": "tag_cc91e573e7d8a0baecac",
-    "similarity": 0.8389
-   },
-   {
-    "canonicalTagId": "tag_b61129ee99cc6ffb471a",
-    "similarity": 0.7364
+    "canonicalTagId": "tag_e8b4bdf884b7fe9820aa",
+    "similarity": 0.7022
    }
   ],
   "tag_48eb99ac121e0b188813": [
@@ -1858,44 +1610,10 @@
     "similarity": 0.8175
    }
   ],
-  "tag_2965e28f3e20dba6c2c6": [
-   {
-    "canonicalTagId": "tag_b19be8c4b346e1adda57",
-    "similarity": 0.7112
-   }
-  ],
-  "tag_b19be8c4b346e1adda57": [
-   {
-    "canonicalTagId": "tag_bc930a22f251820c2d64",
-    "similarity": 0.9156
-   },
-   {
-    "canonicalTagId": "tag_2965e28f3e20dba6c2c6",
-    "similarity": 0.7112
-   }
-  ],
-  "tag_bc930a22f251820c2d64": [
-   {
-    "canonicalTagId": "tag_b19be8c4b346e1adda57",
-    "similarity": 0.9156
-   }
-  ],
   "tag_f29dc9a459aad6da6892": [
    {
     "canonicalTagId": "tag_4be720748ccae7aba0eb",
     "similarity": 0.7575
-   }
-  ],
-  "tag_88ac1b0d6131d48084c4": [
-   {
-    "canonicalTagId": "tag_c51146217b6181f88f98",
-    "similarity": 0.8244
-   }
-  ],
-  "tag_c51146217b6181f88f98": [
-   {
-    "canonicalTagId": "tag_88ac1b0d6131d48084c4",
-    "similarity": 0.8244
    }
   ],
   "tag_0c39fd11b915a161eec8": [
@@ -1906,6 +1624,12 @@
    {
     "canonicalTagId": "tag_be92e94aba0be148ec1f",
     "similarity": 0.7377
+   }
+  ],
+  "tag_e8b4bdf884b7fe9820aa": [
+   {
+    "canonicalTagId": "tag_03f90fe7ce20ea3dab43",
+    "similarity": 0.7022
    }
   ],
   "tag_9204149fc349c44140ce": [
@@ -2016,14 +1740,6 @@
   ],
   "tag_802753f8b0743bc52e0a": [
    {
-    "canonicalTagId": "tag_e31f35dd3a40bda107bc",
-    "similarity": 0.8349
-   },
-   {
-    "canonicalTagId": "tag_2bfcba143cc3bc42fb86",
-    "similarity": 0.8339
-   },
-   {
     "canonicalTagId": "tag_21937a5e0b18a8664954",
     "similarity": 0.7955
    },
@@ -2032,8 +1748,16 @@
     "similarity": 0.7515
    },
    {
+    "canonicalTagId": "tag_b629b3a6e799034f009c",
+    "similarity": 0.7508
+   },
+   {
     "canonicalTagId": "tag_0b431cd2d746b3fd69f7",
     "similarity": 0.7496
+   },
+   {
+    "canonicalTagId": "tag_f099dae844a0c9406875",
+    "similarity": 0.7447
    }
   ],
   "tag_0b431cd2d746b3fd69f7": [
@@ -2056,49 +1780,37 @@
   ],
   "tag_bf63f07f8e7cee6b2492": [
    {
-    "canonicalTagId": "tag_e31f35dd3a40bda107bc",
-    "similarity": 0.8135
-   },
-   {
-    "canonicalTagId": "tag_2bfcba143cc3bc42fb86",
-    "similarity": 0.7813
-   },
-   {
-    "canonicalTagId": "tag_898bf84c4985a90a7945",
-    "similarity": 0.7554
-   },
-   {
     "canonicalTagId": "tag_802753f8b0743bc52e0a",
     "similarity": 0.7515
    },
    {
     "canonicalTagId": "tag_061b0d7f6511011c49d4",
     "similarity": 0.7348
+   },
+   {
+    "canonicalTagId": "tag_08caf7ed18503ceb3e63",
+    "similarity": 0.7213
+   },
+   {
+    "canonicalTagId": "tag_59293c5a1f22ed4673c7",
+    "similarity": 0.7201
    }
   ],
-  "tag_e31f35dd3a40bda107bc": [
+  "tag_b629b3a6e799034f009c": [
    {
-    "canonicalTagId": "tag_2bfcba143cc3bc42fb86",
-    "similarity": 0.9103
+    "canonicalTagId": "tag_ac8f24382db39b3d16f9",
+    "similarity": 0.7622
    },
    {
     "canonicalTagId": "tag_802753f8b0743bc52e0a",
-    "similarity": 0.8349
-   },
-   {
-    "canonicalTagId": "tag_bf63f07f8e7cee6b2492",
-    "similarity": 0.8135
-   },
-   {
-    "canonicalTagId": "tag_21937a5e0b18a8664954",
-    "similarity": 0.7735
-   },
-   {
-    "canonicalTagId": "tag_f099dae844a0c9406875",
-    "similarity": 0.7249
+    "similarity": 0.7508
    }
   ],
   "tag_ac8f24382db39b3d16f9": [
+   {
+    "canonicalTagId": "tag_b629b3a6e799034f009c",
+    "similarity": 0.7622
+   },
    {
     "canonicalTagId": "tag_0b431cd2d746b3fd69f7",
     "similarity": 0.7504
@@ -2108,16 +1820,8 @@
     "similarity": 0.7387
    },
    {
-    "canonicalTagId": "tag_2bfcba143cc3bc42fb86",
-    "similarity": 0.7273
-   },
-   {
     "canonicalTagId": "tag_21937a5e0b18a8664954",
     "similarity": 0.7256
-   },
-   {
-    "canonicalTagId": "tag_e31f35dd3a40bda107bc",
-    "similarity": 0.7136
    }
   ],
   "tag_21937a5e0b18a8664954": [
@@ -2126,38 +1830,8 @@
     "similarity": 0.7955
    },
    {
-    "canonicalTagId": "tag_2bfcba143cc3bc42fb86",
-    "similarity": 0.7817
-   },
-   {
-    "canonicalTagId": "tag_e31f35dd3a40bda107bc",
-    "similarity": 0.7735
-   },
-   {
     "canonicalTagId": "tag_ac8f24382db39b3d16f9",
     "similarity": 0.7256
-   }
-  ],
-  "tag_2bfcba143cc3bc42fb86": [
-   {
-    "canonicalTagId": "tag_e31f35dd3a40bda107bc",
-    "similarity": 0.9103
-   },
-   {
-    "canonicalTagId": "tag_802753f8b0743bc52e0a",
-    "similarity": 0.8339
-   },
-   {
-    "canonicalTagId": "tag_21937a5e0b18a8664954",
-    "similarity": 0.7817
-   },
-   {
-    "canonicalTagId": "tag_bf63f07f8e7cee6b2492",
-    "similarity": 0.7813
-   },
-   {
-    "canonicalTagId": "tag_ac8f24382db39b3d16f9",
-    "similarity": 0.7273
    }
   ],
   "tag_f099dae844a0c9406875": [
@@ -2166,16 +1840,8 @@
     "similarity": 0.7447
    },
    {
-    "canonicalTagId": "tag_e31f35dd3a40bda107bc",
-    "similarity": 0.7249
-   },
-   {
     "canonicalTagId": "tag_0b431cd2d746b3fd69f7",
     "similarity": 0.709
-   },
-   {
-    "canonicalTagId": "tag_2bfcba143cc3bc42fb86",
-    "similarity": 0.7064
    }
   ],
   "tag_cf70b9674f51ba0c228e": [
@@ -2270,24 +1936,6 @@
     "similarity": 0.7176
    }
   ],
-  "tag_1ab216cc0d267c79c2bc": [
-   {
-    "canonicalTagId": "tag_a29c671732fc278df609",
-    "similarity": 0.8912
-   },
-   {
-    "canonicalTagId": "tag_9d2db9e0132e3be6c3b9",
-    "similarity": 0.7575
-   },
-   {
-    "canonicalTagId": "tag_ddbf4561528cadb73761",
-    "similarity": 0.7391
-   },
-   {
-    "canonicalTagId": "tag_7a03c3208eabc79a5a6a",
-    "similarity": 0.7097
-   }
-  ],
   "tag_026f532c21e1f341d732": [
    {
     "canonicalTagId": "tag_74b75e66fb1096e112af",
@@ -2312,26 +1960,6 @@
     "similarity": 0.7416
    }
   ],
-  "tag_39865633ab6596f82d01": [
-   {
-    "canonicalTagId": "tag_1a0b70f6e02b5ca5656f",
-    "similarity": 0.7107
-   }
-  ],
-  "tag_a29c671732fc278df609": [
-   {
-    "canonicalTagId": "tag_1ab216cc0d267c79c2bc",
-    "similarity": 0.8912
-   },
-   {
-    "canonicalTagId": "tag_9d2db9e0132e3be6c3b9",
-    "similarity": 0.8676
-   },
-   {
-    "canonicalTagId": "tag_7a03c3208eabc79a5a6a",
-    "similarity": 0.7948
-   }
-  ],
   "tag_9d9a2ec70afb1f5352cc": [
    {
     "canonicalTagId": "tag_026f532c21e1f341d732",
@@ -2342,38 +1970,12 @@
    {
     "canonicalTagId": "tag_7914fb42525167852dc6",
     "similarity": 0.7795
-   },
-   {
-    "canonicalTagId": "tag_93698542e834924cea31",
-    "similarity": 0.7447
    }
   ],
   "tag_1fe2b1f226b209d36de0": [
    {
     "canonicalTagId": "tag_3779dfc3e86211f0ec04",
     "similarity": 0.7974
-   }
-  ],
-  "tag_93698542e834924cea31": [
-   {
-    "canonicalTagId": "tag_5e5e80d4e851d79663b6",
-    "similarity": 0.848
-   },
-   {
-    "canonicalTagId": "tag_cfcf43874b86f405c3a7",
-    "similarity": 0.7664
-   },
-   {
-    "canonicalTagId": "tag_1de1cad4c496bcf5aead",
-    "similarity": 0.7447
-   },
-   {
-    "canonicalTagId": "tag_77a03115f3dbf7518f69",
-    "similarity": 0.7293
-   },
-   {
-    "canonicalTagId": "tag_6fc1e3fd941473568ff4",
-    "similarity": 0.7133
    }
   ],
   "tag_3771c6ee3ff6f19e6fda": [
@@ -2386,12 +1988,6 @@
    {
     "canonicalTagId": "tag_93d8bfd9d87fe3053f3c",
     "similarity": 0.7052
-   }
-  ],
-  "tag_2177c33cb934ec304da3": [
-   {
-    "canonicalTagId": "tag_fab331127a3c740de35d",
-    "similarity": 0.8685
    }
   ],
   "tag_2dea10b517c9374e99c3": [
@@ -2510,10 +2106,6 @@
     "similarity": 0.7359
    },
    {
-    "canonicalTagId": "tag_3c8a8a69eb2d3f3fe062",
-    "similarity": 0.7315
-   },
-   {
     "canonicalTagId": "tag_d632905f0e6a2739fc34",
     "similarity": 0.7231
    },
@@ -2522,44 +2114,10 @@
     "similarity": 0.7175
    }
   ],
-  "tag_3c8a8a69eb2d3f3fe062": [
-   {
-    "canonicalTagId": "tag_494a8946e3d35399d5d1",
-    "similarity": 0.8481
-   },
-   {
-    "canonicalTagId": "tag_dc621e731648baadb5e3",
-    "similarity": 0.7741
-   },
-   {
-    "canonicalTagId": "tag_2e42d86f1dbddfd5a8ab",
-    "similarity": 0.7703
-   },
-   {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.7655
-   },
-   {
-    "canonicalTagId": "tag_01c18492ff9e251cd246",
-    "similarity": 0.7459
-   }
-  ],
   "tag_494a8946e3d35399d5d1": [
-   {
-    "canonicalTagId": "tag_3c8a8a69eb2d3f3fe062",
-    "similarity": 0.8481
-   },
-   {
-    "canonicalTagId": "tag_14d2f01126f26eae788a",
-    "similarity": 0.7365
-   },
    {
     "canonicalTagId": "tag_669e4a5c87a6e1e18bfd",
     "similarity": 0.7359
-   },
-   {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.7251
    },
    {
     "canonicalTagId": "tag_2e42d86f1dbddfd5a8ab",
@@ -2598,23 +2156,19 @@
     "similarity": 0.7538
    },
    {
-    "canonicalTagId": "tag_3c8a8a69eb2d3f3fe062",
-    "similarity": 0.7349
-   },
-   {
     "canonicalTagId": "tag_6df3321f4d88b613e27f",
     "similarity": 0.7324
    },
    {
     "canonicalTagId": "tag_0a465d1b027a60a93a49",
     "similarity": 0.7304
+   },
+   {
+    "canonicalTagId": "tag_18f0b12dc159cefc497e",
+    "similarity": 0.7054
    }
   ],
   "tag_2e42d86f1dbddfd5a8ab": [
-   {
-    "canonicalTagId": "tag_3c8a8a69eb2d3f3fe062",
-    "similarity": 0.7703
-   },
    {
     "canonicalTagId": "tag_669e4a5c87a6e1e18bfd",
     "similarity": 0.7581
@@ -2642,26 +2196,22 @@
     "similarity": 0.7915
    },
    {
-    "canonicalTagId": "tag_3c8a8a69eb2d3f3fe062",
-    "similarity": 0.7741
-   },
-   {
     "canonicalTagId": "tag_2e42d86f1dbddfd5a8ab",
     "similarity": 0.7387
    },
    {
     "canonicalTagId": "tag_fee55132cb70817d6770",
     "similarity": 0.7288
+   },
+   {
+    "canonicalTagId": "tag_19f4b2729332e14e6582",
+    "similarity": 0.7269
    }
   ],
   "tag_e231e4d1111fabb66a0a": [
    {
     "canonicalTagId": "tag_711516ab10967f9c4bee",
     "similarity": 0.7691
-   },
-   {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.7689
    },
    {
     "canonicalTagId": "tag_6df3321f4d88b613e27f",
@@ -2674,28 +2224,10 @@
    {
     "canonicalTagId": "tag_fb9f1afa3b390915f084",
     "similarity": 0.7357
-   }
-  ],
-  "tag_b32a5d7e41e17385e21d": [
-   {
-    "canonicalTagId": "tag_e231e4d1111fabb66a0a",
-    "similarity": 0.7689
    },
    {
-    "canonicalTagId": "tag_3c8a8a69eb2d3f3fe062",
-    "similarity": 0.7655
-   },
-   {
-    "canonicalTagId": "tag_711516ab10967f9c4bee",
-    "similarity": 0.7651
-   },
-   {
-    "canonicalTagId": "tag_6df3321f4d88b613e27f",
-    "similarity": 0.7452
-   },
-   {
-    "canonicalTagId": "tag_fb9f1afa3b390915f084",
-    "similarity": 0.74
+    "canonicalTagId": "tag_40e8fa73591e7956c67b",
+    "similarity": 0.731
    }
   ],
   "tag_47dc623055e0114dac83": [
@@ -2708,16 +2240,16 @@
     "similarity": 0.745
    },
    {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.7361
-   },
-   {
     "canonicalTagId": "tag_40e8fa73591e7956c67b",
     "similarity": 0.7286
    },
    {
     "canonicalTagId": "tag_6df3321f4d88b613e27f",
     "similarity": 0.7276
+   },
+   {
+    "canonicalTagId": "tag_8d80aa84ab836dde28bc",
+    "similarity": 0.7102
    }
   ],
   "tag_6df3321f4d88b613e27f": [
@@ -2734,12 +2266,12 @@
     "similarity": 0.7483
    },
    {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.7452
-   },
-   {
     "canonicalTagId": "tag_21564674c7176013bd60",
     "similarity": 0.7324
+   },
+   {
+    "canonicalTagId": "tag_47dc623055e0114dac83",
+    "similarity": 0.7276
    }
   ],
   "tag_40e8fa73591e7956c67b": [
@@ -2766,10 +2298,6 @@
   ],
   "tag_91dc83e8f2c7a52a0050": [
    {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.7279
-   },
-   {
     "canonicalTagId": "tag_e231e4d1111fabb66a0a",
     "similarity": 0.7265
    },
@@ -2787,10 +2315,6 @@
    }
   ],
   "tag_fb9f1afa3b390915f084": [
-   {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.74
-   },
    {
     "canonicalTagId": "tag_e231e4d1111fabb66a0a",
     "similarity": 0.7357
@@ -2818,16 +2342,16 @@
     "similarity": 0.7691
    },
    {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.7651
-   },
-   {
     "canonicalTagId": "tag_47dc623055e0114dac83",
     "similarity": 0.7632
    },
    {
     "canonicalTagId": "tag_21564674c7176013bd60",
     "similarity": 0.7538
+   },
+   {
+    "canonicalTagId": "tag_6df3321f4d88b613e27f",
+    "similarity": 0.7483
    }
   ],
   "tag_df307a8ad09b9ea097e6": [
@@ -2853,10 +2377,6 @@
    }
   ],
   "tag_01c18492ff9e251cd246": [
-   {
-    "canonicalTagId": "tag_3c8a8a69eb2d3f3fe062",
-    "similarity": 0.7459
-   },
    {
     "canonicalTagId": "tag_9cbeebd67d4964f0e57b",
     "similarity": 0.7272
@@ -2918,8 +2438,8 @@
     "similarity": 0.7135
    },
    {
-    "canonicalTagId": "tag_cf2a9d8aa95644aabd88",
-    "similarity": 0.7046
+    "canonicalTagId": "tag_0490771fdf5e6e67779d",
+    "similarity": 0.7067
    }
   ],
   "tag_462314dab766d851eba8": [
@@ -2930,6 +2450,12 @@
    {
     "canonicalTagId": "tag_0ce1e015db74f35fd597",
     "similarity": 0.7445
+   }
+  ],
+  "tag_efde0bb196a244824fa8": [
+   {
+    "canonicalTagId": "tag_3d6bd2a19cfca934afb9",
+    "similarity": 0.7152
    }
   ],
   "tag_4f4bbd085aca2df0c186": [
@@ -2992,14 +2518,16 @@
     "similarity": 0.7061
    }
   ],
+  "tag_3d6bd2a19cfca934afb9": [
+   {
+    "canonicalTagId": "tag_efde0bb196a244824fa8",
+    "similarity": 0.7152
+   }
+  ],
   "tag_f390faf2571e53db84c2": [
    {
     "canonicalTagId": "tag_f32428d8db449a9ac259",
     "similarity": 0.7442
-   },
-   {
-    "canonicalTagId": "tag_0ba74aad1ecebebfbbfe",
-    "similarity": 0.7426
    },
    {
     "canonicalTagId": "tag_fdd523ef2724f1606a53",
@@ -3014,28 +2542,6 @@
    {
     "canonicalTagId": "tag_fdd523ef2724f1606a53",
     "similarity": 0.7305
-   },
-   {
-    "canonicalTagId": "tag_0ba74aad1ecebebfbbfe",
-    "similarity": 0.7063
-   }
-  ],
-  "tag_0ba74aad1ecebebfbbfe": [
-   {
-    "canonicalTagId": "tag_e9c2883bef4af0cee225",
-    "similarity": 0.8023
-   },
-   {
-    "canonicalTagId": "tag_f390faf2571e53db84c2",
-    "similarity": 0.7426
-   },
-   {
-    "canonicalTagId": "tag_f32428d8db449a9ac259",
-    "similarity": 0.7063
-   },
-   {
-    "canonicalTagId": "tag_07d2c3aee63b1ae020fc",
-    "similarity": 0.7059
    }
   ],
   "tag_fdd523ef2724f1606a53": [
@@ -3046,62 +2552,6 @@
    {
     "canonicalTagId": "tag_f32428d8db449a9ac259",
     "similarity": 0.7305
-   }
-  ],
-  "tag_a6088633dec4580c553f": [
-   {
-    "canonicalTagId": "tag_652ec2f7824592317656",
-    "similarity": 0.7355
-   },
-   {
-    "canonicalTagId": "tag_07d2c3aee63b1ae020fc",
-    "similarity": 0.7262
-   }
-  ],
-  "tag_652ec2f7824592317656": [
-   {
-    "canonicalTagId": "tag_07d2c3aee63b1ae020fc",
-    "similarity": 0.933
-   },
-   {
-    "canonicalTagId": "tag_e9c2883bef4af0cee225",
-    "similarity": 0.7809
-   },
-   {
-    "canonicalTagId": "tag_a6088633dec4580c553f",
-    "similarity": 0.7355
-   }
-  ],
-  "tag_07d2c3aee63b1ae020fc": [
-   {
-    "canonicalTagId": "tag_652ec2f7824592317656",
-    "similarity": 0.933
-   },
-   {
-    "canonicalTagId": "tag_e9c2883bef4af0cee225",
-    "similarity": 0.8525
-   },
-   {
-    "canonicalTagId": "tag_a6088633dec4580c553f",
-    "similarity": 0.7262
-   },
-   {
-    "canonicalTagId": "tag_0ba74aad1ecebebfbbfe",
-    "similarity": 0.7059
-   }
-  ],
-  "tag_e9c2883bef4af0cee225": [
-   {
-    "canonicalTagId": "tag_07d2c3aee63b1ae020fc",
-    "similarity": 0.8525
-   },
-   {
-    "canonicalTagId": "tag_0ba74aad1ecebebfbbfe",
-    "similarity": 0.8023
-   },
-   {
-    "canonicalTagId": "tag_652ec2f7824592317656",
-    "similarity": 0.7809
    }
   ],
   "tag_610defe99fe2325827e0": [
@@ -3124,24 +2574,10 @@
     "similarity": 0.7283
    }
   ],
-  "tag_fab331127a3c740de35d": [
-   {
-    "canonicalTagId": "tag_2177c33cb934ec304da3",
-    "similarity": 0.8685
-   }
-  ],
   "tag_c1cfc7f1cd7d764bd2a5": [
-   {
-    "canonicalTagId": "tag_74484577c9be5f411fa3",
-    "similarity": 0.7697
-   },
    {
     "canonicalTagId": "tag_43029a964b518f9c8281",
     "similarity": 0.7626
-   },
-   {
-    "canonicalTagId": "tag_a9e1ef4daa9199f078e3",
-    "similarity": 0.7126
    },
    {
     "canonicalTagId": "tag_01fa129139bd5bfcbe3c",
@@ -3154,22 +2590,38 @@
   ],
   "tag_4a36b651669e1588bf56": [
    {
-    "canonicalTagId": "tag_84a127a1d9cb3ca5acca",
-    "similarity": 0.9213
-   },
-   {
     "canonicalTagId": "tag_8f4cd467f07b3ab0bc2d",
     "similarity": 0.701
    }
   ],
-  "tag_a9e1ef4daa9199f078e3": [
+  "tag_a0b18aef02cd2967abfc": [
    {
-    "canonicalTagId": "tag_970cb822229040e999c0",
-    "similarity": 0.9043
+    "canonicalTagId": "tag_276a325ff6e254dec971",
+    "similarity": 0.7515
    },
    {
-    "canonicalTagId": "tag_c1cfc7f1cd7d764bd2a5",
-    "similarity": 0.7126
+    "canonicalTagId": "tag_b260b013cdb4155b4f0e",
+    "similarity": 0.7138
+   }
+  ],
+  "tag_276a325ff6e254dec971": [
+   {
+    "canonicalTagId": "tag_a0b18aef02cd2967abfc",
+    "similarity": 0.7515
+   },
+   {
+    "canonicalTagId": "tag_b260b013cdb4155b4f0e",
+    "similarity": 0.7065
+   }
+  ],
+  "tag_b260b013cdb4155b4f0e": [
+   {
+    "canonicalTagId": "tag_a0b18aef02cd2967abfc",
+    "similarity": 0.7138
+   },
+   {
+    "canonicalTagId": "tag_276a325ff6e254dec971",
+    "similarity": 0.7065
    }
   ],
   "tag_ef4b3cde787be895b902": [
@@ -3330,42 +2782,6 @@
    {
     "canonicalTagId": "tag_c7e2e63e449911239f2a",
     "similarity": 0.7787
-   },
-   {
-    "canonicalTagId": "tag_f8d050fb13f049b26fbb",
-    "similarity": 0.7485
-   }
-  ],
-  "tag_600ca9baccbfd1272ce5": [
-   {
-    "canonicalTagId": "tag_f43811c9d037307c236e",
-    "similarity": 0.8611
-   },
-   {
-    "canonicalTagId": "tag_e38237173efd0a15044c",
-    "similarity": 0.7516
-   },
-   {
-    "canonicalTagId": "tag_9eec1905d75a531d1292",
-    "similarity": 0.734
-   }
-  ],
-  "tag_e38237173efd0a15044c": [
-   {
-    "canonicalTagId": "tag_e582f8992d3794f41959",
-    "similarity": 0.8747
-   },
-   {
-    "canonicalTagId": "tag_bf9a8688528ddd609b3d",
-    "similarity": 0.8488
-   },
-   {
-    "canonicalTagId": "tag_b5aacc33786252c63ee8",
-    "similarity": 0.788
-   },
-   {
-    "canonicalTagId": "tag_600ca9baccbfd1272ce5",
-    "similarity": 0.7516
    }
   ],
   "tag_b7c27ea472599469d468": [
@@ -3388,12 +2804,12 @@
     "similarity": 0.7616
    },
    {
-    "canonicalTagId": "tag_bf9a8688528ddd609b3d",
-    "similarity": 0.7615
-   },
-   {
     "canonicalTagId": "tag_7e752a27485f4a5718ca",
     "similarity": 0.7539
+   },
+   {
+    "canonicalTagId": "tag_c7e2e63e449911239f2a",
+    "similarity": 0.7469
    }
   ],
   "tag_9eec1905d75a531d1292": [
@@ -3410,37 +2826,15 @@
     "similarity": 0.7439
    },
    {
-    "canonicalTagId": "tag_600ca9baccbfd1272ce5",
-    "similarity": 0.734
-   },
-   {
-    "canonicalTagId": "tag_bf9a8688528ddd609b3d",
-    "similarity": 0.7183
-   }
-  ],
-  "tag_3d47052f408c0a04629c": [
-   {
-    "canonicalTagId": "tag_4c5b3b8c4467b8d41ef0",
-    "similarity": 0.8194
-   },
-   {
-    "canonicalTagId": "tag_20aef7cad704726c8947",
-    "similarity": 0.7403
-   },
-   {
-    "canonicalTagId": "tag_dd2c58f84c1e8f04f331",
-    "similarity": 0.7187
-   },
-   {
-    "canonicalTagId": "tag_9057de900f4831ef1f4c",
+    "canonicalTagId": "tag_8d739916e0b86af80d8d",
     "similarity": 0.7115
-   },
-   {
-    "canonicalTagId": "tag_446d7aa4511515fb7f9b",
-    "similarity": 0.7025
    }
   ],
   "tag_5d3c3943df961262d743": [
+   {
+    "canonicalTagId": "tag_cc32f0b3cd249943fbe1",
+    "similarity": 0.8309
+   },
    {
     "canonicalTagId": "tag_a92d2676892b2f27addc",
     "similarity": 0.7359
@@ -3456,10 +2850,6 @@
    {
     "canonicalTagId": "tag_5c27e2dbe22ca2ed7a8d",
     "similarity": 0.7296
-   },
-   {
-    "canonicalTagId": "tag_2ba290fcf11384158d40",
-    "similarity": 0.7161
    }
   ],
   "tag_d78d33123d886b612553": [
@@ -3474,24 +2864,6 @@
    {
     "canonicalTagId": "tag_a3787f68b3a50eeae4c4",
     "similarity": 0.7129
-   }
-  ],
-  "tag_fe778d0b9abac907ffd7": [
-   {
-    "canonicalTagId": "tag_83add8ae58c10922ef4f",
-    "similarity": 0.8496
-   },
-   {
-    "canonicalTagId": "tag_99e2750a1319f2f15678",
-    "similarity": 0.7757
-   },
-   {
-    "canonicalTagId": "tag_f46824706853e3d7c0a7",
-    "similarity": 0.7662
-   },
-   {
-    "canonicalTagId": "tag_7f65dd2704c5857e3a65",
-    "similarity": 0.7403
    }
   ],
   "tag_8d739916e0b86af80d8d": [
@@ -3516,29 +2888,7 @@
     "similarity": 0.7115
    }
   ],
-  "tag_117b63a1035ce323598d": [
-   {
-    "canonicalTagId": "tag_7b467dc2ad6d343bb143",
-    "similarity": 0.8329
-   },
-   {
-    "canonicalTagId": "tag_2d536e21035ad22183ee",
-    "similarity": 0.7474
-   },
-   {
-    "canonicalTagId": "tag_421ff3a70f5f5b2c73f8",
-    "similarity": 0.7451
-   },
-   {
-    "canonicalTagId": "tag_28313ca8bde3662fe3a1",
-    "similarity": 0.7019
-   }
-  ],
   "tag_7b467dc2ad6d343bb143": [
-   {
-    "canonicalTagId": "tag_117b63a1035ce323598d",
-    "similarity": 0.8329
-   },
    {
     "canonicalTagId": "tag_8d739916e0b86af80d8d",
     "similarity": 0.7026
@@ -3548,10 +2898,6 @@
    {
     "canonicalTagId": "tag_c7e2e63e449911239f2a",
     "similarity": 0.8131
-   },
-   {
-    "canonicalTagId": "tag_f8d050fb13f049b26fbb",
-    "similarity": 0.7364
    }
   ],
   "tag_5a3fc49aad6b96a3f08e": [
@@ -3574,23 +2920,19 @@
     "similarity": 0.7625
    },
    {
-    "canonicalTagId": "tag_117b63a1035ce323598d",
-    "similarity": 0.7474
-   },
-   {
     "canonicalTagId": "tag_9b581805d9900b768463",
     "similarity": 0.7371
    },
    {
     "canonicalTagId": "tag_28313ca8bde3662fe3a1",
     "similarity": 0.7339
+   },
+   {
+    "canonicalTagId": "tag_5d3c3943df961262d743",
+    "similarity": 0.7311
    }
   ],
   "tag_c7e2e63e449911239f2a": [
-   {
-    "canonicalTagId": "tag_f8d050fb13f049b26fbb",
-    "similarity": 0.9204
-   },
    {
     "canonicalTagId": "tag_851789defc83b3e37712",
     "similarity": 0.8131
@@ -3608,29 +2950,7 @@
     "similarity": 0.7205
    }
   ],
-  "tag_f8d050fb13f049b26fbb": [
-   {
-    "canonicalTagId": "tag_c7e2e63e449911239f2a",
-    "similarity": 0.9204
-   },
-   {
-    "canonicalTagId": "tag_1d9a84c15b1c8349006d",
-    "similarity": 0.7485
-   },
-   {
-    "canonicalTagId": "tag_851789defc83b3e37712",
-    "similarity": 0.7364
-   },
-   {
-    "canonicalTagId": "tag_28313ca8bde3662fe3a1",
-    "similarity": 0.7232
-   }
-  ],
   "tag_f43811c9d037307c236e": [
-   {
-    "canonicalTagId": "tag_600ca9baccbfd1272ce5",
-    "similarity": 0.8611
-   },
    {
     "canonicalTagId": "tag_9eec1905d75a531d1292",
     "similarity": 0.7927
@@ -3644,8 +2964,8 @@
     "similarity": 0.7363
    },
    {
-    "canonicalTagId": "tag_bf9a8688528ddd609b3d",
-    "similarity": 0.7187
+    "canonicalTagId": "tag_e582f8992d3794f41959",
+    "similarity": 0.7184
    }
   ],
   "tag_2ed2bbb0b502fbaea7c5": [
@@ -3658,16 +2978,16 @@
     "similarity": 0.72
    },
    {
+    "canonicalTagId": "tag_cc32f0b3cd249943fbe1",
+    "similarity": 0.7172
+   },
+   {
     "canonicalTagId": "tag_542afd9fc0fab2e8454d",
     "similarity": 0.7145
    },
    {
     "canonicalTagId": "tag_570628e81eee6bbcf16a",
     "similarity": 0.7097
-   },
-   {
-    "canonicalTagId": "tag_0594e271297b978c2d27",
-    "similarity": 0.7003
    }
   ],
   "tag_7e752a27485f4a5718ca": [
@@ -3694,12 +3014,12 @@
     "similarity": 0.7796
    },
    {
-    "canonicalTagId": "tag_117b63a1035ce323598d",
-    "similarity": 0.7451
-   },
-   {
     "canonicalTagId": "tag_570628e81eee6bbcf16a",
     "similarity": 0.7065
+   },
+   {
+    "canonicalTagId": "tag_5d3c3943df961262d743",
+    "similarity": 0.7063
    }
   ],
   "tag_570628e81eee6bbcf16a": [
@@ -3726,45 +3046,15 @@
   ],
   "tag_adfa6558010f556c0b78": [
    {
+    "canonicalTagId": "tag_cc32f0b3cd249943fbe1",
+    "similarity": 0.7264
+   },
+   {
     "canonicalTagId": "tag_5d3c3943df961262d743",
     "similarity": 0.7054
    }
   ],
-  "tag_bf9a8688528ddd609b3d": [
-   {
-    "canonicalTagId": "tag_e582f8992d3794f41959",
-    "similarity": 0.9351
-   },
-   {
-    "canonicalTagId": "tag_b5aacc33786252c63ee8",
-    "similarity": 0.8845
-   },
-   {
-    "canonicalTagId": "tag_e38237173efd0a15044c",
-    "similarity": 0.8488
-   },
-   {
-    "canonicalTagId": "tag_28313ca8bde3662fe3a1",
-    "similarity": 0.7615
-   },
-   {
-    "canonicalTagId": "tag_f43811c9d037307c236e",
-    "similarity": 0.7187
-   }
-  ],
   "tag_e582f8992d3794f41959": [
-   {
-    "canonicalTagId": "tag_bf9a8688528ddd609b3d",
-    "similarity": 0.9351
-   },
-   {
-    "canonicalTagId": "tag_e38237173efd0a15044c",
-    "similarity": 0.8747
-   },
-   {
-    "canonicalTagId": "tag_b5aacc33786252c63ee8",
-    "similarity": 0.8595
-   },
    {
     "canonicalTagId": "tag_f43811c9d037307c236e",
     "similarity": 0.7184
@@ -3772,6 +3062,24 @@
    {
     "canonicalTagId": "tag_bfe21efe35b06bbec98f",
     "similarity": 0.7045
+   }
+  ],
+  "tag_cc32f0b3cd249943fbe1": [
+   {
+    "canonicalTagId": "tag_5d3c3943df961262d743",
+    "similarity": 0.8309
+   },
+   {
+    "canonicalTagId": "tag_367f64314a15654aacdb",
+    "similarity": 0.7343
+   },
+   {
+    "canonicalTagId": "tag_adfa6558010f556c0b78",
+    "similarity": 0.7264
+   },
+   {
+    "canonicalTagId": "tag_2ed2bbb0b502fbaea7c5",
+    "similarity": 0.7172
    }
   ],
   "tag_9b581805d9900b768463": [
@@ -3794,20 +3102,6 @@
    {
     "canonicalTagId": "tag_570628e81eee6bbcf16a",
     "similarity": 0.73
-   }
-  ],
-  "tag_b5aacc33786252c63ee8": [
-   {
-    "canonicalTagId": "tag_bf9a8688528ddd609b3d",
-    "similarity": 0.8845
-   },
-   {
-    "canonicalTagId": "tag_e582f8992d3794f41959",
-    "similarity": 0.8595
-   },
-   {
-    "canonicalTagId": "tag_e38237173efd0a15044c",
-    "similarity": 0.788
    }
   ],
   "tag_246b739276efa2b944a2": [
@@ -3838,12 +3132,12 @@
     "similarity": 0.7804
    },
    {
-    "canonicalTagId": "tag_e5b050c360b6d053d6ab",
-    "similarity": 0.7739
-   },
-   {
     "canonicalTagId": "tag_ef67417e0c4d8c058d2e",
     "similarity": 0.7692
+   },
+   {
+    "canonicalTagId": "tag_617e331db838cfdfb158",
+    "similarity": 0.7621
    },
    {
     "canonicalTagId": "tag_426920fec172613456d2",
@@ -3872,38 +3166,12 @@
   ],
   "tag_310f5f052db22f5c3e96": [
    {
-    "canonicalTagId": "tag_e5b050c360b6d053d6ab",
-    "similarity": 0.9208
-   },
-   {
     "canonicalTagId": "tag_f0f2b873561feb7e44f7",
     "similarity": 0.7858
    },
    {
     "canonicalTagId": "tag_cb57ca2790d718442126",
     "similarity": 0.7804
-   }
-  ],
-  "tag_e5b050c360b6d053d6ab": [
-   {
-    "canonicalTagId": "tag_310f5f052db22f5c3e96",
-    "similarity": 0.9208
-   },
-   {
-    "canonicalTagId": "tag_f0f2b873561feb7e44f7",
-    "similarity": 0.8317
-   },
-   {
-    "canonicalTagId": "tag_cb57ca2790d718442126",
-    "similarity": 0.7739
-   },
-   {
-    "canonicalTagId": "tag_9eec1905d75a531d1292",
-    "similarity": 0.7044
-   },
-   {
-    "canonicalTagId": "tag_28313ca8bde3662fe3a1",
-    "similarity": 0.7032
    }
   ],
   "tag_69e88863416d5d78cf80": [
@@ -3998,10 +3266,6 @@
   ],
   "tag_f0f2b873561feb7e44f7": [
    {
-    "canonicalTagId": "tag_e5b050c360b6d053d6ab",
-    "similarity": 0.8317
-   },
-   {
     "canonicalTagId": "tag_b2f95605e0737052976b",
     "similarity": 0.8004
    },
@@ -4044,23 +3308,23 @@
     "similarity": 0.838
    }
   ],
-  "tag_6c218b0b496d184ae914": [
+  "tag_13a156b7afbff514eb5b": [
    {
-    "canonicalTagId": "tag_73a620cc81aa9afab528",
-    "similarity": 0.8267
+    "canonicalTagId": "tag_0bee418e63aa8a4034ff",
+    "similarity": 0.7461
+   },
+   {
+    "canonicalTagId": "tag_a9918899cb8eb438e677",
+    "similarity": 0.7195
    }
   ],
-  "tag_967f35a6ede7b4c7f0be": [
+  "tag_a9918899cb8eb438e677": [
    {
-    "canonicalTagId": "tag_5937cda498c4b2357a3b",
-    "similarity": 0.7474
+    "canonicalTagId": "tag_13a156b7afbff514eb5b",
+    "similarity": 0.7195
    }
   ],
   "tag_5937cda498c4b2357a3b": [
-   {
-    "canonicalTagId": "tag_967f35a6ede7b4c7f0be",
-    "similarity": 0.7474
-   },
    {
     "canonicalTagId": "tag_3b71e7c5c1b9397925ce",
     "similarity": 0.733
@@ -4106,10 +3370,6 @@
     "similarity": 0.7931
    },
    {
-    "canonicalTagId": "tag_307b79f9527b9f48c7b9",
-    "similarity": 0.7471
-   },
-   {
     "canonicalTagId": "tag_01287af0cecec67b6be9",
     "similarity": 0.74
    },
@@ -4120,6 +3380,10 @@
    {
     "canonicalTagId": "tag_4763060fe471a2a7beeb",
     "similarity": 0.7109
+   },
+   {
+    "canonicalTagId": "tag_ce47215659c47f8c1af7",
+    "similarity": 0.7082
    }
   ],
   "tag_9241a3b2487b373f5048": [
@@ -4160,6 +3424,12 @@
     "similarity": 0.7124
    }
   ],
+  "tag_fa768140d92ae57a805c": [
+   {
+    "canonicalTagId": "tag_d1a89772d57b3830b8fe",
+    "similarity": 0.7172
+   }
+  ],
   "tag_1695ffa99835cd3de690": [
    {
     "canonicalTagId": "tag_bd23c2acc382cb94ac35",
@@ -4178,21 +3448,7 @@
     "similarity": 0.7605
    }
   ],
-  "tag_ddbf4561528cadb73761": [
-   {
-    "canonicalTagId": "tag_e987663715c181ddd346",
-    "similarity": 0.8651
-   },
-   {
-    "canonicalTagId": "tag_1ab216cc0d267c79c2bc",
-    "similarity": 0.7391
-   }
-  ],
   "tag_2382adcec97712ed41c7": [
-   {
-    "canonicalTagId": "tag_328a140f5a9237c003dc",
-    "similarity": 0.7752
-   },
    {
     "canonicalTagId": "tag_4f94678690f597d78661",
     "similarity": 0.7747
@@ -4204,46 +3460,24 @@
   ],
   "tag_4f94678690f597d78661": [
    {
-    "canonicalTagId": "tag_307b79f9527b9f48c7b9",
-    "similarity": 0.887
-   },
-   {
-    "canonicalTagId": "tag_328a140f5a9237c003dc",
-    "similarity": 0.846
-   },
-   {
-    "canonicalTagId": "tag_f00a8e658deba62f721e",
-    "similarity": 0.8055
-   },
-   {
     "canonicalTagId": "tag_a4ad34dbd89c0877fdc0",
     "similarity": 0.7931
    },
    {
     "canonicalTagId": "tag_01287af0cecec67b6be9",
     "similarity": 0.7811
-   }
-  ],
-  "tag_328a140f5a9237c003dc": [
-   {
-    "canonicalTagId": "tag_c8b60103fef507a16103",
-    "similarity": 0.8843
-   },
-   {
-    "canonicalTagId": "tag_4f94678690f597d78661",
-    "similarity": 0.846
    },
    {
     "canonicalTagId": "tag_2382adcec97712ed41c7",
-    "similarity": 0.7752
+    "similarity": 0.7747
    },
    {
-    "canonicalTagId": "tag_307b79f9527b9f48c7b9",
-    "similarity": 0.7557
+    "canonicalTagId": "tag_c8b60103fef507a16103",
+    "similarity": 0.76
    },
    {
-    "canonicalTagId": "tag_f00a8e658deba62f721e",
-    "similarity": 0.7187
+    "canonicalTagId": "tag_32b5efdc79a4f3d15d43",
+    "similarity": 0.7479
    }
   ],
   "tag_7b42e601dd2c5088e819": [
@@ -4292,7 +3526,17 @@
     "similarity": 0.7072
    }
   ],
+  "tag_7e924cf51383c7967018": [
+   {
+    "canonicalTagId": "tag_ccc58df42cea2457fbc1",
+    "similarity": 0.7579
+   }
+  ],
   "tag_ccc58df42cea2457fbc1": [
+   {
+    "canonicalTagId": "tag_7e924cf51383c7967018",
+    "similarity": 0.7579
+   },
    {
     "canonicalTagId": "tag_ccba5645688ec1be309e",
     "similarity": 0.7102
@@ -4308,16 +3552,6 @@
    {
     "canonicalTagId": "tag_778b890705e359479383",
     "similarity": 0.7983
-   }
-  ],
-  "tag_570ddbf9da0f370f45f0": [
-   {
-    "canonicalTagId": "tag_91cba55eebc8a9928018",
-    "similarity": 0.8133
-   },
-   {
-    "canonicalTagId": "tag_ae08a42c423201ec53f5",
-    "similarity": 0.7156
    }
   ],
   "tag_222ac4fd965817c4f3ff": [
@@ -4378,63 +3612,29 @@
     "similarity": 0.8347
    }
   ],
+  "tag_617e331db838cfdfb158": [
+   {
+    "canonicalTagId": "tag_cb57ca2790d718442126",
+    "similarity": 0.7621
+   },
+   {
+    "canonicalTagId": "tag_426920fec172613456d2",
+    "similarity": 0.7343
+   }
+  ],
   "tag_4cfa5051b8619cd3bed8": [
    {
     "canonicalTagId": "tag_8dfeabab8f6eedc4d623",
     "similarity": 0.7088
    }
   ],
-  "tag_934332c9f02dce38e84a": [
-   {
-    "canonicalTagId": "tag_28cb3b81eafb273e78ef",
-    "similarity": 0.8436
-   },
-   {
-    "canonicalTagId": "tag_03c20a14bda89e016bc3",
-    "similarity": 0.7767
-   },
-   {
-    "canonicalTagId": "tag_e1086eac86bfdd00139d",
-    "similarity": 0.763
-   }
-  ],
   "tag_28cb3b81eafb273e78ef": [
-   {
-    "canonicalTagId": "tag_934332c9f02dce38e84a",
-    "similarity": 0.8436
-   },
    {
     "canonicalTagId": "tag_03c20a14bda89e016bc3",
     "similarity": 0.8053
-   },
-   {
-    "canonicalTagId": "tag_e1086eac86bfdd00139d",
-    "similarity": 0.7292
-   }
-  ],
-  "tag_e1086eac86bfdd00139d": [
-   {
-    "canonicalTagId": "tag_dcf0f129d24f96308a5f",
-    "similarity": 0.872
-   },
-   {
-    "canonicalTagId": "tag_934332c9f02dce38e84a",
-    "similarity": 0.763
-   },
-   {
-    "canonicalTagId": "tag_96587ea33eaa0a5d7432",
-    "similarity": 0.7392
-   },
-   {
-    "canonicalTagId": "tag_28cb3b81eafb273e78ef",
-    "similarity": 0.7292
    }
   ],
   "tag_dcf0f129d24f96308a5f": [
-   {
-    "canonicalTagId": "tag_e1086eac86bfdd00139d",
-    "similarity": 0.872
-   },
    {
     "canonicalTagId": "tag_96587ea33eaa0a5d7432",
     "similarity": 0.7877
@@ -4502,16 +3702,8 @@
   ],
   "tag_9d2db9e0132e3be6c3b9": [
    {
-    "canonicalTagId": "tag_a29c671732fc278df609",
-    "similarity": 0.8676
-   },
-   {
     "canonicalTagId": "tag_7a03c3208eabc79a5a6a",
     "similarity": 0.7804
-   },
-   {
-    "canonicalTagId": "tag_1ab216cc0d267c79c2bc",
-    "similarity": 0.7575
    }
   ],
   "tag_b43559e722a48f927437": [
@@ -4592,10 +3784,6 @@
   ],
   "tag_465461a1e61da826d182": [
    {
-    "canonicalTagId": "tag_470fb521aad85a3f60d4",
-    "similarity": 0.8793
-   },
-   {
     "canonicalTagId": "tag_0f7718f60e61be82e452",
     "similarity": 0.8454
    }
@@ -4620,10 +3808,6 @@
     "similarity": 0.732
    },
    {
-    "canonicalTagId": "tag_61035a42438a2dd230cb",
-    "similarity": 0.7243
-   },
-   {
     "canonicalTagId": "tag_46fb3b42294d5864380a",
     "similarity": 0.7178
    }
@@ -4644,20 +3828,12 @@
    {
     "canonicalTagId": "tag_1e43b34a66a2304159da",
     "similarity": 0.7178
-   },
-   {
-    "canonicalTagId": "tag_61035a42438a2dd230cb",
-    "similarity": 0.7093
    }
   ],
   "tag_71a1f64e0c2065ca02ac": [
    {
     "canonicalTagId": "tag_0c691a92ee0a28887e28",
     "similarity": 0.7706
-   },
-   {
-    "canonicalTagId": "tag_dd2c58f84c1e8f04f331",
-    "similarity": 0.7247
    },
    {
     "canonicalTagId": "tag_1ca2a94db861ea8585e1",
@@ -4676,10 +3852,6 @@
     "similarity": 0.8207
    },
    {
-    "canonicalTagId": "tag_2f7c77ab5e312986e911",
-    "similarity": 0.789
-   },
-   {
     "canonicalTagId": "tag_4a4054156c063e7e6658",
     "similarity": 0.7361
    },
@@ -4690,24 +3862,6 @@
    {
     "canonicalTagId": "tag_df0c067a726b567ab616",
     "similarity": 0.7115
-   }
-  ],
-  "tag_61035a42438a2dd230cb": [
-   {
-    "canonicalTagId": "tag_aa07bd4156172f508502",
-    "similarity": 0.8566
-   },
-   {
-    "canonicalTagId": "tag_4a4054156c063e7e6658",
-    "similarity": 0.7962
-   },
-   {
-    "canonicalTagId": "tag_1e43b34a66a2304159da",
-    "similarity": 0.7243
-   },
-   {
-    "canonicalTagId": "tag_46fb3b42294d5864380a",
-    "similarity": 0.7093
    }
   ],
   "tag_1ae2a1757aafd0a98a3f": [
@@ -4738,10 +3892,6 @@
     "similarity": 0.8111
    },
    {
-    "canonicalTagId": "tag_61035a42438a2dd230cb",
-    "similarity": 0.7962
-   },
-   {
     "canonicalTagId": "tag_aa07bd4156172f508502",
     "similarity": 0.7891
    },
@@ -4752,6 +3902,10 @@
    {
     "canonicalTagId": "tag_1ae2a1757aafd0a98a3f",
     "similarity": 0.7436
+   },
+   {
+    "canonicalTagId": "tag_a5963c8eac09505c620c",
+    "similarity": 0.7435
    }
   ],
   "tag_df0c067a726b567ab616": [
@@ -4770,10 +3924,6 @@
   ],
   "tag_aa07bd4156172f508502": [
    {
-    "canonicalTagId": "tag_61035a42438a2dd230cb",
-    "similarity": 0.8566
-   },
-   {
     "canonicalTagId": "tag_4a4054156c063e7e6658",
     "similarity": 0.7891
    },
@@ -4788,6 +3938,10 @@
    {
     "canonicalTagId": "tag_1e43b34a66a2304159da",
     "similarity": 0.742
+   },
+   {
+    "canonicalTagId": "tag_0c606b82c8aec62fd1d9",
+    "similarity": 0.7121
    }
   ],
   "tag_671b957d017dbf572cc3": [
@@ -4816,16 +3970,6 @@
    {
     "canonicalTagId": "tag_34f46e29fa1c9d43ab7b",
     "similarity": 0.7531
-   }
-  ],
-  "tag_bfa796682b51c0e3131e": [
-   {
-    "canonicalTagId": "tag_bcd56da363d0675ad77b",
-    "similarity": 0.8278
-   },
-   {
-    "canonicalTagId": "tag_992c25430eb09a832379",
-    "similarity": 0.7193
    }
   ],
   "tag_b0f241d8796a5b4b5271": [
@@ -4940,10 +4084,6 @@
    {
     "canonicalTagId": "tag_378f413fba978fdeaefb",
     "similarity": 0.744
-   },
-   {
-    "canonicalTagId": "tag_b9c50c1241ab9155b21f",
-    "similarity": 0.7191
    }
   ],
   "tag_378f413fba978fdeaefb": [
@@ -5012,6 +4152,10 @@
    {
     "canonicalTagId": "tag_5cc574c8a5891f0b42d9",
     "similarity": 0.7291
+   },
+   {
+    "canonicalTagId": "tag_4a2ed396cac4ae7fdd9c",
+    "similarity": 0.7233
    }
   ],
   "tag_11616b2f0e1db44e9292": [
@@ -5030,16 +4174,16 @@
     "similarity": 0.7651
    },
    {
-    "canonicalTagId": "tag_b9c50c1241ab9155b21f",
-    "similarity": 0.7579
-   },
-   {
     "canonicalTagId": "tag_900c94ba0435d787c835",
     "similarity": 0.7411
    },
    {
     "canonicalTagId": "tag_18059962f83541fa40e8",
     "similarity": 0.7349
+   },
+   {
+    "canonicalTagId": "tag_769c3a8169527573b084",
+    "similarity": 0.7206
    }
   ],
   "tag_f8f71416b532ad7e74cc": [
@@ -5054,19 +4198,11 @@
   ],
   "tag_8cc4989d2c8e88c5a53e": [
    {
-    "canonicalTagId": "tag_b9c50c1241ab9155b21f",
-    "similarity": 0.8432
-   },
-   {
     "canonicalTagId": "tag_f8f71416b532ad7e74cc",
     "similarity": 0.7637
    }
   ],
   "tag_5c75fb58b981c1138f6c": [
-   {
-    "canonicalTagId": "tag_b9c50c1241ab9155b21f",
-    "similarity": 0.8264
-   },
    {
     "canonicalTagId": "tag_0480ca2200e76b1f89bf",
     "similarity": 0.7476
@@ -5078,28 +4214,6 @@
    {
     "canonicalTagId": "tag_1985ebe7e7b88bb78cef",
     "similarity": 0.7099
-   }
-  ],
-  "tag_b9c50c1241ab9155b21f": [
-   {
-    "canonicalTagId": "tag_8cc4989d2c8e88c5a53e",
-    "similarity": 0.8432
-   },
-   {
-    "canonicalTagId": "tag_5c75fb58b981c1138f6c",
-    "similarity": 0.8264
-   },
-   {
-    "canonicalTagId": "tag_1985ebe7e7b88bb78cef",
-    "similarity": 0.7579
-   },
-   {
-    "canonicalTagId": "tag_0480ca2200e76b1f89bf",
-    "similarity": 0.7237
-   },
-   {
-    "canonicalTagId": "tag_206b48d071840bd39803",
-    "similarity": 0.7191
    }
   ],
   "tag_0480ca2200e76b1f89bf": [
@@ -5116,12 +4230,12 @@
     "similarity": 0.7299
    },
    {
-    "canonicalTagId": "tag_b9c50c1241ab9155b21f",
-    "similarity": 0.7237
-   },
-   {
     "canonicalTagId": "tag_900c94ba0435d787c835",
     "similarity": 0.7175
+   },
+   {
+    "canonicalTagId": "tag_18059962f83541fa40e8",
+    "similarity": 0.7032
    }
   ],
   "tag_769c3a8169527573b084": [
@@ -5164,10 +4278,6 @@
   ],
   "tag_fdd315b48028487e362d": [
    {
-    "canonicalTagId": "tag_2aca826b492fc4cf3f6e",
-    "similarity": 0.8809
-   },
-   {
     "canonicalTagId": "tag_7a3a1a0613a9e0c219c8",
     "similarity": 0.727
    },
@@ -5188,10 +4298,6 @@
    {
     "canonicalTagId": "tag_fdd315b48028487e362d",
     "similarity": 0.727
-   },
-   {
-    "canonicalTagId": "tag_2aca826b492fc4cf3f6e",
-    "similarity": 0.7179
    },
    {
     "canonicalTagId": "tag_586681245ce7c7ace4d1",
@@ -5244,28 +4350,6 @@
     "similarity": 0.7191
    }
   ],
-  "tag_dd2c58f84c1e8f04f331": [
-   {
-    "canonicalTagId": "tag_446d7aa4511515fb7f9b",
-    "similarity": 0.7861
-   },
-   {
-    "canonicalTagId": "tag_20aef7cad704726c8947",
-    "similarity": 0.7324
-   },
-   {
-    "canonicalTagId": "tag_9057de900f4831ef1f4c",
-    "similarity": 0.7306
-   },
-   {
-    "canonicalTagId": "tag_71a1f64e0c2065ca02ac",
-    "similarity": 0.7247
-   },
-   {
-    "canonicalTagId": "tag_3d47052f408c0a04629c",
-    "similarity": 0.7187
-   }
-  ],
   "tag_c4ff9bd826c73e220aa7": [
    {
     "canonicalTagId": "tag_f46824706853e3d7c0a7",
@@ -5284,18 +4368,14 @@
     "similarity": 0.7386
    },
    {
-    "canonicalTagId": "tag_5cc574c8a5891f0b42d9",
-    "similarity": 0.717
+    "canonicalTagId": "tag_994ad68003467b335893",
+    "similarity": 0.7237
    }
   ],
   "tag_f46824706853e3d7c0a7": [
    {
     "canonicalTagId": "tag_c4ff9bd826c73e220aa7",
     "similarity": 0.8014
-   },
-   {
-    "canonicalTagId": "tag_fe778d0b9abac907ffd7",
-    "similarity": 0.7662
    },
    {
     "canonicalTagId": "tag_83add8ae58c10922ef4f",
@@ -5312,20 +4392,12 @@
   ],
   "tag_8c5b0f0ee52c5240a1a0": [
    {
-    "canonicalTagId": "tag_d21ffece23ea3f75bba0",
-    "similarity": 0.8499
-   },
-   {
     "canonicalTagId": "tag_0d9e8f0a28620eae390d",
     "similarity": 0.7498
    },
    {
     "canonicalTagId": "tag_c4ff9bd826c73e220aa7",
     "similarity": 0.7386
-   },
-   {
-    "canonicalTagId": "tag_ba6d24c578008ea3aa7c",
-    "similarity": 0.7286
    },
    {
     "canonicalTagId": "tag_819c2ad51db26f02eb2e",
@@ -5398,6 +4470,12 @@
     "similarity": 0.7012
    }
   ],
+  "tag_39fce0aabaca77e517e2": [
+   {
+    "canonicalTagId": "tag_5d5d301bf656a5b02387",
+    "similarity": 0.7157
+   }
+  ],
   "tag_229f55e8a0542bd7bc97": [
    {
     "canonicalTagId": "tag_1403d3c936f3396f8615",
@@ -5434,8 +4512,8 @@
     "similarity": 0.7216
    },
    {
-    "canonicalTagId": "tag_49262a2171fc3feb1dd1",
-    "similarity": 0.7069
+    "canonicalTagId": "tag_39fce0aabaca77e517e2",
+    "similarity": 0.7157
    }
   ],
   "tag_a1333b86ff8be9caf7df": [
@@ -5626,6 +4704,20 @@
     "similarity": 0.7143
    }
   ],
+  "tag_e9d0743d312dfeb4c26c": [
+   {
+    "canonicalTagId": "tag_589ea8f0007c0cba3d88",
+    "similarity": 0.7399
+   },
+   {
+    "canonicalTagId": "tag_3714dd01df7b0868d9f3",
+    "similarity": 0.735
+   },
+   {
+    "canonicalTagId": "tag_69f6f82df42757f7cfee",
+    "similarity": 0.7182
+   }
+  ],
   "tag_c06c1ef24090ef3ff019": [
    {
     "canonicalTagId": "tag_d6da45b3c72260a72f78",
@@ -5708,6 +4800,12 @@
    {
     "canonicalTagId": "tag_13bb54f8ff0c85213538",
     "similarity": 0.7358
+   }
+  ],
+  "tag_0bee418e63aa8a4034ff": [
+   {
+    "canonicalTagId": "tag_13a156b7afbff514eb5b",
+    "similarity": 0.7461
    }
   ],
   "tag_c72600353b4a898150ee": [
@@ -5912,12 +5010,12 @@
     "similarity": 0.7439
    },
    {
-    "canonicalTagId": "tag_414f4912c4d286029079",
-    "similarity": 0.7375
-   },
-   {
     "canonicalTagId": "tag_dc7bfcaa152082b8af71",
     "similarity": 0.7162
+   },
+   {
+    "canonicalTagId": "tag_c06c1ef24090ef3ff019",
+    "similarity": 0.7126
    }
   ],
   "tag_379567807c8293510fc5": [
@@ -5972,10 +5070,6 @@
     "similarity": 0.792
    },
    {
-    "canonicalTagId": "tag_f2b51252fdbe74c0093b",
-    "similarity": 0.7634
-   },
-   {
     "canonicalTagId": "tag_72c835d88d87595649b6",
     "similarity": 0.7371
    },
@@ -5985,14 +5079,6 @@
    }
   ],
   "tag_542afd9fc0fab2e8454d": [
-   {
-    "canonicalTagId": "tag_f2b51252fdbe74c0093b",
-    "similarity": 0.874
-   },
-   {
-    "canonicalTagId": "tag_0594e271297b978c2d27",
-    "similarity": 0.8187
-   },
    {
     "canonicalTagId": "tag_a92d2676892b2f27addc",
     "similarity": 0.792
@@ -6016,28 +5102,24 @@
     "similarity": 0.7418
    },
    {
-    "canonicalTagId": "tag_1b2037347df90a379641",
-    "similarity": 0.7161
-   },
-   {
     "canonicalTagId": "tag_d5a1384bec9566e629e2",
     "similarity": 0.7097
-   }
-  ],
-  "tag_f2b51252fdbe74c0093b": [
-   {
-    "canonicalTagId": "tag_542afd9fc0fab2e8454d",
-    "similarity": 0.874
    },
    {
-    "canonicalTagId": "tag_a92d2676892b2f27addc",
-    "similarity": 0.7634
+    "canonicalTagId": "tag_1f9c15e41ee028bda65d",
+    "similarity": 0.7097
    }
   ],
   "tag_72c835d88d87595649b6": [
    {
     "canonicalTagId": "tag_a92d2676892b2f27addc",
     "similarity": 0.7371
+   }
+  ],
+  "tag_ec0914a9297e4b2ee505": [
+   {
+    "canonicalTagId": "tag_177ba4bbd58140207d07",
+    "similarity": 0.7111
    }
   ],
   "tag_699e86ceea7a10a8e5e3": [
@@ -6068,16 +5150,6 @@
    {
     "canonicalTagId": "tag_0985b7cefc6645e5c82f",
     "similarity": 0.7092
-   }
-  ],
-  "tag_470fb521aad85a3f60d4": [
-   {
-    "canonicalTagId": "tag_465461a1e61da826d182",
-    "similarity": 0.8793
-   },
-   {
-    "canonicalTagId": "tag_a9d425330b7bbb704096",
-    "similarity": 0.7231
    }
   ],
   "tag_fda0a267909a115188ac": [
@@ -6172,10 +5244,6 @@
   ],
   "tag_188160721c9c75672c09": [
    {
-    "canonicalTagId": "tag_414f4912c4d286029079",
-    "similarity": 0.8556
-   },
-   {
     "canonicalTagId": "tag_73e8250ac4486f6dad18",
     "similarity": 0.7724
    },
@@ -6204,6 +5272,10 @@
    {
     "canonicalTagId": "tag_9afbffec68c7c2dbe4d4",
     "similarity": 0.7702
+   },
+   {
+    "canonicalTagId": "tag_177ba4bbd58140207d07",
+    "similarity": 0.769
    },
    {
     "canonicalTagId": "tag_4f94678690f597d78661",
@@ -6242,44 +5314,26 @@
     "similarity": 0.7777
    },
    {
-    "canonicalTagId": "tag_414f4912c4d286029079",
-    "similarity": 0.7432
-   },
-   {
     "canonicalTagId": "tag_46546355693cd58d707c",
     "similarity": 0.7317
    },
    {
     "canonicalTagId": "tag_87b7dfa96d409dbbd0e5",
     "similarity": 0.7259
-   }
-  ],
-  "tag_414f4912c4d286029079": [
-   {
-    "canonicalTagId": "tag_188160721c9c75672c09",
-    "similarity": 0.8556
    },
    {
-    "canonicalTagId": "tag_b90d720706f0483b104f",
-    "similarity": 0.8102
-   },
-   {
-    "canonicalTagId": "tag_a04241c2d5da52ad7a21",
-    "similarity": 0.7933
-   },
-   {
-    "canonicalTagId": "tag_c84167e22bee4601ab62",
-    "similarity": 0.7432
-   },
-   {
-    "canonicalTagId": "tag_0150ba44a392c969b578",
-    "similarity": 0.7375
+    "canonicalTagId": "tag_e791f36578c923cc9233",
+    "similarity": 0.7168
    }
   ],
   "tag_63639436998378ba9edc": [
    {
     "canonicalTagId": "tag_a5e5e9e41040dfe0fb2d",
     "similarity": 0.7274
+   },
+   {
+    "canonicalTagId": "tag_dab53e2d011b81e95d98",
+    "similarity": 0.7066
    }
   ],
   "tag_929e48f0b2d69bfda376": [
@@ -6290,10 +5344,6 @@
   ],
   "tag_1a66594124091622769a": [
    {
-    "canonicalTagId": "tag_73a620cc81aa9afab528",
-    "similarity": 0.7871
-   },
-   {
     "canonicalTagId": "tag_929e48f0b2d69bfda376",
     "similarity": 0.7273
    },
@@ -6302,10 +5352,24 @@
     "similarity": 0.7142
    }
   ],
+  "tag_40cd2394c03323294b0b": [
+   {
+    "canonicalTagId": "tag_787a0ffeb7c8c7fe7550",
+    "similarity": 0.7127
+   },
+   {
+    "canonicalTagId": "tag_9eefcab1792a689ebee4",
+    "similarity": 0.7026
+   }
+  ],
   "tag_9eefcab1792a689ebee4": [
    {
     "canonicalTagId": "tag_787a0ffeb7c8c7fe7550",
     "similarity": 0.793
+   },
+   {
+    "canonicalTagId": "tag_40cd2394c03323294b0b",
+    "similarity": 0.7026
    }
   ],
   "tag_787a0ffeb7c8c7fe7550": [
@@ -6318,26 +5382,12 @@
     "similarity": 0.793
    },
    {
-    "canonicalTagId": "tag_73a620cc81aa9afab528",
-    "similarity": 0.7172
-   },
-   {
     "canonicalTagId": "tag_1a66594124091622769a",
     "similarity": 0.7142
-   }
-  ],
-  "tag_73a620cc81aa9afab528": [
-   {
-    "canonicalTagId": "tag_6c218b0b496d184ae914",
-    "similarity": 0.8267
    },
    {
-    "canonicalTagId": "tag_1a66594124091622769a",
-    "similarity": 0.7871
-   },
-   {
-    "canonicalTagId": "tag_787a0ffeb7c8c7fe7550",
-    "similarity": 0.7172
+    "canonicalTagId": "tag_40cd2394c03323294b0b",
+    "similarity": 0.7127
    }
   ],
   "tag_3966a66613171a8881c4": [
@@ -6408,6 +5458,12 @@
    {
     "canonicalTagId": "tag_bea5a3065d59f6e3d6f7",
     "similarity": 0.7039
+   }
+  ],
+  "tag_20a5727e1f6a4f32c2de": [
+   {
+    "canonicalTagId": "tag_bb7d1b1bb9c4f7c1f8cc",
+    "similarity": 0.7361
    }
   ],
   "tag_bea5a3065d59f6e3d6f7": [
@@ -6484,6 +5540,10 @@
   ],
   "tag_a5e5e9e41040dfe0fb2d": [
    {
+    "canonicalTagId": "tag_dab53e2d011b81e95d98",
+    "similarity": 0.7629
+   },
+   {
     "canonicalTagId": "tag_63639436998378ba9edc",
     "similarity": 0.7274
    },
@@ -6496,16 +5556,6 @@
    {
     "canonicalTagId": "tag_b5664ddcc0fd190863c1",
     "similarity": 0.7973
-   }
-  ],
-  "tag_2c0b1316f86d9d484dc0": [
-   {
-    "canonicalTagId": "tag_0b409fc42967b5042495",
-    "similarity": 0.8748
-   },
-   {
-    "canonicalTagId": "tag_bdd0a87af98ae4c89bf1",
-    "similarity": 0.7405
    }
   ],
   "tag_df6d4c594273b5998d9e": [
@@ -6608,75 +5658,13 @@
     "similarity": 0.8483
    }
   ],
-  "tag_bf0d8fae4af950aef44f": [
-   {
-    "canonicalTagId": "tag_d6151303ab3e9de4e8ef",
-    "similarity": 0.9102
-   },
-   {
-    "canonicalTagId": "tag_3bbf4bb98db3177ee228",
-    "similarity": 0.8968
-   },
-   {
-    "canonicalTagId": "tag_45e57873e6c904bd9395",
-    "similarity": 0.8358
-   }
-  ],
-  "tag_3bbf4bb98db3177ee228": [
-   {
-    "canonicalTagId": "tag_bf0d8fae4af950aef44f",
-    "similarity": 0.8968
-   },
-   {
-    "canonicalTagId": "tag_45e57873e6c904bd9395",
-    "similarity": 0.8932
-   },
-   {
-    "canonicalTagId": "tag_d6151303ab3e9de4e8ef",
-    "similarity": 0.8452
-   }
-  ],
   "tag_d6151303ab3e9de4e8ef": [
-   {
-    "canonicalTagId": "tag_45e57873e6c904bd9395",
-    "similarity": 0.927
-   },
-   {
-    "canonicalTagId": "tag_bf0d8fae4af950aef44f",
-    "similarity": 0.9102
-   },
-   {
-    "canonicalTagId": "tag_3bbf4bb98db3177ee228",
-    "similarity": 0.8452
-   },
    {
     "canonicalTagId": "tag_3ae8c36281e3a078555d",
     "similarity": 0.7492
    }
   ],
-  "tag_45e57873e6c904bd9395": [
-   {
-    "canonicalTagId": "tag_d6151303ab3e9de4e8ef",
-    "similarity": 0.927
-   },
-   {
-    "canonicalTagId": "tag_3bbf4bb98db3177ee228",
-    "similarity": 0.8932
-   },
-   {
-    "canonicalTagId": "tag_bf0d8fae4af950aef44f",
-    "similarity": 0.8358
-   },
-   {
-    "canonicalTagId": "tag_3ae8c36281e3a078555d",
-    "similarity": 0.7598
-   }
-  ],
   "tag_3ae8c36281e3a078555d": [
-   {
-    "canonicalTagId": "tag_45e57873e6c904bd9395",
-    "similarity": 0.7598
-   },
    {
     "canonicalTagId": "tag_d6151303ab3e9de4e8ef",
     "similarity": 0.7492
@@ -6720,12 +5708,6 @@
    {
     "canonicalTagId": "tag_745dc811a76a3285df93",
     "similarity": 0.7076
-   }
-  ],
-  "tag_8d09746daeae1f18ff29": [
-   {
-    "canonicalTagId": "tag_7363db30e190546f9801",
-    "similarity": 0.8425
    }
   ],
   "tag_8044fd674fedc40e8872": [
@@ -6894,18 +5876,6 @@
     "similarity": 0.7556
    }
   ],
-  "tag_3ddf67baa15027d666f7": [
-   {
-    "canonicalTagId": "tag_e0ec2d0ced89ff66abf5",
-    "similarity": 0.9008
-   }
-  ],
-  "tag_e0ec2d0ced89ff66abf5": [
-   {
-    "canonicalTagId": "tag_3ddf67baa15027d666f7",
-    "similarity": 0.9008
-   }
-  ],
   "tag_4f51d0285e88c4c90a19": [
    {
     "canonicalTagId": "tag_356b8916d67664f53c33",
@@ -6960,19 +5930,11 @@
   ],
   "tag_6993adeb805bd378f14f": [
    {
-    "canonicalTagId": "tag_1a0b70f6e02b5ca5656f",
-    "similarity": 0.7682
-   },
-   {
     "canonicalTagId": "tag_e6d7fa951ecb7f8c5110",
     "similarity": 0.7056
    }
   ],
   "tag_e6d7fa951ecb7f8c5110": [
-   {
-    "canonicalTagId": "tag_1a0b70f6e02b5ca5656f",
-    "similarity": 0.9129
-   },
    {
     "canonicalTagId": "tag_6993adeb805bd378f14f",
     "similarity": 0.7056
@@ -6980,24 +5942,6 @@
    {
     "canonicalTagId": "tag_1dd2ef8591af9184b0f7",
     "similarity": 0.7048
-   }
-  ],
-  "tag_1a0b70f6e02b5ca5656f": [
-   {
-    "canonicalTagId": "tag_e6d7fa951ecb7f8c5110",
-    "similarity": 0.9129
-   },
-   {
-    "canonicalTagId": "tag_6993adeb805bd378f14f",
-    "similarity": 0.7682
-   },
-   {
-    "canonicalTagId": "tag_efd34964f0ab261f8abf",
-    "similarity": 0.7557
-   },
-   {
-    "canonicalTagId": "tag_39865633ab6596f82d01",
-    "similarity": 0.7107
    }
   ],
   "tag_7ee9c0e4028f818a35d4": [
@@ -7362,16 +6306,16 @@
     "similarity": 0.7485
    },
    {
-    "canonicalTagId": "tag_2c0b1316f86d9d484dc0",
-    "similarity": 0.7405
-   },
-   {
     "canonicalTagId": "tag_70535dee38813793e737",
     "similarity": 0.737
    },
    {
     "canonicalTagId": "tag_87d3e030819fb5d594f3",
     "similarity": 0.7046
+   },
+   {
+    "canonicalTagId": "tag_e3d7eac651452a8f6c07",
+    "similarity": 0.7029
    }
   ],
   "tag_70535dee38813793e737": [
@@ -7398,10 +6342,6 @@
   ],
   "tag_0b409fc42967b5042495": [
    {
-    "canonicalTagId": "tag_2c0b1316f86d9d484dc0",
-    "similarity": 0.8748
-   },
-   {
     "canonicalTagId": "tag_bdd0a87af98ae4c89bf1",
     "similarity": 0.7584
    }
@@ -7414,22 +6354,8 @@
   ],
   "tag_5fb5683145187751603b": [
    {
-    "canonicalTagId": "tag_932e7a198241e3b50103",
-    "similarity": 0.8588
-   },
-   {
     "canonicalTagId": "tag_023015b1dc9d8d0c7c70",
     "similarity": 0.7547
-   }
-  ],
-  "tag_5bd0b4f3c1a77364341b": [
-   {
-    "canonicalTagId": "tag_5d298d22be395abeb543",
-    "similarity": 0.8276
-   },
-   {
-    "canonicalTagId": "tag_52ae3980a55b7d447300",
-    "similarity": 0.8008
    }
   ],
   "tag_c0a1d8b557c32af83cd0": [
@@ -7454,10 +6380,6 @@
    {
     "canonicalTagId": "tag_c0c1b264e273d4f0779f",
     "similarity": 0.7138
-   },
-   {
-    "canonicalTagId": "tag_beb8f56ae090386db311",
-    "similarity": 0.7107
    },
    {
     "canonicalTagId": "tag_bdd0a87af98ae4c89bf1",
@@ -7530,6 +6452,12 @@
     "similarity": 0.7035
    }
   ],
+  "tag_fd87b72c631062fef16c": [
+   {
+    "canonicalTagId": "tag_6ab61f574e163a68679e",
+    "similarity": 0.7116
+   }
+  ],
   "tag_4be720748ccae7aba0eb": [
    {
     "canonicalTagId": "tag_f29dc9a459aad6da6892",
@@ -7541,6 +6469,10 @@
    }
   ],
   "tag_c2d99a232f87eed57782": [
+   {
+    "canonicalTagId": "tag_45d3414d3eef118d4cce",
+    "similarity": 0.7488
+   },
    {
     "canonicalTagId": "tag_be51fbf70089dab6f444",
     "similarity": 0.7356
@@ -7606,6 +6538,12 @@
     "similarity": 0.7127
    }
   ],
+  "tag_45d3414d3eef118d4cce": [
+   {
+    "canonicalTagId": "tag_c2d99a232f87eed57782",
+    "similarity": 0.7488
+   }
+  ],
   "tag_a272034280f70e4d3a84": [
    {
     "canonicalTagId": "tag_b12e914c1f82d6ed3a04",
@@ -7622,6 +6560,12 @@
    {
     "canonicalTagId": "tag_1e95cacca4f86c66f9b2",
     "similarity": 0.7035
+   }
+  ],
+  "tag_6ab61f574e163a68679e": [
+   {
+    "canonicalTagId": "tag_fd87b72c631062fef16c",
+    "similarity": 0.7116
    }
   ],
   "tag_24f83aeac0f55d459168": [
@@ -7886,10 +6830,6 @@
   ],
   "tag_061fe3ad652b6c8392a5": [
    {
-    "canonicalTagId": "tag_da59981880ab90e8cd36",
-    "similarity": 0.7759
-   },
-   {
     "canonicalTagId": "tag_bc2b7d278197dea4be14",
     "similarity": 0.7708
    },
@@ -7904,6 +6844,10 @@
    {
     "canonicalTagId": "tag_8e198ece08325538b52f",
     "similarity": 0.7285
+   },
+   {
+    "canonicalTagId": "tag_3fb6ad97121fc9f0964a",
+    "similarity": 0.7261
    }
   ],
   "tag_88ea7ec8b00cab36381e": [
@@ -7916,22 +6860,22 @@
     "similarity": 0.7962
    },
    {
-    "canonicalTagId": "tag_da59981880ab90e8cd36",
-    "similarity": 0.7927
-   },
-   {
     "canonicalTagId": "tag_3fb6ad97121fc9f0964a",
     "similarity": 0.7712
    },
    {
     "canonicalTagId": "tag_061fe3ad652b6c8392a5",
     "similarity": 0.7602
+   },
+   {
+    "canonicalTagId": "tag_77c49e06b0a6e2b8d1a8",
+    "similarity": 0.7555
    }
   ],
   "tag_3fb6ad97121fc9f0964a": [
    {
-    "canonicalTagId": "tag_71012f9301973912fd42",
-    "similarity": 0.9149
+    "canonicalTagId": "tag_e92bfb324dbc891b8781",
+    "similarity": 0.8376
    },
    {
     "canonicalTagId": "tag_88ea7ec8b00cab36381e",
@@ -7946,8 +6890,30 @@
     "similarity": 0.7653
    },
    {
-    "canonicalTagId": "tag_da59981880ab90e8cd36",
-    "similarity": 0.7341
+    "canonicalTagId": "tag_061fe3ad652b6c8392a5",
+    "similarity": 0.7261
+   }
+  ],
+  "tag_e92bfb324dbc891b8781": [
+   {
+    "canonicalTagId": "tag_3fb6ad97121fc9f0964a",
+    "similarity": 0.8376
+   },
+   {
+    "canonicalTagId": "tag_8e198ece08325538b52f",
+    "similarity": 0.8023
+   },
+   {
+    "canonicalTagId": "tag_52ae3980a55b7d447300",
+    "similarity": 0.7563
+   },
+   {
+    "canonicalTagId": "tag_bc2b7d278197dea4be14",
+    "similarity": 0.747
+   },
+   {
+    "canonicalTagId": "tag_88ea7ec8b00cab36381e",
+    "similarity": 0.726
    }
   ],
   "tag_8e198ece08325538b52f": [
@@ -7956,49 +6922,23 @@
     "similarity": 0.8055
    },
    {
-    "canonicalTagId": "tag_3fb6ad97121fc9f0964a",
-    "similarity": 0.7653
+    "canonicalTagId": "tag_e92bfb324dbc891b8781",
+    "similarity": 0.8023
    },
    {
-    "canonicalTagId": "tag_da59981880ab90e8cd36",
-    "similarity": 0.7618
+    "canonicalTagId": "tag_3fb6ad97121fc9f0964a",
+    "similarity": 0.7653
    },
    {
     "canonicalTagId": "tag_bc2b7d278197dea4be14",
     "similarity": 0.7562
    },
    {
-    "canonicalTagId": "tag_71012f9301973912fd42",
-    "similarity": 0.7306
-   }
-  ],
-  "tag_71012f9301973912fd42": [
-   {
-    "canonicalTagId": "tag_3fb6ad97121fc9f0964a",
-    "similarity": 0.9149
-   },
-   {
-    "canonicalTagId": "tag_88ea7ec8b00cab36381e",
-    "similarity": 0.747
-   },
-   {
-    "canonicalTagId": "tag_bc2b7d278197dea4be14",
-    "similarity": 0.7419
-   },
-   {
-    "canonicalTagId": "tag_8e198ece08325538b52f",
-    "similarity": 0.7306
-   },
-   {
-    "canonicalTagId": "tag_77c49e06b0a6e2b8d1a8",
-    "similarity": 0.7083
+    "canonicalTagId": "tag_061fe3ad652b6c8392a5",
+    "similarity": 0.7285
    }
   ],
   "tag_77c49e06b0a6e2b8d1a8": [
-   {
-    "canonicalTagId": "tag_da59981880ab90e8cd36",
-    "similarity": 0.8717
-   },
    {
     "canonicalTagId": "tag_bc2b7d278197dea4be14",
     "similarity": 0.7691
@@ -8014,35 +6954,13 @@
    {
     "canonicalTagId": "tag_8e198ece08325538b52f",
     "similarity": 0.7205
-   }
-  ],
-  "tag_da59981880ab90e8cd36": [
-   {
-    "canonicalTagId": "tag_77c49e06b0a6e2b8d1a8",
-    "similarity": 0.8717
    },
    {
-    "canonicalTagId": "tag_bc2b7d278197dea4be14",
-    "similarity": 0.7992
-   },
-   {
-    "canonicalTagId": "tag_88ea7ec8b00cab36381e",
-    "similarity": 0.7927
-   },
-   {
-    "canonicalTagId": "tag_061fe3ad652b6c8392a5",
-    "similarity": 0.7759
-   },
-   {
-    "canonicalTagId": "tag_8e198ece08325538b52f",
-    "similarity": 0.7618
+    "canonicalTagId": "tag_3fb6ad97121fc9f0964a",
+    "similarity": 0.7193
    }
   ],
   "tag_bc2b7d278197dea4be14": [
-   {
-    "canonicalTagId": "tag_da59981880ab90e8cd36",
-    "similarity": 0.7992
-   },
    {
     "canonicalTagId": "tag_88ea7ec8b00cab36381e",
     "similarity": 0.7962
@@ -8058,6 +6976,10 @@
    {
     "canonicalTagId": "tag_77c49e06b0a6e2b8d1a8",
     "similarity": 0.7691
+   },
+   {
+    "canonicalTagId": "tag_8e198ece08325538b52f",
+    "similarity": 0.7562
    }
   ],
   "tag_8dfeabab8f6eedc4d623": [
@@ -8090,10 +7012,6 @@
     "similarity": 0.7993
    },
    {
-    "canonicalTagId": "tag_414f4912c4d286029079",
-    "similarity": 0.7933
-   },
-   {
     "canonicalTagId": "tag_188160721c9c75672c09",
     "similarity": 0.7295
    },
@@ -8106,53 +7024,31 @@
     "similarity": 0.7106
    }
   ],
-  "tag_e8b770d8e7ec45f968f9": [
+  "tag_7964ead97aa0be656c75": [
    {
-    "canonicalTagId": "tag_ecce92de1eee053f866e",
-    "similarity": 0.9452
+    "canonicalTagId": "tag_890f69c8af027d15b0e4",
+    "similarity": 0.7129
+   }
+  ],
+  "tag_890f69c8af027d15b0e4": [
+   {
+    "canonicalTagId": "tag_7964ead97aa0be656c75",
+    "similarity": 0.7129
    }
   ],
   "tag_ecce92de1eee053f866e": [
-   {
-    "canonicalTagId": "tag_e8b770d8e7ec45f968f9",
-    "similarity": 0.9452
-   },
    {
     "canonicalTagId": "tag_f79c1136b1e48243da34",
     "similarity": 0.7204
    }
   ],
-  "tag_ffb5f47363d4eeddd565": [
-   {
-    "canonicalTagId": "tag_c20d34fdc5aec36e4aaf",
-    "similarity": 0.8
-   }
-  ],
-  "tag_c20d34fdc5aec36e4aaf": [
-   {
-    "canonicalTagId": "tag_ffb5f47363d4eeddd565",
-    "similarity": 0.8
-   }
-  ],
   "tag_bd360c49b68a8c8d7c9c": [
-   {
-    "canonicalTagId": "tag_581efff7992428199093",
-    "similarity": 0.7936
-   },
    {
     "canonicalTagId": "tag_d1cc6d10ecc994bed936",
     "similarity": 0.7181
    }
   ],
   "tag_50d80d544b0d6e494151": [
-   {
-    "canonicalTagId": "tag_eb58f22a00be308adc79",
-    "similarity": 0.8802
-   },
-   {
-    "canonicalTagId": "tag_9e20be070c6d17610940",
-    "similarity": 0.793
-   },
    {
     "canonicalTagId": "tag_ec866b703b4b1c657342",
     "similarity": 0.7262
@@ -8164,66 +7060,16 @@
     "similarity": 0.7414
    }
   ],
-  "tag_9e20be070c6d17610940": [
-   {
-    "canonicalTagId": "tag_eb58f22a00be308adc79",
-    "similarity": 0.8308
-   },
-   {
-    "canonicalTagId": "tag_50d80d544b0d6e494151",
-    "similarity": 0.793
-   }
-  ],
   "tag_ec866b703b4b1c657342": [
    {
     "canonicalTagId": "tag_50d80d544b0d6e494151",
     "similarity": 0.7262
-   },
-   {
-    "canonicalTagId": "tag_eb58f22a00be308adc79",
-    "similarity": 0.7096
-   }
-  ],
-  "tag_b7bc0b3a75f00012ee88": [
-   {
-    "canonicalTagId": "tag_848930930381dcd37bb6",
-    "similarity": 0.9107
-   },
-   {
-    "canonicalTagId": "tag_20cdd841819232b4c03d",
-    "similarity": 0.9083
-   },
-   {
-    "canonicalTagId": "tag_fa774130799a5165887d",
-    "similarity": 0.7436
-   },
-   {
-    "canonicalTagId": "tag_345fc47692ebff42ceef",
-    "similarity": 0.7075
-   }
-  ],
-  "tag_848930930381dcd37bb6": [
-   {
-    "canonicalTagId": "tag_b7bc0b3a75f00012ee88",
-    "similarity": 0.9107
-   },
-   {
-    "canonicalTagId": "tag_20cdd841819232b4c03d",
-    "similarity": 0.8226
-   },
-   {
-    "canonicalTagId": "tag_fa774130799a5165887d",
-    "similarity": 0.7055
    }
   ],
   "tag_748732b0c574bb67ccf5": [
    {
     "canonicalTagId": "tag_e5c057865a1bc8169ad5",
     "similarity": 0.7843
-   },
-   {
-    "canonicalTagId": "tag_fe106990aca880a2f6f5",
-    "similarity": 0.705
    }
   ],
   "tag_55b6e1b6390f1b4859e1": [
@@ -8236,27 +7082,9 @@
    {
     "canonicalTagId": "tag_82894e8d689546e5e356",
     "similarity": 0.7477
-   },
-   {
-    "canonicalTagId": "tag_b7bc0b3a75f00012ee88",
-    "similarity": 0.7075
-   }
-  ],
-  "tag_fa774130799a5165887d": [
-   {
-    "canonicalTagId": "tag_b7bc0b3a75f00012ee88",
-    "similarity": 0.7436
-   },
-   {
-    "canonicalTagId": "tag_848930930381dcd37bb6",
-    "similarity": 0.7055
    }
   ],
   "tag_e5c057865a1bc8169ad5": [
-   {
-    "canonicalTagId": "tag_fe106990aca880a2f6f5",
-    "similarity": 0.9175
-   },
    {
     "canonicalTagId": "tag_748732b0c574bb67ccf5",
     "similarity": 0.7843
@@ -8264,26 +7092,8 @@
   ],
   "tag_b9d54d045a3d8cee0f97": [
    {
-    "canonicalTagId": "tag_6c6d98529ab33d6b80a6",
-    "similarity": 0.8054
-   },
-   {
     "canonicalTagId": "tag_6794d487606b4ef3d441",
     "similarity": 0.7365
-   }
-  ],
-  "tag_eb58f22a00be308adc79": [
-   {
-    "canonicalTagId": "tag_50d80d544b0d6e494151",
-    "similarity": 0.8802
-   },
-   {
-    "canonicalTagId": "tag_9e20be070c6d17610940",
-    "similarity": 0.8308
-   },
-   {
-    "canonicalTagId": "tag_ec866b703b4b1c657342",
-    "similarity": 0.7096
    }
   ],
   "tag_d8d66e383619ee524e4c": [
@@ -8292,30 +7102,20 @@
     "similarity": 0.7015
    }
   ],
-  "tag_20cdd841819232b4c03d": [
+  "tag_eca0e3465e8774fdd2be": [
    {
-    "canonicalTagId": "tag_b7bc0b3a75f00012ee88",
-    "similarity": 0.9083
+    "canonicalTagId": "tag_01a34e92b94d2c8266c5",
+    "similarity": 0.7116
    },
    {
-    "canonicalTagId": "tag_848930930381dcd37bb6",
-    "similarity": 0.8226
+    "canonicalTagId": "tag_4629073d1bbd6ce21747",
+    "similarity": 0.7076
    }
   ],
   "tag_f1976a16389a79aa60c9": [
    {
     "canonicalTagId": "tag_31eda1addf050bc96d53",
     "similarity": 0.7114
-   }
-  ],
-  "tag_fe106990aca880a2f6f5": [
-   {
-    "canonicalTagId": "tag_e5c057865a1bc8169ad5",
-    "similarity": 0.9175
-   },
-   {
-    "canonicalTagId": "tag_748732b0c574bb67ccf5",
-    "similarity": 0.705
    }
   ],
   "tag_a764596423fdada8c4bc": [
@@ -8330,38 +7130,12 @@
    {
     "canonicalTagId": "tag_922c633fe25fafe77e98",
     "similarity": 0.7407
-   },
-   {
-    "canonicalTagId": "tag_2aca826b492fc4cf3f6e",
-    "similarity": 0.7303
-   }
-  ],
-  "tag_2aca826b492fc4cf3f6e": [
-   {
-    "canonicalTagId": "tag_fdd315b48028487e362d",
-    "similarity": 0.8809
-   },
-   {
-    "canonicalTagId": "tag_462de8ea349721a45d40",
-    "similarity": 0.7978
-   },
-   {
-    "canonicalTagId": "tag_a764596423fdada8c4bc",
-    "similarity": 0.7303
-   },
-   {
-    "canonicalTagId": "tag_7a3a1a0613a9e0c219c8",
-    "similarity": 0.7179
    }
   ],
   "tag_462de8ea349721a45d40": [
    {
     "canonicalTagId": "tag_7a3a1a0613a9e0c219c8",
     "similarity": 0.9013
-   },
-   {
-    "canonicalTagId": "tag_2aca826b492fc4cf3f6e",
-    "similarity": 0.7978
    },
    {
     "canonicalTagId": "tag_a764596423fdada8c4bc",
@@ -8522,28 +7296,14 @@
   ],
   "tag_e5c275e92dd07847a1db": [
    {
-    "canonicalTagId": "tag_2f906a809bfbfccb7583",
-    "similarity": 0.9002
+    "canonicalTagId": "tag_ba613d01a3b7e6a3c499",
+    "similarity": 0.7118
    }
   ],
   "tag_e94a3609c0f67140f13b": [
    {
     "canonicalTagId": "tag_5a50e63eb3bb2050b7b1",
     "similarity": 0.7468
-   },
-   {
-    "canonicalTagId": "tag_2f906a809bfbfccb7583",
-    "similarity": 0.7044
-   }
-  ],
-  "tag_2f906a809bfbfccb7583": [
-   {
-    "canonicalTagId": "tag_e5c275e92dd07847a1db",
-    "similarity": 0.9002
-   },
-   {
-    "canonicalTagId": "tag_e94a3609c0f67140f13b",
-    "similarity": 0.7044
    }
   ],
   "tag_e375726c9695826ee069": [
@@ -8552,18 +7312,26 @@
     "similarity": 0.7728
    }
   ],
-  "tag_aa7d5bd3ffb8726b4314": [
+  "tag_4e31222707c827efc6ef": [
    {
-    "canonicalTagId": "tag_cc91e573e7d8a0baecac",
-    "similarity": 0.809
+    "canonicalTagId": "tag_ba613d01a3b7e6a3c499",
+    "similarity": 0.8156
+   }
+  ],
+  "tag_ba613d01a3b7e6a3c499": [
+   {
+    "canonicalTagId": "tag_4e31222707c827efc6ef",
+    "similarity": 0.8156
    },
+   {
+    "canonicalTagId": "tag_e5c275e92dd07847a1db",
+    "similarity": 0.7118
+   }
+  ],
+  "tag_aa7d5bd3ffb8726b4314": [
    {
     "canonicalTagId": "tag_862e718f03f97323c49b",
     "similarity": 0.7921
-   },
-   {
-    "canonicalTagId": "tag_b61129ee99cc6ffb471a",
-    "similarity": 0.7905
    },
    {
     "canonicalTagId": "tag_9ce13fa52f7323bdcf78",
@@ -8572,53 +7340,15 @@
   ],
   "tag_862e718f03f97323c49b": [
    {
-    "canonicalTagId": "tag_8e4456c74cc73ae30cdf",
-    "similarity": 0.8522
-   },
-   {
-    "canonicalTagId": "tag_b61129ee99cc6ffb471a",
-    "similarity": 0.8398
-   },
-   {
     "canonicalTagId": "tag_aa7d5bd3ffb8726b4314",
     "similarity": 0.7921
    },
    {
     "canonicalTagId": "tag_9ce13fa52f7323bdcf78",
     "similarity": 0.7859
-   },
-   {
-    "canonicalTagId": "tag_cc91e573e7d8a0baecac",
-    "similarity": 0.7615
-   }
-  ],
-  "tag_b61129ee99cc6ffb471a": [
-   {
-    "canonicalTagId": "tag_9ce13fa52f7323bdcf78",
-    "similarity": 0.8918
-   },
-   {
-    "canonicalTagId": "tag_862e718f03f97323c49b",
-    "similarity": 0.8398
-   },
-   {
-    "canonicalTagId": "tag_aa7d5bd3ffb8726b4314",
-    "similarity": 0.7905
-   },
-   {
-    "canonicalTagId": "tag_cc91e573e7d8a0baecac",
-    "similarity": 0.7699
-   },
-   {
-    "canonicalTagId": "tag_8e4456c74cc73ae30cdf",
-    "similarity": 0.7364
    }
   ],
   "tag_9ce13fa52f7323bdcf78": [
-   {
-    "canonicalTagId": "tag_b61129ee99cc6ffb471a",
-    "similarity": 0.8918
-   },
    {
     "canonicalTagId": "tag_862e718f03f97323c49b",
     "similarity": 0.7859
@@ -8626,10 +7356,6 @@
    {
     "canonicalTagId": "tag_aa7d5bd3ffb8726b4314",
     "similarity": 0.7734
-   },
-   {
-    "canonicalTagId": "tag_cc91e573e7d8a0baecac",
-    "similarity": 0.7204
    }
   ],
   "tag_b1adf80c40ada803c3ac": [
@@ -8704,12 +7430,20 @@
    {
     "canonicalTagId": "tag_69f6f82df42757f7cfee",
     "similarity": 0.8114
+   },
+   {
+    "canonicalTagId": "tag_e9d0743d312dfeb4c26c",
+    "similarity": 0.7399
    }
   ],
   "tag_69f6f82df42757f7cfee": [
    {
     "canonicalTagId": "tag_589ea8f0007c0cba3d88",
     "similarity": 0.8114
+   },
+   {
+    "canonicalTagId": "tag_e9d0743d312dfeb4c26c",
+    "similarity": 0.7182
    },
    {
     "canonicalTagId": "tag_b37e0eee18644fd5083f",
@@ -8726,10 +7460,6 @@
    {
     "canonicalTagId": "tag_f2e98f3bc354b7649071",
     "similarity": 0.7355
-   },
-   {
-    "canonicalTagId": "tag_7fbfd3ac4cfe88c68bf0",
-    "similarity": 0.7169
    },
    {
     "canonicalTagId": "tag_53a95366266a53c49a74",
@@ -8816,28 +7546,6 @@
     "similarity": 0.7228
    }
   ],
-  "tag_7fbfd3ac4cfe88c68bf0": [
-   {
-    "canonicalTagId": "tag_2937bbbf36ebc916bae9",
-    "similarity": 0.8272
-   },
-   {
-    "canonicalTagId": "tag_8c14290920c481578870",
-    "similarity": 0.7809
-   },
-   {
-    "canonicalTagId": "tag_3b49478ad4c51b42fab8",
-    "similarity": 0.7801
-   },
-   {
-    "canonicalTagId": "tag_53a95366266a53c49a74",
-    "similarity": 0.7467
-   },
-   {
-    "canonicalTagId": "tag_0ce6a58c5b4e1c55c048",
-    "similarity": 0.7179
-   }
-  ],
   "tag_2937bbbf36ebc916bae9": [
    {
     "canonicalTagId": "tag_59293c5a1f22ed4673c7",
@@ -8848,23 +7556,19 @@
     "similarity": 0.8345
    },
    {
-    "canonicalTagId": "tag_7fbfd3ac4cfe88c68bf0",
-    "similarity": 0.8272
-   },
-   {
-    "canonicalTagId": "tag_898bf84c4985a90a7945",
-    "similarity": 0.7638
-   },
-   {
     "canonicalTagId": "tag_061b0d7f6511011c49d4",
     "similarity": 0.7617
+   },
+   {
+    "canonicalTagId": "tag_8c14290920c481578870",
+    "similarity": 0.7374
+   },
+   {
+    "canonicalTagId": "tag_1d21df21112d5fc615ed",
+    "similarity": 0.7207
    }
   ],
   "tag_3b49478ad4c51b42fab8": [
-   {
-    "canonicalTagId": "tag_7fbfd3ac4cfe88c68bf0",
-    "similarity": 0.7801
-   },
    {
     "canonicalTagId": "tag_8c14290920c481578870",
     "similarity": 0.7571
@@ -8875,10 +7579,6 @@
    }
   ],
   "tag_8c14290920c481578870": [
-   {
-    "canonicalTagId": "tag_7fbfd3ac4cfe88c68bf0",
-    "similarity": 0.7809
-   },
    {
     "canonicalTagId": "tag_3b49478ad4c51b42fab8",
     "similarity": 0.7571
@@ -8948,10 +7648,6 @@
   ],
   "tag_ae07defe73c71b1fb1ac": [
    {
-    "canonicalTagId": "tag_3b76382769ad4cbdb0f7",
-    "similarity": 0.8846
-   },
-   {
     "canonicalTagId": "tag_4c3c9de466a212089088",
     "similarity": 0.8054
    },
@@ -8961,10 +7657,6 @@
    }
   ],
   "tag_4c3c9de466a212089088": [
-   {
-    "canonicalTagId": "tag_3b76382769ad4cbdb0f7",
-    "similarity": 0.8257
-   },
    {
     "canonicalTagId": "tag_ae07defe73c71b1fb1ac",
     "similarity": 0.8054
@@ -9062,11 +7754,13 @@
     "similarity": 0.7421
    }
   ],
-  "tag_8f4cd467f07b3ab0bc2d": [
+  "tag_6bba0a0d2437967dd24e": [
    {
-    "canonicalTagId": "tag_84a127a1d9cb3ca5acca",
-    "similarity": 0.7854
-   },
+    "canonicalTagId": "tag_019b758cb30ea6c81c0a",
+    "similarity": 0.7327
+   }
+  ],
+  "tag_8f4cd467f07b3ab0bc2d": [
    {
     "canonicalTagId": "tag_970cb822229040e999c0",
     "similarity": 0.7447
@@ -9080,18 +7774,8 @@
     "similarity": 0.7116
    },
    {
-    "canonicalTagId": "tag_74484577c9be5f411fa3",
-    "similarity": 0.7038
-   }
-  ],
-  "tag_84a127a1d9cb3ca5acca": [
-   {
     "canonicalTagId": "tag_4a36b651669e1588bf56",
-    "similarity": 0.9213
-   },
-   {
-    "canonicalTagId": "tag_8f4cd467f07b3ab0bc2d",
-    "similarity": 0.7854
+    "similarity": 0.701
    }
   ],
   "tag_967b3217a993c023e429": [
@@ -9116,10 +7800,6 @@
   ],
   "tag_970cb822229040e999c0": [
    {
-    "canonicalTagId": "tag_a9e1ef4daa9199f078e3",
-    "similarity": 0.9043
-   },
-   {
     "canonicalTagId": "tag_8f4cd467f07b3ab0bc2d",
     "similarity": 0.7447
    },
@@ -9132,6 +7812,10 @@
    {
     "canonicalTagId": "tag_575d3f35b6cefd89f0f4",
     "similarity": 0.7425
+   },
+   {
+    "canonicalTagId": "tag_6bba0a0d2437967dd24e",
+    "similarity": 0.7327
    }
   ],
   "tag_4a876767031ad3264edb": [
@@ -9250,20 +7934,10 @@
     "similarity": 0.7207
    }
   ],
-  "tag_66de34c97262c3858379": [
-   {
-    "canonicalTagId": "tag_af87f34e6d3160727c50",
-    "similarity": 0.8081
-   },
-   {
-    "canonicalTagId": "tag_60205aeef077b05b98bf",
-    "similarity": 0.7525
-   }
-  ],
   "tag_60205aeef077b05b98bf": [
    {
-    "canonicalTagId": "tag_66de34c97262c3858379",
-    "similarity": 0.7525
+    "canonicalTagId": "tag_81112d50b1d433c148a6",
+    "similarity": 0.7931
    }
   ],
   "tag_32bc0a3372fcf9cb2699": [
@@ -9282,31 +7956,35 @@
    {
     "canonicalTagId": "tag_705dcd9751fcbdf58fb5",
     "similarity": 0.716
+   },
+   {
+    "canonicalTagId": "tag_1c3ae71d30f981cc773a",
+    "similarity": 0.7108
    }
   ],
   "tag_9057de900f4831ef1f4c": [
    {
-    "canonicalTagId": "tag_dd2c58f84c1e8f04f331",
-    "similarity": 0.7306
-   },
-   {
     "canonicalTagId": "tag_9b16702dbc1e921f1e5d",
     "similarity": 0.7164
-   },
-   {
-    "canonicalTagId": "tag_3d47052f408c0a04629c",
-    "similarity": 0.7115
    },
    {
     "canonicalTagId": "tag_4a3570a1053e62a9651d",
     "similarity": 0.7072
    }
   ],
-  "tag_af87f34e6d3160727c50": [
+  "tag_4b9f6bf01107b92cf927": [
    {
-    "canonicalTagId": "tag_66de34c97262c3858379",
-    "similarity": 0.8081
-   },
+    "canonicalTagId": "tag_81112d50b1d433c148a6",
+    "similarity": 0.7353
+   }
+  ],
+  "tag_1c3ae71d30f981cc773a": [
+   {
+    "canonicalTagId": "tag_32bc0a3372fcf9cb2699",
+    "similarity": 0.7108
+   }
+  ],
+  "tag_af87f34e6d3160727c50": [
    {
     "canonicalTagId": "tag_6109d31bda6592bb019e",
     "similarity": 0.7897
@@ -9322,6 +8000,10 @@
    {
     "canonicalTagId": "tag_16bb004375101bd4440d",
     "similarity": 0.7362
+   },
+   {
+    "canonicalTagId": "tag_32bc0a3372fcf9cb2699",
+    "similarity": 0.7241
    }
   ],
   "tag_16bb004375101bd4440d": [
@@ -9350,6 +8032,16 @@
    {
     "canonicalTagId": "tag_af87f34e6d3160727c50",
     "similarity": 0.7624
+   }
+  ],
+  "tag_81112d50b1d433c148a6": [
+   {
+    "canonicalTagId": "tag_60205aeef077b05b98bf",
+    "similarity": 0.7931
+   },
+   {
+    "canonicalTagId": "tag_4b9f6bf01107b92cf927",
+    "similarity": 0.7353
    }
   ],
   "tag_f54b26ba15d05059aed5": [
@@ -9470,6 +8162,20 @@
     "similarity": 0.7255
    }
   ],
+  "tag_c3b187a654a3f2be0975": [
+   {
+    "canonicalTagId": "tag_882162566819070f7427",
+    "similarity": 0.81
+   },
+   {
+    "canonicalTagId": "tag_a664cfb2bdf5f46a0dfe",
+    "similarity": 0.7378
+   },
+   {
+    "canonicalTagId": "tag_d101db8c9e76def4f2aa",
+    "similarity": 0.702
+   }
+  ],
   "tag_190a532738821690a0ef": [
    {
     "canonicalTagId": "tag_f13404de8a5468f70987",
@@ -9499,10 +8205,6 @@
    }
   ],
   "tag_9b24097798c8f07ae0d0": [
-   {
-    "canonicalTagId": "tag_8ca77eba32e94f4bf74f",
-    "similarity": 0.7594
-   },
    {
     "canonicalTagId": "tag_08603878b5e09b81b016",
     "similarity": 0.712
@@ -9598,10 +8300,6 @@
   ],
   "tag_b90d720706f0483b104f": [
    {
-    "canonicalTagId": "tag_414f4912c4d286029079",
-    "similarity": 0.8102
-   },
-   {
     "canonicalTagId": "tag_188160721c9c75672c09",
     "similarity": 0.7659
    },
@@ -9616,10 +8314,6 @@
     "similarity": 0.8792
    },
    {
-    "canonicalTagId": "tag_112cb490f84743b9c898",
-    "similarity": 0.8773
-   },
-   {
     "canonicalTagId": "tag_3508b2b8d0f97e03cd4d",
     "similarity": 0.7444
    },
@@ -9630,19 +8324,13 @@
    {
     "canonicalTagId": "tag_cbc5bd281b7ae72fc14c",
     "similarity": 0.72
-   }
-  ],
-  "tag_9ae9b67848073c781b82": [
+   },
    {
-    "canonicalTagId": "tag_aa65808af1537446b1f8",
-    "similarity": 0.7863
+    "canonicalTagId": "tag_e20a0d8bcf26315cf5d3",
+    "similarity": 0.7097
    }
   ],
   "tag_57b15800ed78b6b86b25": [
-   {
-    "canonicalTagId": "tag_f6bd2357a44bff528fb2",
-    "similarity": 0.8884
-   },
    {
     "canonicalTagId": "tag_bd489713d439cb1769fa",
     "similarity": 0.8864
@@ -9658,36 +8346,14 @@
     "similarity": 0.9542
    },
    {
-    "canonicalTagId": "tag_f6bd2357a44bff528fb2",
-    "similarity": 0.9345
-   },
-   {
     "canonicalTagId": "tag_57b15800ed78b6b86b25",
     "similarity": 0.8574
-   }
-  ],
-  "tag_f6bd2357a44bff528fb2": [
-   {
-    "canonicalTagId": "tag_0f04e3affe5e074de326",
-    "similarity": 0.9345
-   },
-   {
-    "canonicalTagId": "tag_bd489713d439cb1769fa",
-    "similarity": 0.9117
-   },
-   {
-    "canonicalTagId": "tag_57b15800ed78b6b86b25",
-    "similarity": 0.8884
    }
   ],
   "tag_bd489713d439cb1769fa": [
    {
     "canonicalTagId": "tag_0f04e3affe5e074de326",
     "similarity": 0.9542
-   },
-   {
-    "canonicalTagId": "tag_f6bd2357a44bff528fb2",
-    "similarity": 0.9117
    },
    {
     "canonicalTagId": "tag_57b15800ed78b6b86b25",
@@ -9710,10 +8376,6 @@
    {
     "canonicalTagId": "tag_43438c8dc3282cccf598",
     "similarity": 0.7244
-   },
-   {
-    "canonicalTagId": "tag_414f4912c4d286029079",
-    "similarity": 0.7075
    }
   ],
   "tag_27d07e2bfc10b206e59d": [
@@ -9786,6 +8448,10 @@
    {
     "canonicalTagId": "tag_7073e40665a51d606e99",
     "similarity": 0.7317
+   },
+   {
+    "canonicalTagId": "tag_8162e10cfb38b2ea0f19",
+    "similarity": 0.7184
    }
   ],
   "tag_07593b90e8f6bbfddb54": [
@@ -9798,6 +8464,10 @@
    {
     "canonicalTagId": "tag_a454f17872a14b8ae11e",
     "similarity": 0.7388
+   },
+   {
+    "canonicalTagId": "tag_8162e10cfb38b2ea0f19",
+    "similarity": 0.7262
    },
    {
     "canonicalTagId": "tag_7073e40665a51d606e99",
@@ -9828,10 +8498,6 @@
   ],
   "tag_7073e40665a51d606e99": [
    {
-    "canonicalTagId": "tag_e2a5ff72e46394767171",
-    "similarity": 0.8543
-   },
-   {
     "canonicalTagId": "tag_a454f17872a14b8ae11e",
     "similarity": 0.7317
    },
@@ -9842,12 +8508,24 @@
    {
     "canonicalTagId": "tag_e705c5456941e47132f7",
     "similarity": 0.7066
+   },
+   {
+    "canonicalTagId": "tag_8162e10cfb38b2ea0f19",
+    "similarity": 0.7033
    }
   ],
-  "tag_e2a5ff72e46394767171": [
+  "tag_8162e10cfb38b2ea0f19": [
+   {
+    "canonicalTagId": "tag_e705c5456941e47132f7",
+    "similarity": 0.7262
+   },
+   {
+    "canonicalTagId": "tag_a454f17872a14b8ae11e",
+    "similarity": 0.7184
+   },
    {
     "canonicalTagId": "tag_7073e40665a51d606e99",
-    "similarity": 0.8543
+    "similarity": 0.7033
    }
   ],
   "tag_82894e8d689546e5e356": [
@@ -9896,42 +8574,16 @@
     "similarity": 0.8406
    }
   ],
-  "tag_1e1b70c4964e528b732c": [
+  "tag_4b983de1249ab619e98e": [
    {
     "canonicalTagId": "tag_eca5d7fa4f83aeb99934",
-    "similarity": 0.8395
-   },
-   {
-    "canonicalTagId": "tag_7d5792430a62ed7ae1de",
-    "similarity": 0.7368
-   },
-   {
-    "canonicalTagId": "tag_0322d2df4e69a75bd43a",
-    "similarity": 0.725
-   },
-   {
-    "canonicalTagId": "tag_01fa129139bd5bfcbe3c",
-    "similarity": 0.7147
-   },
-   {
-    "canonicalTagId": "tag_f3cc5b15b7ff4405c36d",
-    "similarity": 0.7075
+    "similarity": 0.7537
    }
   ],
   "tag_7d5792430a62ed7ae1de": [
    {
-    "canonicalTagId": "tag_1e1b70c4964e528b732c",
-    "similarity": 0.7368
-   },
-   {
     "canonicalTagId": "tag_a9960c915199801512c2",
     "similarity": 0.7044
-   }
-  ],
-  "tag_0322d2df4e69a75bd43a": [
-   {
-    "canonicalTagId": "tag_1e1b70c4964e528b732c",
-    "similarity": 0.725
    }
   ],
   "tag_fba18681418f8f6dd41d": [
@@ -9944,15 +8596,19 @@
     "similarity": 0.7228
    },
    {
+    "canonicalTagId": "tag_b13a0c0577f02eafb15a",
+    "similarity": 0.7088
+   },
+   {
+    "canonicalTagId": "tag_4068259474ce6b12fdf0",
+    "similarity": 0.7029
+   },
+   {
     "canonicalTagId": "tag_4e1e6e4e0340a8359e5b",
     "similarity": 0.7013
    }
   ],
   "tag_eca5d7fa4f83aeb99934": [
-   {
-    "canonicalTagId": "tag_1e1b70c4964e528b732c",
-    "similarity": 0.8395
-   },
    {
     "canonicalTagId": "tag_d9cb5ec6fcdaa82bee7b",
     "similarity": 0.7918
@@ -9962,12 +8618,16 @@
     "similarity": 0.783
    },
    {
+    "canonicalTagId": "tag_4b983de1249ab619e98e",
+    "similarity": 0.7537
+   },
+   {
     "canonicalTagId": "tag_b92456c95776db7eeec9",
     "similarity": 0.7535
    },
    {
-    "canonicalTagId": "tag_01fa129139bd5bfcbe3c",
-    "similarity": 0.7399
+    "canonicalTagId": "tag_b13a0c0577f02eafb15a",
+    "similarity": 0.7524
    }
   ],
   "tag_92137c6261f03c1f45da": [
@@ -9976,28 +8636,24 @@
     "similarity": 0.7102
    }
   ],
+  "tag_9325a66191129d9e66d7": [
+   {
+    "canonicalTagId": "tag_297092d0abd23a408f56",
+    "similarity": 0.7226
+   },
+   {
+    "canonicalTagId": "tag_5719e7e29fc552e61ebb",
+    "similarity": 0.7215
+   },
+   {
+    "canonicalTagId": "tag_4e1e6e4e0340a8359e5b",
+    "similarity": 0.7037
+   }
+  ],
   "tag_23294d59a0ab01673844": [
    {
     "canonicalTagId": "tag_cb444b60b57689455179",
     "similarity": 0.7218
-   }
-  ],
-  "tag_74484577c9be5f411fa3": [
-   {
-    "canonicalTagId": "tag_01fa129139bd5bfcbe3c",
-    "similarity": 0.9158
-   },
-   {
-    "canonicalTagId": "tag_c1cfc7f1cd7d764bd2a5",
-    "similarity": 0.7697
-   },
-   {
-    "canonicalTagId": "tag_8f4cd467f07b3ab0bc2d",
-    "similarity": 0.7038
-   },
-   {
-    "canonicalTagId": "tag_d9cb5ec6fcdaa82bee7b",
-    "similarity": 0.7001
    }
   ],
   "tag_7cf7885fe327c609e195": [
@@ -10006,10 +8662,36 @@
     "similarity": 0.703
    }
   ],
+  "tag_b13a0c0577f02eafb15a": [
+   {
+    "canonicalTagId": "tag_eca5d7fa4f83aeb99934",
+    "similarity": 0.7524
+   },
+   {
+    "canonicalTagId": "tag_d9cb5ec6fcdaa82bee7b",
+    "similarity": 0.7282
+   },
+   {
+    "canonicalTagId": "tag_5719e7e29fc552e61ebb",
+    "similarity": 0.7164
+   },
+   {
+    "canonicalTagId": "tag_fba18681418f8f6dd41d",
+    "similarity": 0.7088
+   }
+  ],
   "tag_5719e7e29fc552e61ebb": [
    {
     "canonicalTagId": "tag_fba18681418f8f6dd41d",
     "similarity": 0.7578
+   },
+   {
+    "canonicalTagId": "tag_9325a66191129d9e66d7",
+    "similarity": 0.7215
+   },
+   {
+    "canonicalTagId": "tag_b13a0c0577f02eafb15a",
+    "similarity": 0.7164
    }
   ],
   "tag_158520a1cefe315a921b": [
@@ -10064,12 +8746,22 @@
     "similarity": 0.7342
    },
    {
-    "canonicalTagId": "tag_01287af0cecec67b6be9",
-    "similarity": 0.7253
+    "canonicalTagId": "tag_b13a0c0577f02eafb15a",
+    "similarity": 0.7282
    },
    {
-    "canonicalTagId": "tag_a95bf6c8a59c7dd57a8a",
-    "similarity": 0.7227
+    "canonicalTagId": "tag_01287af0cecec67b6be9",
+    "similarity": 0.7253
+   }
+  ],
+  "tag_5f87affde344798718b9": [
+   {
+    "canonicalTagId": "tag_18e238e8f5a1adba7fe4",
+    "similarity": 0.7784
+   },
+   {
+    "canonicalTagId": "tag_4e1e6e4e0340a8359e5b",
+    "similarity": 0.7289
    }
   ],
   "tag_927976f3c36b742e8d85": [
@@ -10084,8 +8776,8 @@
   ],
   "tag_01fa129139bd5bfcbe3c": [
    {
-    "canonicalTagId": "tag_74484577c9be5f411fa3",
-    "similarity": 0.9158
+    "canonicalTagId": "tag_cb32012b3727f90c953b",
+    "similarity": 0.7621
    },
    {
     "canonicalTagId": "tag_eca5d7fa4f83aeb99934",
@@ -10100,8 +8792,8 @@
     "similarity": 0.7363
    },
    {
-    "canonicalTagId": "tag_1e1b70c4964e528b732c",
-    "similarity": 0.7147
+    "canonicalTagId": "tag_4068259474ce6b12fdf0",
+    "similarity": 0.711
    }
   ],
   "tag_a95bf6c8a59c7dd57a8a": [
@@ -10110,7 +8802,33 @@
     "similarity": 0.7227
    }
   ],
+  "tag_4068259474ce6b12fdf0": [
+   {
+    "canonicalTagId": "tag_cb444b60b57689455179",
+    "similarity": 0.7508
+   },
+   {
+    "canonicalTagId": "tag_9a244f478a5ec948b30b",
+    "similarity": 0.7318
+   },
+   {
+    "canonicalTagId": "tag_cb32012b3727f90c953b",
+    "similarity": 0.7316
+   },
+   {
+    "canonicalTagId": "tag_d1a89772d57b3830b8fe",
+    "similarity": 0.7268
+   },
+   {
+    "canonicalTagId": "tag_eca5d7fa4f83aeb99934",
+    "similarity": 0.7155
+   }
+  ],
   "tag_18e238e8f5a1adba7fe4": [
+   {
+    "canonicalTagId": "tag_5f87affde344798718b9",
+    "similarity": 0.7784
+   },
    {
     "canonicalTagId": "tag_4e1e6e4e0340a8359e5b",
     "similarity": 0.7251
@@ -10121,6 +8839,10 @@
    }
   ],
   "tag_cb444b60b57689455179": [
+   {
+    "canonicalTagId": "tag_4068259474ce6b12fdf0",
+    "similarity": 0.7508
+   },
    {
     "canonicalTagId": "tag_330b5ead5acea6e50681",
     "similarity": 0.7353
@@ -10172,10 +8894,6 @@
     "similarity": 0.7253
    },
    {
-    "canonicalTagId": "tag_307b79f9527b9f48c7b9",
-    "similarity": 0.7231
-   },
-   {
     "canonicalTagId": "tag_eca5d7fa4f83aeb99934",
     "similarity": 0.7001
    }
@@ -10190,6 +8908,10 @@
     "similarity": 0.7564
    },
    {
+    "canonicalTagId": "tag_9325a66191129d9e66d7",
+    "similarity": 0.7226
+   },
+   {
     "canonicalTagId": "tag_ae21bd39c8e2165221a7",
     "similarity": 0.7119
    }
@@ -10200,8 +8922,16 @@
     "similarity": 0.7564
    },
    {
+    "canonicalTagId": "tag_5f87affde344798718b9",
+    "similarity": 0.7289
+   },
+   {
     "canonicalTagId": "tag_18e238e8f5a1adba7fe4",
     "similarity": 0.7251
+   },
+   {
+    "canonicalTagId": "tag_9325a66191129d9e66d7",
+    "similarity": 0.7037
    },
    {
     "canonicalTagId": "tag_fba18681418f8f6dd41d",
@@ -10216,40 +8946,22 @@
   ],
   "tag_a7aa5f1080a1c95197ee": [
    {
-    "canonicalTagId": "tag_f3cc5b15b7ff4405c36d",
-    "similarity": 0.8735
+    "canonicalTagId": "tag_cb32012b3727f90c953b",
+    "similarity": 0.73
    },
    {
     "canonicalTagId": "tag_d1a89772d57b3830b8fe",
     "similarity": 0.7041
    }
   ],
-  "tag_f3cc5b15b7ff4405c36d": [
-   {
-    "canonicalTagId": "tag_a7aa5f1080a1c95197ee",
-    "similarity": 0.8735
-   },
-   {
-    "canonicalTagId": "tag_55ea3e3da098d6dc836c",
-    "similarity": 0.7392
-   },
-   {
-    "canonicalTagId": "tag_d1a89772d57b3830b8fe",
-    "similarity": 0.7266
-   },
-   {
-    "canonicalTagId": "tag_9a244f478a5ec948b30b",
-    "similarity": 0.721
-   },
-   {
-    "canonicalTagId": "tag_eca5d7fa4f83aeb99934",
-    "similarity": 0.7114
-   }
-  ],
   "tag_d1a89772d57b3830b8fe": [
    {
-    "canonicalTagId": "tag_f3cc5b15b7ff4405c36d",
-    "similarity": 0.7266
+    "canonicalTagId": "tag_4068259474ce6b12fdf0",
+    "similarity": 0.7268
+   },
+   {
+    "canonicalTagId": "tag_fa768140d92ae57a805c",
+    "similarity": 0.7172
    },
    {
     "canonicalTagId": "tag_9a244f478a5ec948b30b",
@@ -10270,16 +8982,36 @@
     "similarity": 0.7322
    }
   ],
-  "tag_55ea3e3da098d6dc836c": [
+  "tag_cb32012b3727f90c953b": [
    {
-    "canonicalTagId": "tag_f3cc5b15b7ff4405c36d",
-    "similarity": 0.7392
+    "canonicalTagId": "tag_01fa129139bd5bfcbe3c",
+    "similarity": 0.7621
+   },
+   {
+    "canonicalTagId": "tag_9a244f478a5ec948b30b",
+    "similarity": 0.7468
+   },
+   {
+    "canonicalTagId": "tag_4068259474ce6b12fdf0",
+    "similarity": 0.7316
+   },
+   {
+    "canonicalTagId": "tag_a7aa5f1080a1c95197ee",
+    "similarity": 0.73
+   },
+   {
+    "canonicalTagId": "tag_d1a89772d57b3830b8fe",
+    "similarity": 0.7009
    }
   ],
   "tag_9a244f478a5ec948b30b": [
    {
-    "canonicalTagId": "tag_f3cc5b15b7ff4405c36d",
-    "similarity": 0.721
+    "canonicalTagId": "tag_cb32012b3727f90c953b",
+    "similarity": 0.7468
+   },
+   {
+    "canonicalTagId": "tag_4068259474ce6b12fdf0",
+    "similarity": 0.7318
    },
    {
     "canonicalTagId": "tag_d1a89772d57b3830b8fe",
@@ -10300,10 +9032,6 @@
   ],
   "tag_52cb2a8d59576aa4c8bc": [
    {
-    "canonicalTagId": "tag_12ff933e7c0fb1d28d7d",
-    "similarity": 0.8534
-   },
-   {
     "canonicalTagId": "tag_853ce66cefcdd76dc079",
     "similarity": 0.7387
    },
@@ -10312,28 +9040,10 @@
     "similarity": 0.7018
    }
   ],
-  "tag_12ff933e7c0fb1d28d7d": [
-   {
-    "canonicalTagId": "tag_52cb2a8d59576aa4c8bc",
-    "similarity": 0.8534
-   },
-   {
-    "canonicalTagId": "tag_1fda05d5fdf33af53bf6",
-    "similarity": 0.7235
-   },
-   {
-    "canonicalTagId": "tag_853ce66cefcdd76dc079",
-    "similarity": 0.7176
-   }
-  ],
   "tag_1fda05d5fdf33af53bf6": [
    {
     "canonicalTagId": "tag_b0f6746472f855166c75",
     "similarity": 0.7505
-   },
-   {
-    "canonicalTagId": "tag_12ff933e7c0fb1d28d7d",
-    "similarity": 0.7235
    },
    {
     "canonicalTagId": "tag_52cb2a8d59576aa4c8bc",
@@ -10341,10 +9051,6 @@
    }
   ],
   "tag_b0f6746472f855166c75": [
-   {
-    "canonicalTagId": "tag_29d09c34e0d731e7178c",
-    "similarity": 0.8906
-   },
    {
     "canonicalTagId": "tag_1fda05d5fdf33af53bf6",
     "similarity": 0.7505
@@ -10404,8 +9110,38 @@
   ],
   "tag_ab977be3a1ca35525cf2": [
    {
+    "canonicalTagId": "tag_994ad68003467b335893",
+    "similarity": 0.7212
+   },
+   {
     "canonicalTagId": "tag_36e755a32abb99ea1485",
     "similarity": 0.7184
+   },
+   {
+    "canonicalTagId": "tag_4a2ed396cac4ae7fdd9c",
+    "similarity": 0.7048
+   }
+  ],
+  "tag_994ad68003467b335893": [
+   {
+    "canonicalTagId": "tag_f0439a8490625005cd0e",
+    "similarity": 0.7837
+   },
+   {
+    "canonicalTagId": "tag_4a2ed396cac4ae7fdd9c",
+    "similarity": 0.7616
+   },
+   {
+    "canonicalTagId": "tag_d6da45b3c72260a72f78",
+    "similarity": 0.7615
+   },
+   {
+    "canonicalTagId": "tag_36e755a32abb99ea1485",
+    "similarity": 0.729
+   },
+   {
+    "canonicalTagId": "tag_c4ff9bd826c73e220aa7",
+    "similarity": 0.7237
    }
   ],
   "tag_36e755a32abb99ea1485": [
@@ -10422,6 +9158,10 @@
     "similarity": 0.7513
    },
    {
+    "canonicalTagId": "tag_994ad68003467b335893",
+    "similarity": 0.729
+   },
+   {
     "canonicalTagId": "tag_ab977be3a1ca35525cf2",
     "similarity": 0.7184
    }
@@ -10436,22 +9176,44 @@
     "similarity": 0.7668
    },
    {
+    "canonicalTagId": "tag_994ad68003467b335893",
+    "similarity": 0.7615
+   },
+   {
     "canonicalTagId": "tag_570628e81eee6bbcf16a",
     "similarity": 0.7497
    },
    {
     "canonicalTagId": "tag_2ddfdfa6ab46f28565dd",
     "similarity": 0.7154
+   }
+  ],
+  "tag_4a2ed396cac4ae7fdd9c": [
+   {
+    "canonicalTagId": "tag_994ad68003467b335893",
+    "similarity": 0.7616
    },
    {
-    "canonicalTagId": "tag_df75d41799e038d751e6",
-    "similarity": 0.7068
+    "canonicalTagId": "tag_d509b5bba04bcb17549c",
+    "similarity": 0.7233
+   },
+   {
+    "canonicalTagId": "tag_36e755a32abb99ea1485",
+    "similarity": 0.7126
+   },
+   {
+    "canonicalTagId": "tag_ab977be3a1ca35525cf2",
+    "similarity": 0.7048
    }
   ],
   "tag_9699e291f3256b91dd94": [
    {
     "canonicalTagId": "tag_68d49e3d5d7da26cfb38",
     "similarity": 0.7967
+   },
+   {
+    "canonicalTagId": "tag_994ad68003467b335893",
+    "similarity": 0.7157
    }
   ],
   "tag_45553fb83397a64175b5": [
@@ -10472,14 +9234,10 @@
     "similarity": 0.7323
    }
   ],
-  "tag_6c6d98529ab33d6b80a6": [
+  "tag_63d818200802fe2d540d": [
    {
-    "canonicalTagId": "tag_b9d54d045a3d8cee0f97",
-    "similarity": 0.8054
-   },
-   {
-    "canonicalTagId": "tag_6794d487606b4ef3d441",
-    "similarity": 0.783
+    "canonicalTagId": "tag_4364126734a9b896c534",
+    "similarity": 0.7276
    }
   ],
   "tag_9ae1edb818c425292a6e": [
@@ -10490,33 +9248,11 @@
   ],
   "tag_e42328c344253647d92a": [
    {
-    "canonicalTagId": "tag_581efff7992428199093",
-    "similarity": 0.8539
-   },
-   {
     "canonicalTagId": "tag_d1cc6d10ecc994bed936",
     "similarity": 0.7382
    }
   ],
-  "tag_581efff7992428199093": [
-   {
-    "canonicalTagId": "tag_d1cc6d10ecc994bed936",
-    "similarity": 0.8945
-   },
-   {
-    "canonicalTagId": "tag_e42328c344253647d92a",
-    "similarity": 0.8539
-   },
-   {
-    "canonicalTagId": "tag_bd360c49b68a8c8d7c9c",
-    "similarity": 0.7936
-   }
-  ],
   "tag_d1cc6d10ecc994bed936": [
-   {
-    "canonicalTagId": "tag_581efff7992428199093",
-    "similarity": 0.8945
-   },
    {
     "canonicalTagId": "tag_e42328c344253647d92a",
     "similarity": 0.7382
@@ -10540,10 +9276,6 @@
    {
     "canonicalTagId": "tag_71a1f64e0c2065ca02ac",
     "similarity": 0.7706
-   },
-   {
-    "canonicalTagId": "tag_dd2c58f84c1e8f04f331",
-    "similarity": 0.7141
    }
   ],
   "tag_a9ceb7aed7ab6a78a379": [
@@ -10680,8 +9412,18 @@
   ],
   "tag_a664cfb2bdf5f46a0dfe": [
    {
+    "canonicalTagId": "tag_c3b187a654a3f2be0975",
+    "similarity": 0.7378
+   },
+   {
     "canonicalTagId": "tag_a8e2be18c2929124f216",
     "similarity": 0.7189
+   }
+  ],
+  "tag_d101db8c9e76def4f2aa": [
+   {
+    "canonicalTagId": "tag_c3b187a654a3f2be0975",
+    "similarity": 0.702
    }
   ],
   "tag_a8e2be18c2929124f216": [
@@ -10720,12 +9462,6 @@
    {
     "canonicalTagId": "tag_b9982ebfb1275e10a9be",
     "similarity": 0.7141
-   }
-  ],
-  "tag_b081192e1e4ef4274f04": [
-   {
-    "canonicalTagId": "tag_0e0c558d38772628cf8a",
-    "similarity": 0.8571
    }
   ],
   "tag_70fe335692704b5a7315": [
@@ -10782,19 +9518,25 @@
   ],
   "tag_083c6845f6bd5f576ca9": [
    {
-    "canonicalTagId": "tag_b6ed17817ab931919caf",
-    "similarity": 0.805
-   },
-   {
     "canonicalTagId": "tag_69083901061bcac36a48",
     "similarity": 0.7603
    }
   ],
-  "tag_0b6c7f490e874bdd02c2": [
+  "tag_76539de6800a69c01d45": [
    {
-    "canonicalTagId": "tag_b6ed17817ab931919caf",
-    "similarity": 0.7443
+    "canonicalTagId": "tag_fcf8c6b2593696e798d1",
+    "similarity": 0.8453
    },
+   {
+    "canonicalTagId": "tag_1e65bc2b2c5c06a48d13",
+    "similarity": 0.7893
+   },
+   {
+    "canonicalTagId": "tag_703fc99b7b348d3f6114",
+    "similarity": 0.7059
+   }
+  ],
+  "tag_0b6c7f490e874bdd02c2": [
    {
     "canonicalTagId": "tag_82c43247d5d5807e2bf2",
     "similarity": 0.7128
@@ -10802,16 +9544,6 @@
    {
     "canonicalTagId": "tag_73a386f20b299115c6ee",
     "similarity": 0.7102
-   }
-  ],
-  "tag_b6ed17817ab931919caf": [
-   {
-    "canonicalTagId": "tag_083c6845f6bd5f576ca9",
-    "similarity": 0.805
-   },
-   {
-    "canonicalTagId": "tag_0b6c7f490e874bdd02c2",
-    "similarity": 0.7443
    }
   ],
   "tag_8ae6ffcde18528a23b3a": [
@@ -10825,10 +9557,6 @@
    }
   ],
   "tag_c40bcb6aa0ddea9886aa": [
-   {
-    "canonicalTagId": "tag_6bac51df4bf97c26711f",
-    "similarity": 0.8504
-   },
    {
     "canonicalTagId": "tag_b163085fb7784977bf03",
     "similarity": 0.7218
@@ -10898,7 +9626,17 @@
     "similarity": 0.8509
    }
   ],
+  "tag_bb7d1b1bb9c4f7c1f8cc": [
+   {
+    "canonicalTagId": "tag_20a5727e1f6a4f32c2de",
+    "similarity": 0.7361
+   }
+  ],
   "tag_1e65bc2b2c5c06a48d13": [
+   {
+    "canonicalTagId": "tag_76539de6800a69c01d45",
+    "similarity": 0.7893
+   },
    {
     "canonicalTagId": "tag_fcf8c6b2593696e798d1",
     "similarity": 0.7836
@@ -10914,17 +9652,9 @@
    {
     "canonicalTagId": "tag_026f532c21e1f341d732",
     "similarity": 0.7075
-   },
-   {
-    "canonicalTagId": "tag_c40bcb6aa0ddea9886aa",
-    "similarity": 0.7005
    }
   ],
   "tag_9dad1f4a0739244456b9": [
-   {
-    "canonicalTagId": "tag_7603af3ff1f6dc55385d",
-    "similarity": 0.7515
-   },
    {
     "canonicalTagId": "tag_40fedb209d62301ff88d",
     "similarity": 0.7268
@@ -10950,6 +9680,10 @@
    {
     "canonicalTagId": "tag_1e65bc2b2c5c06a48d13",
     "similarity": 0.7335
+   },
+   {
+    "canonicalTagId": "tag_76539de6800a69c01d45",
+    "similarity": 0.7059
    }
   ],
   "tag_1a5db2b9d4487958227d": [
@@ -11002,6 +9736,10 @@
   ],
   "tag_fcf8c6b2593696e798d1": [
    {
+    "canonicalTagId": "tag_76539de6800a69c01d45",
+    "similarity": 0.8453
+   },
+   {
     "canonicalTagId": "tag_1e65bc2b2c5c06a48d13",
     "similarity": 0.7836
    },
@@ -11028,12 +9766,12 @@
     "similarity": 0.7444
    },
    {
-    "canonicalTagId": "tag_638457baa4d01d9323ff",
-    "similarity": 0.7274
-   },
-   {
     "canonicalTagId": "tag_40fedb209d62301ff88d",
     "similarity": 0.7264
+   },
+   {
+    "canonicalTagId": "tag_7791596493c62dfdb8cb",
+    "similarity": 0.7204
    }
   ],
   "tag_1dd2ef8591af9184b0f7": [
@@ -11048,12 +9786,6 @@
    {
     "canonicalTagId": "tag_e6d7fa951ecb7f8c5110",
     "similarity": 0.7048
-   }
-  ],
-  "tag_6bac51df4bf97c26711f": [
-   {
-    "canonicalTagId": "tag_c40bcb6aa0ddea9886aa",
-    "similarity": 0.8504
    }
   ],
   "tag_c0bbc4224c52fb0a94c4": [
@@ -11080,12 +9812,6 @@
    {
     "canonicalTagId": "tag_c0bbc4224c52fb0a94c4",
     "similarity": 0.8099
-   }
-  ],
-  "tag_0e0c558d38772628cf8a": [
-   {
-    "canonicalTagId": "tag_b081192e1e4ef4274f04",
-    "similarity": 0.8571
    }
   ],
   "tag_f81994cb0bb40f4bcd6d": [
@@ -11248,10 +9974,6 @@
   ],
   "tag_7363db30e190546f9801": [
    {
-    "canonicalTagId": "tag_8d09746daeae1f18ff29",
-    "similarity": 0.8425
-   },
-   {
     "canonicalTagId": "tag_6edb77679bbe71f518b1",
     "similarity": 0.7076
    }
@@ -11358,12 +10080,22 @@
   ],
   "tag_e8bdf416a5238040932a": [
    {
+    "canonicalTagId": "tag_187f2e839060dd12630f",
+    "similarity": 0.7344
+   },
+   {
     "canonicalTagId": "tag_9cda02e62c64acdfe3aa",
     "similarity": 0.7316
    },
    {
     "canonicalTagId": "tag_c90bf325aa847f92b17c",
     "similarity": 0.7056
+   }
+  ],
+  "tag_187f2e839060dd12630f": [
+   {
+    "canonicalTagId": "tag_e8bdf416a5238040932a",
+    "similarity": 0.7344
    }
   ],
   "tag_0fbb7f06dda6c956d775": [
@@ -11462,16 +10194,6 @@
     "similarity": 0.8015
    }
   ],
-  "tag_3b76382769ad4cbdb0f7": [
-   {
-    "canonicalTagId": "tag_ae07defe73c71b1fb1ac",
-    "similarity": 0.8846
-   },
-   {
-    "canonicalTagId": "tag_4c3c9de466a212089088",
-    "similarity": 0.8257
-   }
-  ],
   "tag_b73da0afef8e10545667": [
    {
     "canonicalTagId": "tag_e6f05271b5a92285c207",
@@ -11494,6 +10216,10 @@
    {
     "canonicalTagId": "tag_c66ebb3b7b899d6c5db5",
     "similarity": 0.7359
+   },
+   {
+    "canonicalTagId": "tag_177ba4bbd58140207d07",
+    "similarity": 0.7334
    }
   ],
   "tag_a4e2f560ff204cf95ebe": [
@@ -11638,32 +10364,6 @@
    {
     "canonicalTagId": "tag_1053926d862fce030c02",
     "similarity": 0.7253
-   },
-   {
-    "canonicalTagId": "tag_1b2037347df90a379641",
-    "similarity": 0.7028
-   }
-  ],
-  "tag_1b2037347df90a379641": [
-   {
-    "canonicalTagId": "tag_e6dab81351c3dedcdeb0",
-    "similarity": 0.8231
-   },
-   {
-    "canonicalTagId": "tag_a2f1d2afc82a211caa07",
-    "similarity": 0.7164
-   },
-   {
-    "canonicalTagId": "tag_1228f143f02d59265dcc",
-    "similarity": 0.7161
-   },
-   {
-    "canonicalTagId": "tag_1d41cca88c28bf684d65",
-    "similarity": 0.7075
-   },
-   {
-    "canonicalTagId": "tag_b1f77970d771db776b1c",
-    "similarity": 0.7028
    }
   ],
   "tag_a2f1d2afc82a211caa07": [
@@ -11678,10 +10378,6 @@
    {
     "canonicalTagId": "tag_6775077e1caf3f5ff3ba",
     "similarity": 0.7612
-   },
-   {
-    "canonicalTagId": "tag_1b2037347df90a379641",
-    "similarity": 0.7164
    },
    {
     "canonicalTagId": "tag_d2d7f335b8461d9bea67",
@@ -11730,6 +10426,12 @@
     "similarity": 0.7135
    }
   ],
+  "tag_882162566819070f7427": [
+   {
+    "canonicalTagId": "tag_c3b187a654a3f2be0975",
+    "similarity": 0.81
+   }
+  ],
   "tag_9afe6969e6a3b60f6327": [
    {
     "canonicalTagId": "tag_c4028a29de680090e443",
@@ -11758,6 +10460,20 @@
    {
     "canonicalTagId": "tag_ad6c389d79d76cdbfbd6",
     "similarity": 0.7221
+   },
+   {
+    "canonicalTagId": "tag_0490771fdf5e6e67779d",
+    "similarity": 0.7007
+   }
+  ],
+  "tag_0490771fdf5e6e67779d": [
+   {
+    "canonicalTagId": "tag_5ad73bba1bc7c6d0b21b",
+    "similarity": 0.7067
+   },
+   {
+    "canonicalTagId": "tag_986fa56778173b37ceb9",
+    "similarity": 0.7007
    }
   ],
   "tag_ad6c389d79d76cdbfbd6": [
@@ -11852,12 +10568,6 @@
     "similarity": 0.7201
    }
   ],
-  "tag_aa65808af1537446b1f8": [
-   {
-    "canonicalTagId": "tag_9ae9b67848073c781b82",
-    "similarity": 0.7863
-   }
-  ],
   "tag_284deb753972241632e1": [
    {
     "canonicalTagId": "tag_e4f621179ef4252ad333",
@@ -11894,24 +10604,6 @@
     "similarity": 0.7119
    }
   ],
-  "tag_beb8f56ae090386db311": [
-   {
-    "canonicalTagId": "tag_fe5e186921c0c0002ff5",
-    "similarity": 0.8154
-   },
-   {
-    "canonicalTagId": "tag_b249eee72f7966f33989",
-    "similarity": 0.7783
-   },
-   {
-    "canonicalTagId": "tag_c0c1b264e273d4f0779f",
-    "similarity": 0.7778
-   },
-   {
-    "canonicalTagId": "tag_e3d7eac651452a8f6c07",
-    "similarity": 0.7107
-   }
-  ],
   "tag_b249eee72f7966f33989": [
    {
     "canonicalTagId": "tag_c0c1b264e273d4f0779f",
@@ -11922,23 +10614,19 @@
     "similarity": 0.7819
    },
    {
-    "canonicalTagId": "tag_beb8f56ae090386db311",
-    "similarity": 0.7783
-   },
-   {
     "canonicalTagId": "tag_367f64314a15654aacdb",
     "similarity": 0.7624
    },
    {
     "canonicalTagId": "tag_208b2b5beec66ebb8964",
     "similarity": 0.7518
+   },
+   {
+    "canonicalTagId": "tag_a9ceb7aed7ab6a78a379",
+    "similarity": 0.7283
    }
   ],
   "tag_fe5e186921c0c0002ff5": [
-   {
-    "canonicalTagId": "tag_beb8f56ae090386db311",
-    "similarity": 0.8154
-   },
    {
     "canonicalTagId": "tag_e35d8342aa8675685eb1",
     "similarity": 0.8038
@@ -11986,10 +10674,6 @@
    {
     "canonicalTagId": "tag_b249eee72f7966f33989",
     "similarity": 0.7839
-   },
-   {
-    "canonicalTagId": "tag_beb8f56ae090386db311",
-    "similarity": 0.7778
    },
    {
     "canonicalTagId": "tag_e35d8342aa8675685eb1",
@@ -12058,12 +10742,12 @@
     "similarity": 0.7572
    },
    {
-    "canonicalTagId": "tag_1a0b70f6e02b5ca5656f",
-    "similarity": 0.7557
-   },
-   {
     "canonicalTagId": "tag_2c210263c3aa2081ad36",
     "similarity": 0.7299
+   },
+   {
+    "canonicalTagId": "tag_bcd56da363d0675ad77b",
+    "similarity": 0.7251
    }
   ],
   "tag_218626cc21e5a7a26aa5": [
@@ -12240,12 +10924,12 @@
     "similarity": 0.7871
    },
    {
-    "canonicalTagId": "tag_112cb490f84743b9c898",
-    "similarity": 0.7737
-   },
-   {
     "canonicalTagId": "tag_570628e81eee6bbcf16a",
     "similarity": 0.7351
+   },
+   {
+    "canonicalTagId": "tag_fe7ed954e3a4cc86c004",
+    "similarity": 0.7281
    }
   ],
   "tag_d939972bab59eff9eab5": [
@@ -12440,35 +11124,35 @@
   ],
   "tag_916e7997182bbf72c514": [
    {
+    "canonicalTagId": "tag_f78e682fe16380583d77",
+    "similarity": 0.7888
+   },
+   {
     "canonicalTagId": "tag_6cc4cdb6c2202614f123",
     "similarity": 0.7117
    }
   ],
+  "tag_f78e682fe16380583d77": [
+   {
+    "canonicalTagId": "tag_916e7997182bbf72c514",
+    "similarity": 0.7888
+   },
+   {
+    "canonicalTagId": "tag_6cc4cdb6c2202614f123",
+    "similarity": 0.7412
+   }
+  ],
   "tag_6cc4cdb6c2202614f123": [
+   {
+    "canonicalTagId": "tag_f78e682fe16380583d77",
+    "similarity": 0.7412
+   },
    {
     "canonicalTagId": "tag_916e7997182bbf72c514",
     "similarity": 0.7117
    }
   ],
-  "tag_992c25430eb09a832379": [
-   {
-    "canonicalTagId": "tag_bcd56da363d0675ad77b",
-    "similarity": 0.8951
-   },
-   {
-    "canonicalTagId": "tag_bfa796682b51c0e3131e",
-    "similarity": 0.7193
-   }
-  ],
   "tag_bcd56da363d0675ad77b": [
-   {
-    "canonicalTagId": "tag_992c25430eb09a832379",
-    "similarity": 0.8951
-   },
-   {
-    "canonicalTagId": "tag_bfa796682b51c0e3131e",
-    "similarity": 0.8278
-   },
    {
     "canonicalTagId": "tag_efd34964f0ab261f8abf",
     "similarity": 0.7251
@@ -12522,20 +11206,8 @@
   ],
   "tag_20aef7cad704726c8947": [
    {
-    "canonicalTagId": "tag_446d7aa4511515fb7f9b",
-    "similarity": 0.7974
-   },
-   {
     "canonicalTagId": "tag_4c5b3b8c4467b8d41ef0",
     "similarity": 0.7906
-   },
-   {
-    "canonicalTagId": "tag_3d47052f408c0a04629c",
-    "similarity": 0.7403
-   },
-   {
-    "canonicalTagId": "tag_dd2c58f84c1e8f04f331",
-    "similarity": 0.7324
    },
    {
     "canonicalTagId": "tag_3f8c987e86952f29dd77",
@@ -12616,21 +11288,7 @@
     "similarity": 0.7357
    }
   ],
-  "tag_78bec55cca9b0c8246a3": [
-   {
-    "canonicalTagId": "tag_bfe21efe35b06bbec98f",
-    "similarity": 0.9302
-   },
-   {
-    "canonicalTagId": "tag_28aabb5f81bdc0b8a55c",
-    "similarity": 0.7014
-   }
-  ],
   "tag_bfe21efe35b06bbec98f": [
-   {
-    "canonicalTagId": "tag_78bec55cca9b0c8246a3",
-    "similarity": 0.9302
-   },
    {
     "canonicalTagId": "tag_120e3262be1208e5393a",
     "similarity": 0.7084
@@ -12644,14 +11302,6 @@
    {
     "canonicalTagId": "tag_9699e291f3256b91dd94",
     "similarity": 0.7967
-   },
-   {
-    "canonicalTagId": "tag_d21ffece23ea3f75bba0",
-    "similarity": 0.7512
-   },
-   {
-    "canonicalTagId": "tag_3308228fe97a77abc5e6",
-    "similarity": 0.7345
    },
    {
     "canonicalTagId": "tag_248963dc0987e74b8819",
@@ -12678,57 +11328,7 @@
     "similarity": 0.8387
    }
   ],
-  "tag_d21ffece23ea3f75bba0": [
-   {
-    "canonicalTagId": "tag_0d9e8f0a28620eae390d",
-    "similarity": 0.8616
-   },
-   {
-    "canonicalTagId": "tag_8c5b0f0ee52c5240a1a0",
-    "similarity": 0.8499
-   },
-   {
-    "canonicalTagId": "tag_3308228fe97a77abc5e6",
-    "similarity": 0.7631
-   },
-   {
-    "canonicalTagId": "tag_68d49e3d5d7da26cfb38",
-    "similarity": 0.7512
-   }
-  ],
-  "tag_3308228fe97a77abc5e6": [
-   {
-    "canonicalTagId": "tag_517701cf8b4455acc0d9",
-    "similarity": 0.8546
-   },
-   {
-    "canonicalTagId": "tag_d21ffece23ea3f75bba0",
-    "similarity": 0.7631
-   },
-   {
-    "canonicalTagId": "tag_68d49e3d5d7da26cfb38",
-    "similarity": 0.7345
-   }
-  ],
-  "tag_446d7aa4511515fb7f9b": [
-   {
-    "canonicalTagId": "tag_20aef7cad704726c8947",
-    "similarity": 0.7974
-   },
-   {
-    "canonicalTagId": "tag_dd2c58f84c1e8f04f331",
-    "similarity": 0.7861
-   },
-   {
-    "canonicalTagId": "tag_3d47052f408c0a04629c",
-    "similarity": 0.7025
-   }
-  ],
   "tag_0d9e8f0a28620eae390d": [
-   {
-    "canonicalTagId": "tag_d21ffece23ea3f75bba0",
-    "similarity": 0.8616
-   },
    {
     "canonicalTagId": "tag_517701cf8b4455acc0d9",
     "similarity": 0.8028
@@ -12736,13 +11336,13 @@
    {
     "canonicalTagId": "tag_8c5b0f0ee52c5240a1a0",
     "similarity": 0.7498
+   },
+   {
+    "canonicalTagId": "tag_4f6544d69daa91a3e0ad",
+    "similarity": 0.7175
    }
   ],
   "tag_517701cf8b4455acc0d9": [
-   {
-    "canonicalTagId": "tag_3308228fe97a77abc5e6",
-    "similarity": 0.8546
-   },
    {
     "canonicalTagId": "tag_0d9e8f0a28620eae390d",
     "similarity": 0.8028
@@ -12750,13 +11350,23 @@
    {
     "canonicalTagId": "tag_ba1844dc01d86aeabe67",
     "similarity": 0.774
+   },
+   {
+    "canonicalTagId": "tag_4f6544d69daa91a3e0ad",
+    "similarity": 0.7623
+   }
+  ],
+  "tag_4f6544d69daa91a3e0ad": [
+   {
+    "canonicalTagId": "tag_517701cf8b4455acc0d9",
+    "similarity": 0.7623
+   },
+   {
+    "canonicalTagId": "tag_0d9e8f0a28620eae390d",
+    "similarity": 0.7175
    }
   ],
   "tag_cfdd04ca655a9fd8aa68": [
-   {
-    "canonicalTagId": "tag_fadf50088708c36d44bd",
-    "similarity": 0.7952
-   },
    {
     "canonicalTagId": "tag_c18a95ba669cbdc0ec78",
     "similarity": 0.7719
@@ -12772,10 +11382,6 @@
   ],
   "tag_0e3835528afd8fe5b401": [
    {
-    "canonicalTagId": "tag_fadf50088708c36d44bd",
-    "similarity": 0.9242
-   },
-   {
     "canonicalTagId": "tag_ae68658396c08979b2a3",
     "similarity": 0.8263
    },
@@ -12788,29 +11394,7 @@
     "similarity": 0.7314
    }
   ],
-  "tag_fadf50088708c36d44bd": [
-   {
-    "canonicalTagId": "tag_0e3835528afd8fe5b401",
-    "similarity": 0.9242
-   },
-   {
-    "canonicalTagId": "tag_ae68658396c08979b2a3",
-    "similarity": 0.8053
-   },
-   {
-    "canonicalTagId": "tag_cfdd04ca655a9fd8aa68",
-    "similarity": 0.7952
-   },
-   {
-    "canonicalTagId": "tag_c18a95ba669cbdc0ec78",
-    "similarity": 0.7859
-   }
-  ],
   "tag_c18a95ba669cbdc0ec78": [
-   {
-    "canonicalTagId": "tag_fadf50088708c36d44bd",
-    "similarity": 0.7859
-   },
    {
     "canonicalTagId": "tag_cfdd04ca655a9fd8aa68",
     "similarity": 0.7719
@@ -12828,10 +11412,6 @@
    {
     "canonicalTagId": "tag_0e3835528afd8fe5b401",
     "similarity": 0.8263
-   },
-   {
-    "canonicalTagId": "tag_fadf50088708c36d44bd",
-    "similarity": 0.8053
    },
    {
     "canonicalTagId": "tag_cfdd04ca655a9fd8aa68",
@@ -12874,6 +11454,16 @@
    {
     "canonicalTagId": "tag_08caf7ed18503ceb3e63",
     "similarity": 0.754
+   },
+   {
+    "canonicalTagId": "tag_b5696cec47e652aa9581",
+    "similarity": 0.7337
+   }
+  ],
+  "tag_b5696cec47e652aa9581": [
+   {
+    "canonicalTagId": "tag_475511130703dd9950fc",
+    "similarity": 0.7337
    }
   ],
   "tag_12098daea4858d6f9810": [
@@ -13004,12 +11594,6 @@
     "similarity": 0.7145
    }
   ],
-  "tag_64f299236c2d3a3b46ce": [
-   {
-    "canonicalTagId": "tag_ba6d24c578008ea3aa7c",
-    "similarity": 0.7459
-   }
-  ],
   "tag_91a6a36a405769a49950": [
    {
     "canonicalTagId": "tag_a9983b650dcc4f2994fb",
@@ -13086,17 +11670,7 @@
     "similarity": 0.826
    }
   ],
-  "tag_348ea84c60466c775ef7": [
-   {
-    "canonicalTagId": "tag_57b8fc274f106bc64aba",
-    "similarity": 0.8803
-   }
-  ],
   "tag_485c3dab9f1882282057": [
-   {
-    "canonicalTagId": "tag_2a68acfb39c87af47fb6",
-    "similarity": 0.9633
-   },
    {
     "canonicalTagId": "tag_4b0aa2d91904ddbf3477",
     "similarity": 0.7264
@@ -13106,12 +11680,6 @@
    {
     "canonicalTagId": "tag_24c4a23a2f831e96e65f",
     "similarity": 0.826
-   }
-  ],
-  "tag_57b8fc274f106bc64aba": [
-   {
-    "canonicalTagId": "tag_348ea84c60466c775ef7",
-    "similarity": 0.8803
    }
   ],
   "tag_cc7879e4fbc08fabb33c": [
@@ -13130,14 +11698,16 @@
     "similarity": 0.7751
    }
   ],
-  "tag_2a68acfb39c87af47fb6": [
+  "tag_75227a529aa72663dfce": [
    {
-    "canonicalTagId": "tag_485c3dab9f1882282057",
-    "similarity": 0.9633
-   },
+    "canonicalTagId": "tag_10289aaafd7743da21e0",
+    "similarity": 0.7117
+   }
+  ],
+  "tag_10289aaafd7743da21e0": [
    {
-    "canonicalTagId": "tag_4b0aa2d91904ddbf3477",
-    "similarity": 0.7175
+    "canonicalTagId": "tag_75227a529aa72663dfce",
+    "similarity": 0.7117
    }
   ],
   "tag_170c2d73aed06b636f4f": [
@@ -13226,18 +11796,6 @@
     "similarity": 0.7796
    }
   ],
-  "tag_6f4423004523d7b7dc58": [
-   {
-    "canonicalTagId": "tag_54a808bd444fb5161f43",
-    "similarity": 0.8801
-   }
-  ],
-  "tag_54a808bd444fb5161f43": [
-   {
-    "canonicalTagId": "tag_6f4423004523d7b7dc58",
-    "similarity": 0.8801
-   }
-  ],
   "tag_95247f37dad510796578": [
    {
     "canonicalTagId": "tag_48f102d11a5b03691ee8",
@@ -13288,15 +11846,11 @@
     "similarity": 0.7408
    },
    {
-    "canonicalTagId": "tag_0594e271297b978c2d27",
-    "similarity": 0.723
+    "canonicalTagId": "tag_0f4ff75743df73e7303f",
+    "similarity": 0.7204
    }
   ],
   "tag_99e2750a1319f2f15678": [
-   {
-    "canonicalTagId": "tag_fe778d0b9abac907ffd7",
-    "similarity": 0.7757
-   },
    {
     "canonicalTagId": "tag_83add8ae58c10922ef4f",
     "similarity": 0.7251
@@ -13316,12 +11870,8 @@
     "similarity": 0.7664
    },
    {
-    "canonicalTagId": "tag_0594e271297b978c2d27",
-    "similarity": 0.7177
-   },
-   {
-    "canonicalTagId": "tag_1b2037347df90a379641",
-    "similarity": 0.7075
+    "canonicalTagId": "tag_1228f143f02d59265dcc",
+    "similarity": 0.702
    }
   ],
   "tag_02c85ddfd54666c7074e": [
@@ -13334,36 +11884,10 @@
     "similarity": 0.7069
    }
   ],
-  "tag_0594e271297b978c2d27": [
-   {
-    "canonicalTagId": "tag_542afd9fc0fab2e8454d",
-    "similarity": 0.8187
-   },
-   {
-    "canonicalTagId": "tag_2f779f109872f9faca62",
-    "similarity": 0.723
-   },
-   {
-    "canonicalTagId": "tag_1d41cca88c28bf684d65",
-    "similarity": 0.7177
-   },
-   {
-    "canonicalTagId": "tag_697b3cc95d477eca4a09",
-    "similarity": 0.7054
-   },
-   {
-    "canonicalTagId": "tag_2ed2bbb0b502fbaea7c5",
-    "similarity": 0.7003
-   }
-  ],
   "tag_e6dab81351c3dedcdeb0": [
    {
     "canonicalTagId": "tag_1d41cca88c28bf684d65",
     "similarity": 0.8562
-   },
-   {
-    "canonicalTagId": "tag_1b2037347df90a379641",
-    "similarity": 0.8231
    },
    {
     "canonicalTagId": "tag_2f779f109872f9faca62",
@@ -13376,6 +11900,10 @@
    {
     "canonicalTagId": "tag_80e97f92088ccde61cc2",
     "similarity": 0.7156
+   },
+   {
+    "canonicalTagId": "tag_fe7ed954e3a4cc86c004",
+    "similarity": 0.708
    }
   ],
   "tag_697b3cc95d477eca4a09": [
@@ -13394,26 +11922,12 @@
    {
     "canonicalTagId": "tag_e6dab81351c3dedcdeb0",
     "similarity": 0.7235
-   },
-   {
-    "canonicalTagId": "tag_0594e271297b978c2d27",
-    "similarity": 0.7054
    }
   ],
   "tag_63f6069c4080bec50d84": [
    {
-    "canonicalTagId": "tag_d3cb94e1b92319d8fdc7",
-    "similarity": 0.9076
-   },
-   {
     "canonicalTagId": "tag_c0ac586c2e2bfa1ea522",
     "similarity": 0.7689
-   }
-  ],
-  "tag_d3cb94e1b92319d8fdc7": [
-   {
-    "canonicalTagId": "tag_63f6069c4080bec50d84",
-    "similarity": 0.9076
    }
   ],
   "tag_3cfe34e84c9ac4e74b60": [
@@ -13606,6 +12120,18 @@
     "similarity": 0.7056
    }
   ],
+  "tag_a6473eb488c9aa35b487": [
+   {
+    "canonicalTagId": "tag_1400b496f4d7d4d1d37e",
+    "similarity": 0.72
+   }
+  ],
+  "tag_1400b496f4d7d4d1d37e": [
+   {
+    "canonicalTagId": "tag_a6473eb488c9aa35b487",
+    "similarity": 0.72
+   }
+  ],
   "tag_7a50da3197c6ac6b7387": [
    {
     "canonicalTagId": "tag_5e77d2eaceef331b8354",
@@ -13613,6 +12139,10 @@
    }
   ],
   "tag_c66ebb3b7b899d6c5db5": [
+   {
+    "canonicalTagId": "tag_177ba4bbd58140207d07",
+    "similarity": 0.8658
+   },
    {
     "canonicalTagId": "tag_32b5efdc79a4f3d15d43",
     "similarity": 0.7784
@@ -13626,24 +12156,32 @@
     "similarity": 0.7214
    }
   ],
-  "tag_939ccbbcb99073fe1b99": [
+  "tag_177ba4bbd58140207d07": [
    {
-    "canonicalTagId": "tag_5991d72706467acc94fd",
-    "similarity": 0.8548
+    "canonicalTagId": "tag_c66ebb3b7b899d6c5db5",
+    "similarity": 0.8658
    },
+   {
+    "canonicalTagId": "tag_32b5efdc79a4f3d15d43",
+    "similarity": 0.769
+   },
+   {
+    "canonicalTagId": "tag_19f4b2729332e14e6582",
+    "similarity": 0.7642
+   },
+   {
+    "canonicalTagId": "tag_9afbffec68c7c2dbe4d4",
+    "similarity": 0.7334
+   },
+   {
+    "canonicalTagId": "tag_ec0914a9297e4b2ee505",
+    "similarity": 0.7111
+   }
+  ],
+  "tag_939ccbbcb99073fe1b99": [
    {
     "canonicalTagId": "tag_d240672d3d9a1160f939",
     "similarity": 0.7092
-   }
-  ],
-  "tag_5991d72706467acc94fd": [
-   {
-    "canonicalTagId": "tag_939ccbbcb99073fe1b99",
-    "similarity": 0.8548
-   },
-   {
-    "canonicalTagId": "tag_d240672d3d9a1160f939",
-    "similarity": 0.7148
    }
   ],
   "tag_931ac85c4526eb025d29": [
@@ -13666,12 +12204,12 @@
     "similarity": 0.7166
    },
    {
-    "canonicalTagId": "tag_5991d72706467acc94fd",
-    "similarity": 0.7148
-   },
-   {
     "canonicalTagId": "tag_939ccbbcb99073fe1b99",
     "similarity": 0.7092
+   },
+   {
+    "canonicalTagId": "tag_8eecd81feeee01e6d1ba",
+    "similarity": 0.7068
    }
   ],
   "tag_71bf33aa843a94a8f82d": [
@@ -13782,6 +12320,10 @@
   ],
   "tag_19f4b2729332e14e6582": [
    {
+    "canonicalTagId": "tag_177ba4bbd58140207d07",
+    "similarity": 0.7642
+   },
+   {
     "canonicalTagId": "tag_fee55132cb70817d6770",
     "similarity": 0.7525
    },
@@ -13796,10 +12338,6 @@
    {
     "canonicalTagId": "tag_dc621e731648baadb5e3",
     "similarity": 0.7269
-   },
-   {
-    "canonicalTagId": "tag_14d2f01126f26eae788a",
-    "similarity": 0.7247
    }
   ],
   "tag_d7fec10e11624d59da29": [
@@ -13818,6 +12356,14 @@
     "similarity": 0.7521
    },
    {
+    "canonicalTagId": "tag_31df4ed388759833d0e7",
+    "similarity": 0.7389
+   },
+   {
+    "canonicalTagId": "tag_177ba4bbd58140207d07",
+    "similarity": 0.7109
+   },
+   {
     "canonicalTagId": "tag_87292173b1634db7e0e4",
     "similarity": 0.7107
    },
@@ -13827,10 +12373,6 @@
    }
   ],
   "tag_56717677eb8276719a47": [
-   {
-    "canonicalTagId": "tag_14d2f01126f26eae788a",
-    "similarity": 0.9157
-   },
    {
     "canonicalTagId": "tag_87292173b1634db7e0e4",
     "similarity": 0.7436
@@ -13844,33 +12386,37 @@
     "similarity": 0.7386
    },
    {
-    "canonicalTagId": "tag_b32a5d7e41e17385e21d",
-    "similarity": 0.722
-   }
-  ],
-  "tag_14d2f01126f26eae788a": [
-   {
-    "canonicalTagId": "tag_56717677eb8276719a47",
-    "similarity": 0.9157
+    "canonicalTagId": "tag_19f4b2729332e14e6582",
+    "similarity": 0.7191
    },
    {
-    "canonicalTagId": "tag_fee55132cb70817d6770",
-    "similarity": 0.7453
+    "canonicalTagId": "tag_dc621e731648baadb5e3",
+    "similarity": 0.7095
+   }
+  ],
+  "tag_31df4ed388759833d0e7": [
+   {
+    "canonicalTagId": "tag_814022d05c11cd30c65b",
+    "similarity": 0.8416
+   },
+   {
+    "canonicalTagId": "tag_9a40bd1de8ce7c6e6ca2",
+    "similarity": 0.7389
+   },
+   {
+    "canonicalTagId": "tag_19f4b2729332e14e6582",
+    "similarity": 0.7089
    },
    {
     "canonicalTagId": "tag_87292173b1634db7e0e4",
-    "similarity": 0.7442
-   },
-   {
-    "canonicalTagId": "tag_66d6d4b6c9582e2604cb",
-    "similarity": 0.744
-   },
-   {
-    "canonicalTagId": "tag_494a8946e3d35399d5d1",
-    "similarity": 0.7365
+    "similarity": 0.703
    }
   ],
   "tag_814022d05c11cd30c65b": [
+   {
+    "canonicalTagId": "tag_31df4ed388759833d0e7",
+    "similarity": 0.8416
+   },
    {
     "canonicalTagId": "tag_19f4b2729332e14e6582",
     "similarity": 0.7472
@@ -13886,17 +12432,9 @@
    {
     "canonicalTagId": "tag_e791f36578c923cc9233",
     "similarity": 0.7194
-   },
-   {
-    "canonicalTagId": "tag_87292173b1634db7e0e4",
-    "similarity": 0.713
    }
   ],
   "tag_87292173b1634db7e0e4": [
-   {
-    "canonicalTagId": "tag_14d2f01126f26eae788a",
-    "similarity": 0.7442
-   },
    {
     "canonicalTagId": "tag_56717677eb8276719a47",
     "similarity": 0.7436
@@ -13912,16 +12450,16 @@
    {
     "canonicalTagId": "tag_814022d05c11cd30c65b",
     "similarity": 0.713
+   },
+   {
+    "canonicalTagId": "tag_9a40bd1de8ce7c6e6ca2",
+    "similarity": 0.7107
    }
   ],
   "tag_fee55132cb70817d6770": [
    {
     "canonicalTagId": "tag_19f4b2729332e14e6582",
     "similarity": 0.7525
-   },
-   {
-    "canonicalTagId": "tag_14d2f01126f26eae788a",
-    "similarity": 0.7453
    },
    {
     "canonicalTagId": "tag_d7fec10e11624d59da29",
@@ -13934,13 +12472,13 @@
    {
     "canonicalTagId": "tag_dc621e731648baadb5e3",
     "similarity": 0.7288
+   },
+   {
+    "canonicalTagId": "tag_87292173b1634db7e0e4",
+    "similarity": 0.7038
    }
   ],
   "tag_66d6d4b6c9582e2604cb": [
-   {
-    "canonicalTagId": "tag_14d2f01126f26eae788a",
-    "similarity": 0.744
-   },
    {
     "canonicalTagId": "tag_56717677eb8276719a47",
     "similarity": 0.7434
@@ -13954,6 +12492,10 @@
    {
     "canonicalTagId": "tag_6c31818d6cfed1a89a97",
     "similarity": 0.7455
+   },
+   {
+    "canonicalTagId": "tag_550fc13879cb7e2271f0",
+    "similarity": 0.7218
    }
   ],
   "tag_17db9965f15b48646fc0": [
@@ -14054,30 +12596,12 @@
   ],
   "tag_8c0d84b10503e9d4ba13": [
    {
-    "canonicalTagId": "tag_2f7c77ab5e312986e911",
-    "similarity": 0.9159
-   },
-   {
     "canonicalTagId": "tag_a6efca46d4703a09c03b",
     "similarity": 0.8207
    },
    {
     "canonicalTagId": "tag_328abd3a4768ead4f8e5",
     "similarity": 0.7032
-   }
-  ],
-  "tag_2f7c77ab5e312986e911": [
-   {
-    "canonicalTagId": "tag_8c0d84b10503e9d4ba13",
-    "similarity": 0.9159
-   },
-   {
-    "canonicalTagId": "tag_a6efca46d4703a09c03b",
-    "similarity": 0.789
-   },
-   {
-    "canonicalTagId": "tag_97f064fb568f152bb6bb",
-    "similarity": 0.7002
    }
   ],
   "tag_97f064fb568f152bb6bb": [
@@ -14088,10 +12612,6 @@
    {
     "canonicalTagId": "tag_328abd3a4768ead4f8e5",
     "similarity": 0.71
-   },
-   {
-    "canonicalTagId": "tag_2f7c77ab5e312986e911",
-    "similarity": 0.7002
    }
   ],
   "tag_1c0ce941ac28e7079ca4": [
@@ -14104,10 +12624,6 @@
    {
     "canonicalTagId": "tag_dcf0f129d24f96308a5f",
     "similarity": 0.7877
-   },
-   {
-    "canonicalTagId": "tag_e1086eac86bfdd00139d",
-    "similarity": 0.7392
    }
   ],
   "tag_4af22cb33c93bfeebee0": [
@@ -14158,12 +12674,12 @@
     "similarity": 0.7969
    },
    {
-    "canonicalTagId": "tag_e2886b38a324322d97f7",
-    "similarity": 0.7535
+    "canonicalTagId": "tag_8fdbc87347965ea3afec",
+    "similarity": 0.793
    },
    {
-    "canonicalTagId": "tag_6fc1e3fd941473568ff4",
-    "similarity": 0.7488
+    "canonicalTagId": "tag_e2886b38a324322d97f7",
+    "similarity": 0.7535
    }
   ],
   "tag_6fc1e3fd941473568ff4": [
@@ -14368,6 +12884,10 @@
   ],
   "tag_b9ca84de044488a5c732": [
    {
+    "canonicalTagId": "tag_8fdbc87347965ea3afec",
+    "similarity": 0.8404
+   },
+   {
     "canonicalTagId": "tag_44f65c73d1da9bfbe5a5",
     "similarity": 0.8382
    },
@@ -14396,6 +12916,24 @@
    {
     "canonicalTagId": "tag_d8ca3615bb281eaf16df",
     "similarity": 0.7304
+   }
+  ],
+  "tag_8fdbc87347965ea3afec": [
+   {
+    "canonicalTagId": "tag_b9ca84de044488a5c732",
+    "similarity": 0.8404
+   },
+   {
+    "canonicalTagId": "tag_d8ca3615bb281eaf16df",
+    "similarity": 0.793
+   },
+   {
+    "canonicalTagId": "tag_f22b2ea70297a101adc3",
+    "similarity": 0.7059
+   },
+   {
+    "canonicalTagId": "tag_6fc1e3fd941473568ff4",
+    "similarity": 0.7031
    }
   ],
   "tag_d17e9d005d0473080d28": [
@@ -14446,10 +12984,6 @@
   ],
   "tag_6794d487606b4ef3d441": [
    {
-    "canonicalTagId": "tag_6c6d98529ab33d6b80a6",
-    "similarity": 0.783
-   },
-   {
     "canonicalTagId": "tag_b9d54d045a3d8cee0f97",
     "similarity": 0.7365
    }
@@ -14498,26 +13032,6 @@
     "similarity": 0.718
    }
   ],
-  "tag_a398f92c182d34d65024": [
-   {
-    "canonicalTagId": "tag_0007a8e4ac46ea238076",
-    "similarity": 0.8185
-   }
-  ],
-  "tag_932e7a198241e3b50103": [
-   {
-    "canonicalTagId": "tag_5fb5683145187751603b",
-    "similarity": 0.8588
-   },
-   {
-    "canonicalTagId": "tag_023015b1dc9d8d0c7c70",
-    "similarity": 0.7627
-   },
-   {
-    "canonicalTagId": "tag_fa264622290729fb67c7",
-    "similarity": 0.7099
-   }
-  ],
   "tag_367f64314a15654aacdb": [
    {
     "canonicalTagId": "tag_19cba831ef7cdd6b21c4",
@@ -14530,6 +13044,10 @@
    {
     "canonicalTagId": "tag_b249eee72f7966f33989",
     "similarity": 0.7624
+   },
+   {
+    "canonicalTagId": "tag_cc32f0b3cd249943fbe1",
+    "similarity": 0.7343
    },
    {
     "canonicalTagId": "tag_79a4e5dd757dcc4a9c43",
@@ -14632,40 +13150,14 @@
     "similarity": 0.7214
    },
    {
-    "canonicalTagId": "tag_5d298d22be395abeb543",
-    "similarity": 0.7146
-   },
-   {
     "canonicalTagId": "tag_367f64314a15654aacdb",
     "similarity": 0.7142
-   }
-  ],
-  "tag_5d298d22be395abeb543": [
-   {
-    "canonicalTagId": "tag_52ae3980a55b7d447300",
-    "similarity": 0.964
-   },
-   {
-    "canonicalTagId": "tag_5bd0b4f3c1a77364341b",
-    "similarity": 0.8276
-   },
-   {
-    "canonicalTagId": "tag_0b359690ef9fc2e05413",
-    "similarity": 0.7761
-   },
-   {
-    "canonicalTagId": "tag_79a4e5dd757dcc4a9c43",
-    "similarity": 0.7146
    }
   ],
   "tag_0b359690ef9fc2e05413": [
    {
     "canonicalTagId": "tag_52ae3980a55b7d447300",
     "similarity": 0.7799
-   },
-   {
-    "canonicalTagId": "tag_5d298d22be395abeb543",
-    "similarity": 0.7761
    },
    {
     "canonicalTagId": "tag_8e198ece08325538b52f",
@@ -14688,16 +13180,12 @@
   ],
   "tag_52ae3980a55b7d447300": [
    {
-    "canonicalTagId": "tag_5d298d22be395abeb543",
-    "similarity": 0.964
-   },
-   {
-    "canonicalTagId": "tag_5bd0b4f3c1a77364341b",
-    "similarity": 0.8008
-   },
-   {
     "canonicalTagId": "tag_0b359690ef9fc2e05413",
     "similarity": 0.7799
+   },
+   {
+    "canonicalTagId": "tag_e92bfb324dbc891b8781",
+    "similarity": 0.7563
    },
    {
     "canonicalTagId": "tag_79a4e5dd757dcc4a9c43",
@@ -14806,10 +13294,6 @@
   ],
   "tag_0007a8e4ac46ea238076": [
    {
-    "canonicalTagId": "tag_a398f92c182d34d65024",
-    "similarity": 0.8185
-   },
-   {
     "canonicalTagId": "tag_94e387d9c81e017ede61",
     "similarity": 0.721
    }
@@ -14822,10 +13306,6 @@
    {
     "canonicalTagId": "tag_f46824706853e3d7c0a7",
     "similarity": 0.7525
-   },
-   {
-    "canonicalTagId": "tag_fe778d0b9abac907ffd7",
-    "similarity": 0.7403
    }
   ],
   "tag_60d10c48fb9fa3cd6da9": [
@@ -14838,38 +13318,12 @@
     "similarity": 0.7618
    },
    {
-    "canonicalTagId": "tag_2df64e2a93dadcf2e896",
-    "similarity": 0.7603
-   },
-   {
     "canonicalTagId": "tag_6cda64c87cfeb57e78ba",
     "similarity": 0.7531
    },
    {
     "canonicalTagId": "tag_954dac2621ee5552c9b5",
     "similarity": 0.718
-   }
-  ],
-  "tag_2df64e2a93dadcf2e896": [
-   {
-    "canonicalTagId": "tag_e04641de057f2c711968",
-    "similarity": 0.949
-   },
-   {
-    "canonicalTagId": "tag_6cda64c87cfeb57e78ba",
-    "similarity": 0.8173
-   },
-   {
-    "canonicalTagId": "tag_60d10c48fb9fa3cd6da9",
-    "similarity": 0.7603
-   },
-   {
-    "canonicalTagId": "tag_954dac2621ee5552c9b5",
-    "similarity": 0.7448
-   },
-   {
-    "canonicalTagId": "tag_82d26e690eed3448db6f",
-    "similarity": 0.7188
    }
   ],
   "tag_6cda64c87cfeb57e78ba": [
@@ -14886,19 +13340,15 @@
     "similarity": 0.827
    },
    {
-    "canonicalTagId": "tag_2df64e2a93dadcf2e896",
-    "similarity": 0.8173
-   },
-   {
     "canonicalTagId": "tag_954dac2621ee5552c9b5",
     "similarity": 0.769
+   },
+   {
+    "canonicalTagId": "tag_60d10c48fb9fa3cd6da9",
+    "similarity": 0.7531
    }
   ],
   "tag_e04641de057f2c711968": [
-   {
-    "canonicalTagId": "tag_2df64e2a93dadcf2e896",
-    "similarity": 0.949
-   },
    {
     "canonicalTagId": "tag_6cda64c87cfeb57e78ba",
     "similarity": 0.8754
@@ -14914,6 +13364,10 @@
    {
     "canonicalTagId": "tag_e7ad7ca81e96040324a8",
     "similarity": 0.7411
+   },
+   {
+    "canonicalTagId": "tag_82d26e690eed3448db6f",
+    "similarity": 0.7292
    }
   ],
   "tag_3816462797fd0a723186": [
@@ -14948,16 +13402,16 @@
     "similarity": 0.7589
    },
    {
-    "canonicalTagId": "tag_2df64e2a93dadcf2e896",
-    "similarity": 0.7448
-   },
-   {
     "canonicalTagId": "tag_3816462797fd0a723186",
     "similarity": 0.7439
    },
    {
     "canonicalTagId": "tag_82d26e690eed3448db6f",
     "similarity": 0.7222
+   },
+   {
+    "canonicalTagId": "tag_60d10c48fb9fa3cd6da9",
+    "similarity": 0.718
    }
   ],
   "tag_82d26e690eed3448db6f": [
@@ -14990,10 +13444,6 @@
    {
     "canonicalTagId": "tag_e04641de057f2c711968",
     "similarity": 0.7411
-   },
-   {
-    "canonicalTagId": "tag_2df64e2a93dadcf2e896",
-    "similarity": 0.7168
    },
    {
     "canonicalTagId": "tag_6cda64c87cfeb57e78ba",
@@ -15038,6 +13488,10 @@
   ],
   "tag_426920fec172613456d2": [
    {
+    "canonicalTagId": "tag_617e331db838cfdfb158",
+    "similarity": 0.7343
+   },
+   {
     "canonicalTagId": "tag_cb57ca2790d718442126",
     "similarity": 0.7336
    }
@@ -15046,22 +13500,20 @@
    {
     "canonicalTagId": "tag_abab6ad4654cd3b3115f",
     "similarity": 0.7934
-   }
-  ],
-  "tag_a54b472a53dc8c4dc0d0": [
-   {
-    "canonicalTagId": "tag_22e938fbbea5bef253f2",
-    "similarity": 0.7033
-   }
-  ],
-  "tag_25a825478ed794743f0c": [
-   {
-    "canonicalTagId": "tag_9ca52d66b6eae5535800",
-    "similarity": 0.8741
    },
    {
-    "canonicalTagId": "tag_abab6ad4654cd3b3115f",
-    "similarity": 0.7356
+    "canonicalTagId": "tag_8086845eb2dc57dbb771",
+    "similarity": 0.7298
+   }
+  ],
+  "tag_8086845eb2dc57dbb771": [
+   {
+    "canonicalTagId": "tag_3359d9f2c983c8daa2c2",
+    "similarity": 0.7298
+   },
+   {
+    "canonicalTagId": "tag_8929d7d8cb5796adc773",
+    "similarity": 0.71
    }
   ],
   "tag_2b0ea6b4a70db7be7c55": [
@@ -15114,13 +13566,13 @@
    {
     "canonicalTagId": "tag_6f1f6a6a1b17f214d15b",
     "similarity": 0.7893
+   },
+   {
+    "canonicalTagId": "tag_8086845eb2dc57dbb771",
+    "similarity": 0.71
    }
   ],
   "tag_9ca52d66b6eae5535800": [
-   {
-    "canonicalTagId": "tag_25a825478ed794743f0c",
-    "similarity": 0.8741
-   },
    {
     "canonicalTagId": "tag_8929d7d8cb5796adc773",
     "similarity": 0.8374
@@ -15280,21 +13732,7 @@
     "similarity": 0.7126
    }
   ],
-  "tag_8ca77eba32e94f4bf74f": [
-   {
-    "canonicalTagId": "tag_85d9f0d005cd5a80939c",
-    "similarity": 0.8233
-   },
-   {
-    "canonicalTagId": "tag_9b24097798c8f07ae0d0",
-    "similarity": 0.7594
-   }
-  ],
   "tag_85d9f0d005cd5a80939c": [
-   {
-    "canonicalTagId": "tag_8ca77eba32e94f4bf74f",
-    "similarity": 0.8233
-   },
    {
     "canonicalTagId": "tag_11371160bb410ba5f142",
     "similarity": 0.7681
@@ -15310,6 +13748,10 @@
    {
     "canonicalTagId": "tag_e4ae54cd8b02025eec26",
     "similarity": 0.7222
+   },
+   {
+    "canonicalTagId": "tag_0e9a213dc5dec3d7b7b2",
+    "similarity": 0.7114
    }
   ],
   "tag_e4ae54cd8b02025eec26": [
@@ -15368,10 +13810,22 @@
     "similarity": 0.7215
    }
   ],
+  "tag_0a15e4f077d4264a6556": [
+   {
+    "canonicalTagId": "tag_85d9f0d005cd5a80939c",
+    "similarity": 0.7027
+   }
+  ],
   "tag_e30b278d11ce25232bf5": [
    {
     "canonicalTagId": "tag_0093fda421dca6a1d000",
     "similarity": 0.7017
+   }
+  ],
+  "tag_98ddbb57bf4c46cd98e8": [
+   {
+    "canonicalTagId": "tag_3de28da27904a763462a",
+    "similarity": 0.7756
    }
   ],
   "tag_7d782cdc5f1189322bce": [
@@ -15454,18 +13908,6 @@
     "similarity": 0.7205
    }
   ],
-  "tag_df8052138efcd017c503": [
-   {
-    "canonicalTagId": "tag_e8349765b980a134eef5",
-    "similarity": 0.8837
-   }
-  ],
-  "tag_e8349765b980a134eef5": [
-   {
-    "canonicalTagId": "tag_df8052138efcd017c503",
-    "similarity": 0.8837
-   }
-  ],
   "tag_e0a0aa2f06d6a7c705e2": [
    {
     "canonicalTagId": "tag_171ddd2092921df432a4",
@@ -15506,20 +13948,6 @@
    {
     "canonicalTagId": "tag_7d782cdc5f1189322bce",
     "similarity": 0.731
-   }
-  ],
-  "tag_112cb490f84743b9c898": [
-   {
-    "canonicalTagId": "tag_df75d41799e038d751e6",
-    "similarity": 0.8773
-   },
-   {
-    "canonicalTagId": "tag_2ddfdfa6ab46f28565dd",
-    "similarity": 0.7737
-   },
-   {
-    "canonicalTagId": "tag_cbc5bd281b7ae72fc14c",
-    "similarity": 0.7191
    }
   ],
   "tag_7e14393cb93498b25d78": [
@@ -15646,25 +14074,7 @@
     "similarity": 0.7092
    }
   ],
-  "tag_b0419496a125b7fa588b": [
-   {
-    "canonicalTagId": "tag_a0d60eea162b02461271",
-    "similarity": 0.9403
-   },
-   {
-    "canonicalTagId": "tag_78ad3ed7d0bb3cee72a5",
-    "similarity": 0.814
-   },
-   {
-    "canonicalTagId": "tag_c0b3a80e3b61d32e040c",
-    "similarity": 0.7793
-   }
-  ],
   "tag_a0d60eea162b02461271": [
-   {
-    "canonicalTagId": "tag_b0419496a125b7fa588b",
-    "similarity": 0.9403
-   },
    {
     "canonicalTagId": "tag_78ad3ed7d0bb3cee72a5",
     "similarity": 0.8116
@@ -15676,10 +14086,6 @@
   ],
   "tag_c0b3a80e3b61d32e040c": [
    {
-    "canonicalTagId": "tag_b0419496a125b7fa588b",
-    "similarity": 0.7793
-   },
-   {
     "canonicalTagId": "tag_a0d60eea162b02461271",
     "similarity": 0.7585
    },
@@ -15689,10 +14095,6 @@
    }
   ],
   "tag_78ad3ed7d0bb3cee72a5": [
-   {
-    "canonicalTagId": "tag_b0419496a125b7fa588b",
-    "similarity": 0.814
-   },
    {
     "canonicalTagId": "tag_a0d60eea162b02461271",
     "similarity": 0.8116
@@ -15706,83 +14108,13 @@
     "similarity": 0.7439
    }
   ],
-  "tag_e987663715c181ddd346": [
-   {
-    "canonicalTagId": "tag_ddbf4561528cadb73761",
-    "similarity": 0.8651
-   }
-  ],
   "tag_4f18c17e4e306a2f3d27": [
-   {
-    "canonicalTagId": "tag_f00a8e658deba62f721e",
-    "similarity": 0.7387
-   },
-   {
-    "canonicalTagId": "tag_307b79f9527b9f48c7b9",
-    "similarity": 0.7354
-   },
    {
     "canonicalTagId": "tag_c8b60103fef507a16103",
     "similarity": 0.7115
    }
   ],
-  "tag_307b79f9527b9f48c7b9": [
-   {
-    "canonicalTagId": "tag_f00a8e658deba62f721e",
-    "similarity": 0.9256
-   },
-   {
-    "canonicalTagId": "tag_4f94678690f597d78661",
-    "similarity": 0.887
-   },
-   {
-    "canonicalTagId": "tag_c8b60103fef507a16103",
-    "similarity": 0.8541
-   },
-   {
-    "canonicalTagId": "tag_328a140f5a9237c003dc",
-    "similarity": 0.7557
-   },
-   {
-    "canonicalTagId": "tag_a4ad34dbd89c0877fdc0",
-    "similarity": 0.7471
-   }
-  ],
-  "tag_f00a8e658deba62f721e": [
-   {
-    "canonicalTagId": "tag_307b79f9527b9f48c7b9",
-    "similarity": 0.9256
-   },
-   {
-    "canonicalTagId": "tag_c8b60103fef507a16103",
-    "similarity": 0.8454
-   },
-   {
-    "canonicalTagId": "tag_4f94678690f597d78661",
-    "similarity": 0.8055
-   },
-   {
-    "canonicalTagId": "tag_4f18c17e4e306a2f3d27",
-    "similarity": 0.7387
-   },
-   {
-    "canonicalTagId": "tag_328a140f5a9237c003dc",
-    "similarity": 0.7187
-   }
-  ],
   "tag_c8b60103fef507a16103": [
-   {
-    "canonicalTagId": "tag_328a140f5a9237c003dc",
-    "similarity": 0.8843
-   },
-   {
-    "canonicalTagId": "tag_307b79f9527b9f48c7b9",
-    "similarity": 0.8541
-   },
-   {
-    "canonicalTagId": "tag_f00a8e658deba62f721e",
-    "similarity": 0.8454
-   },
    {
     "canonicalTagId": "tag_4f94678690f597d78661",
     "similarity": 0.76
@@ -15790,12 +14122,10 @@
    {
     "canonicalTagId": "tag_4f18c17e4e306a2f3d27",
     "similarity": 0.7115
-   }
-  ],
-  "tag_29d09c34e0d731e7178c": [
+   },
    {
-    "canonicalTagId": "tag_b0f6746472f855166c75",
-    "similarity": 0.8906
+    "canonicalTagId": "tag_2382adcec97712ed41c7",
+    "similarity": 0.7003
    }
   ],
   "tag_c29647cf63a0ba1f29c8": [
@@ -15806,22 +14136,6 @@
    {
     "canonicalTagId": "tag_6b1159f7bc624981ba5d",
     "similarity": 0.7328
-   }
-  ],
-  "tag_9d7909068d271c0364df": [
-   {
-    "canonicalTagId": "tag_c7d1fc66d44478dbadbf",
-    "similarity": 0.933
-   }
-  ],
-  "tag_c7d1fc66d44478dbadbf": [
-   {
-    "canonicalTagId": "tag_9d7909068d271c0364df",
-    "similarity": 0.933
-   },
-   {
-    "canonicalTagId": "tag_6b1159f7bc624981ba5d",
-    "similarity": 0.7049
    }
   ],
   "tag_688f197ce6546488779b": [
@@ -15846,10 +14160,6 @@
    {
     "canonicalTagId": "tag_688f197ce6546488779b",
     "similarity": 0.7134
-   },
-   {
-    "canonicalTagId": "tag_c7d1fc66d44478dbadbf",
-    "similarity": 0.7049
    },
    {
     "canonicalTagId": "tag_d8d66e383619ee524e4c",
@@ -16012,8 +14322,8 @@
     "similarity": 0.7177
    },
    {
-    "canonicalTagId": "tag_77173462a77ac7f49a52",
-    "similarity": 0.7095
+    "canonicalTagId": "tag_a61c807dcd642fce7950",
+    "similarity": 0.705
    }
   ],
   "tag_4594c5c197d0acefe3e4": [
@@ -16050,12 +14360,12 @@
     "similarity": 0.74
    },
    {
-    "canonicalTagId": "tag_77173462a77ac7f49a52",
-    "similarity": 0.7241
-   },
-   {
     "canonicalTagId": "tag_63a41b1878d14b20896e",
     "similarity": 0.7185
+   },
+   {
+    "canonicalTagId": "tag_c0ac586c2e2bfa1ea522",
+    "similarity": 0.711
    }
   ],
   "tag_bc9bd88544bcbee84451": [
@@ -16100,10 +14410,6 @@
     "similarity": 0.7157
    },
    {
-    "canonicalTagId": "tag_77173462a77ac7f49a52",
-    "similarity": 0.7101
-   },
-   {
     "canonicalTagId": "tag_63a41b1878d14b20896e",
     "similarity": 0.704
    }
@@ -16112,10 +14418,6 @@
    {
     "canonicalTagId": "tag_63a41b1878d14b20896e",
     "similarity": 0.7738
-   },
-   {
-    "canonicalTagId": "tag_77173462a77ac7f49a52",
-    "similarity": 0.748
    },
    {
     "canonicalTagId": "tag_a42315e416fa25507f24",
@@ -16154,33 +14456,7 @@
     "similarity": 0.7056
    }
   ],
-  "tag_77173462a77ac7f49a52": [
-   {
-    "canonicalTagId": "tag_63a41b1878d14b20896e",
-    "similarity": 0.9148
-   },
-   {
-    "canonicalTagId": "tag_6a8f35190a25078866ff",
-    "similarity": 0.748
-   },
-   {
-    "canonicalTagId": "tag_bb74a8b86515d104ed8b",
-    "similarity": 0.7241
-   },
-   {
-    "canonicalTagId": "tag_af085b1e150496b2f904",
-    "similarity": 0.7101
-   },
-   {
-    "canonicalTagId": "tag_1802f729de8ca1a6416d",
-    "similarity": 0.7095
-   }
-  ],
   "tag_63a41b1878d14b20896e": [
-   {
-    "canonicalTagId": "tag_77173462a77ac7f49a52",
-    "similarity": 0.9148
-   },
    {
     "canonicalTagId": "tag_6a8f35190a25078866ff",
     "similarity": 0.7738
@@ -16210,12 +14486,6 @@
     "similarity": 0.701
    }
   ],
-  "tag_87345293af5c187a4930": [
-   {
-    "canonicalTagId": "tag_a53b70ad3363c47110d8",
-    "similarity": 0.9374
-   }
-  ],
   "tag_59b69a37f4d8f6a54de0": [
    {
     "canonicalTagId": "tag_a47904b6ff7600e43571",
@@ -16230,12 +14500,6 @@
    {
     "canonicalTagId": "tag_218626cc21e5a7a26aa5",
     "similarity": 0.7712
-   }
-  ],
-  "tag_a53b70ad3363c47110d8": [
-   {
-    "canonicalTagId": "tag_87345293af5c187a4930",
-    "similarity": 0.9374
    }
   ],
   "tag_1cd616fc028a85f1e040": [
@@ -16254,10 +14518,6 @@
    {
     "canonicalTagId": "tag_485c3dab9f1882282057",
     "similarity": 0.7264
-   },
-   {
-    "canonicalTagId": "tag_2a68acfb39c87af47fb6",
-    "similarity": 0.7175
    }
   ],
   "tag_8e2cecb2309d8ef0c694": [
@@ -16282,10 +14542,6 @@
     "similarity": 0.9061
    },
    {
-    "canonicalTagId": "tag_932e7a198241e3b50103",
-    "similarity": 0.7627
-   },
-   {
     "canonicalTagId": "tag_5fb5683145187751603b",
     "similarity": 0.7547
    }
@@ -16300,10 +14556,6 @@
    {
     "canonicalTagId": "tag_28cb3b81eafb273e78ef",
     "similarity": 0.8053
-   },
-   {
-    "canonicalTagId": "tag_934332c9f02dce38e84a",
-    "similarity": 0.7767
    }
   ],
   "tag_4615b8e3bbb7d1134c1f": [
@@ -16316,10 +14568,6 @@
     "similarity": 0.7406
    },
    {
-    "canonicalTagId": "tag_152193bd1fc5edc3b696",
-    "similarity": 0.7366
-   },
-   {
     "canonicalTagId": "tag_9ba23e85c20c1a6efe4a",
     "similarity": 0.7256
    }
@@ -16328,10 +14576,6 @@
    {
     "canonicalTagId": "tag_5ea42d31605230f9c9ed",
     "similarity": 0.8244
-   },
-   {
-    "canonicalTagId": "tag_152193bd1fc5edc3b696",
-    "similarity": 0.7899
    },
    {
     "canonicalTagId": "tag_2d536d4cb674400a3250",
@@ -16344,13 +14588,13 @@
    {
     "canonicalTagId": "tag_4615b8e3bbb7d1134c1f",
     "similarity": 0.7256
+   },
+   {
+    "canonicalTagId": "tag_2f5bb887943915c843f2",
+    "similarity": 0.7154
    }
   ],
   "tag_2d536d4cb674400a3250": [
-   {
-    "canonicalTagId": "tag_152193bd1fc5edc3b696",
-    "similarity": 0.7922
-   },
    {
     "canonicalTagId": "tag_5ea42d31605230f9c9ed",
     "similarity": 0.789
@@ -16366,16 +14610,16 @@
    {
     "canonicalTagId": "tag_4615b8e3bbb7d1134c1f",
     "similarity": 0.7406
+   },
+   {
+    "canonicalTagId": "tag_7ac5be889bc116693d84",
+    "similarity": 0.7338
    }
   ],
   "tag_5ea42d31605230f9c9ed": [
    {
     "canonicalTagId": "tag_9ba23e85c20c1a6efe4a",
     "similarity": 0.8244
-   },
-   {
-    "canonicalTagId": "tag_152193bd1fc5edc3b696",
-    "similarity": 0.8226
    },
    {
     "canonicalTagId": "tag_2d536d4cb674400a3250",
@@ -16388,13 +14632,13 @@
    {
     "canonicalTagId": "tag_2f5bb887943915c843f2",
     "similarity": 0.7557
+   },
+   {
+    "canonicalTagId": "tag_7ac5be889bc116693d84",
+    "similarity": 0.7266
    }
   ],
   "tag_2f5bb887943915c843f2": [
-   {
-    "canonicalTagId": "tag_152193bd1fc5edc3b696",
-    "similarity": 0.758
-   },
    {
     "canonicalTagId": "tag_5ea42d31605230f9c9ed",
     "similarity": 0.7557
@@ -16408,33 +14652,7 @@
     "similarity": 0.7154
    }
   ],
-  "tag_152193bd1fc5edc3b696": [
-   {
-    "canonicalTagId": "tag_7ac5be889bc116693d84",
-    "similarity": 0.8323
-   },
-   {
-    "canonicalTagId": "tag_5ea42d31605230f9c9ed",
-    "similarity": 0.8226
-   },
-   {
-    "canonicalTagId": "tag_2d536d4cb674400a3250",
-    "similarity": 0.7922
-   },
-   {
-    "canonicalTagId": "tag_9ba23e85c20c1a6efe4a",
-    "similarity": 0.7899
-   },
-   {
-    "canonicalTagId": "tag_2f5bb887943915c843f2",
-    "similarity": 0.758
-   }
-  ],
   "tag_7ac5be889bc116693d84": [
-   {
-    "canonicalTagId": "tag_152193bd1fc5edc3b696",
-    "similarity": 0.8323
-   },
    {
     "canonicalTagId": "tag_2d536d4cb674400a3250",
     "similarity": 0.7338
@@ -16448,18 +14666,6 @@
     "similarity": 0.7266
    }
   ],
-  "tag_eab6fb197949053b6441": [
-   {
-    "canonicalTagId": "tag_6e35bf3a46ab9b648a25",
-    "similarity": 0.8055
-   }
-  ],
-  "tag_6e35bf3a46ab9b648a25": [
-   {
-    "canonicalTagId": "tag_eab6fb197949053b6441",
-    "similarity": 0.8055
-   }
-  ],
   "tag_d10a7582c7de53516315": [
    {
     "canonicalTagId": "tag_07233a1263f948017cde",
@@ -16467,10 +14673,6 @@
    }
   ],
   "tag_08caf7ed18503ceb3e63": [
-   {
-    "canonicalTagId": "tag_898bf84c4985a90a7945",
-    "similarity": 0.8685
-   },
    {
     "canonicalTagId": "tag_59293c5a1f22ed4673c7",
     "similarity": 0.7654
@@ -16500,16 +14702,6 @@
     "similarity": 0.7681
    }
   ],
-  "tag_22e938fbbea5bef253f2": [
-   {
-    "canonicalTagId": "tag_b943dee575dde6557658",
-    "similarity": 0.8662
-   },
-   {
-    "canonicalTagId": "tag_a54b472a53dc8c4dc0d0",
-    "similarity": 0.7033
-   }
-  ],
   "tag_161c72e03eadafc85f4c": [
    {
     "canonicalTagId": "tag_f9063fde41a22c0efeb8",
@@ -16524,12 +14716,6 @@
    {
     "canonicalTagId": "tag_ca0d0c89f20c8227e0b7",
     "similarity": 0.7009
-   }
-  ],
-  "tag_b943dee575dde6557658": [
-   {
-    "canonicalTagId": "tag_22e938fbbea5bef253f2",
-    "similarity": 0.8662
    }
   ],
   "tag_91dbd11cd2d4965df0c6": [
@@ -16548,10 +14734,6 @@
     "similarity": 0.8548
    },
    {
-    "canonicalTagId": "tag_898bf84c4985a90a7945",
-    "similarity": 0.8157
-   },
-   {
     "canonicalTagId": "tag_f9063fde41a22c0efeb8",
     "similarity": 0.7753
    },
@@ -16562,6 +14744,10 @@
    {
     "canonicalTagId": "tag_2937bbbf36ebc916bae9",
     "similarity": 0.7617
+   },
+   {
+    "canonicalTagId": "tag_9bc81e17545f36002d96",
+    "similarity": 0.7562
    }
   ],
   "tag_f9063fde41a22c0efeb8": [
@@ -16578,12 +14764,12 @@
     "similarity": 0.7433
    },
    {
-    "canonicalTagId": "tag_e31f35dd3a40bda107bc",
-    "similarity": 0.7224
-   },
-   {
     "canonicalTagId": "tag_a9fe3883235cda160c55",
     "similarity": 0.7223
+   },
+   {
+    "canonicalTagId": "tag_161c72e03eadafc85f4c",
+    "similarity": 0.722
    }
   ],
   "tag_12b0569cc4d015b45c24": [
@@ -16684,10 +14870,6 @@
     "similarity": 0.7488
    },
    {
-    "canonicalTagId": "tag_7fbfd3ac4cfe88c68bf0",
-    "similarity": 0.7467
-   },
-   {
     "canonicalTagId": "tag_59293c5a1f22ed4673c7",
     "similarity": 0.7263
    },
@@ -16697,10 +14879,6 @@
    }
   ],
   "tag_59293c5a1f22ed4673c7": [
-   {
-    "canonicalTagId": "tag_898bf84c4985a90a7945",
-    "similarity": 0.8774
-   },
    {
     "canonicalTagId": "tag_2937bbbf36ebc916bae9",
     "similarity": 0.8693
@@ -16716,6 +14894,10 @@
    {
     "canonicalTagId": "tag_08caf7ed18503ceb3e63",
     "similarity": 0.7654
+   },
+   {
+    "canonicalTagId": "tag_53a95366266a53c49a74",
+    "similarity": 0.7263
    }
   ],
   "tag_0ce6a58c5b4e1c55c048": [
@@ -16736,30 +14918,8 @@
     "similarity": 0.7179
    },
    {
-    "canonicalTagId": "tag_7fbfd3ac4cfe88c68bf0",
-    "similarity": 0.7179
-   }
-  ],
-  "tag_898bf84c4985a90a7945": [
-   {
-    "canonicalTagId": "tag_59293c5a1f22ed4673c7",
-    "similarity": 0.8774
-   },
-   {
-    "canonicalTagId": "tag_08caf7ed18503ceb3e63",
-    "similarity": 0.8685
-   },
-   {
-    "canonicalTagId": "tag_061b0d7f6511011c49d4",
-    "similarity": 0.8157
-   },
-   {
-    "canonicalTagId": "tag_2937bbbf36ebc916bae9",
-    "similarity": 0.7638
-   },
-   {
-    "canonicalTagId": "tag_bf63f07f8e7cee6b2492",
-    "similarity": 0.7554
+    "canonicalTagId": "tag_3e24c923903a88daac05",
+    "similarity": 0.7119
    }
   ],
   "tag_73fdf25b23894b51a5cc": [
@@ -16866,7 +15026,25 @@
     "similarity": 0.7571
    }
   ],
+  "tag_dab53e2d011b81e95d98": [
+   {
+    "canonicalTagId": "tag_b80dbb8c93b65a0e5b09",
+    "similarity": 0.7991
+   },
+   {
+    "canonicalTagId": "tag_a5e5e9e41040dfe0fb2d",
+    "similarity": 0.7629
+   },
+   {
+    "canonicalTagId": "tag_63639436998378ba9edc",
+    "similarity": 0.7066
+   }
+  ],
   "tag_b80dbb8c93b65a0e5b09": [
+   {
+    "canonicalTagId": "tag_dab53e2d011b81e95d98",
+    "similarity": 0.7991
+   },
    {
     "canonicalTagId": "tag_9347db49ab7fc0175a7a",
     "similarity": 0.7348
@@ -16878,10 +15056,10 @@
     "similarity": 0.7348
    }
   ],
-  "tag_7727c2dc9de579cfbeab": [
+  "tag_4364126734a9b896c534": [
    {
-    "canonicalTagId": "tag_4e4c2f6efabd5fb07e41",
-    "similarity": 0.8181
+    "canonicalTagId": "tag_63d818200802fe2d540d",
+    "similarity": 0.7276
    }
   ],
   "tag_18d28239b6283b3f9e2f": [
@@ -16914,34 +15092,6 @@
    {
     "canonicalTagId": "tag_662230208a43af40015c",
     "similarity": 0.7156
-   }
-  ],
-  "tag_e96e22a0d6e3170180ea": [
-   {
-    "canonicalTagId": "tag_77daa93067d5ab50b0d3",
-    "similarity": 0.8156
-   }
-  ],
-  "tag_77daa93067d5ab50b0d3": [
-   {
-    "canonicalTagId": "tag_e96e22a0d6e3170180ea",
-    "similarity": 0.8156
-   }
-  ],
-  "tag_fa10af31983ba2c5fb7b": [
-   {
-    "canonicalTagId": "tag_039ef3498f7c02c72efe",
-    "similarity": 0.8221
-   },
-   {
-    "canonicalTagId": "tag_9e720e53885580b1e0c5",
-    "similarity": 0.7069
-   }
-  ],
-  "tag_039ef3498f7c02c72efe": [
-   {
-    "canonicalTagId": "tag_fa10af31983ba2c5fb7b",
-    "similarity": 0.8221
    }
   ],
   "tag_c192512bd64d412d0d14": [
@@ -17020,6 +15170,18 @@
    {
     "canonicalTagId": "tag_297092d0abd23a408f56",
     "similarity": 0.7119
+   }
+  ],
+  "tag_0da70c02a6da65f3f49e": [
+   {
+    "canonicalTagId": "tag_f3ee69c0fceb472c10b2",
+    "similarity": 0.7199
+   }
+  ],
+  "tag_f3ee69c0fceb472c10b2": [
+   {
+    "canonicalTagId": "tag_0da70c02a6da65f3f49e",
+    "similarity": 0.7199
    }
   ],
   "tag_d6e80edd3b2a794c7b2e": [

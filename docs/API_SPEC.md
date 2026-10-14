@@ -328,6 +328,54 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 這支 API 是全校目錄探索，**不判定目前登入者能否修讀課程，也不承諾課程可計入其畢業
 學分**。加入課表與排課時仍須由既有個人化驗證檢查班級資格、先修、學分及其他規則。
 
+### `GET /api/history-feedback`（協同過濾與 User Embedding 構想階段 5）
+
+歷史修課回饋視窗的課程清單。**唯讀**；需登入與 service consent。未同意 `personalization_learning` 時
+`consented: false`、`groups` 為空陣列。
+
+只列最新一次已通過、畢業分類為選修／通識／系外選修的課（必修與不計學分課不列），且必須在當學期有開課
+（事件快照要從班次讀標籤）並有可比對的標籤（否則回答不影響推薦）。依學期由近到遠分組。
+
+```json
+{
+  "consented": true,
+  "term": { "academicYear": 114, "semester": "下學期" },
+  "groups": [{
+    "academicYear": 113, "semester": 2,
+    "courses": [{
+      "courseCode": "IECS2011", "name": "系統分析與設計", "sectionId": 1234,
+      "graduationCategory": "elective", "response": null, "answeredAt": null
+    }]
+  }],
+  "pendingCount": 18,
+  "excluded": { "noTags": 7, "notOfferedThisTerm": 0 }
+}
+```
+
+- `response`：未到期事件中最後一次的回答（`liked`／`neutral`／`disliked`），沒回答過為 `null`。
+- `pendingCount`：還沒回答過的課數。前端在排課主頁 `pendingCount > 0` 時自動跳出一次；
+  「稍後再說」會把這批課都記為 `neutral`，同一批課不再自動跳出。
+
+回答以 `POST /api/interactions` 送出 `history_course_feedback` 事件：
+
+```json
+{
+  "eventType": "history_course_feedback",
+  "requestId": "<uuid>", "actionId": "<uuid>",
+  "course": { "catalogCourseCode": "IECS2011", "sectionId": 1234 },
+  "term": { "academicYear": 114, "semester": "下學期" },
+  "source": "history_review",
+  "interestFeedback": { "response": "liked", "canonicalTagIds": [] },
+  "versionSnapshot": { "recommendationReasonVersion": null }
+}
+```
+
+- `source` 必須是 `history_review`；`response` 只能是 `liked`／`neutral`／`disliked`；`canonicalTagIds` 必須是空陣列
+  （針對整門課，證據標籤由伺服器快照決定）。
+- **伺服器依 Profile 的修課歷史核對課號**：不是本人已通過的選修／通識／系外選修就 `rejected`。
+- 學習權重：喜歡 +1、不喜歡 −1、普通 0；同一門課以最後一次回答為準，不套用時間衰減（事件 180 天到期）。
+  標籤空間使用者向量中，回答「不喜歡」的課不再給歷史修課的 +0.5。
+
 ### `GET /api/interest-exploration/cards`（Roadmap #43 階段 4）
 
 需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳最多 8 張
@@ -850,6 +898,16 @@ Response:
 `graduationPlanning`（Roadmap #23）說明這次排課採用的畢業缺口、剩餘學期、每學期目標與
 實際排入的類別門數／學分。`enabled:false` 代表歷史修課、畢業規則或剩餘學期不足，系統
 不會假裝有配額。它也會出現在每個方案中；多方案的類別門數必須與 S₀ 一致。
+
+`graduationPlanning.externalInterestReservation`（2026-10-14 階段 4）：
+`{source,candidateLimit:5,preferredCourses:[{courseCode,score}]}`。
+`source` 為 `s_vec`、`no-consent`、`no-positive-signal`、`unavailable` 或舊政策 `keyword`。
+清單為 greedy 可用系外候選中正 `s_vec` 的前五個不同課號，每系最多一門，班次不重複計數。
+它表示優先嘗試清單，不保證全排入；`externalReservedForInterest` 表示有沒有額外保留系外名額，
+最終排入仍看 `selected`。分數不加入候選／方案的既有計分。
+context 僅由 server 建立，request body 不能指定政策、向量或分數；REST 與 Chat 共用。
+`EXTERNAL_INTEREST_RESERVATION_MODE` 預設 `vector`，設 `keyword` 重現原關鍵字 A/B。
+未同意、沒有正向證據或讀取失敗時不額外保留，但不刪除原有系外候選。
 
 `graduationPlanning.totalGap`／`creditFloorOnly`（2026-10-02，出現在各方案的
 `graduationPlanning`）：`totalGap` 是畢業門檻總學分減已取得總學分（沒有資料時為 `null`）；
@@ -1676,6 +1734,76 @@ Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `av
 
 錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課）、`400 FAVORITE_UNAVAILABLE`
 （查不到說明）、`400 CLASS_NAME_REQUIRED`（profile 缺班級）。
+
+回應另帶 `mode: "favorite"`。同一課號的講課與實習課（課號多一個 `P`，例：`ACCT2031` 與
+`ACCT2031P`）合併成一個項目，以講課課號為準，兩者的班次都在 `sections`。
+
+#### `GET /api/exploration?representation=embedding`（階段 4 本機文字向量原型）
+
+「從一門課出發」另可選 `representation=tfidf|embedding`（省略為 `tfidf`）。`mode=profile`
+仍使用使用者標籤向量，不使用此參數。未知的 representation 回 `400 INVALID_EXPLORATION_REPRESENTATION`。
+前端「共同用詞／語意相似」切換會保留同一個 `favoriteCourseCode`，兩種方法共用候選與單位分散規則。
+
+`embedding` 讀取本機離線產物，以「課名＋正規標籤名稱＋課程簡介」的文字向量算餘弦相似度。
+請求當下不呼叫外部 API，不寫入 MySQL。起點仍須為使用者已通過的課；候選仍須當學期、資格確定、
+有上課時間、尚未通過。只列正相似的候選，每組最多 5 門，講課與實習課沿用合併規則。
+
+- `method.representation="course-text-embedding-v1"`，有產物時另帶 `embeddingModel`、`dimension`、
+  `catalogVersion`、`generatedAt`，數值為產物實際版本。沒有產物時不填不存在的模型資料。
+- `items[].similarity` 是文字 embedding 餘弦值；與 TF-IDF 值尺度不同，不可解讀為喜歡機率或直接比較高低。
+- `items[].semanticMatch={sourceCourseCode,commonTags}`：`commonTags` 只列兩門課 canonical 標籤的實際交集，
+  最多 5 個。它是附加內容事實，不宣稱為向量分數的因果解釋；此模式不產生 `sharedTerms` 或內部向量。
+- `favorites[].reason="no-text-embedding"`：該課沒有可用且文件雜湊一致的向量；本學期未開不會單獨使起點失效。
+- `emptyReason="text-embeddings-unavailable"`：本機產物不存在。
+- `emptyReason="text-embeddings-invalid"`：產物格式、目錄版本或讀取狀態不相容。
+- `emptyReason="no-text-embedding-favorite"`：指定起點或所有起點的向量缺少／內容已更新。
+  上述狀態回 `200`、`favorite=null`、清單為空；前端提供「改用共同用詞」。不偷偷改用 TF-IDF。
+
+產物路徑與重算方式見 `docs/DATA_SCHEMA.md` 的「課程文字向量本機產物」。這是本機原型，沒有建立
+`Course_Text_Embeddings` MySQL 表。只驗證探索流程與輸出差異，不代表已驗證推薦成效。
+
+#### `GET /api/exploration?mode=profile`（協同過濾與 User Embedding 構想階段 4）
+
+「依你的修課與興趣」探索。以標籤空間使用者向量（`server/src/skills/userTagVector.js`）排序系外選修與
+通識：向量由非必修已通過的歷史修課、收藏／加選／表示有興趣等互動事件與明確興趣組成，**必修不列入**；
+課程分數用階段 2 的標籤相近表與審核過的降權名單。每個系所／通識領域只出一門（通識沒有領域時不分散）。
+**需要 `personalization_learning` 同意**；使用者向量只在記憶體中計算，不寫入任何資料表。唯讀，
+不寫互動事件，也不影響自動排課。
+
+```json
+{
+  "mode": "profile",
+  "emptyReason": null,
+  "signals": { "historyCourses": 18, "positiveEvents": 120, "negativeEvents": 6, "explicitTags": 9 },
+  "outside": {
+    "diversification": "department",
+    "items": [{
+      "courseCode": "COME3046", "name": "機器學習", "credits": 3, "unit": "通訊工程學系",
+      "score": 0.8123,
+      "reasons": {
+        "tags": [
+          { "userTag": "資料科學", "courseTag": "資料科學", "viaNeighbor": false },
+          { "userTag": "機器學習", "courseTag": "深度學習", "viaNeighbor": true }
+        ],
+        "closestEvidence": { "courseCode": "IECS3059", "name": "人工智慧導論", "source": "history" }
+      },
+      "recognition": { "status": "needs-office-confirmation", "checked": true, "needsOfficeConfirmation": true, "warnings": [] },
+      "sections": [{ "id": 2031, "catalogCourseCode": "COME3046" }]
+    }]
+  },
+  "general": { "diversification": "domain", "items": [] },
+  "method": { "representation": "user-tag-vector-v1", "selection": "one-per-unit-svec", "k": 5 },
+  "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
+}
+```
+
+- `emptyReason`：`no-personalization-consent`（未同意個人化學習，不計算）或 `no-profile-signal`
+  （沒有任何非必修修課、互動或可對應的明確興趣）。這兩種情況 `items` 皆為空陣列；前者 `signals` 為 `null`。
+- `score`：−1～1，以候選池內正向相似度第 95 百分位為 1；只列正向相似大於 0 的課。
+- `reasons.tags`：貢獻最大的標籤配對；`viaNeighbor: true` 表示經標籤相近表連結（使用者的標籤與課程的標籤
+  意思相近但不同）。`closestEvidence`：使用者證據中與這門課最接近的**另一門**課，`source` 為
+  `history`（修過）或互動事件類型（例：`course_favorited`、`interest_exploration_feedback`、`course_viewed`）。
+- 其餘欄位（`recognition`、`sections`、`poolSize`、候選條件）與預設模式相同。
 
 ## Graduation
 
