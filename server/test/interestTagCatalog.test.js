@@ -16,8 +16,10 @@ describe('rag_tag 興趣分類目錄', () => {
     assert.equal(interestTagCatalog.summary.categoryPathCount, 112);
     assert.equal(interestTagCatalog.summary.rawTagCount, 6846);
     assert.equal(interestTagCatalog.summary.categoryAssignmentCount, 15113);
-    assert.equal(interestTagCatalog.summary.approvedAliasCount, 13);
-    assert.equal(interestTagCatalog.catalogVersion, 'rag-tag-catalog-2026-10-09-v2');
+    // 2026-10-14：13 組語意別名之外，再加入使用者審核的 480 個同義詞別名（見 2026-10-14-tag-synonym-merge.md）。
+    assert.equal(interestTagCatalog.summary.approvedAliasCount, 493);
+    assert.equal(interestTagCatalog.summary.canonicalTagCount, 6289);
+    assert.equal(interestTagCatalog.catalogVersion, 'rag-tag-catalog-2026-10-14-v3');
     assert.ok(interestTagCatalog.mainCategories.some(category => category.name === '學習階段與課程情境'));
     assert.ok(!interestTagCatalog.mainCategories.some(category => category.name === '其他／待人工確認'));
     assert.deepEqual(interestTagCatalog.summary.aliasCanonicalTargetsMissingFromCatalog, []);
@@ -52,6 +54,10 @@ describe('rag_tag 興趣分類目錄', () => {
   });
 
   test('套用核准別名並保留使用者原始標籤寫法', () => {
+    // 2026-10-14 審核的同義詞也走同一個別名機制。
+    const merged = resolveInterestTag('人工智能');
+    assert.equal(merged.resolution, 'approved_alias');
+    assert.equal(merged.canonicalName, '人工智慧');
     const alias = resolveInterestTag('AI');
     const canonical = resolveInterestTag('人工智慧');
 
@@ -88,9 +94,9 @@ describe('rag_tag 興趣分類目錄', () => {
   test('已核對的 MySQL 資格快照與逐標籤統計一致', () => {
     const snapshot = interestTagCatalog.eligibilityRecount;
     const tags = interestTagCatalog.canonicalTags;
-    assert.equal(snapshot.version, 'rag-tag-eligibility-2026-10-09-v1');
+    assert.equal(snapshot.version, 'rag-tag-eligibility-2026-10-14-v1');
     assert.equal(snapshot.source, 'mysql-course-api');
-    assert.equal(snapshot.reviewedOn, '2026-10-09');
+    assert.equal(snapshot.reviewedOn, '2026-10-14');
     assert.match(snapshot.courseMembershipSha256, /^[a-f0-9]{64}$/);
     assert.equal(snapshot.summary.catalogVersion, interestTagCatalog.catalogVersion);
     assert.equal(snapshot.summary.sectionCount, 3560);
@@ -98,8 +104,8 @@ describe('rag_tag 興趣分類目錄', () => {
     assert.equal(snapshot.summary.canonicalTagCount, tags.length);
     assert.equal(snapshot.summary.unknownCourseTagCount, 0);
     assert.equal(snapshot.summary.skippedSectionCount, 0);
-    assert.equal(snapshot.summary.interestLearningEligibleCount, 6736);
-    assert.equal(snapshot.summary.crossCourseMatchEligibleCount, 2144);
+    assert.equal(snapshot.summary.interestLearningEligibleCount, 6255);
+    assert.equal(snapshot.summary.crossCourseMatchEligibleCount, 2121);
 
     for (const tag of tags) {
       const eligibility = tag.eligibility;
@@ -119,8 +125,8 @@ describe('rag_tag 興趣分類目錄', () => {
       }
       if (eligibility.exclusionReason === 'single_course') assert.equal(eligibility.courseCount, 1);
     }
-    assert.equal(tags.filter(tag => tag.eligibility.interestLearningEligible).length, 6736);
-    assert.equal(tags.filter(tag => tag.eligibility.crossCourseMatchEligible).length, 2144);
+    assert.equal(tags.filter(tag => tag.eligibility.interestLearningEligible).length, 6255);
+    assert.equal(tags.filter(tag => tag.eligibility.crossCourseMatchEligible).length, 2121);
     for (const [reason, count] of Object.entries(snapshot.summary.ineligibleReasonCounts)) {
       assert.equal(tags.filter(tag => tag.eligibility.exclusionReason === reason).length, count);
     }
@@ -129,7 +135,7 @@ describe('rag_tag 興趣分類目錄', () => {
   test('執行期區分高頻、通用、單課與可配對標籤，別名沿用同一資格', () => {
     const ai = resolveInterestTag('AI');
     assert.equal(ai.eligibility.exclusionReason, 'too_common');
-    assert.equal(ai.eligibility.courseCount, 97);
+    assert.equal(ai.eligibility.courseCount, 99); // 2026-10-14 併入「人工智能」（2 門課）
     assert.deepEqual(ai.eligibility, resolveInterestTag('人工智慧').eligibility);
     assert.equal(isEligibleForInterestLearning(ai), false);
     assert.equal(isEligibleForCrossCourseMatch(ai), false);

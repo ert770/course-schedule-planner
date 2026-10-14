@@ -1,5 +1,5 @@
 import { normalizeSemesterLabel } from '../data/activeTerm.js';
-import { interestTagCatalog, resolveInterestTags } from '../data/interestTagCatalog.js';
+import { interestTagCatalog, resolveInterestTag, resolveInterestTags } from '../data/interestTagCatalog.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
 import { isRequiredForStudent } from './courseScope.js';
 
@@ -266,6 +266,36 @@ function snapshotFor(event) {
     : null;
 }
 
+// 事件快照保存的是事件當時的標籤 ID。目錄合併同義詞後（例：2026-10-14 合併 480 個標籤），
+// 被併掉的 ID 不再存在；依快照中的標籤名稱解析到目前的標準標籤，避免使用者的互動證據流失。
+// 目前目錄仍有的 ID 一律不變，所以沒有合併時行為完全相同。
+const currentCatalogTagIds = new Set(interestTagCatalog.canonicalTags.map(tag => tag.id));
+const remappedTagCache = new Map();
+function currentTagFor(tag) {
+  if (!tag?.canonicalTagId || currentCatalogTagIds.has(tag.canonicalTagId)) return tag;
+  if (!remappedTagCache.has(tag.canonicalTagId)) {
+    const resolved = resolveInterestTag(tag.canonicalName);
+    remappedTagCache.set(tag.canonicalTagId, resolved.status === 'resolved'
+      ? {
+        ...tag,
+        canonicalTagId: resolved.canonicalTagId,
+        canonicalName: resolved.canonicalName,
+        categoryPaths: resolved.categoryPaths.map(path => ({ mainCategoryId: path.mainCategoryId, subcategoryId: path.subcategoryId })),
+        crossCourseMatchEligible: resolved.eligibility?.crossCourseMatchEligible === true,
+      }
+      : tag);
+  }
+  return remappedTagCache.get(tag.canonicalTagId);
+}
+
+function currentSnapshot(snapshot) {
+  if (snapshot.tags.every(tag => currentCatalogTagIds.has(tag.canonicalTagId))) return snapshot;
+  const mapping = new Map(snapshot.tags.map(tag => [tag.canonicalTagId, currentTagFor(tag)]));
+  const tags = [...new Map([...mapping.values()].map(tag => [tag.canonicalTagId, tag])).values()];
+  const evidenceTagIds = normalizeTagIds(snapshot.evidenceTagIds.map(id => mapping.get(id)?.canonicalTagId ?? id));
+  return { ...snapshot, tags, evidenceTagIds };
+}
+
 function eventWeight(event) {
   const feedback = event?.interestFeedback?.response ?? event?.tagInterestSnapshot?.feedbackResponse;
   if (event?.eventType === 'interest_exploration_feedback') {
@@ -336,11 +366,12 @@ export function collectWeightedTagInterestEvents(events = [], options = {}) {
   let excludedEventCount = 0;
 
   for (const event of sorted) {
-    const snapshot = snapshotFor(event);
-    if (!snapshot) {
+    const original = snapshotFor(event);
+    if (!original) {
       if (event.tagInterestSnapshot) excludedEventCount += 1;
       continue; // historical events without an immutable tag snapshot are not guessed
     }
+    const snapshot = currentSnapshot(original);
     if (invalidated.has(event.eventId)) continue;
     const weight = eventWeight(event);
     if (weight === 0) continue;
