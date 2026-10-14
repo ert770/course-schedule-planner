@@ -4,6 +4,7 @@
 
 ## 2026-10-14
 
+- [協同過濾與 User Embedding：階段 5 歷史修課回饋視窗（含 Codex 階段 4 審查）](./2026-10-14-history-feedback-stage5.md)
 - [階段 4：系外保留候選改用 s_vec](./2026-10-14-external-reservation-stage4.md)
 
 1. [階段 4：課程文字向量本機原型與探索 A/B](./2026-10-14-course-text-exploration-stage4.md)

@@ -328,6 +328,54 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 這支 API 是全校目錄探索，**不判定目前登入者能否修讀課程，也不承諾課程可計入其畢業
 學分**。加入課表與排課時仍須由既有個人化驗證檢查班級資格、先修、學分及其他規則。
 
+### `GET /api/history-feedback`（協同過濾與 User Embedding 構想階段 5）
+
+歷史修課回饋視窗的課程清單。**唯讀**；需登入與 service consent。未同意 `personalization_learning` 時
+`consented: false`、`groups` 為空陣列。
+
+只列最新一次已通過、畢業分類為選修／通識／系外選修的課（必修與不計學分課不列），且必須在當學期有開課
+（事件快照要從班次讀標籤）並有可比對的標籤（否則回答不影響推薦）。依學期由近到遠分組。
+
+```json
+{
+  "consented": true,
+  "term": { "academicYear": 114, "semester": "下學期" },
+  "groups": [{
+    "academicYear": 113, "semester": 2,
+    "courses": [{
+      "courseCode": "IECS2011", "name": "系統分析與設計", "sectionId": 1234,
+      "graduationCategory": "elective", "response": null, "answeredAt": null
+    }]
+  }],
+  "pendingCount": 18,
+  "excluded": { "noTags": 7, "notOfferedThisTerm": 0 }
+}
+```
+
+- `response`：未到期事件中最後一次的回答（`liked`／`neutral`／`disliked`），沒回答過為 `null`。
+- `pendingCount`：還沒回答過的課數。前端在排課主頁 `pendingCount > 0` 時自動跳出一次；
+  「稍後再說」會把這批課都記為 `neutral`，同一批課不再自動跳出。
+
+回答以 `POST /api/interactions` 送出 `history_course_feedback` 事件：
+
+```json
+{
+  "eventType": "history_course_feedback",
+  "requestId": "<uuid>", "actionId": "<uuid>",
+  "course": { "catalogCourseCode": "IECS2011", "sectionId": 1234 },
+  "term": { "academicYear": 114, "semester": "下學期" },
+  "source": "history_review",
+  "interestFeedback": { "response": "liked", "canonicalTagIds": [] },
+  "versionSnapshot": { "recommendationReasonVersion": null }
+}
+```
+
+- `source` 必須是 `history_review`；`response` 只能是 `liked`／`neutral`／`disliked`；`canonicalTagIds` 必須是空陣列
+  （針對整門課，證據標籤由伺服器快照決定）。
+- **伺服器依 Profile 的修課歷史核對課號**：不是本人已通過的選修／通識／系外選修就 `rejected`。
+- 學習權重：喜歡 +1、不喜歡 −1、普通 0；同一門課以最後一次回答為準，不套用時間衰減（事件 180 天到期）。
+  標籤空間使用者向量中，回答「不喜歡」的課不再給歷史修課的 +0.5。
+
 ### `GET /api/interest-exploration/cards`（Roadmap #43 階段 4）
 
 需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳最多 8 張

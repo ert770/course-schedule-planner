@@ -52,8 +52,9 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
   由 `npm run cleanup:privacy` 一併清理。
 - `exposure_json` 存 `surface`／`trigger`／ordered `candidateSet`／`displayedSet`。
 - `tag_interest_snapshot_json` 由 server 依事件當時的課程 `rag_tag`、標籤目錄版本與該使用者必修 scope 產生；client 不得送入或覆寫。它保存 raw tag、可學習 canonical tag IDs、分類路徑與跨課配對資格。所有必修課都不提供興趣證據；已解析的 scope 用來區分本人必修與其他班級必修，scope 未解析時 fail closed。
-- `rating` 只用於 `course_rated`（1～5）；`interest_feedback_json` 只用於 `interest_exploration_feedback`，保存回應類型與使用者明確選取的 canonical tag IDs。兩者與 server 產生的標籤快照一起保留，讓匯出、冪等比較與重算可重現。
+- `rating` 只用於 `course_rated`（1～5）；`interest_feedback_json` 只用於 `interest_exploration_feedback` 與 `history_course_feedback`，保存回應類型與使用者明確選取的 canonical tag IDs（後者恆為空陣列）。兩者與 server 產生的標籤快照一起保留，讓匯出、冪等比較與重算可重現。
 - 舊事件沒有標籤快照時不回頭依今天的目錄猜測；它們仍是 v2 等既有用途的事件，但不會進入 rag-tag 興趣重算。
+- 歷史修課回饋（2026-10-14 起）使用 `history_course_feedback`，`source` 為 `history_review`，回應為 `liked`／`neutral`／`disliked`，針對使用者本人已通過的選修／通識／系外選修（伺服器依修課歷史核對）。不需改表：`event_type`、`source` 皆為 `VARCHAR(32)`，回應存在 `interest_feedback_json`。
 - 初始探索事件使用 `interest_exploration_feedback`，回應為 `interested`／`not_interested`／`learn_more`。明確不感興趣必須列出使用者指定的 `canonicalTagIds`；「想先了解」不產生正負證據。`course_rated` 只把 4～5 分視為正向訊號，低分本身不推定為主題反感。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
 - **Roadmap #31**：`academic_year`／`semester` 從這輪起不再只是來源標記，也是

@@ -127,3 +127,27 @@ test('UV6 explanation names the closest evidence course and the contributing tag
   const near = explainCourseForUser(user, index, 'X2', { similarity }).tags.map(tag => tag.courseTag);
   assert.equal(new Set(near).size, near.length);
 });
+
+test('UV7 歷史修課回饋：不喜歡取消該課的 +0.5 並記負向，喜歡另加 +1', () => {
+  const feedback = (response, code = 'H1') => {
+    const course = courses.find(item => item.catalogCourseCode === code);
+    const event = {
+      eventId: `hf-${response}-${code}`, eventType: 'history_course_feedback', timestamp: '2026-10-01T00:00:00.000Z',
+      course: { catalogCourseCode: code, sectionId: 1 }, term: { academicYear: 114, semester: 'second' },
+      source: 'history_review', interestFeedback: { response, canonicalTagIds: [] },
+    };
+    return { ...event, tagInterestSnapshot: buildTagInterestSnapshot(event, { ...course, category: '選修' }, { resolved: true }) };
+  };
+  const courseHistory = [history('H1', 'elective', 114, 1)];
+  const plain = buildUserTagVector({ courseHistory, index, activeTerm });
+  const disliked = buildUserTagVector({ courseHistory, events: [feedback('disliked')], index, activeTerm });
+  assert.equal(disliked.sources.historyCourses, 0);
+  assert.equal(disliked.sources.historyDisliked, 1);
+  assert.equal(disliked.positive.size, 0);
+  assert.ok(disliked.negative.size > 0);
+  const liked = buildUserTagVector({ courseHistory, events: [feedback('liked')], index, activeTerm });
+  assert.equal(liked.sources.historyCourses, 1);
+  assert.equal(liked.sources.positiveEvents, 1);
+  const [id] = [...plain.positive.keys()];
+  assert.ok(liked.positive.get(id) > plain.positive.get(id));
+});

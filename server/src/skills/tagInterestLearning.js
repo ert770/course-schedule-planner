@@ -17,6 +17,9 @@ export const TAG_INTEREST_EVENT_WEIGHTS = Object.freeze({
   browsePerCourseCap: 0.15,
   explicitNotInterested: -1,
   contentWithdrawal: -1,
+  // 歷史修課回饋（階段 5）：對修過的課表示喜歡／不喜歡；普通為 0。
+  historyLiked: 1,
+  historyDisliked: -1,
 });
 
 const catalogVersion = interestTagCatalog.catalogVersion;
@@ -298,6 +301,11 @@ function currentSnapshot(snapshot) {
 
 function eventWeight(event) {
   const feedback = event?.interestFeedback?.response ?? event?.tagInterestSnapshot?.feedbackResponse;
+  if (event?.eventType === 'history_course_feedback') {
+    if (feedback === 'liked') return TAG_INTEREST_EVENT_WEIGHTS.historyLiked;
+    if (feedback === 'disliked') return TAG_INTEREST_EVENT_WEIGHTS.historyDisliked;
+    return 0;
+  }
   if (event?.eventType === 'interest_exploration_feedback') {
     if (feedback === 'interested') return TAG_INTEREST_EVENT_WEIGHTS.explorationInterested;
     if (feedback === 'not_interested') return TAG_INTEREST_EVENT_WEIGHTS.explicitNotInterested;
@@ -361,11 +369,18 @@ export function collectWeightedTagInterestEvents(events = [], options = {}) {
   const activeTerm = options.activeTerm ?? null;
   const sorted = sortEvents(Array.isArray(events) ? events : []);
   const invalidated = invalidatedPositiveEvents(sorted);
+  // 歷史修課回饋以每門課最後一次回答為準（使用者改主意時，舊回答不再計入）。
+  const latestHistoryFeedback = new Map();
+  for (const event of sorted) {
+    if (event.eventType === 'history_course_feedback') latestHistoryFeedback.set(courseKey(event), event.eventId);
+  }
   const browseTotals = new Map();
   const items = [];
   let excludedEventCount = 0;
 
   for (const event of sorted) {
+    if (event.eventType === 'history_course_feedback'
+      && latestHistoryFeedback.get(courseKey(event)) !== event.eventId) continue;
     const original = snapshotFor(event);
     if (!original) {
       if (event.tagInterestSnapshot) excludedEventCount += 1;
@@ -379,7 +394,11 @@ export function collectWeightedTagInterestEvents(events = [], options = {}) {
     const tagIds = normalizeTagIds(snapshot.evidenceTagIds);
     if (tagIds.length === 0) continue;
 
-    const factor = tagInterestDecay(event, { now, activeTerm }).factor;
+    // 對修過的課的看法不會像瀏覽紀錄一樣隨時間淡化，歷史修課回饋不套用時間衰減；
+    // 事件到期（180 天）後該課退回歷史修課的預設權重。
+    const factor = event.eventType === 'history_course_feedback'
+      ? 1
+      : tagInterestDecay(event, { now, activeTerm }).factor;
     let effectiveWeight = weight * factor;
     if (event.eventType === 'course_viewed') {
       const used = browseTotals.get(course) ?? 0;

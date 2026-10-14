@@ -14,6 +14,7 @@ import privacyRoutes from './routes/privacy.js';
 import interactionRoutes from './routes/interactions.js';
 import explorationRoutes from './routes/exploration.js';
 import interestExplorationRoutes from './routes/interestExploration.js';
+import historyFeedbackRoutes from './routes/historyFeedback.js';
 import { assertSessionSecretConfigured } from './services/sessionService.js';
 import { assertPrivacyConfigured } from './services/privacyService.js';
 import { getHighsRuntime } from './skills/optimization/highsRuntime.js';
@@ -46,6 +47,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/interactions', interactionRoutes);
 app.use('/api/exploration', explorationRoutes);
 app.use('/api/interest-exploration', interestExplorationRoutes);
+app.use('/api/history-feedback', historyFeedbackRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -153,6 +153,12 @@ export const interestExplorationAPI = {
   getCards: () => request('/interest-exploration/cards'),
 };
 
+// 協同過濾與 User Embedding 構想階段 5：可回饋的歷史修課與目前的回答（唯讀）。
+// 回答本身以 history_course_feedback 事件經 interactionsAPI.record() 送出。
+export const historyFeedbackAPI = {
+  get: () => request('/history-feedback'),
+};
+
 export const scheduleAPI = {
   generate: (data) =>
     request('/schedule/generate', {

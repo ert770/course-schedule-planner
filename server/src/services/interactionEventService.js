@@ -37,6 +37,8 @@ import { sha256Hex } from '../utils/hash.js';
 import { SCORING_POLICY_VERSION } from '../skills/scoringPolicy.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 import { buildTagInterestSnapshot } from '../skills/tagInterestLearning.js';
+import { getPassedNonRequiredAttempts } from '../data/courseHistory.js';
+import { getUserPreferences } from './memoryService.js';
 
 // 產生這批推薦的模型版本。#7 用連續權重向量取代固定 variant 時要一併改這個值，
 // 否則 #30 會把兩種不同模型產生的曝光混為一談。
@@ -218,6 +220,7 @@ function insertParams(subjectId, event, occurredAt, expiresAt) {
 
 const TAG_INTEREST_EVENT_TYPES = new Set([
   INTERACTION_EVENT_TYPES.INTEREST_EXPLORATION_FEEDBACK,
+  INTERACTION_EVENT_TYPES.HISTORY_COURSE_FEEDBACK,
   INTERACTION_EVENT_TYPES.COURSE_VIEWED,
   INTERACTION_EVENT_TYPES.COURSE_FAVORITED,
   INTERACTION_EVENT_TYPES.COURSE_UNFAVORITED,
@@ -253,7 +256,7 @@ async function buildServerTagInterestSnapshot(identity, event, options = {}) {
           ragTag: row.rag_tag,
         };
       }
-      const profiles = profile ? [] : await getAll('user_preferences');
+      const profiles = profile ? [] : await (options.loadSnapshotProfiles?.() ?? getAll('user_preferences'));
       profile ??= profiles.find(item => String(item.userId) === String(identity.canonicalId)) ?? null;
     } catch (error) {
       logger.warn(`無法建立 rag_tag 事件快照：${error.message}`, { label: 'TagInterest' });
@@ -261,9 +264,10 @@ async function buildServerTagInterestSnapshot(identity, event, options = {}) {
   }
 
   const snapshot = buildTagInterestSnapshot(event, course, buildStudentScope(profile ?? {}));
-  if (event.eventType === INTERACTION_EVENT_TYPES.INTEREST_EXPLORATION_FEEDBACK
+  if ((event.eventType === INTERACTION_EVENT_TYPES.INTEREST_EXPLORATION_FEEDBACK
+    || event.eventType === INTERACTION_EVENT_TYPES.HISTORY_COURSE_FEEDBACK)
     && snapshot.exclusionReason === 'course_not_resolved') {
-    throw new TypeError('找不到探索回饋所屬課程，無法驗證標籤');
+    throw new TypeError('找不到回饋所屬課程，無法驗證標籤');
   }
   if (course && event.course.catalogCourseCode
     && String(course.catalogCourseCode) !== String(event.course.catalogCourseCode)) {
@@ -364,7 +368,21 @@ function requiresExposureProof(event) {
 
 // `exposureCache` 是單次批次呼叫內的記憶——同一批事件常常共用同一個
 // requestId（例如「接受方案」+「順便退掉其中一門」），沒必要查兩次。
-async function assertProvenance(identity, event, exposureCache) {
+async function assertProvenance(identity, event, exposureCache, options = {}) {
+  if (event.eventType === INTERACTION_EVENT_TYPES.HISTORY_COURSE_FEEDBACK) {
+    // 歷史修課回饋只能針對本人已通過的非必修課；課號由伺服器依 Profile 的修課歷史核對，
+    // 不採信呼叫端的說法（否則任何人都能對任意課灌「喜歡」）。
+    const profile = options.loadProfile
+      ? await options.loadProfile(identity)
+      : await getUserPreferences(identity);
+    const allowed = new Set(getPassedNonRequiredAttempts(profile?.courseHistory ?? [])
+      .map(entry => String(entry.courseCode ?? '').trim().toUpperCase()));
+    const code = String(event.course?.catalogCourseCode ?? '').trim().toUpperCase();
+    if (!code || !allowed.has(code)) {
+      throw new Error(`課號 ${code || '（空）'} 不是你已通過的選修、通識或系外選修，不能提供歷史修課回饋。`);
+    }
+    return;
+  }
   if (event.eventType === INTERACTION_EVENT_TYPES.RECOMMENDATION_EXPOSED) {
     // `recommendation_exposed` 只由伺服器在產生推薦的當下寫入（見
     // `services/scheduleService.js`），一般呼叫端一律拒絕——即使格式完全
@@ -454,6 +472,19 @@ async function assertProvenance(identity, event, exposureCache) {
  * @returns `{ recorded, reason?, results: [{ actionId, eventType, status, errors? }] }`
  *          `status` 為 append｜duplicate｜conflict｜rejected。
  */
+// 同一批事件共用一次 Profile 讀取。歷史修課回饋一次會送十幾筆，逐筆重讀 Profile、
+// 修課歷史與 user_preferences，D1249697 的 18 筆實測要 22 秒；一批內 Profile 不會變。
+function withBatchProfileCache(identity, options) {
+  const loadProfile = options.loadProfile ?? getUserPreferences;
+  let profilePromise = null;
+  let snapshotProfilesPromise = null;
+  return {
+    ...options,
+    loadProfile: () => (profilePromise ??= loadProfile(identity)),
+    loadSnapshotProfiles: () => (snapshotProfilesPromise ??= getAll('user_preferences')),
+  };
+}
+
 export async function recordInteractionEvents(identity, inputs = [], options = {}) {
   const drafts = Array.isArray(inputs) ? inputs : [];
   if (!await hasPersonalizationConsent(identity)) {
@@ -463,6 +494,7 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
   const subjectId = deriveSubjectId(identity.canonicalId);
   const results = [];
   const exposureCache = new Map();
+  const batchOptions = withBatchProfileCache(identity, options);
 
   for (const draft of drafts) {
     let event;
@@ -508,7 +540,7 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
       // 伺服器自己寫曝光事件時跳過來源驗證——它就是來源本身。
     } else {
       try {
-        await assertProvenance(identity, event, exposureCache);
+        await assertProvenance(identity, event, exposureCache, batchOptions);
       } catch (err) {
         results.push({
           actionId: event.actionId, eventType: event.eventType, status: 'rejected', errors: [err.message],
@@ -525,7 +557,7 @@ export async function recordInteractionEvents(identity, inputs = [], options = {
     }
 
     try {
-      event.tagInterestSnapshot = await buildServerTagInterestSnapshot(identity, event, options);
+      event.tagInterestSnapshot = await buildServerTagInterestSnapshot(identity, event, batchOptions);
       await insertEvent(subjectId, event);
       results.push({ actionId: event.actionId, eventType: event.eventType, status: 'append' });
     } catch (snapshotError) {

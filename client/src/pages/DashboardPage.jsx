@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
 import { useClickOutside } from '../hooks/useClickOutside';
-import { scheduleAPI, chatAPI, profileAPI } from '../services/api';
+import { scheduleAPI, chatAPI, profileAPI, historyFeedbackAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
@@ -17,6 +17,7 @@ import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PlanComparison from '../components/Schedule/PlanComparison';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import SkillTreeModal from '../components/Profile/SkillTreeModal';
+import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award, Compass } from 'lucide-react';
@@ -78,6 +79,8 @@ export default function DashboardPage() {
   const [confirmation, setConfirmation] = useState(null);
   const [removalCandidate, setRemovalCandidate] = useState(null);
   const [showSkillModal, setShowSkillModal] = useState(false);
+  // 階段 5：還有沒回答過的歷史修課時，進排課主頁自動跳出一次。
+  const [historyFeedback, setHistoryFeedback] = useState(null);
 
   const [showUserMenu, setShowUserMenu] = useState(false);
   const chatInputRef = useRef(null);
@@ -192,6 +195,16 @@ export default function DashboardPage() {
     initialGenerationUserRef.current = userIdentity;
     generateInitialSchedule();
   }, [generateInitialSchedule, schedule.length, scheduleLoading, userIdentity]);
+
+  // 階段 5：歷史修課回饋。只在同意個人化學習時查；查不到不影響排課。
+  useEffect(() => {
+    let cancelled = false;
+    if (userIdentity === null || !personalizationEnabled) return undefined;
+    historyFeedbackAPI.get()
+      .then(data => { if (!cancelled && data?.pendingCount > 0) setHistoryFeedback(data); })
+      .catch(() => { /* 取不到就不跳出，不影響排課 */ });
+    return () => { cancelled = true; };
+  }, [userIdentity, personalizationEnabled]);
 
   // 標籤目錄不隨使用者變動，載入一次即可。
   useEffect(() => {
@@ -610,6 +623,14 @@ export default function DashboardPage() {
         onClose={() => setShowSkillModal(false)}
         schedule={schedule}
       />
+
+      {historyFeedback && (
+        <HistoryFeedbackModal
+          data={historyFeedback}
+          mode="initial"
+          onClose={() => setHistoryFeedback(null)}
+        />
+      )}
 
       <RemoveReasonDialog
         course={removalCandidate}

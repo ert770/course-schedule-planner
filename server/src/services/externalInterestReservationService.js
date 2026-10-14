@@ -1,13 +1,14 @@
-import { getAll } from '../db/database.js';
+import { getCachedCourseCatalog } from './courseCatalogCache.js';
 import { loadUserTagVectorContext } from './userTagVectorService.js';
 import { scoreCoursesForUser } from '../skills/userTagVector.js';
 import { logger } from '../utils/logger.js';
 
+// 完整課程目錄只用來建立課程向量；用共用的 10 分鐘快取，避免每次排課都多讀一次 MySQL。
 // 只供伺服器排課流程建立；不接受 HTTP body 傳入的分數。
 // keyword 是可重現舊行為的 A/B 開關，不是另一種學習模型。
 export async function loadExternalInterestReservation(identity, prefs, candidates, {
   mode = process.env.EXTERNAL_INTEREST_RESERVATION_MODE ?? 'vector',
-  loadCourses = () => getAll('courses'),
+  loadCourses = () => getCachedCourseCatalog(),
   loadContext = loadUserTagVectorContext,
 } = {}) {
   if (mode === 'keyword') return null;

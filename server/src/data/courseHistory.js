@@ -85,6 +85,16 @@ export function getPassedCourseCodes(courseHistory = []) {
     .map(entry => entry.courseCode);
 }
 
+// 可以反映興趣的已修課：最新一次已通過、畢業分類為選修／通識／系外。
+// 必修與不計學分課不算（使用者沒有選擇權，修過不代表感興趣）。
+// 標籤空間使用者向量、歷史修課回饋視窗與其事件驗證共用這一條規則。
+export const INTEREST_HISTORY_CATEGORIES = Object.freeze(['elective', 'general', 'external']);
+export function getPassedNonRequiredAttempts(courseHistory = []) {
+  const categories = new Set(INTEREST_HISTORY_CATEGORIES);
+  return [...getLatestAttemptsByCourseCode(courseHistory).values()]
+    .filter(entry => entry?.passed && categories.has(entry.graduationCategory));
+}
+
 export function getFailedRequiredCourses(courseHistory = []) {
   return [...getLatestAttemptsByCourseCode(courseHistory).values()]
     .filter(entry => entry?.passed === false && entry.requirementType === '必修');

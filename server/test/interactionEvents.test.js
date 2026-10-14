@@ -938,3 +938,65 @@ describe('#10 任務 3A plan_chosen 的來源驗證與一次詢問只學一次',
     assert.equal(stored.filter(event => event.eventType === 'plan_chosen').length, 1);
   });
 });
+
+describe('階段 5 歷史修課回饋（history_course_feedback）', () => {
+  const tag = interestTagCatalog.canonicalTags.find(item => item.eligibility?.crossCourseMatchEligible === true);
+  const history = (courseCode, graduationCategory, passed = true) => ({
+    academicYear: 113, semester: 1, courseCode, courseName: courseCode, score: passed ? 85 : 40,
+    letterGrade: null, credits: 3, passed, requirementType: graduationCategory === 'required' ? '必修' : '選修',
+    generalEducationCategory: null, graduationCategory,
+  });
+  const loadProfile = async () => ({
+    department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲',
+    courseHistory: [history('IECS3002', 'elective'), history('IECS2001', 'required'), history('GEN1001', 'general', false)],
+  });
+  const tagInterestContext = {
+    course: { sectionId: 101, catalogCourseCode: 'IECS3002', category: '選修', department: '資訊三甲', ragTag: [tag.name] },
+    profile: { department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲' },
+  };
+  const draft = (overrides = {}) => baseDraft({
+    eventType: 'history_course_feedback', actionId: randomUUID(), source: 'history_review', feedbackReason: null,
+    interestFeedback: { response: 'liked', canonicalTagIds: [] }, ...overrides,
+  });
+
+  test('HF-1 本人已通過的非必修課可寫入，快照以整門課的標籤為證據', async () => {
+    await grantPersonalization(identityA);
+    const result = await recordInteractionEvents(identityA, [draft()], { loadProfile, tagInterestContext });
+    assert.equal(result.recorded, 1);
+    const [event] = (await getInteractionEventsForExport(identityA)).filter(item => item.eventType === 'history_course_feedback');
+    assert.deepEqual(event.interestFeedback, { response: 'liked', canonicalTagIds: [] });
+    assert.deepEqual(event.tagInterestSnapshot.evidenceTagIds, [tag.id]);
+  });
+
+  test('HF-2 不在本人非必修已修課中的課（未修、必修、未通過）一律拒絕', async () => {
+    await grantPersonalization(identityA);
+    for (const catalogCourseCode of ['IECS9999', 'IECS2001', 'GEN1001']) {
+      const result = await recordInteractionEvents(identityA, [draft({ course: { catalogCourseCode, sectionId: 101 } })],
+        { loadProfile, tagInterestContext });
+      assert.equal(result.results[0].status, 'rejected', catalogCourseCode);
+    }
+    assert.equal((await getInteractionEventsForExport(identityA)).length, 0);
+  });
+
+  test('HF-3 來源、回答與標籤欄位的格式限制', async () => {
+    await grantPersonalization(identityA);
+    const bad = [
+      draft({ source: 'exploration' }),
+      draft({ interestFeedback: { response: 'interested', canonicalTagIds: [] } }),
+      draft({ interestFeedback: { response: 'liked', canonicalTagIds: [tag.id] } }),
+      draft({ interestFeedback: null }),
+    ];
+    const result = await recordInteractionEvents(identityA, bad, { loadProfile, tagInterestContext });
+    assert.deepEqual(result.results.map(item => item.status), ['rejected', 'rejected', 'rejected', 'rejected']);
+  });
+
+  test('HF-4 同一批多筆回饋只讀一次 Profile', async () => {
+    await grantPersonalization(identityA);
+    let loads = 0;
+    const countingLoad = async (identity) => { loads += 1; return loadProfile(identity); };
+    const result = await recordInteractionEvents(identityA, [draft(), draft(), draft()],
+      { loadProfile: countingLoad, tagInterestContext });
+    assert.equal(result.recorded, 3);
+    assert.equal(loads, 1);
+  });
+});

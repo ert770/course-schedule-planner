@@ -165,3 +165,25 @@ test('TIL-MERGE 事件快照中已被同義詞合併的標籤 ID，依名稱對�
   assert.equal(profile.tagInterests[0].canonicalName, '資訊安全');
   assert.equal(profile.tagInterests[0].crossCourseMatchEligible, target.eligibility.crossCourseMatchEligible);
 });
+
+test('TIL-HF 歷史修課回饋：喜歡 +1、不喜歡 −1、以最後一次為準、不套用時間衰減', () => {
+  const event = (eventId, response, timestamp) => {
+    const draft = {
+      eventId, eventType: 'history_course_feedback', timestamp,
+      course: { catalogCourseCode: 'TEST1001', sectionId: 101 }, term: { academicYear: 114, semester: 'second' },
+      source: 'history_review', interestFeedback: { response, canonicalTagIds: [] },
+    };
+    return { ...draft, tagInterestSnapshot: snapshot(draft) };
+  };
+  const now = '2027-06-01T00:00:00.000Z'; // 一年多以後：若套用 120 天半衰期，權重會降到約 0.1
+  const liked = computeTagInterestProfile([event('h1', 'liked', '2026-03-01T00:00:00.000Z')], {}, { now });
+  assert.equal(liked.tagInterests[0].positiveEvidence, 1);
+  const changed = computeTagInterestProfile([
+    event('h1', 'liked', '2026-03-01T00:00:00.000Z'),
+    event('h2', 'disliked', '2026-04-01T00:00:00.000Z'),
+  ], {}, { now });
+  assert.equal(changed.tagInterests[0].positiveEvidence, 0);
+  assert.equal(changed.tagInterests[0].negativeEvidence, 1);
+  const neutral = computeTagInterestProfile([event('h3', 'neutral', '2026-03-01T00:00:00.000Z')], {}, { now });
+  assert.equal(neutral.tagInterests.length, 0);
+});
