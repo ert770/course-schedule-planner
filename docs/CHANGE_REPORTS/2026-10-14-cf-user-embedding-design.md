@@ -134,8 +134,13 @@ idf(t) = log( 課程總數 / 有標籤 t 的課程數 )
 | 呼叫 API | OpenAI `text-embedding-3-small`（專案已有 OpenAI 金鑰） | 不用裝東西；品質好 | 每次計算要付費（量很小）；課程公開資訊會送到外部 |
 | 本機執行 | 多語言小模型，在 Node 用 ONNX／transformers.js 執行 | 資料不出去、不付費 | 要下載數百 MB 的模型檔、增加相依套件；伺服器要有足夠記憶體 |
 
-**決定：用 API。** 模型用 OpenAI 的文字 embedding 模型（構想用 `text-embedding-3-small`，
-動工時再確認當下可用的型號與價格），金鑰沿用伺服器的 `OPENAI_API_KEY`，不寫進程式或文件。
+**決定：用 API。** 金鑰沿用伺服器的 `OPENAI_API_KEY`，不寫進程式或文件。
+
+**階段 2 實測後的實際做法（2026-10-14，見[階段 2 報告](./2026-10-14-tag-embedding-stage2.md)）**：
+模型改用 `text-embedding-3-large`（small 對短中文詞偏重字面）；**只送標籤名稱，不附分類路徑**
+（附上後分類文字主導相似度）；門檻 τ = 0.70（large 的相似度整體較低）。下方「用途 1」表格中
+「名稱加分類路徑」與「τ 起點 0.80」是原構想，已被取代。相近表存在
+`server/src/data/tagVectorNeighbors.json`。
 
 **B 的兩個用途**
 

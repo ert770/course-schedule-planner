@@ -17,6 +17,22 @@ const tooCommon = byReason('too_common')[0].name;
 const singleCourse = byReason('single_course')[0].name;
 const generic = byReason('explicit_generic')[0].name;
 
+test('TV5 committed tag neighbor table matches the catalog and its own threshold', async () => {
+  const { default: table } = await import('../src/data/tagVectorNeighbors.json', { with: { type: 'json' } });
+  const byId = new Map(interestTagCatalog.canonicalTags.map(tag => [tag.id, tag]));
+  assert.equal(table.catalogVersion, interestTagCatalog.catalogVersion);
+  assert.ok(table.tau > 0 && table.tau < 1);
+  for (const [id, neighbors] of Object.entries(table.neighbors)) {
+    assert.ok(isVectorEligibleTag(byId.get(id)), `${id} must be a vector tag`);
+    assert.ok(neighbors.length > 0 && neighbors.length <= table.topK);
+    for (const item of neighbors) {
+      assert.notEqual(item.canonicalTagId, id);
+      assert.ok(isVectorEligibleTag(byId.get(item.canonicalTagId)));
+      assert.ok(item.similarity >= table.tau && item.similarity <= 1);
+    }
+  }
+});
+
 test('TV1 vector tags keep cross-course and too_common tags, drop single-course and generic tags', () => {
   const names = [...vectorTagsOf([crossA, tooCommon, singleCourse, generic]).values()];
   assert.deepEqual(names.sort(), [crossA, tooCommon].sort());
