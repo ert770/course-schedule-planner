@@ -199,12 +199,17 @@ export function explainCourseForUser(user, index, courseCode, { similarity = nul
     }
   }
   return {
-    tags: contributions.slice(0, topTags).map(item => ({
-      userTag: name(item.left),
-      courseTag: name(item.right),
-      viaNeighbor: item.left !== item.right,
-      contribution: item.contribution,
-    })),
+    // 同一個課程標籤可能和使用者的好幾個標籤相近；理由只列一次，取貢獻最大的那組配對
+    // （contributions 已依貢獻由大到小排序）。
+    tags: contributions
+      .filter((item, i) => contributions.findIndex(other => other.right === item.right) === i)
+      .slice(0, topTags)
+      .map(item => ({
+        userTag: name(item.left),
+        courseTag: name(item.right),
+        viaNeighbor: item.left !== item.right,
+        contribution: item.contribution,
+      })),
     closestEvidence: closest,
   };
 }

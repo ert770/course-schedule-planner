@@ -7,6 +7,7 @@ import {
   buildTagSimilarity,
   cosineWithContributions,
   softCosine,
+  vectorTagsOf,
 } from '../src/skills/tagVectorSpace.js';
 import {
   buildUserTagVector,
@@ -118,4 +119,11 @@ test('UV6 explanation names the closest evidence course and the contributing tag
   assert.equal(explanation.tags[0].courseTag, a.name);
   assert.equal(explanation.tags[0].viaNeighbor, false);
   assert.notEqual(explainCourseForUser(user, index, 'H1').closestEvidence?.courseCode, 'H1', 'a course never explains itself');
+  // 課程的同一個標籤和使用者兩個標籤都相近時，理由只列一次。
+  const [aId] = [...vectorTagsOf([a.name]).keys()];
+  const [cId] = [...vectorTagsOf([c.name]).keys()];
+  const [fId] = [...vectorTagsOf([f.name]).keys()];
+  const similarity = buildTagSimilarity({ neighbors: { [fId]: [{ canonicalTagId: aId, similarity: 0.9 }, { canonicalTagId: cId, similarity: 0.8 }] } });
+  const near = explainCourseForUser(user, index, 'X2', { similarity }).tags.map(tag => tag.courseTag);
+  assert.equal(new Set(near).size, near.length);
 });

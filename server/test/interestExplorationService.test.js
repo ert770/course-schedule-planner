@@ -135,3 +135,19 @@ describe('initial rag-tag interest exploration cards', () => {
     assert.deepEqual(result.term, ACTIVE_TERM);
   });
 });
+
+test('IE-SVEC 主題相關度相同時依 s_vec 排序；沒有分數時維持課號順序', async () => {
+  const { buildInterestExplorationCards } = await import('../src/services/interestExplorationService.js');
+  const { interestTagCatalog } = await import('../src/data/interestTagCatalog.js');
+  const [x, y] = interestTagCatalog.canonicalTags.filter(tag => tag.eligibility?.interestLearningEligible === true
+    && tag.eligibility?.crossCourseMatchEligible === true).map(tag => tag.name);
+  const card = (id, code, tag) => ({
+    id, sectionId: id, catalogCourseCode: code, name: code, category: '選修', type: '選修',
+    eligibility: 'eligible', timeBlocks: [{ dayOfWeek: 1, startPeriod: 1, endPeriod: 2 }], ragTag: [tag],
+  });
+  const sections = [card(1, 'AAA1', x), card(2, 'BBB1', y)];
+  const plain = buildInterestExplorationCards(sections, {}, { limit: 2 });
+  assert.deepEqual(plain.map(item => item.courseCode), ['AAA1', 'BBB1']);
+  const ranked = buildInterestExplorationCards(sections, {}, { limit: 2, vectorScores: new Map([['BBB1', 0.4], ['AAA1', 0.1]]) });
+  assert.deepEqual(ranked.map(item => item.courseCode), ['BBB1', 'AAA1']);
+});

@@ -1159,6 +1159,10 @@
 .explore-favorite { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 0.88rem; font-weight: 600; }
 .explore-favorite select { flex: 1; max-width: 420px; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); }
 .explore-note { margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); }
+.explore-mode-switch { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-primary); }
+.explore-mode-btn { padding: 6px 14px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.explore-mode-btn.active { background: var(--bg-card); color: var(--accent-blue); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.explore-empty-actions { display: flex; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .explore-group { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px 24px; }
 .explore-group h3 { font-size: 1.05rem; margin-bottom: 4px; }
 .explore-group-hint { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px; }

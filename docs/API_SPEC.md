@@ -1677,6 +1677,52 @@ Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `av
 錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課）、`400 FAVORITE_UNAVAILABLE`
 （查不到說明）、`400 CLASS_NAME_REQUIRED`（profile 缺班級）。
 
+回應另帶 `mode: "favorite"`。同一課號的講課與實習課（課號多一個 `P`，例：`ACCT2031` 與
+`ACCT2031P`）合併成一個項目，以講課課號為準，兩者的班次都在 `sections`。
+
+#### `GET /api/exploration?mode=profile`（協同過濾與 User Embedding 構想階段 4）
+
+「依你的修課與興趣」探索。以標籤空間使用者向量（`server/src/skills/userTagVector.js`）排序系外選修與
+通識：向量由非必修已通過的歷史修課、收藏／加選／表示有興趣等互動事件與明確興趣組成，**必修不列入**；
+課程分數用階段 2 的標籤相近表與審核過的降權名單。每個系所／通識領域只出一門（通識沒有領域時不分散）。
+**需要 `personalization_learning` 同意**；使用者向量只在記憶體中計算，不寫入任何資料表。唯讀，
+不寫互動事件，也不影響自動排課。
+
+```json
+{
+  "mode": "profile",
+  "emptyReason": null,
+  "signals": { "historyCourses": 18, "positiveEvents": 120, "negativeEvents": 6, "explicitTags": 9 },
+  "outside": {
+    "diversification": "department",
+    "items": [{
+      "courseCode": "COME3046", "name": "機器學習", "credits": 3, "unit": "通訊工程學系",
+      "score": 0.8123,
+      "reasons": {
+        "tags": [
+          { "userTag": "資料科學", "courseTag": "資料科學", "viaNeighbor": false },
+          { "userTag": "機器學習", "courseTag": "深度學習", "viaNeighbor": true }
+        ],
+        "closestEvidence": { "courseCode": "IECS3059", "name": "人工智慧導論", "source": "history" }
+      },
+      "recognition": { "status": "needs-office-confirmation", "checked": true, "needsOfficeConfirmation": true, "warnings": [] },
+      "sections": [{ "id": 2031, "catalogCourseCode": "COME3046" }]
+    }]
+  },
+  "general": { "diversification": "domain", "items": [] },
+  "method": { "representation": "user-tag-vector-v1", "selection": "one-per-unit-svec", "k": 5 },
+  "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
+}
+```
+
+- `emptyReason`：`no-personalization-consent`（未同意個人化學習，不計算）或 `no-profile-signal`
+  （沒有任何非必修修課、互動或可對應的明確興趣）。這兩種情況 `items` 皆為空陣列；前者 `signals` 為 `null`。
+- `score`：−1～1，以候選池內正向相似度第 95 百分位為 1；只列正向相似大於 0 的課。
+- `reasons.tags`：貢獻最大的標籤配對；`viaNeighbor: true` 表示經標籤相近表連結（使用者的標籤與課程的標籤
+  意思相近但不同）。`closestEvidence`：使用者證據中與這門課最接近的**另一門**課，`source` 為
+  `history`（修過）或互動事件類型（例：`course_favorited`、`interest_exploration_feedback`、`course_viewed`）。
+- 其餘欄位（`recognition`、`sections`、`poolSize`、候選條件）與預設模式相同。
+
 ## Graduation
 
 ### `GET /api/graduation/me`

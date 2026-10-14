@@ -134,9 +134,11 @@ export const coursesAPI = {
 // Schedule API
 // Roadmap #10 任務 4：系外與通識探索清單（唯讀）。
 export const explorationAPI = {
-  get: (favoriteCourseCode) => {
+  // mode：'profile' 依你的修課與興趣（標籤空間使用者向量）；省略為從一門課出發。
+  get: (favoriteCourseCode, mode) => {
     const params = new URLSearchParams();
-    if (favoriteCourseCode) params.set('favoriteCourseCode', favoriteCourseCode);
+    if (mode === 'profile') params.set('mode', 'profile');
+    else if (favoriteCourseCode) params.set('favoriteCourseCode', favoriteCourseCode);
     const query = params.toString();
     return request(`/exploration${query ? `?${query}` : ''}`);
   },
