@@ -321,16 +321,18 @@ function invalidatedPositiveEvents(events) {
   return invalid;
 }
 
-/** Rebuild the sparse per-user profile from versioned event snapshots and explicit preferences. */
-export function computeTagInterestProfile(events = [], prefs = {}, options = {}) {
+/**
+ * 依 rag-tag-interest-v1 的規則逐筆算出事件的有效權重（含失效、時間衰減與瀏覽上限）。
+ * 標籤興趣檔與標籤空間使用者向量（userTagVector.js）共用這一份規則。
+ * 回傳的 `weight` 已乘上衰減；正值為正向證據、負值為負向證據。
+ */
+export function collectWeightedTagInterestEvents(events = [], options = {}) {
   const now = options.now ?? null;
   const activeTerm = options.activeTerm ?? null;
-  const priors = buildExplicitTagInterest(prefs);
   const sorted = sortEvents(Array.isArray(events) ? events : []);
   const invalidated = invalidatedPositiveEvents(sorted);
   const browseTotals = new Map();
-  const evidence = new Map();
-  let usableEventCount = 0;
+  const items = [];
   let excludedEventCount = 0;
 
   for (const event of sorted) {
@@ -338,10 +340,6 @@ export function computeTagInterestProfile(events = [], prefs = {}, options = {})
     if (!snapshot) {
       if (event.tagInterestSnapshot) excludedEventCount += 1;
       continue; // historical events without an immutable tag snapshot are not guessed
-    }
-    if (event.tagInterestSnapshot.requiredStatus !== 'not-required') {
-      excludedEventCount += 1;
-      continue;
     }
     if (invalidated.has(event.eventId)) continue;
     const weight = eventWeight(event);
@@ -360,7 +358,19 @@ export function computeTagInterestProfile(events = [], prefs = {}, options = {})
       browseTotals.set(course, used + nominal);
       effectiveWeight = nominal * factor;
     }
+    items.push({ event, snapshot, tagIds, weight: effectiveWeight });
+  }
+  return { items, excludedEventCount };
+}
 
+/** Rebuild the sparse per-user profile from versioned event snapshots and explicit preferences. */
+export function computeTagInterestProfile(events = [], prefs = {}, options = {}) {
+  const priors = buildExplicitTagInterest(prefs);
+  const evidence = new Map();
+  let usableEventCount = 0;
+  const { items, excludedEventCount } = collectWeightedTagInterestEvents(events, options);
+
+  for (const { event, snapshot, tagIds, weight: effectiveWeight } of items) {
     const split = effectiveWeight / tagIds.length;
     for (const id of tagIds) {
       const tagSnapshot = snapshot.tags.find(tag => tag.canonicalTagId === id);
@@ -494,6 +504,7 @@ export default {
   buildTagInterestSnapshot,
   buildExplicitTagInterest,
   tagInterestDecay,
+  collectWeightedTagInterestEvents,
   computeTagInterestProfile,
   scoreCourseTagInterest,
 };

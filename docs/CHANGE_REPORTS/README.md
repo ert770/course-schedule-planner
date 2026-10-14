@@ -2,10 +2,19 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-14
+
+1. [協同過濾與 User Embedding：階段 3 使用者向量與 s_vec（離線）](./2026-10-14-user-tag-vector-stage3.md)
+2. [協同過濾與 User Embedding：階段 2 標籤相近表（文字 embedding）](./2026-10-14-tag-embedding-stage2.md)
+3. [協同過濾與 User Embedding：階段 1 標籤空間課程向量](./2026-10-14-tag-vector-stage1.md)
+4. [協同過濾與 User Embedding：階段 0 現況量測](./2026-10-14-cf-embedding-stage0-baseline.md)
+5. [構想：協同過濾與 User Embedding 的搭建方式，以及如何接進排課流程](./2026-10-14-cf-user-embedding-design.md)
+
 ## 2026-10-11
 
-1. [把 main（PR #27）合併進 backend；修正搜尋頁切換分頁後殘留舊結果](./2026-10-11-merge-main-pr27-and-search-stale-results.md)
-2. [rag-tag-interest-v1 階段 6：Persona scheduler off／active 重播](./2026-10-11-rag-tag-interest-stage6-persona-replay.md)
+1. [實驗：「CP ＋ 標籤興趣」對「v2 ＋ 標籤興趣」，10 位 Persona](./2026-10-11-cp-plus-tag-interest-persona-experiment.md)
+2. [把 main（PR #27）合併進 backend；修正搜尋頁切換分頁後殘留舊結果](./2026-10-11-merge-main-pr27-and-search-stale-results.md)
+3. [rag-tag-interest-v1 階段 6：Persona scheduler off／active 重播](./2026-10-11-rag-tag-interest-stage6-persona-replay.md)
 
 ## 2026-10-10
 

@@ -28,6 +28,8 @@ const { annotateScheduleIdentifiers, buildExposureDraft } = await import('../src
 const { generateSchedule, setSchedulingHighsRuntime } = await import('../src/skills/scheduler.js');
 const { getHighsRuntime } = await import('../src/skills/optimization/highsRuntime.js');
 const { buildStudentScope } = await import('../src/skills/courseScope.js');
+const { buildTagInterestContext } = await import('../src/skills/tagInterestRanking.js');
+const { getStoredTagInterestProfile } = await import('../src/services/tagInterestService.js');
 const {
   absentLearnedPreference, buildCandidates, buildCaseConstraints,
 } = await import('./lib/demoCaseLoader.js');
@@ -40,6 +42,8 @@ const {
 const args = process.argv.slice(2);
 const argValue = name => args.find(arg => arg.startsWith(`--${name}=`))?.split('=')[1];
 const dryRun = args.includes('--dry-run');
+// 預設帶入標籤興趣排序；加 --no-tag-interest 可重現未接標籤排序時的方案。
+const useTagInterest = !args.includes('--no-tag-interest');
 const limit = Number(argValue('limit') ?? 30);
 // 這個模型不接受 temperature 參數，同一題重問會換答案（試跑時 10 題有 3 題）。
 // 每題問 VOTES 次取過半數；沒有任何方案過半就整題丟掉，不挑一個湊數。
@@ -68,13 +72,21 @@ async function candidatesFor(constraints, allCourses, cache) {
 }
 
 // 排出一個情境的方案。回傳 `{ skip }` 表示這個情境不能當一道比較題，並附原因。
-function buildQuery({ persona, prefs, scenario, reviews, candidatesCache, allCourses, index }) {
+function buildQuery({ persona, prefs, scenario, reviews, candidatesCache, allCourses, index, tagProfile }) {
   const constraints = buildCaseConstraints(scenario.input, prefs, {
     reviews, learnedPreference: absentLearnedPreference('simulation'),
   });
   return candidatesFor(constraints, allCourses, candidatesCache).then(candidates => {
     const requestId = `sim-${persona.userId}-${String(index).padStart(3, '0')}`;
-    const result = annotateScheduleIdentifiers(generateSchedule(candidates, constraints, {}), requestId);
+    // 線上預設會套用標籤興趣排序（TAG_INTEREST_RANKING_MODE=active）。模擬要與線上看到的方案一致，
+    // 所以帶入同一份 context；profile 只讀已存的那一列，不重算、不寫入。
+    const tagInterestContext = tagProfile
+      ? buildTagInterestContext({ mode: 'active', profileSource: 'consented-learned', profile: tagProfile, candidates })
+      : null;
+    const result = annotateScheduleIdentifiers(
+      generateSchedule(candidates, constraints, tagInterestContext ? { tagInterestContext } : {}),
+      requestId
+    );
     const plans = result.plans ?? [];
     if (plans.length < 2) return { skip: 'single-plan' };
     const exposure = buildExposureDraft(result, requestId, { surface: 'simulation', trigger: 'simulation' });
@@ -114,6 +126,8 @@ async function main() {
     const identity = { canonicalId: persona.studentId, numericId: String(persona.userId), studentId: persona.studentId };
     const prefs = await getUserPreferences(identity);
     profiles[persona.studentId] = { explicit: explicitDirection(prefs), v2Explicit: v2ExplicitProfile(prefs) };
+    const storedTag = useTagInterest ? await getStoredTagInterestProfile(identity) : null;
+    const tagProfile = storedTag?.profile ?? null;
     const scenarios = buildScenarios(prefs, { seed: persona.userId });
     const seen = new Set();
     const skipped = {};
@@ -128,7 +142,7 @@ async function main() {
       if (usable >= limit) break;
       tried += 1;
       const query = await buildQuery({
-        persona, prefs, scenario, reviews, candidatesCache, allCourses, index: tried,
+        persona, prefs, scenario, reviews, candidatesCache, allCourses, index: tried, tagProfile,
       });
       if (query.skip) {
         skipped[query.skip] = (skipped[query.skip] || 0) + 1;
@@ -199,6 +213,7 @@ async function main() {
 
     summary.push({
       userId: persona.userId,
+      tagInterest: !useTagInterest ? 'off' : tagProfile ? 'active' : 'no-stored-profile',
       scenariosTried: tried,
       usableRounds: usable,
       candidatePool: candidatesCache.size,

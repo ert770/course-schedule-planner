@@ -34,3 +34,34 @@ test('#7 features use bounded scales, unknown ease is neutral, challenge reverse
   assert.equal(features.interest, 0.5);
   assert.equal(features.compact, 0.5);
 });
+
+// roadmap #10 任務 3B：Choice Perceptron 的帶號權重。只有離線實驗會送出這個模式。
+test('#10-3B signed mode uses learned weights directly, clamps to ±2, and can reverse the explicit direction', () => {
+  const policy = resolveScoringPolicy({
+    preferEasyCourses: true, preferCompact: true,
+    learnedPreference: { applied: true, mode: 'signed', weights: { interest: 0.5, compact: -1.2, easy: -9 } },
+  });
+  // 顯式勾了集中與輕鬆，學到的卻是相反方向：帶號模式照學到的用。
+  assert.deepEqual(policy.weights, { interest: 0.5, compact: -1.2, easy: -2 });
+  assert.equal(policy.source.mode, 'signed');
+  assert.equal(policy.categoryCoefficient, 0.35);
+});
+
+test('#10-3B signed mode is ignored unless applied, and never changes the v2 branch', () => {
+  const input = { preferCompact: true, preferEasyCourses: true };
+  const baseline = resolveScoringPolicy(input);
+  // 沒有 applied：退回顯式偏好。
+  assert.deepEqual(resolveScoringPolicy({
+    ...input, learnedPreference: { applied: false, mode: 'signed', weights: { interest: 2, compact: -2, easy: -2 } },
+  }).weights, baseline.weights);
+  // v2（boosts）不帶 mode：結果與原本逐位元相同，也不會多出 mode 欄位。
+  const v2 = resolveScoringPolicy({ ...input, learnedPreference: { applied: true, boosts: { compact: 0.5, easy: 1 } } });
+  assert.deepEqual(v2.weights, { interest: 0, compact: 1.5, easy: 2 });
+  assert.equal(Object.hasOwn(v2.source, 'mode'), false);
+  // 帶號模式缺 weights：不套用帶號分支。
+  assert.deepEqual(resolveScoringPolicy({ ...input, learnedPreference: { applied: true, mode: 'signed' } }).weights, baseline.weights);
+  // 非數值的權重視為 0。
+  assert.equal(resolveScoringPolicy({
+    learnedPreference: { applied: true, mode: 'signed', weights: { interest: 'x', compact: 1, easy: null } },
+  }).weights.interest, 0);
+});
