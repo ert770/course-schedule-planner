@@ -705,6 +705,7 @@ export function learnChoicePerceptronWeights(events = [], options = {}) {
     now = null,
     activeTerm = null,
     learningRate = DEFAULT_CHOICE_LEARNING_RATE,
+    respectExplicitDirection = false,
   } = options;
 
   const sorted = sortEvents(events);
@@ -754,13 +755,24 @@ export function learnChoicePerceptronWeights(events = [], options = {}) {
   const rawWeights = Object.fromEntries(
     PREFERENCE_AXES.map(axis => [axis, roundChoiceValue(raw[axis])])
   );
+  // 保守模式（預設關閉）：使用者明確勾選的面向不准學成相反，也不准弱於他勾選時的基準。
+  //
+  // 2026-10-11 的 Persona 實驗裡，一位明確勾了集中排課的使用者被學成集中 −2，課表從三天變成
+  // 四到五天，12 題比較輸了 11 題。使用者親口說的偏好不該被 30 次選擇推翻；行為只能在那個方向上
+  // 加強，或在他沒表態的面向上自由學習。`initialWeights` 就是顯式基準（興趣軸恆為 0，不受限）。
+  const guard = (axis, value) => {
+    const base = initialWeights[axis];
+    if (!respectExplicitDirection || base === 0) return value;
+    return base > 0 ? Math.max(value, base) : Math.min(value, base);
+  };
   const weights = Object.fromEntries(
-    PREFERENCE_AXES.map(axis => [axis, roundChoiceValue(clipChoiceWeight(raw[axis]))])
+    PREFERENCE_AXES.map(axis => [axis, roundChoiceValue(guard(axis, clipChoiceWeight(raw[axis])))])
   );
 
   return {
     modelVersion: CHOICE_PERCEPTRON_VERSION,
     learningRate,
+    respectExplicitDirection,
     initialWeights,
     rawWeights,
     weights,

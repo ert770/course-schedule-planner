@@ -2,6 +2,8 @@
 export const SCORING_POLICY_VERSION = 'personalized-scoring-v2';
 export const PREFERENCE_AXES = Object.freeze(['interest', 'compact', 'easy']);
 export const PREFERENCE_SCALE = 240;
+// 帶號權重的上下界。與 `preferenceLearning.js` 的 `CHOICE_WEIGHT_LIMIT` 同值；v2 的權重上界本來就是 2。
+export const SIGNED_WEIGHT_LIMIT = 2;
 
 const clamp = (value, min, max) => Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : 0;
 const list = value => !value ? [] : Array.isArray(value) ? value : [value];
@@ -39,8 +41,20 @@ export function resolveScoringPolicy(constraints = {}) {
     easy: resolveEasyDirection(constraints).direction,
   };
   const learned = constraints.learnedPreference;
+  // 帶號權重模式（Choice Perceptron，roadmap #10 任務 3B）。
+  //
+  // v2 的學習結果是「顯式方向 ×（1＋非負加強量）」，永遠不會翻轉方向；Choice Perceptron 學到的是
+  // 帶正負號的權重本身，可以把顯式勾的方向學成相反。兩者不能共用 `boosts` 這個欄位——把帶號權重
+  // 塞進 boosts 會被夾成 0～1，負值靜默消失。因此另開一條分支：`mode === 'signed'` 時直接用
+  // `weights`，範圍夾在 ±SIGNED_WEIGHT_LIMIT。
+  //
+  // **線上服務目前不會送出這個模式**（`preferenceLearningService` 只產生 v2 的 boosts）。
+  // 這條分支只由離線實驗腳本使用；下面的 v2 分支逐位元維持原樣。
+  const signed = learned?.applied === true && learned.mode === 'signed' && learned.weights;
   const weights = Object.fromEntries(PREFERENCE_AXES.map(axis => [axis,
-    directions[axis] * (1 + (learned?.applied === true ? clamp(Number(learned.boosts?.[axis]), 0, 1) : 0)),
+    signed
+      ? clamp(Number(learned.weights[axis]), -SIGNED_WEIGHT_LIMIT, SIGNED_WEIGHT_LIMIT)
+      : directions[axis] * (1 + (learned?.applied === true ? clamp(Number(learned.boosts?.[axis]), 0, 1) : 0)),
   ]));
   return {
     version: SCORING_POLICY_VERSION,
@@ -51,6 +65,7 @@ export function resolveScoringPolicy(constraints = {}) {
       learnedApplied: learned?.applied === true,
       reason: learned?.reason ?? 'absent',
       modelVersion: learned?.modelVersion ?? null,
+      ...(signed ? { mode: 'signed' } : {}),
     },
   };
 }
