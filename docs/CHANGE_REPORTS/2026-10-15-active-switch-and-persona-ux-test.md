@@ -153,4 +153,4 @@
 - 文件：`docs/SCHEDULING_LOGIC.md`、`docs/API_SPEC.md`、`.env.example`、roadmap #6、構想文件、本報告。
 - **共用資料庫寫入**：10 位 Persona 的 v4 同意、歷史修課回饋、互動事件 259 筆、已存課表；9010 執行過「重設個人化」
   （刪除了他先前的互動事件與學習結果）；共現表重建 1 次（撤回觸發）。D1249697 本次只有登出，沒有其他操作。
-- 已 commit 並推到 `origin backend`（併入 PR #30）；`server/data/users.json` 的 Persona 關注清單變動未提交。
+- 已 commit 並推到 `origin backend`（PR #31）；`server/data/users.json` 的 Persona 關注清單變動未提交。

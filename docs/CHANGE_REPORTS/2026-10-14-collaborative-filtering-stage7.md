@@ -103,4 +103,4 @@
 
 ## 6. 是否 commit 與 push
 
-已 commit 並推到 `origin backend`（併入 PR #30）。
+已 commit 並推到 `origin backend`（PR #31）。
