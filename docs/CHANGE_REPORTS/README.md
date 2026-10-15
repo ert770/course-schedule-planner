@@ -4,6 +4,7 @@
 
 ## 2026-10-15
 
+- [課程詳情「先修條件」顯示成 [object Object] 的修正](./2026-10-15-course-prerequisites-display.md)
 - [協同過濾階段 8：用 10 位 Persona 模擬演練 CF active 與 #32 比較](./2026-10-15-cf-stage8-persona-rehearsal.md)
 - [Persona 實測剩餘 6 項發現的修正（探索、查詢、推薦理由、儲存提示、個人化來源、語意相似與系列課）](./2026-10-15-persona-findings-fixes.md)
 - [AI 對話推薦品質修正（忠實度檢查誤判、查詢次數上限、無效的資料更新提議）](./2026-10-15-ai-chat-recommendation-quality.md)

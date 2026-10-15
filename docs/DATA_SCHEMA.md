@@ -407,6 +407,10 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 5＝碩士／博士／研究所。課程查詢與 scheduler 皆使用同一欄位，年級不符時排除。
 `prerequisites` 映射為 `course.prerequisites`；2026-09-11 實查 3,086/3,086 皆為 NULL，
 因此 NULL 必須顯示為「尚未取得官方先修資料」，不得解讀成沒有先修。
+2026-10-15 實查：3,058 門為空陣列 `[]`、28 門為物件
+`{ rules: [{ name, course_id }], required_ids, course_code, course_name }`，NULL 0 門。前端以
+`client/src/utils/coursePrerequisites.js` 統一顯示：NULL →「尚未取得官方先修資料」、空陣列或空 `rules` →「無」、
+物件列出 `rules` 的課名（沒有課名時用課號）。
 
 ### `admission_year` 與版本化畢業規則（roadmap #23）
 

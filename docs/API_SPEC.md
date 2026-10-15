@@ -513,7 +513,7 @@ Response:
 | `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學年學期，以及是否為系統目前的 active term |
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明，可直接呈現給使用者 |
 | `gradeLevel` | `Courses.target_grade` 的 API 名稱；0＝全年級、1～4＝大一至大四、5＝研究所 |
-| `prerequisites` | 先修資料；`null` 代表資料尚未提供，不代表沒有先修 |
+| `prerequisites` | 先修資料；`null` 代表資料尚未提供，不代表沒有先修。可能是課名陣列（空陣列＝沒有先修），或物件 `{ rules: [{ name, course_id }], required_ids, course_code, course_name }`（見 `DATA_SCHEMA.md`） |
 
 **Active term（Roadmap #20）**：所有課程搜尋、排課與 Agent 查詢只回傳
 `server/src/data/activeTerm.js` 定義的 `ACTIVE_TERM`（預設 114 學年下學期）內的
