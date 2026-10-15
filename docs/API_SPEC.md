@@ -121,6 +121,7 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
   "source": "insufficient",
   "appliedToScheduling": true,
   "explicitProfileEmpty": false,
+  "hasExplicitPreferences": true,
   "weights": { "interest": 0, "compact": 1, "easy": 0 },
   "explicitProfile": { "interest": 0, "compact": 1, "easy": 0 },
   "sufficiency": {
@@ -133,6 +134,8 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
   "computedAt": "2026-09-04T02:38:14.334Z"
 }
 ```
+
+`hasExplicitPreferences`：使用者是否自己設定過偏好標籤、興趣、關鍵字或避開時段（2026-10-15 新增）。`explicitProfileEmpty` 只代表學習權重的基準軸都是 0，不能用來判斷「尚未表達偏好」。
 
 `source` 為 `no-consent` / `insufficient` / `explicit` / `learned` 四選一；`insufficient`
 時 `weights` 等於 `explicitProfile` 原樣。`appliedToScheduling`（Roadmap #5B 起恆為
@@ -323,6 +326,7 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 `ACTIVE_TERM` 篩選，再套用下列條件：
 
 - `keyword`（課名、課號、教師、系所或課程描述）
+- `name`（只比對課名與課號；查詢頁「科目名稱」欄位用這個，「課程描述」欄位用 `keyword`。2026-10-15 新增）
 - `code`
 - `instructor`
 - `dayOfWeek`

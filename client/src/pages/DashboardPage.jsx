@@ -60,6 +60,9 @@ export default function DashboardPage() {
     buildPlanningContext,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
+  // 儲存課表的結果提示。ScheduleNotice 在 PR #27 刻意隱藏（橘色警告框），但按了儲存卻沒有任何回饋，
+  // 使用者不知道有沒有存成功（2026-10-15 Persona 實測），因此只為儲存另外顯示一則短暫提示。
+  const [saveToast, setSaveToast] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
   // 偏好狀態就是**目前勾選的標籤集合**，來源是 profile API（即 MySQL
   // `User_Profiles.preference_tags`），與 Setup 頁讀的是同一支 API、同一份資料。
@@ -371,11 +374,16 @@ export default function DashboardPage() {
 
   const handleSave = async () => {
     const result = await saveCurrentSchedule();
-    setScheduleNotice(makeNotice({
-      level: result.success ? 'success' : 'error',
-      message: result.success ? '課表已儲存到目前登入帳號。' : result.message,
-    }));
+    const message = result.success ? '課表已儲存。' : (result.message || '課表儲存失敗，請稍後再試。');
+    setScheduleNotice(makeNotice({ level: result.success ? 'success' : 'error', message }));
+    setSaveToast({ success: result.success, message });
   };
+
+  useEffect(() => {
+    if (!saveToast) return undefined;
+    const timer = setTimeout(() => setSaveToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [saveToast]);
 
   return (
     <div className="layout-container" id="dashboard-page">
@@ -485,6 +493,11 @@ export default function DashboardPage() {
               >
                 {saving ? '儲存中…' : '儲存課表'}
               </button>
+              {saveToast && (
+                <span className={`save-toast ${saveToast.success ? 'success' : 'error'}`} role="status" id="save-schedule-toast">
+                  {saveToast.message}
+                </span>
+              )}
               <button className="action-btn primary" onClick={handleRegenerate}>
                 <Sparkles size={16} /> 套用偏好排課
               </button>

@@ -50,6 +50,16 @@ function getCourseTimeBlocks(course) {
 function applyCommonFilters(courseList, filters = {}, { filterCategory = true } = {}) {
   let courses = courseList;
 
+  // 只比對課名與課號（全校查詢的「科目名稱」欄）；keyword 則同時比對教師、系所與課程描述。
+  if (filters.name) {
+    const name = String(filters.name).toLowerCase();
+    courses = courses.filter(course =>
+      textIncludes(course.name, name)
+      || textIncludes(course.code, name)
+      || textIncludes(course.catalogCourseCode, name)
+    );
+  }
+
   if (filters.keyword) {
     const keyword = String(filters.keyword).toLowerCase();
     courses = courses.filter(course =>

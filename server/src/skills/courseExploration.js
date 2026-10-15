@@ -217,7 +217,8 @@ export function sharedPhrases(left, right, {
 export function rankSerendipitous({ favoriteVector, candidates = [], unitOf = () => null, k = 5, similarityOf = cosineSimilarity }) {
   const scored = [];
   for (const candidate of candidates) {
-    const similarity = similarityOf(favoriteVector, candidate.vector);
+    // 第三個參數讓呼叫端能依候選課的其他資料（例如標籤）調整分數。
+    const similarity = similarityOf(favoriteVector, candidate.vector, candidate);
     // 沒有任何共同 term 的課不算「相關」，不拿來湊數。
     if (similarity <= 0) continue;
     scored.push({ ...candidate, unit: unitOf(candidate) ?? null, similarity });

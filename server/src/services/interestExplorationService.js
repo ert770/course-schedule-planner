@@ -6,6 +6,7 @@ import {
   isEligibleForInterestLearning,
 } from '../data/interestTagCatalog.js';
 import { getPassedCourseCodes } from '../data/courseHistory.js';
+import { isSeriesLevelReachable, passedSeriesLevels } from '../data/courseSeries.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
 import { getUserPreferences } from './memoryService.js';
 import { filterCategorizedCourses } from '../skills/courseQuery.js';
@@ -73,6 +74,7 @@ function publicCard(course, tags) {
 export function buildInterestExplorationCards(courseSections, profile = {}, options = {}) {
   const limit = Math.max(0, Number(options.limit ?? INTEREST_EXPLORATION_CARD_LIMIT) || 0);
   const passedCodes = new Set(getPassedCourseCodes(profile.courseHistory).map(normalizeCode));
+  const seriesLevels = passedSeriesLevels(profile.courseHistory);
   const intent = topicIntent(profile);
   const byCourse = new Map();
 
@@ -82,6 +84,7 @@ export function buildInterestExplorationCards(courseSections, profile = {}, opti
   for (const course of orderedSections) {
     const courseCode = normalizeCode(course.catalogCourseCode);
     if (!courseCode || passedCodes.has(courseCode)) continue;
+    if (!isSeriesLevelReachable(course.name, seriesLevels)) continue;
     if (course.category === CATEGORY_REQUIRED || course.type === CATEGORY_REQUIRED) continue;
     if (course.eligibility === 'unknown' || course.eligibility === 'ineligible') continue;
     if (course.outsideElective?.eligible === false || !hasSchedule(course)) continue;

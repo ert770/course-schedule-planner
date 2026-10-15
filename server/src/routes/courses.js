@@ -71,6 +71,7 @@ router.get('/catalog', async (req, res) => {
   try {
     const filters = {};
     if (req.query.keyword) filters.keyword = String(req.query.keyword).trim();
+    if (req.query.name) filters.name = String(req.query.name).trim();
     if (req.query.category) filters.category = String(req.query.category).trim();
     if (req.query.dayOfWeek) filters.dayOfWeek = Number(req.query.dayOfWeek);
     if (req.query.period) filters.period = Number(req.query.period);

@@ -23,18 +23,38 @@ const EASINESS_LABELS = {
   none: '沒有涼度依據',
 };
 
+// 興趣模型的加分（構想 5.1：標籤興趣、相近主題 s_vec、協同過濾 s_cf 分開列）。
+const INTEREST_COMPONENT_LABELS = {
+  tagInterest: '主題興趣',
+  vectorInterest: '相近主題',
+  cfInterest: '同學選課',
+};
+
+// 「PREFERENCE_MATCH」是選修課預設的選入原因；沒有命中任何偏好時不能寫成「它符合你的偏好」，
+// 否則下一行又說「沒有命中任何偏好」，自相矛盾（2026-10-15 Persona 實測）。
+function headlineFor(reason, interestBoosts) {
+  if (reason.selectedBecause !== 'PREFERENCE_MATCH' || reason.matchedPreferences?.length > 0) {
+    return SELECTION_LABELS[reason.selectedBecause] || '依排課結果選入';
+  }
+  return interestBoosts.length > 0 ? '它和你的興趣主題相近' : '同時段的候選中，它的綜合分數最高';
+}
+
 function ReasonSection({ reason }) {
   if (!reason) return null;
 
   const confidence = CONFIDENCE_LABELS[reason.confidence] || CONFIDENCE_LABELS.medium;
   const alternatives = reason.alternativesRejected;
+  // 四捨五入後不到 1 分的加分不算（否則會出現「相近主題 +0」，標題卻說興趣相近）。
+  const interestBoosts = (reason.scoreBreakdown ?? [])
+    .filter(item => INTEREST_COMPONENT_LABELS[item.component] && Math.round(item.value) >= 1)
+    .map(item => `${INTEREST_COMPONENT_LABELS[item.component]} +${Math.round(item.value)}`);
 
   return (
     <div className="detail-reason">
       <div className="detail-desc-label">為什麼推薦這門課</div>
 
       <p className="reason-headline">
-        {SELECTION_LABELS[reason.selectedBecause] || '依排課結果選入'}
+        {headlineFor(reason, interestBoosts)}
         <span className={`reason-confidence ${confidence.className}`}>{confidence.text}</span>
       </p>
 
@@ -44,7 +64,14 @@ function ReasonSection({ reason }) {
           {reason.matchedPreferences.map(item => item.label).join('、')}
         </p>
       ) : (
-        <p className="reason-line reason-muted">它沒有命中你設定的任何偏好。</p>
+        <p className="reason-line reason-muted">它沒有命中你設定的排課偏好。</p>
+      )}
+
+      {interestBoosts.length > 0 && (
+        <p className="reason-line">
+          <strong>興趣加分：</strong>
+          {interestBoosts.join('、')}
+        </p>
       )}
 
       <p className="reason-line">
