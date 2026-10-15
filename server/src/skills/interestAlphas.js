@@ -8,8 +8,8 @@ import { DEFAULT_TAG_INTEREST_COURSE_ALPHA } from './tagInterestRanking.js';
 export const INTEREST_ALPHA_SUM_CAP = 0.9;
 export const DEFAULT_VECTOR_INTEREST_ALPHA = 0.2;
 export const DEFAULT_CF_INTEREST_ALPHA = 0.1;
-// 階段 6 只接 shadow；active 要等 shadow 結果檢視後另外決定。
-export const DEFAULT_VECTOR_INTEREST_MODE = 'shadow';
+// 2026-10-14 使用者決定兩者都切 active（構想原訂 shadow 驗證後再決定）；可設 shadow 或 off 回復。
+export const DEFAULT_VECTOR_INTEREST_MODE = 'active';
 
 const ALPHA_EPSILON = 1e-9;
 
@@ -39,26 +39,25 @@ export function resolveInterestAlphas(env = process.env) {
   return alphas;
 }
 
-/** `VECTOR_INTEREST_MODE`：off／shadow。active 尚未開放，拋錯而不是當成 off。 */
-export function resolveVectorInterestMode(value = DEFAULT_VECTOR_INTEREST_MODE) {
-  const mode = String(value ?? DEFAULT_VECTOR_INTEREST_MODE).trim().toLowerCase() || DEFAULT_VECTOR_INTEREST_MODE;
-  if (mode === 'off' || mode === 'shadow') return mode;
-  if (mode === 'active') {
-    throw new RangeError('VECTOR_INTEREST_MODE=active 尚未開放：s_vec 目前只能 off 或 shadow');
-  }
-  throw new RangeError(`VECTOR_INTEREST_MODE 只接受 off 或 shadow（目前是「${value}」）`);
+const INTEREST_MODES = ['off', 'shadow', 'active'];
+
+function resolveMode(name, value, fallback) {
+  const mode = String(value ?? fallback).trim().toLowerCase() || fallback;
+  if (INTEREST_MODES.includes(mode)) return mode;
+  throw new RangeError(`${name} 只接受 off、shadow 或 active（目前是「${value}」）`);
 }
 
-// 階段 7：協同過濾 s_cf 只能 off／shadow；active 要等構想 4.6 的門檻達到後（階段 8）才開放。
-export const DEFAULT_CF_INTEREST_MODE = 'shadow';
+/** `VECTOR_INTEREST_MODE`：off／shadow／active。不認得的值拋錯（拒絕啟動），不當成 off。 */
+export function resolveVectorInterestMode(value = DEFAULT_VECTOR_INTEREST_MODE) {
+  return resolveMode('VECTOR_INTEREST_MODE', value, DEFAULT_VECTOR_INTEREST_MODE);
+}
+
+// 協同過濾 s_cf。構想 4.6 原訂門檻（真人 ≥ 15）達到前不 active；2026-10-14 使用者決定先切 active。
+// 共現表為空或本人沒有訊號時 s_cf 為 null，等於不加分；日誌持續記錄門檻是否達到。
+export const DEFAULT_CF_INTEREST_MODE = 'active';
 
 export function resolveCfInterestMode(value = DEFAULT_CF_INTEREST_MODE) {
-  const mode = String(value ?? DEFAULT_CF_INTEREST_MODE).trim().toLowerCase() || DEFAULT_CF_INTEREST_MODE;
-  if (mode === 'off' || mode === 'shadow') return mode;
-  if (mode === 'active') {
-    throw new RangeError('CF_INTEREST_MODE=active 尚未開放：協同過濾達到啟用門檻前只能 off 或 shadow');
-  }
-  throw new RangeError(`CF_INTEREST_MODE 只接受 off 或 shadow（目前是「${value}」）`);
+  return resolveMode('CF_INTEREST_MODE', value, DEFAULT_CF_INTEREST_MODE);
 }
 
 /** 啟動時檢查；設定錯誤就拒絕啟動。 */

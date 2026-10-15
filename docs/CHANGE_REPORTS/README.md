@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-15
+
+- [s_vec／s_cf 切 active，以及四類測試與 10 位 Persona UX 實測](./2026-10-15-active-switch-and-persona-ux-test.md)
+
 ## 2026-10-14
 
 - [協同過濾與 User Embedding：階段 7 協同過濾同意、課程共現表與 s_cf shadow](./2026-10-14-collaborative-filtering-stage7.md)

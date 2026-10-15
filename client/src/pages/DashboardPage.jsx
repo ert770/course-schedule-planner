@@ -56,6 +56,7 @@ export default function DashboardPage() {
     clearSessionAvoidances,
     applyResolvedAvoidances,
     buildAvoidanceConstraints,
+    userAddedCourseIds,
     buildPlanningContext,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
@@ -134,6 +135,8 @@ export default function DashboardPage() {
         // 本次規劃的避開清單：使用者剛移除的課，這一次重排就不要再出現。
         // 只送 sectionId 與原因代號，課號與教師由後端從 Courses 重查。
         sessionAvoidances: buildAvoidanceConstraints(),
+        // 使用者自己加入的課當成指定課程，重排時保留（否則會被整份換掉）。
+        selectedCourseIds: userAddedCourseIds(),
       };
 
       // 排課讀的是這位學生的偏好與修課歷史，未登入就不該產生課表。
@@ -183,7 +186,7 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userIdentity]);
+  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userAddedCourseIds, userIdentity]);
 
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;

@@ -3,7 +3,7 @@
 // - 貢獻者：現行政策下同時同意 personalization_learning 與 collaborative_learning 的人
 //   （privacyService.listCollaborativeContributors）。學號只在讀取修課歷史時使用，
 //   共現表只存課號、相似度與共現人數，不存任何 subject 或學號。
-// - 正式儲存的表只由真人組成；Persona／demo（同意來源不是隱私中心）只能在 dry-run 驗證管線時加入。
+// - 正式儲存的表只由真人組成；Persona（帳號 9001～9010）與 demo（同意來源不是隱私中心）只能在 dry-run 驗證管線時加入。
 // - 每次重建整張換新（新的 build 寫入後刪除舊 build），撤回同意的人下一次重建起就不在表內。
 // - 每 24 小時重建一次；有人撤回 collaborative_learning 時提前重建。
 import crypto from 'node:crypto';
@@ -12,6 +12,7 @@ import { PRIVACY_RETENTION } from '../data/privacyPolicy.js';
 import { getAll } from '../db/database.js';
 import { isMysqlConfigured, queryRows, withTransaction } from '../db/mysql.js';
 import { resolveIdentityFrom } from './identityService.js';
+import { isPersonaAccount } from '../data/simulatedAccounts.js';
 import { deriveSubjectId, listCollaborativeContributors, toMysqlDate } from './privacyService.js';
 import { getUserPreferences } from './memoryService.js';
 import { getInteractionEventsForExport } from './interactionEventService.js';
@@ -50,8 +51,10 @@ export async function collectContributorSignals({ includeSimulated = false, now 
   for (const user of users) {
     const identity = resolveIdentityFrom(users, user.studentId ?? user.id);
     if (!identity.found) continue;
-    const info = contributors.get(deriveSubjectId(identity.canonicalId));
-    if (!info) continue;
+    const consent = contributors.get(deriveSubjectId(identity.canonicalId));
+    if (!consent) continue;
+    // Persona 帳號一律視為模擬，不論同意是在哪裡做的。
+    const info = { ...consent, simulated: consent.simulated || isPersonaAccount(user) };
     if (info.simulated && !includeSimulated) { skippedSimulated += 1; continue; }
     try {
       const profile = await loadProfile(identity);
@@ -191,6 +194,10 @@ export function requestCourseNeighborRebuild() {
   if (pendingRebuild) return pendingRebuild;
   pendingRebuild = new Promise(resolve => { setTimeout(resolve, 5000).unref?.(); })
     .then(() => rebuildCourseNeighbors())
+    .then(build => logger.info(
+      `共現表已因撤回同意提前重建：真人貢獻者 ${build.gate.realContributors}、保留配對 ${build.stats.keptPairs}。`,
+      { label: 'CF' }
+    ))
     .catch(error => logger.warn(`共現表重建失敗：${error.message}`, { label: 'CF' }))
     .finally(() => { pendingRebuild = null; });
   return pendingRebuild;

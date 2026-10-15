@@ -40,13 +40,13 @@ describe('VA：興趣模型 α 與 VECTOR_INTEREST_MODE', () => {
     }
   });
 
-  test('VA-4 模式只接受 off／shadow，預設 shadow；active 尚未開放', () => {
-    assert.equal(resolveVectorInterestMode(undefined), 'shadow');
+  test('VA-4 模式接受 off／shadow／active，預設 active（2026-10-14 使用者決定）；其他值拒絕啟動', () => {
+    assert.equal(resolveVectorInterestMode(undefined), 'active');
     assert.equal(resolveVectorInterestMode(' OFF '), 'off');
     assert.equal(resolveVectorInterestMode('shadow'), 'shadow');
-    assert.throws(() => resolveVectorInterestMode('active'), /尚未開放/);
-    assert.throws(() => resolveVectorInterestMode('on'), /只接受 off 或 shadow/);
-    assert.throws(() => assertInterestConfig({ VECTOR_INTEREST_MODE: 'active' }), /尚未開放/);
+    assert.equal(resolveVectorInterestMode('active'), 'active');
+    assert.throws(() => resolveVectorInterestMode('on'), /只接受 off、shadow 或 active/);
+    assert.throws(() => assertInterestConfig({ VECTOR_INTEREST_MODE: 'on' }), /只接受/);
   });
 });
 
@@ -182,6 +182,34 @@ describe('VI：shadow 接進排課', () => {
     assert.equal(result, precomputed);
     assert.equal(loads, 0);
     assert.equal(await loadExternalInterestReservation({}, {}, candidates, { mode: 'keyword', precomputed }), null);
+  });
+
+  test('VI-6 active：s_vec 依 α_vec × 基礎分 × s_vec 改變選課，分數明細列出 vectorInterest', () => {
+    const active = { ...vectorContext, mode: 'active' };
+    const baseline = generateSchedule(candidates, constraints);
+    const result = generateScheduleWithTagInterestContext(candidates, constraints, null, generateSchedule, null, active);
+    assert.equal(baseline.schedule[0].id, 86101);
+    assert.equal(result.schedule[0].id, 86102);
+    const breakdown = result.schedule[0].recommendationReason.scoreBreakdown;
+    assert.deepEqual(breakdown.find(item => item.component === 'vectorInterest'), { component: 'vectorInterest', value: 0.2 * 1000 * 0.8 });
+    assert.equal(result.vectorInterestShadowStats, undefined);
+    const plan = result.plans[0];
+    assert.equal(plan.vectorInterestPlanScore, 0.8);
+    assert.ok(Math.abs(plan.combinedPlanScore - plan.preferenceScore * (1 + 0.2 * 0.8)) < 1e-9);
+  });
+
+  test('VI-7 active 不套用到必修', () => {
+    const required = [
+      makeCourse(86121, { department: '資訊三甲', category: '必修', dayOfWeek: 1 }),
+      makeCourse(86122, { department: '資訊三甲', category: '必修', dayOfWeek: 2 }),
+    ];
+    const active = { ...vectorContext, mode: 'active', coursesBySectionId: { 86121: { score: -1 }, 86122: { score: 1 } } };
+    const result = generateScheduleWithTagInterestContext(
+      required, { ...constraints, maxCredits: 25 }, null, generateSchedule, null, active
+    );
+    for (const course of result.schedule) {
+      assert.equal(course.recommendationReason.scoreBreakdown.some(item => item.component === 'vectorInterest'), false);
+    }
   });
 
   test('VI-5 shadow context 沿用系外保留已算的 s_vec；沒有才自己算；off 不算', async () => {

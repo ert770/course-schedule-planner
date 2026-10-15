@@ -41,6 +41,7 @@ import {
 } from '../skills/tagInterestRanking.js';
 import { logger } from '../utils/logger.js';
 import { loadCandidateVectorScores, loadExternalInterestReservation } from './externalInterestReservationService.js';
+import { getCachedCourseCatalog } from './courseCatalogCache.js';
 import { resolveCfInterestMode, resolveInterestAlphas, resolveVectorInterestMode } from '../skills/interestAlphas.js';
 import { buildVectorInterestContext } from '../skills/vectorInterestShadow.js';
 import { CF_MODEL_VERSION, buildUserCourseSignals, scoreCoursesWithCf } from '../skills/itemItemCf.js';
@@ -464,6 +465,19 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
     }
   }
 
+  // 使用者自己加入課表的班次（前端以 selectedCourseIds 送來）必須在候選池裡，排課引擎才能保留它們；
+  // 系外選修、通識等可能不在依學生範圍查出的候選中（2026-10-15 Persona UX 測試發現）。
+  const pinnedIds = (Array.isArray(constraints.selectedCourseIds) ? constraints.selectedCourseIds : []).map(String);
+  if (pinnedIds.length > 0) {
+    const present = new Set(candidates.map(course => String(course.id)));
+    const missing = pinnedIds.filter(id => !present.has(id));
+    if (missing.length > 0) {
+      const missingSet = new Set(missing);
+      const catalog = await (options.loadCourses ?? getCachedCourseCatalog)();
+      candidates = [...candidates, ...catalog.filter(course => missingSet.has(String(course.id)))];
+    }
+  }
+
   const externalInterestReservation = candidates.length > 0 && graduationPlanning?.enabled
     && Number(graduationPlanning.gaps?.external) > 0
     ? await loadExternalInterestReservation(identity, prefs, candidates, {
@@ -672,6 +686,11 @@ export async function generateForUser(identity, input = {}, options = {}) {
   }
   logInterestShadow('s_vec', scheduled?.vectorInterestShadowStats);
   logInterestShadow('s_cf', scheduled?.cfInterestShadowStats);
+  if (cfInterestContext?.mode === 'active') {
+    // 構想 4.6 的門檻尚未達到時仍 active（使用者決定），日誌記錄來源與門檻狀態以便追蹤。
+    logger.info(`s_cf active：來源 ${cfInterestContext.source}，啟用門檻${cfInterestContext.gateMet ? '已達到' : '未達到'}`,
+      { label: 'Schedule' });
+  }
   const result = annotateScheduleIdentifiers(scheduled, requestId);
   await recordExposureSafely(identity, result, requestId, { surface, trigger });
   return result;

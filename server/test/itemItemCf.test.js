@@ -151,11 +151,12 @@ describe('CF：item-item 計算', () => {
     assert.equal(CF_ACTIVATION_GATE.minRealContributors, 15);
   });
 
-  test('CF-5 CF_INTEREST_MODE 只接受 off／shadow；active 拒絕啟動', () => {
-    assert.equal(resolveCfInterestMode(undefined), 'shadow');
+  test('CF-5 CF_INTEREST_MODE 接受 off／shadow／active，預設 active（使用者決定）；其他值拒絕啟動', () => {
+    assert.equal(resolveCfInterestMode(undefined), 'active');
     assert.equal(resolveCfInterestMode('off'), 'off');
-    assert.throws(() => resolveCfInterestMode('active'), /尚未開放/);
-    assert.throws(() => assertInterestConfig({ CF_INTEREST_MODE: 'active' }), /尚未開放/);
+    assert.equal(resolveCfInterestMode('shadow'), 'shadow');
+    assert.throws(() => resolveCfInterestMode('yes'), /只接受/);
+    assert.throws(() => assertInterestConfig({ CF_INTEREST_MODE: 'yes' }), /只接受/);
   });
 });
 
@@ -177,6 +178,18 @@ describe('CN：共現表建立與讀取', () => {
     const dryRun = await rebuildCourseNeighbors({ persist: false, includeSimulated: true, deps: deps([3, 4]) });
     assert.equal(dryRun.gate.simulatedContributors, 2);
     await assert.rejects(rebuildCourseNeighbors({ persist: true, includeSimulated: true, deps: deps() }), /只能用於 dry-run/);
+  });
+
+  test('CN-3 Persona 帳號（9001～9010）即使在隱私中心自己同意，也一律視為模擬', async () => {
+    const personaUsers = [...users, { id: 9001, studentId: 'D0009001' }];
+    const personaDeps = {
+      ...deps(),
+      listContributors: async () => new Map(personaUsers.map(user => [deriveSubjectId(user.studentId), { simulated: false }])),
+      loadUsers: async () => personaUsers,
+    };
+    const collected = await collectContributorSignals({ deps: personaDeps });
+    assert.equal(collected.contributors.length, 5);
+    assert.equal(collected.skippedSimulated, 1);
   });
 
   test('CN-2 重建後讀得到最新的表；輸出不含 subject 或學號', async () => {
@@ -231,6 +244,18 @@ describe('CS：s_cf shadow 接入排課', () => {
     const noSignal = await loadCfInterestContext({}, { courseHistory: [] }, candidates, { mode: 'shadow', loadNeighbors, loadEvents: async () => [] });
     assert.equal(noSignal.source, 'no-user-signal');
     assert.equal(await loadCfInterestContext({}, prefs, candidates, { mode: 'off', loadNeighbors }), null);
+  });
+
+  test('CS-4 active：s_cf 依 α_cf × 基礎分 × s_cf 改變選課；s_vec 與 s_cf 同時 active 時分開列在明細', async () => {
+    const cf = { ...(await loadCfInterestContext({}, prefs, candidates, { mode: 'active', loadNeighbors, loadEvents: async () => [] })) };
+    const vec = { mode: 'active', source: 's_vec', alpha: 0.2, coursesBySectionId: { 87101: { score: 0.1 }, 87102: { score: 0.1 } } };
+    const baseline = generateSchedule(candidates, constraints);
+    const result = generateScheduleWithTagInterestContext(candidates, constraints, null, generateSchedule, null, vec, cf);
+    assert.equal(baseline.schedule[0].id, 87101);
+    assert.equal(result.schedule[0].id, 87102);
+    const components = result.schedule[0].recommendationReason.scoreBreakdown.map(item => item.component);
+    assert.ok(components.includes('vectorInterest'));
+    assert.ok(components.includes('cfInterest'));
   });
 
   test('CS-3 s_vec 與 s_cf 分開記錄；shadow 不改變課表', async () => {

@@ -328,7 +328,8 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 - `dayOfWeek`
 - `period`
 - `credits`
-- `language`
+- `language`：`English` 只留全英授課（`isEnglishTaught`），`中文 (Chinese)` 排除全英授課（2026-10-15 修正：
+  原本比對不存在的 `course.language`，選任何語言都是 0 筆）
 - `category`：`通識` 或資料庫原始類別 `必修`
 
 `通識` 會依官方通識分類資料解析；`核心選修`、`一般選修`、`系外選修` 等需要個人
@@ -712,6 +713,9 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 
 `courseIds` 決定候選池，同時代表「使用者明確指定的課」。route 會把它併入
 `explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds` 同樣視為明確指定。
+
+`selectedCourseIds` 中不在候選池的班次（例如系外選修、通識）會從課程目錄補進候選池，排課引擎才能保留它們
+（2026-10-15）。排課主頁的「套用偏好排課」把使用者自己加入課表的班次放在這裡送出；從已存課表載回的課不算。
 
 `retakeCourseIds` 與 `failedRequiredCourseIds` 已移除。重補修不得由 client 或 Agent
 手動指定；後端只依 Profile 的 `courseHistory`，對每個 `courseCode` 取最新

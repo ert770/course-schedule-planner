@@ -553,7 +553,8 @@ OpenAI `text-embedding-3-large`。新增離線腳本與本機產物讀取路徑�
 階段 5 的歷史修課回饋視窗與階段 6 的排課 shadow 已完成（見[階段 5](./2026-10-14-history-feedback-stage5.md)、
 [階段 6](./2026-10-14-vector-interest-shadow-stage6.md) 報告）；階段 7 的同意、共現表與 s_cf shadow 已完成
 （見[階段 7 報告](./2026-10-14-collaborative-filtering-stage7.md)；4.5 的顯示文字依使用者確認採用、政策升版為 v4、
-第 6 節只建了 `Course_Neighbors` 與其建立紀錄表）；階段 8 的試行等真實樣本。
+第 6 節只建了 `Course_Neighbors` 與其建立紀錄表）；2026-10-15 使用者決定 `s_vec`、`s_cf` 提前切 active（見[報告](./2026-10-15-active-switch-and-persona-ux-test.md)），
+門檻未達前 `s_cf` 因共現表為空實際上不加分，階段 8 的效果比較仍等真實樣本。
 
 ---
 
