@@ -61,6 +61,7 @@ export function createVectorInterestShadowStats(vectorContext, tagInterestContex
     modelVersion: vectorContext.modelVersion,
     alphaVec: vectorContext.alpha,
     gateMet: vectorContext.gateMet ?? null,
+    simulated: vectorContext.simulated === true,
     candidates: { positive: 0, neutral: 0, negative: 0, noScore: 0 },
     correlation: { pairs: 0, pearson: null },
     poolComparisons: 0,

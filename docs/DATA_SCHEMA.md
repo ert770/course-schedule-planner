@@ -76,6 +76,8 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 - **重建**：伺服器每 24 小時整張重建（新 build 寫入後刪除舊 build，列由外鍵 `ON DELETE CASCADE` 一併刪除）；
   有人撤回 `collaborative_learning` 時提前重建。`CF_INTEREST_MODE=off` 時不重建。
 - `Course_Neighbor_Builds.gate_met`：構想 4.6 的啟用門檻（真人 ≥ 15、每人有效互動 ≥ 3、共現 ≥ 3）是否達到。
+- **階段 8 模擬共現表**（2026-10-15）：Persona 專用、只在伺服器記憶體，**不寫入這兩張表**，也沒有新欄位；
+  見 `SCHEDULING_LOGIC.md` 的「階段 8 模擬演練」。
 
 ### `Learned_Tag_Interests`（Roadmap #43 階段 3）
 

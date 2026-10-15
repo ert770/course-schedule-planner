@@ -45,7 +45,8 @@ import { getCachedCourseCatalog } from './courseCatalogCache.js';
 import { resolveCfInterestMode, resolveInterestAlphas, resolveVectorInterestMode } from '../skills/interestAlphas.js';
 import { buildVectorInterestContext } from '../skills/vectorInterestShadow.js';
 import { CF_MODEL_VERSION, buildUserCourseSignals, scoreCoursesWithCf } from '../skills/itemItemCf.js';
-import { loadLatestCourseNeighbors } from './courseNeighborService.js';
+import { loadLatestCourseNeighbors, loadSimulatedCourseNeighbors } from './courseNeighborService.js';
+import { isPersonaAccount } from '../data/simulatedAccounts.js';
 import { PRIVACY_RETENTION } from '../data/privacyPolicy.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
@@ -517,11 +518,15 @@ export async function loadVectorInterestContext(identity, prefs, candidates, {
  */
 export async function loadCfInterestContext(identity, prefs, candidates, {
   mode,
-  loadNeighbors = loadLatestCourseNeighbors,
+  loadNeighbors = null,
+  loadSimulatedNeighbors = loadSimulatedCourseNeighbors,
   loadEvents = null,
   now = new Date(),
 } = {}) {
   if (mode === 'off' || candidates.length === 0) return null;
+  // 階段 8 模擬演練：Persona 讀只由 Persona 組成的模擬共現表，且要達演練門檻才加分；
+  // 真人一律讀正式表（正式表未達門檻仍 active 是 2026-10-15 的使用者決定）。
+  const simulated = !loadNeighbors && isPersonaAccount({ id: identity?.numericId });
   let source = 'unavailable';
   let scores = null;
   let gateMet = null;
@@ -530,10 +535,12 @@ export async function loadCfInterestContext(identity, prefs, candidates, {
     if (!consented) {
       source = 'no-consent';
     } else {
-      const table = await loadNeighbors();
+      const table = simulated ? await loadSimulatedNeighbors() : await (loadNeighbors ?? loadLatestCourseNeighbors)();
       gateMet = table.gateMet ?? null;
       if (!table.available) {
         source = table.reason ?? 'unavailable';
+      } else if (simulated && !table.gateMet) {
+        source = 'rehearsal_gate_not_met';
       } else if (table.neighbors.size === 0) {
         source = 'empty_table';
       } else {
@@ -568,6 +575,7 @@ export async function loadCfInterestContext(identity, prefs, candidates, {
       noScoreReason: 'no_neighbor_overlap',
     }),
     gateMet,
+    simulated,
   };
 }
 
@@ -603,7 +611,7 @@ function logInterestShadow(label, stats) {
   const percent = value => (value === null ? '無' : `${Math.round(value * 100)}%`);
   const gate = stats.gateMet === null || stats.gateMet === undefined
     ? ''
-    : `，啟用門檻${stats.gateMet ? '已達到' : '未達到'}`;
+    : `，${stats.simulated ? '模擬共現表（Persona）、演練門檻' : '啟用門檻'}${stats.gateMet ? '已達到' : '未達到'}`;
   logger.info(
     `${label} shadow 彙總（α ${stats.alphaVec}，來源 ${stats.source}${gate}）：`
       + `候選正向 ${stats.candidates.positive}、中性 ${stats.candidates.neutral}、`
@@ -688,7 +696,8 @@ export async function generateForUser(identity, input = {}, options = {}) {
   logInterestShadow('s_cf', scheduled?.cfInterestShadowStats);
   if (cfInterestContext?.mode === 'active') {
     // 構想 4.6 的門檻尚未達到時仍 active（使用者決定），日誌記錄來源與門檻狀態以便追蹤。
-    logger.info(`s_cf active：來源 ${cfInterestContext.source}，啟用門檻${cfInterestContext.gateMet ? '已達到' : '未達到'}`,
+    const table = cfInterestContext.simulated ? '模擬共現表（Persona）、演練門檻' : '正式共現表、啟用門檻';
+    logger.info(`s_cf active：來源 ${cfInterestContext.source}，${table}${cfInterestContext.gateMet ? '已達到' : '未達到'}`,
       { label: 'Schedule' });
   }
   const result = annotateScheduleIdentifiers(scheduled, requestId);
