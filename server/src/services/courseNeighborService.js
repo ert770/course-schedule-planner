@@ -6,6 +6,9 @@
 // - 正式儲存的表只由真人組成；Persona（帳號 9001～9010）與 demo（同意來源不是隱私中心）只能在 dry-run 驗證管線時加入。
 // - 每次重建整張換新（新的 build 寫入後刪除舊 build），撤回同意的人下一次重建起就不在表內。
 // - 每 24 小時重建一次；有人撤回 collaborative_learning 時提前重建。
+// - 階段 8 模擬演練（2026-10-15 使用者決定）：沒有真人樣本，先用 10 位 Persona 代替。
+//   另建一張**只由 Persona 組成、只放記憶體、只套用在 Persona 自己排課**的模擬共現表，
+//   真人永遠讀正式表；模擬表不寫 MySQL，也不計入正式啟用門檻（見 loadSimulatedCourseNeighbors）。
 import crypto from 'node:crypto';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
 import { PRIVACY_RETENTION } from '../data/privacyPolicy.js';
@@ -17,9 +20,11 @@ import { deriveSubjectId, listCollaborativeContributors, toMysqlDate } from './p
 import { getUserPreferences } from './memoryService.js';
 import { getInteractionEventsForExport } from './interactionEventService.js';
 import {
+  CF_ACTIVATION_GATE,
   CF_DEFAULTS,
   CF_MODEL_VERSION,
   buildCourseNeighbors,
+  countEffectiveInteractions,
   buildUserCourseSignals,
   evaluateCfActivationGate,
 } from '../skills/itemItemCf.js';
@@ -41,7 +46,9 @@ function retainedEvents(events, now) {
 }
 
 /** 讀取每位貢獻者的課程訊號。學號只在這裡用來讀修課歷史，不進入輸出。 */
-export async function collectContributorSignals({ includeSimulated = false, now = new Date(), deps = {} } = {}) {
+export async function collectContributorSignals({
+  includeSimulated = false, personaOnly = false, now = new Date(), deps = {},
+} = {}) {
   const contributors = await (deps.listContributors ?? listCollaborativeContributors)();
   const users = await (deps.loadUsers ?? (() => getAll('users')))();
   const loadProfile = deps.loadProfile ?? getUserPreferences;
@@ -51,6 +58,7 @@ export async function collectContributorSignals({ includeSimulated = false, now 
   for (const user of users) {
     const identity = resolveIdentityFrom(users, user.studentId ?? user.id);
     if (!identity.found) continue;
+    if (personaOnly && !isPersonaAccount(user)) continue;
     const consent = contributors.get(deriveSubjectId(identity.canonicalId));
     if (!consent) continue;
     // Persona 帳號一律視為模擬，不論同意是在哪裡做的。
@@ -212,9 +220,86 @@ export function startCourseNeighborSchedule() {
   rebuildTimer.unref?.();
 }
 
+// ── 階段 8 模擬演練：Persona 專用共現表 ─────────────────────────────────────────
+
+// 演練用門檻：10 位 Persona 不可能達到正式的 15 位真人，改成「至少 5 位 Persona 達每人 3 筆互動」。
+// 這只決定模擬表要不要對 Persona 加分，**不是**正式門檻的校準，也不作為對真人啟用的依據。
+export const CF_REHEARSAL_GATE = Object.freeze({
+  minContributors: 5,
+  minInteractionsPerContributor: CF_ACTIVATION_GATE.minInteractionsPerContributor,
+  minCooccurrence: CF_ACTIVATION_GATE.minCooccurrence,
+});
+const SIMULATED_CACHE_TTL_MS = 10 * 60 * 1000;
+let simulatedCache = null;
+let simulatedInFlight = null;
+
+export function evaluateCfRehearsalGate(contributors = [], keptPairs = 0, gate = CF_REHEARSAL_GATE) {
+  const eligible = contributors.filter(item => countEffectiveInteractions(item.signals ?? new Map())
+    >= gate.minInteractionsPerContributor);
+  return {
+    contributors: contributors.length,
+    eligibleContributors: eligible.length,
+    keptPairs,
+    met: eligible.length >= gate.minContributors && keptPairs > 0,
+    gate: { ...gate },
+  };
+}
+
+/** 只用 Persona 建立模擬共現表（不寫入任何地方）。 */
+export async function buildSimulatedCourseNeighbors({ now = new Date(), deps = {} } = {}) {
+  const collected = await collectContributorSignals({ includeSimulated: true, personaOnly: true, now, deps });
+  const { neighbors, stats } = buildCourseNeighbors(collected.contributors);
+  return {
+    buildId: `simulated-${crypto.randomUUID()}`,
+    modelVersion: CF_MODEL_VERSION,
+    computedAt: now.toISOString(),
+    simulated: true,
+    stats,
+    gate: evaluateCfRehearsalGate(collected.contributors, stats.keptPairs),
+    neighbors,
+  };
+}
+
+/**
+ * Persona 排課用的模擬共現表（記憶體快取 10 分鐘；同時多個請求共用一次計算）。
+ * 回傳格式與 loadLatestCourseNeighbors 相同，另加 simulated: true。
+ */
+export async function loadSimulatedCourseNeighbors({ now = Date.now(), deps = {} } = {}) {
+  if (simulatedCache && simulatedCache.expiresAt > now) return simulatedCache.value;
+  if (!simulatedInFlight) {
+    simulatedInFlight = buildSimulatedCourseNeighbors({ now: new Date(now), deps })
+      .then(build => {
+        const value = {
+          available: true, simulated: true, buildId: build.buildId, computedAt: build.computedAt,
+          gateMet: build.gate.met, gate: build.gate, stats: build.stats, neighbors: build.neighbors,
+        };
+        simulatedCache = { value, expiresAt: now + SIMULATED_CACHE_TTL_MS };
+        logger.info(
+          `模擬共現表（Persona）已建立：貢獻者 ${build.gate.contributors}（達互動門檻 ${build.gate.eligibleContributors}）、`
+            + `保留配對 ${build.stats.keptPairs}、演練門檻${build.gate.met ? '已達到' : '未達到'}。`,
+          { label: 'CF' }
+        );
+        return value;
+      })
+      .catch(error => {
+        logger.warn(`模擬共現表建立失敗：${error.message}`, { label: 'CF' });
+        return { available: false, simulated: true, reason: 'unavailable', neighbors: new Map() };
+      })
+      .finally(() => { simulatedInFlight = null; });
+  }
+  return simulatedInFlight;
+}
+
+/** Persona 改了協同學習同意時呼叫：下一次排課重算模擬表。 */
+export function invalidateSimulatedCourseNeighbors() {
+  simulatedCache = null;
+}
+
 export function resetCourseNeighborStateForTests() {
   memoryBuild = null;
   readCache = null;
+  simulatedCache = null;
+  simulatedInFlight = null;
 }
 
 export default {
@@ -223,4 +308,6 @@ export default {
   loadLatestCourseNeighbors,
   requestCourseNeighborRebuild,
   startCourseNeighborSchedule,
+  loadSimulatedCourseNeighbors,
+  invalidateSimulatedCourseNeighbors,
 };

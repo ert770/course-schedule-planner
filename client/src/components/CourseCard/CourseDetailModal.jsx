@@ -1,5 +1,6 @@
 import { formatCourseTime } from '../../utils/courseTime';
 import { formatCourseGradeLevel } from '../../utils/courseGradeLevel';
+import { formatCoursePrerequisites } from '../../utils/coursePrerequisites';
 
 const SELECTION_LABELS = {
   REQUIRED_COURSE: '這是你的必修課',
@@ -167,11 +168,7 @@ export default function CourseDetailModal({ course, onClose, onRemove, showTime 
 
         <div className="detail-desc">
           <div className="detail-desc-label">先修條件</div>
-          <p>{course.prerequisites === null
-            ? '尚未取得官方先修資料'
-            : (Array.isArray(course.prerequisites)
-              ? course.prerequisites.join('、') || '無'
-              : String(course.prerequisites))}</p>
+          <p>{formatCoursePrerequisites(course.prerequisites)}</p>
         </div>
 
         {course.description && (

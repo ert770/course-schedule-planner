@@ -555,6 +555,9 @@ OpenAI `text-embedding-3-large`。新增離線腳本與本機產物讀取路徑�
 （見[階段 7 報告](./2026-10-14-collaborative-filtering-stage7.md)；4.5 的顯示文字依使用者確認採用、政策升版為 v4、
 第 6 節只建了 `Course_Neighbors` 與其建立紀錄表）；2026-10-15 使用者決定 `s_vec`、`s_cf` 提前切 active（見[報告](./2026-10-15-active-switch-and-persona-ux-test.md)），
 門檻未達前 `s_cf` 因共現表為空實際上不加分，階段 8 的效果比較仍等真實樣本。
+2026-10-15 使用者決定先用 10 位 Persona 模擬演練階段 8：Persona 讀只由 Persona 組成、只放記憶體的模擬共現表，
+真人仍讀正式表；演練門檻（5 位 Persona 各 3 筆）只決定模擬表是否加分，不是 4.6 的校準。#32 比較管線完成，
+結果無法判定（見[階段 8 演練報告](./2026-10-15-cf-stage8-persona-rehearsal.md)）。
 
 ---
 

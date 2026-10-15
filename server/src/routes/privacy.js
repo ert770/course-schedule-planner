@@ -12,7 +12,7 @@ import {
 } from '../services/preferenceLearningService.js';
 import { deleteTagInterestProfile, getStoredTagInterestProfile, getTagInterestProfile } from '../services/tagInterestService.js';
 import { buildClearSessionCookie } from '../services/sessionService.js';
-import { requestCourseNeighborRebuild } from '../services/courseNeighborService.js';
+import { invalidateSimulatedCourseNeighbors, requestCourseNeighborRebuild } from '../services/courseNeighborService.js';
 
 const router = Router();
 const requestId = req => String(req.get('x-request-id') || '').slice(0, 128) || null;
@@ -46,6 +46,10 @@ router.put('/consents', requireIdentity, async (req, res) => {
     const collaborative = PRIVACY_PURPOSES.COLLABORATIVE_LEARNING;
     if (isCurrentGrant(before.consents?.[collaborative]) && !isCurrentGrant(status.consents?.[collaborative])) {
       requestCourseNeighborRebuild();
+    }
+    // 階段 8 模擬演練：Persona 的同意變動（同意或撤回）都讓模擬共現表下次重算。
+    if (isCurrentGrant(before.consents?.[collaborative]) !== isCurrentGrant(status.consents?.[collaborative])) {
+      invalidateSimulatedCourseNeighbors();
     }
 
     // roadmap #31：撤回「從互動持續改善個人化」等於硬性暫停——連同已學到的

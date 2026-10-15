@@ -390,6 +390,12 @@ context 只經 server runtime options 傳給 scheduler，REST 與 Chat 共用；
 同一方案重複套用（放寬限制時）不會重複加分。`s_cf` 在共現表為空、本人沒有訊號或沒有重疊時為 null，等於不加分；
 構想 4.6 的門檻（真人 ≥ 15）尚未達到，伺服器日誌持續記錄。設 `shadow` 或 `off` 可回復。
 
+**階段 8 模擬演練（2026-10-15 使用者決定：沒有真人樣本，先用 10 位 Persona 代替）**：Persona 帳號（9001～9010）排課時
+`s_cf` 改查**模擬共現表**——只由 Persona 組成、只放伺服器記憶體（10 分鐘快取，Persona 改變協同學習同意時重算）、
+不寫 MySQL；且要達**演練門檻**（至少 5 位 Persona 各有 3 筆有效互動，且有共現 ≥ 3 人的配對）才加分，未達時記為
+`rehearsal_gate_not_met`。真人一律查正式表，模擬表永遠影響不到真人；演練門檻也不是正式門檻的校準。
+離線比較見 `server/scripts/hybridComparisonStage8.js`（roadmap #32 的管線，以 Persona 執行，只驗證管線與方向）。
+
 **s_cf shadow（2026-10-14 階段 7）**：`CF_INTEREST_MODE`（預設 `shadow`，可設 `off`）。item-item 協同過濾：
 用本人（需同意 `personalization_learning`）的課程訊號查課程共現表 `Course_Neighbors`，
 `s_cf(u, c) = Σ sim(c, j) × w_u(j) / max(1, Σ sim(c, j))`，j 為 c 的前 20 門相近課中本人有訊號的。

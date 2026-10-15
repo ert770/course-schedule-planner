@@ -76,6 +76,8 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 - **重建**：伺服器每 24 小時整張重建（新 build 寫入後刪除舊 build，列由外鍵 `ON DELETE CASCADE` 一併刪除）；
   有人撤回 `collaborative_learning` 時提前重建。`CF_INTEREST_MODE=off` 時不重建。
 - `Course_Neighbor_Builds.gate_met`：構想 4.6 的啟用門檻（真人 ≥ 15、每人有效互動 ≥ 3、共現 ≥ 3）是否達到。
+- **階段 8 模擬共現表**（2026-10-15）：Persona 專用、只在伺服器記憶體，**不寫入這兩張表**，也沒有新欄位；
+  見 `SCHEDULING_LOGIC.md` 的「階段 8 模擬演練」。
 
 ### `Learned_Tag_Interests`（Roadmap #43 階段 3）
 
@@ -405,6 +407,10 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 5＝碩士／博士／研究所。課程查詢與 scheduler 皆使用同一欄位，年級不符時排除。
 `prerequisites` 映射為 `course.prerequisites`；2026-09-11 實查 3,086/3,086 皆為 NULL，
 因此 NULL 必須顯示為「尚未取得官方先修資料」，不得解讀成沒有先修。
+2026-10-15 實查：3,058 門為空陣列 `[]`、28 門為物件
+`{ rules: [{ name, course_id }], required_ids, course_code, course_name }`，NULL 0 門。前端以
+`client/src/utils/coursePrerequisites.js` 統一顯示：NULL →「尚未取得官方先修資料」、空陣列或空 `rules` →「無」、
+物件列出 `rules` 的課名（沒有課名時用課號）。
 
 ### `admission_year` 與版本化畢業規則（roadmap #23）
 
