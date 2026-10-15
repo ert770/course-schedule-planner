@@ -8,12 +8,16 @@ import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 const SERVICE = 'service_processing';
 const PERSONALIZATION = 'personalization_learning';
 const RESEARCH = 'aggregate_research';
+// 協同過濾：以個人化學習為前提，未勾選個人化學習時不能勾選。
+const COLLABORATIVE = 'collaborative_learning';
 
 export default function PrivacyPage() {
   const navigate = useNavigate();
   const { privacyStatus, refreshPrivacy, isSetupDone, logout } = useAuth();
   const [policy, setPolicy] = useState(privacyStatus?.policy || null);
-  const [choices, setChoices] = useState({ [SERVICE]: false, [PERSONALIZATION]: false, [RESEARCH]: false });
+  const [choices, setChoices] = useState({
+    [SERVICE]: false, [PERSONALIZATION]: false, [COLLABORATIVE]: false, [RESEARCH]: false,
+  });
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [personalization, setPersonalization] = useState(null);
@@ -38,6 +42,7 @@ export default function PrivacyPage() {
     setChoices({
       [SERVICE]: privacyStatus.consents?.[SERVICE]?.granted || false,
       [PERSONALIZATION]: privacyStatus.consents?.[PERSONALIZATION]?.granted || false,
+      [COLLABORATIVE]: privacyStatus.consents?.[COLLABORATIVE]?.granted || false,
       [RESEARCH]: privacyStatus.consents?.[RESEARCH]?.granted || false,
     });
   }, [privacyStatus]);
@@ -46,7 +51,7 @@ export default function PrivacyPage() {
     const wasGranted = privacyStatus?.consents?.[PERSONALIZATION]?.granted;
     if (wasGranted && !choices[PERSONALIZATION]) {
       const confirmed = window.confirm(
-        '取消「個人化學習」會刪除已學到的偏好權重與互動事件紀錄，且無法復原。重新勾選後會從零開始重新累積。確定？'
+        '取消「個人化學習」會刪除已學到的偏好權重與互動事件紀錄，且無法復原；「協助推薦課程給其他同學」也會一併取消。重新勾選後會從零開始重新累積。確定？'
       );
       if (!confirmed) return;
     }
@@ -150,15 +155,23 @@ export default function PrivacyPage() {
 
         {privacyStatus?.error && <div className="privacy-message" role="alert">{privacyStatus.error}</div>}
 
-        {[SERVICE, PERSONALIZATION, RESEARCH].map(id => {
+        {[SERVICE, PERSONALIZATION, COLLABORATIVE, RESEARCH].map(id => {
           const purpose = purposeById(id);
+          if (!purpose && id === COLLABORATIVE) return null;
+          const blocked = id === COLLABORATIVE && !choices[PERSONALIZATION];
           return (
-            <label className="privacy-purpose" key={id}>
+            <label className={`privacy-purpose${blocked ? ' disabled' : ''}`} key={id}>
               <input
                 id={`consent-${id}`}
                 type="checkbox"
-                checked={choices[id]}
-                onChange={event => setChoices(current => ({ ...current, [id]: event.target.checked }))}
+                checked={choices[id] && !blocked}
+                disabled={blocked}
+                onChange={event => setChoices(current => ({
+                  ...current,
+                  [id]: event.target.checked,
+                  // 取消個人化學習時，協同過濾一併取消（伺服器也會這樣處理）。
+                  ...(id === PERSONALIZATION && !event.target.checked ? { [COLLABORATIVE]: false } : {}),
+                }))}
               />
               <span><strong>{purpose?.title || id}{purpose?.required ? '（必要）' : '（可選）'}</strong><small>{purpose?.description}</small></span>
             </label>

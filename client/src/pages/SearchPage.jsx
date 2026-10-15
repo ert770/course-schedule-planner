@@ -216,7 +216,9 @@ export default function SearchPage() {
     try {
       const filters = {
         code: condForm.code,
-        keyword: condForm.keyword || condForm.description,
+        // 「科目名稱」只比對課名與課號；「課程描述」才比對描述等其他欄位（先前兩者都送成 keyword）。
+        name: condForm.keyword,
+        keyword: condForm.description,
         instructor: condForm.instructor, 
         dayOfWeek: condForm.dayOfWeek ? parseInt(condForm.dayOfWeek) : null,
         period: condForm.period, 

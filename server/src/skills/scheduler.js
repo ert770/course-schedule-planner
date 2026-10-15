@@ -60,6 +60,12 @@ import {
   scoreCandidateWithTagInterest,
   scorePlanTagInterest,
 } from './tagInterestRanking.js';
+import {
+  attachVectorInterestShadowStats,
+  createVectorInterestShadowStats,
+  recordVectorShadowPoolRanking,
+  scorePlanVectorInterest,
+} from './vectorInterestShadow.js';
 
 let configuredHighsRuntime = null;
 
@@ -1227,7 +1233,7 @@ function computeScoreComponents(
       GRADUATION_BUCKET.GENERAL,
       GRADUATION_BUCKET.EXTERNAL,
     ].includes(bucket);
-    if (!poolCandidate) return components;
+    if (!poolCandidate) return addActiveInterestComponents(components, course, requiredIds, scope, tagInterestScoring);
 
     const requiredOrFixed = requiredIds.has(Number(course.id))
       || isRequiredForStudent(course, scope)
@@ -1246,7 +1252,7 @@ function computeScoreComponents(
       easePreferenceScore: components.easy,
     });
 
-    return {
+    return addActiveInterestComponents({
       ...components,
       // Same-year priority is a within-own-department-elective rule only.
       crossYearElective: bucket === GRADUATION_BUCKET.ELECTIVE
@@ -1255,10 +1261,32 @@ function computeScoreComponents(
       outsideOwnDepartment: 0,
       category: 0,
       tagInterest: candidate.tagAdjustedBaseScore - candidate.poolBaseScore,
-    };
+    }, course, requiredIds, scope, tagInterestScoring);
   }
 
-  return components;
+  return addActiveInterestComponents(components, course, requiredIds, scope, tagInterestScoring);
+}
+
+// 構想 5.1：s_vec、s_cf 啟用（active）時各自加一項 α × 基礎分 × s，不先混成一個分數，
+// 推薦理由的分數明細看得出各加了多少。適用範圍與標籤興趣相同（vectorInterestShadowDelta）。
+function addActiveInterestComponents(components, course, requiredIds, scope, interestScoring) {
+  const extras = interestScoring?.extra ?? [];
+  if (extras.length === 0) return components;
+  const added = { ...components };
+  for (const context of extras) {
+    added[context.componentKey] = vectorInterestShadowDelta(course, context, requiredIds, scope);
+  }
+  return added;
+}
+
+// 單課計分用的興趣設定：標籤興趣（active 時）＋已啟用的 s_vec／s_cf。都沒有時回傳 null，維持原計分。
+function buildInterestScoring(tagInterestContext, tagActive, activeInterestContexts = []) {
+  if (!tagActive && activeInterestContexts.length === 0) return null;
+  return {
+    mode: tagActive ? 'active' : 'off',
+    context: tagInterestContext,
+    extra: activeInterestContexts,
+  };
 }
 
 function sumScoreComponents(components) {
@@ -1449,6 +1477,76 @@ function updatePlanTagInterestShadowStats(
     0
   );
   planStats.orderChanged = planStats.changedPositions > 0;
+}
+
+// 階段 6、7：s_vec／s_cf 若啟用時會加的分數（構想 5.1 的 α × 基礎分 × s）。shadow 只用來比較順序，
+// 不進入實際計分。適用範圍與標籤興趣相同：只有可選課池的非必修、非指定、非實習課。
+function vectorInterestShadowDelta(course, vectorContext, requiredIds, scope) {
+  const sectionId = String(course?.id ?? course?.sectionId ?? '').trim();
+  const score = vectorContext?.coursesBySectionId?.[sectionId]?.score;
+  if (!Number.isFinite(score)) return 0;
+  const bucket = getGraduationBucket(course, scope);
+  if (![GRADUATION_BUCKET.ELECTIVE, GRADUATION_BUCKET.GENERAL, GRADUATION_BUCKET.EXTERNAL].includes(bucket)) return 0;
+  if (requiredIds.has(Number(course.id)) || isRequiredForStudent(course, scope)
+    || course.corequisiteRole === 'internship') return 0;
+  // 1000 是 computeScoreComponents() 的池內基礎分 `base`。
+  return vectorContext.alpha * 1000 * score;
+}
+
+// 已啟用（active）的 s_vec／s_cf。componentKey 是推薦理由分數明細的欄位名稱。
+function activeInterestContextsOf(runtimeOptions = {}) {
+  return [
+    ['vectorInterest', runtimeOptions.vectorInterestContext],
+    ['cfInterest', runtimeOptions.cfInterestContext],
+  ].filter(([, context]) => context?.mode === 'active')
+    .map(([componentKey, context]) => ({ ...context, componentKey }));
+}
+
+// 構想 5.1 方案層：方案分 = 方案偏好分 × (1 + α_tag × 平均 s_tag + α_vec × 平均 s_vec + α_cf × 平均 s_cf)。
+// 標籤興趣已由 applyPlanTagInterest 算進 combinedPlanScore，這裡再各自加上 方案偏好分 × α × 平均 s；
+// 平均只計入有分數的自由選擇課，涵蓋率分開記錄。
+function applyPlanActiveInterest(plan, activeInterestContexts, constraints, scope) {
+  if (!plan || activeInterestContexts.length === 0) return plan;
+  const freeChoice = getFreeChoicePlanCourses(plan, constraints, scope);
+  const preference = Number(plan.preferenceScore) || 0;
+  // 從「方案偏好分 × 標籤倍數」重算，同一個方案重複套用（放寬限制時會發生）也不會重複加分。
+  let combined = Number.isFinite(plan.planTagMultiplier) ? preference * plan.planTagMultiplier : preference;
+  for (const context of activeInterestContexts) {
+    const metrics = scorePlanVectorInterest(freeChoice, context);
+    plan[`${context.componentKey}PlanScore`] = metrics.planVecScore;
+    plan[`${context.componentKey}Coverage`] = metrics.vectorInterestCoverage;
+    if (metrics.planVecScore !== null) combined += preference * context.alpha * metrics.planVecScore;
+  }
+  plan.combinedPlanScore = combined;
+  plan.planMetrics = computePlanMetrics(plan);
+  return plan;
+}
+
+// 方案層 shadow：方案分 + 方案偏好分 × α_vec × 平均 s_vec，與實際名次比較。
+function updatePlanVectorInterestShadowStats(plans, vectorContext, constraints, scope, stats) {
+  if (!stats || !Array.isArray(plans) || plans.length === 0) return;
+  const scored = plans.map((plan, index) => {
+    const metrics = scorePlanVectorInterest(getFreeChoicePlanCourses(plan, constraints, scope), vectorContext);
+    const current = Number.isFinite(plan.combinedPlanScore) ? plan.combinedPlanScore : plan.preferenceScore;
+    const shadowScore = metrics.planVecScore === null
+      ? current
+      : current + (Number(plan.preferenceScore) || 0) * vectorContext.alpha * metrics.planVecScore;
+    return { index, metrics, rankedPlan: { ...plan, combinedPlanScore: shadowScore } };
+  });
+  const planStats = stats.plans;
+  planStats.compared = scored.length;
+  planStats.withEvidence = scored.filter(entry => entry.metrics.planVecScore !== null).length;
+  const coverages = scored.map(entry => entry.metrics.vectorInterestCoverage).filter(Number.isFinite);
+  planStats.meanCoverage = coverages.length > 0
+    ? coverages.reduce((sum, value) => sum + value, 0) / coverages.length
+    : null;
+  const shadowOrder = [...scored].sort((left, right) => comparePlans(left.rankedPlan, right.rankedPlan));
+  planStats.changedPositions = shadowOrder.reduce(
+    (count, entry, rank) => count + (entry.index === rank ? 0 : 1),
+    0
+  );
+  planStats.orderChanged = planStats.changedPositions > 0;
+  planStats.recommendedChanged = shadowOrder[0]?.index !== 0;
 }
 
 // 單一課程的放置判斷。greedy 與 roadmap #22 repair 必須共用這一個入口，
@@ -2323,9 +2421,11 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
   const candidateCourses = prepared.courses;
   const tagInterestContext = diagnosticOptions.tagInterestContext ?? null;
   const tagInterestMode = diagnosticOptions.tagInterestMode ?? tagInterestContext?.mode ?? 'off';
-  const activeTagScoring = tagInterestMode === 'active' && tagInterestContext
-    ? { mode: 'active', context: tagInterestContext }
-    : null;
+  const activeTagScoring = buildInterestScoring(
+    tagInterestContext,
+    tagInterestMode === 'active' && Boolean(tagInterestContext),
+    diagnosticOptions.activeInterestContexts ?? []
+  );
   const shadowTagScoring = tagInterestMode === 'shadow'
     && tagInterestContext
     && tagInterestContext.profileSource !== 'unavailable'
@@ -2694,6 +2794,24 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         )
       );
     }
+    // 系外保留名額已經依 s_vec 排序（08e4b3a），那個決策點不再比較。
+    const reservationOrdered = !toppingUp && phase === GRADUATION_BUCKET.EXTERNAL
+      && graduationAllocation?.reserveExternal;
+    const interestShadows = reservationOrdered ? [] : diagnosticOptions.interestShadows ?? [];
+    if (interestShadows.length > 0) {
+      const actualScores = new Map(phaseCandidates.map(candidate => [candidate, scoreCourse(
+        candidate, plan.schedule, constraints, variant, requiredIds, scope, neutralEasyScore,
+        activeTagScoring
+      )]));
+      for (const shadow of interestShadows) {
+        recordVectorShadowPoolRanking(
+          shadow.stats,
+          phaseCandidates,
+          candidate => actualScores.get(candidate),
+          candidate => vectorInterestShadowDelta(candidate, shadow.context, requiredIds, scope)
+        );
+      }
+    }
 
     phaseCandidates.sort((a, b) => (
       (!toppingUp && phase === GRADUATION_BUCKET.EXTERNAL && graduationAllocation?.reserveExternal
@@ -2934,9 +3052,11 @@ function optionStableKey(option) {
 function buildDecisionGroups(prepared, constraints, variant, seed, runtimeOptions = {}) {
   const context = buildRepairCandidateContext(prepared, constraints);
   const { eligible, requiredIds, failedRequiredCodes } = context;
-  const tagInterestScoring = runtimeOptions.tagInterestContext?.mode === 'active'
-    ? { mode: 'active', context: runtimeOptions.tagInterestContext }
-    : null;
+  const tagInterestScoring = buildInterestScoring(
+    runtimeOptions.tagInterestContext,
+    runtimeOptions.tagInterestContext?.mode === 'active',
+    activeInterestContextsOf(runtimeOptions)
+  );
   const internshipsByCode = new Map();
   for (const course of eligible) {
     if (course.corequisiteRole !== 'internship') continue;
@@ -4108,6 +4228,7 @@ function tryRelaxationLadder(prepared, constraints, variant, runtimeOptions = {}
     const plan = buildPlan(prepared, relaxedFlags, variant, {
       tagInterestContext: runtimeOptions.tagInterestContext,
       tagInterestMode: runtimeOptions.tagInterestContext?.mode,
+      activeInterestContexts: activeInterestContextsOf(runtimeOptions),
       externalInterestReservation: runtimeOptions.externalInterestReservation,
     });
     if (plan.success) {
@@ -4160,6 +4281,20 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   const tagInterestPlanAlpha = runtimeOptions.tagInterestPlanAlpha
     ?? DEFAULT_TAG_INTEREST_PLAN_ALPHA;
   const tagInterestShadowStats = createTagInterestShadowStats(tagInterestContext);
+  // 階段 6、7：s_vec 與 s_cf 的 shadow 各自記錄，不互相影響、也不影響實際排序。
+  const interestShadows = [
+    ['vectorInterestShadowStats', runtimeOptions.vectorInterestContext],
+    ['cfInterestShadowStats', runtimeOptions.cfInterestContext],
+  ].map(([name, context]) => ({
+    name, context, stats: createVectorInterestShadowStats(context ?? null, tagInterestContext),
+  })).filter(shadow => shadow.stats);
+  const activeInterestContexts = activeInterestContextsOf(runtimeOptions);
+  const applyPlanInterest = (plan, context, planConstraints, scope, alphaPlan) => applyPlanActiveInterest(
+    applyPlanTagInterest(plan, context, planConstraints, scope, alphaPlan), activeInterestContexts, planConstraints, scope
+  );
+  const attachInterestShadows = result => interestShadows.reduce(
+    (current, shadow) => attachVectorInterestShadowStats(current, shadow.stats, shadow.name), result
+  );
 
   if (!Array.isArray(candidateCourses) || candidateCourses.length === 0) {
     const unmetRequirements = [{
@@ -4255,6 +4390,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
         tagInterestContext,
         tagInterestMode,
         tagInterestShadowStats,
+        interestShadows,
+        activeInterestContexts,
         externalInterestReservation: runtimeOptions.externalInterestReservation,
       });
       const { score, breakdown } = evaluatePreference(plan, constraints, preferenceProfile);
@@ -4263,7 +4400,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       plan.reviewCoverage = buildReviewCoverage(plan);
       // roadmap #27：比較用的指標必須在這裡算完，前端只負責呈現。
       plan.planMetrics = computePlanMetrics(plan);
-      return applyPlanTagInterest(
+      return applyPlanInterest(
         plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
       );
     })
@@ -4278,7 +4415,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     )
     : { plans: [], axes: [], status: 'data-insufficient', collapseReasons: [] };
   if (milpGeneration.plans?.length > 0) {
-    milpGeneration.plans.forEach(plan => applyPlanTagInterest(
+    milpGeneration.plans.forEach(plan => applyPlanInterest(
       plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
     ));
     allVariantPlans = [...allVariantPlans, ...milpGeneration.plans];
@@ -4326,7 +4463,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     repair = runRepair(prepared, constraints, preferenceProfile, plans, runtimeOptions);
     repair.solver.baseline = baseline;
     if (repair.plan) {
-      applyPlanTagInterest(
+      applyPlanInterest(
         repair.plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
       );
       plans = uniquePlans([repair.plan, ...plans]).sort(comparePlans);
@@ -4352,6 +4489,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     plans, tagInterestContext, constraints, prepared.scope,
     tagInterestPlanAlpha, tagInterestShadowStats
   );
+  for (const shadow of interestShadows) {
+    updatePlanVectorInterestShadowStats(plans, shadow.context, constraints, prepared.scope, shadow.stats);
+  }
   let primary = plans[0];
   const solver = repair?.solver || {
     status: primary?.success && baselineCheck.valid ? 'solved' : 'infeasible',
@@ -4394,7 +4534,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
         relaxed.plan.reviewCoverage = buildReviewCoverage(relaxed.plan);
         // roadmap #27：放寬後的方案同樣會進 `plans`，指標不能缺。
         relaxed.plan.planMetrics = computePlanMetrics(relaxed.plan);
-        applyPlanTagInterest(
+        applyPlanInterest(
           relaxed.plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
         );
 
@@ -4408,7 +4548,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
           tagInterestContext?.mode === 'active'
           && tagInterestContext.profileSource !== 'unavailable'
         ) {
-          relaxedPlans.forEach(plan => applyPlanTagInterest(
+          relaxedPlans.forEach(plan => applyPlanInterest(
             plan, tagInterestContext, constraints, prepared.scope, tagInterestPlanAlpha
           ));
           relaxedPlans.sort(comparePlans);
@@ -4452,7 +4592,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
           message: `已放寬部分時段偏好以產生可行課表：${relaxed.plan.schedule.length} 門課，`
             + `共 ${relaxed.plan.totalCredits} 學分。`,
         };
-        return attachTagInterestShadowStats(relaxedResult, tagInterestShadowStats);
+        return attachInterestShadows(attachTagInterestShadowStats(relaxedResult, tagInterestShadowStats));
       }
     }
 
@@ -4654,7 +4794,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       value: basePlan?._mipInputs ? { ...basePlan._mipInputs, basePlan } : null,
     });
   }
-  return attachTagInterestShadowStats(result, tagInterestShadowStats);
+  return attachInterestShadows(attachTagInterestShadowStats(result, tagInterestShadowStats));
 }
 
 export function validateSchedule(courses = []) {

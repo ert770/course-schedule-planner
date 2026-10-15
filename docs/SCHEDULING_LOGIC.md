@@ -373,7 +373,29 @@ context 只經 server runtime options 傳給 scheduler，REST 與 Chat 共用；
 `EXTERNAL_INTEREST_RESERVATION_MODE=keyword` 可重現舊關鍵字政策，預設 `vector`。
 方案的 `graduationPlanning.externalReservedForInterest` 標示是否保留，`externalInterestReservation`
 揭露來源與前五門清單。這是 greedy 初始方案的候選優先機制，不是 `candidateScore` 或 `preferenceScore`
-的新計分項；MILP 替代方案維持類別門數與硬條件，仍可選不同系外課。向量混合計分屬後續階段 6。
+的新計分項；MILP 替代方案維持類別門數與硬條件，仍可選不同系外課。
+
+**s_vec shadow（2026-10-14 階段 6）**：`VECTOR_INTEREST_MODE`（預設 `shadow`，可設 `off`）。shadow 為候選課計算 `s_vec`
+（系外保留已算過時直接沿用），但**以 0 計入，不改變任何候選分、方案分或課表**；只在伺服器日誌記錄若啟用
+`候選分 + α_vec × 基礎分 × s_vec`、`方案分 + 方案偏好分 × α_vec × 平均 s_vec` 時，各決策點的順序與第一名、
+方案名次與推薦方案會不會改變，以及 `s_tag` 與 `s_vec` 的相關係數。適用範圍與標籤興趣相同：只有可選課池的
+非必修、非指定、非實習課；系外保留名額的決策點已經依 `s_vec` 排序，不再比較。（2026-10-15 起預設 active，見下方。）
+興趣模型 α：`α_tag` 0.6、`α_vec` 0.2（`VECTOR_INTEREST_ALPHA`）、`α_cf` 0.1（`CF_INTEREST_ALPHA`），
+總和超過 0.9 時伺服器拒絕啟動，不靜默截斷。
+
+**s_vec／s_cf active（2026-10-15 使用者決定，兩者預設 active）**：依構想 5.1 各自加分，不先混成一個分數：
+單課 `候選分 + α_vec × 基礎分 × s_vec + α_cf × 基礎分 × s_cf`，分數明細另列 `vectorInterest`、`cfInterest`；
+方案 `方案偏好分 × (1 + α_tag × 平均 s_tag + α_vec × 平均 s_vec + α_cf × 平均 s_cf)`，方案另記
+`vectorInterestPlanScore`／`cfInterestPlanScore` 與涵蓋率。適用範圍與標籤興趣相同（必修、指定、實習課不加分）；
+同一方案重複套用（放寬限制時）不會重複加分。`s_cf` 在共現表為空、本人沒有訊號或沒有重疊時為 null，等於不加分；
+構想 4.6 的門檻（真人 ≥ 15）尚未達到，伺服器日誌持續記錄。設 `shadow` 或 `off` 可回復。
+
+**s_cf shadow（2026-10-14 階段 7）**：`CF_INTEREST_MODE`（預設 `shadow`，可設 `off`）。item-item 協同過濾：
+用本人（需同意 `personalization_learning`）的課程訊號查課程共現表 `Course_Neighbors`，
+`s_cf(u, c) = Σ sim(c, j) × w_u(j) / max(1, Σ sim(c, j))`，j 為 c 的前 20 門相近課中本人有訊號的。
+與 `s_vec` 用同一套 shadow，但**分開記錄**（`cfInterestShadowStats`），同樣以 0 計入、不改變排序；
+日誌另記共現表的啟用門檻是否達到。共現表不存在、為空或本人沒有訊號時記為不可用。
+（2026-10-15 起預設 active，見下方；Persona 帳號 9001～9010 一律視為模擬，不進正式共現表。）
 
 核心選修與修課路徑資料來自 `server/src/data/csCurriculum.js`（114 必選修科目表 + 113 課程地圖），
 比對條件為**課程物件的 `catalogCourseCode` 以 `IECS` 開頭且課名在清單中**。只比對課名會把通訊系的

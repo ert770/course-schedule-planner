@@ -52,9 +52,11 @@ const COPY = {
 
 function resolveCopyKey(personalization) {
   if (!personalization) return null;
-  const { source, explicitProfileEmpty, appliedToScheduling } = personalization;
+  const { source, explicitProfileEmpty, hasExplicitPreferences, appliedToScheduling } = personalization;
   if (source === 'no-consent') return 'no-consent';
-  if (source === 'insufficient') return explicitProfileEmpty ? 'insufficient-empty' : 'insufficient';
+  // 有自己設定的偏好標籤、興趣或避開時段，就不是「尚未表達偏好」（explicitProfileEmpty 只看學習權重的基準軸）。
+  const nothingExpressed = explicitProfileEmpty && hasExplicitPreferences !== true;
+  if (source === 'insufficient') return nothingExpressed ? 'insufficient-empty' : 'insufficient';
   if (source === 'learned') return appliedToScheduling ? 'learned' : 'learned-pending';
   return 'explicit';
 }

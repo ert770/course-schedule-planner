@@ -1003,6 +1003,7 @@
 .privacy-purpose { display: flex; gap: 12px; padding: 16px; margin: 10px 0; border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; }
 .privacy-purpose input { width: 20px; height: 20px; accent-color: var(--accent-blue); flex: 0 0 auto; }
 .privacy-purpose span { display: flex; flex-direction: column; gap: 6px; }
+.privacy-purpose.disabled { cursor: not-allowed; opacity: 0.6; }
 .privacy-purpose small, .privacy-facts { color: var(--text-secondary); line-height: 1.55; }
 .privacy-facts { margin: 18px 0; padding: 14px 18px; background: var(--bg-primary); border-radius: var(--radius-md); font-size: .9rem; }
 .privacy-facts p { margin: 6px 0; }
@@ -1201,3 +1202,15 @@
 .history-feedback-setup p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; }
 .history-feedback-hint { margin-top: 6px !important; color: var(--text-muted) !important; }
 .history-feedback-setup > button { flex-shrink: 0; white-space: nowrap; }
+
+/* 儲存課表的短暫提示（2026-10-15） */
+.save-toast {
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-md, 8px);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.save-toast.success { color: var(--accent-green, #15803d); background: color-mix(in srgb, var(--accent-green, #15803d) 12%, transparent); }
+.save-toast.error { color: var(--accent-red, #b91c1c); background: color-mix(in srgb, var(--accent-red, #b91c1c) 12%, transparent); }
+

@@ -4,14 +4,23 @@
     {
       "name": "server",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:server"],
+      "runtimeArgs": [
+        "run",
+        "dev:server"
+      ],
       "port": 27151
     },
     {
       "name": "client",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:client"],
-      "port": 5173
+      "runtimeArgs": [
+        "run",
+        "dev:client"
+      ],
+      "port": 5173,
+      "env": {
+        "VITE_API_PROXY_TARGET": "http://localhost:27151"
+      }
     }
   ]
 }

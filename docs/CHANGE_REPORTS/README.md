@@ -2,8 +2,16 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-15
+
+- [Persona 實測剩餘 6 項發現的修正（探索、查詢、推薦理由、儲存提示、個人化來源、語意相似與系列課）](./2026-10-15-persona-findings-fixes.md)
+- [AI 對話推薦品質修正（忠實度檢查誤判、查詢次數上限、無效的資料更新提議）](./2026-10-15-ai-chat-recommendation-quality.md)
+- [s_vec／s_cf 切 active，以及四類測試與 10 位 Persona UX 實測](./2026-10-15-active-switch-and-persona-ux-test.md)
+
 ## 2026-10-14
 
+- [協同過濾與 User Embedding：階段 7 協同過濾同意、課程共現表與 s_cf shadow](./2026-10-14-collaborative-filtering-stage7.md)
+- [協同過濾與 User Embedding：階段 6 s_vec 以 shadow 接入排課與 α 總和檢查](./2026-10-14-vector-interest-shadow-stage6.md)
 - [協同過濾與 User Embedding：階段 5 歷史修課回饋視窗（含 Codex 階段 4 審查）](./2026-10-14-history-feedback-stage5.md)
 - [階段 4：系外保留候選改用 s_vec](./2026-10-14-external-reservation-stage4.md)
 

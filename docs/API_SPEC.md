@@ -40,12 +40,16 @@ watchlist 等個人資料端點除了 session，還需要目前政策版本的 `
 { "error": "尚未同意目前版本所需的資料用途", "code": "CONSENT_REQUIRED" }
 ```
 
-政策版本過期時 `code` 為 `CONSENT_VERSION_OUTDATED`。`personalization_learning` 與
+政策版本過期時 `code` 為 `CONSENT_VERSION_OUTDATED`。`personalization_learning`、`collaborative_learning` 與
 `aggregate_research` 都是選擇性且預設 false，不影響核心服務。
+
+**2026-10-14 政策升版為 `2026-10-14.v4`**（新增 `collaborative_learning`）：所有人在舊版下的同意都不再有效，
+登入後 `requiresAction: true`、需在隱私中心重新確認一次；確認前個人化學習與排課的個人化訊號都停用。
 
 ### `GET /api/privacy/policy`
 
-公開回傳政策版本、三種用途、processor 與保存期限，不需要登入。
+公開回傳政策版本、四種用途、processor 與保存期限，不需要登入。`collaborative_learning` 另有
+`requires: ["personalization_learning"]`；`retention.collaborativeMinimumCooccurrence` 為 3。
 
 ### `GET /api/privacy/consents`
 
@@ -59,12 +63,18 @@ canonical ID 或 pseudonymous subject ID。
   "consents": {
     "service_processing": true,
     "personalization_learning": false,
+    "collaborative_learning": false,
     "aggregate_research": false
   }
 }
 ```
 
-必要用途必須為 true 才能開始服務；三個值會以同一時間點原子寫入。
+必要用途必須為 true 才能開始服務；各用途的值會以同一時間點原子寫入。
+
+**協同過濾（2026-10-14 階段 7）**：`collaborative_learning` 是「貢獻」——讓本人的修課與課程互動進入課程共現表，
+協助推薦給其他同學。以 `personalization_learning` 為前提：後者為 `false` 時伺服器一律把前者記為 `false`。
+從 `true` 改為 `false` 時，伺服器約 5 秒後重建共現表，新表不含他的資料（不等每日排程）。
+「接收」協同過濾分數只需要 `personalization_learning`。
 
 **Roadmap #31**：`personalization_learning` 從 `true` 改為 `false`（撤回）時，
 本次請求會**連同已學到的權重與作為其輸入的互動事件一起刪除**（等同呼叫下方的
@@ -111,6 +121,7 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
   "source": "insufficient",
   "appliedToScheduling": true,
   "explicitProfileEmpty": false,
+  "hasExplicitPreferences": true,
   "weights": { "interest": 0, "compact": 1, "easy": 0 },
   "explicitProfile": { "interest": 0, "compact": 1, "easy": 0 },
   "sufficiency": {
@@ -123,6 +134,8 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
   "computedAt": "2026-09-04T02:38:14.334Z"
 }
 ```
+
+`hasExplicitPreferences`：使用者是否自己設定過偏好標籤、興趣、關鍵字或避開時段（2026-10-15 新增）。`explicitProfileEmpty` 只代表學習權重的基準軸都是 0，不能用來判斷「尚未表達偏好」。
 
 `source` 為 `no-consent` / `insufficient` / `explicit` / `learned` 四選一；`insufficient`
 時 `weights` 等於 `explicitProfile` 原樣。`appliedToScheduling`（Roadmap #5B 起恆為
@@ -313,12 +326,14 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 `ACTIVE_TERM` 篩選，再套用下列條件：
 
 - `keyword`（課名、課號、教師、系所或課程描述）
+- `name`（只比對課名與課號；查詢頁「科目名稱」欄位用這個，「課程描述」欄位用 `keyword`。2026-10-15 新增）
 - `code`
 - `instructor`
 - `dayOfWeek`
 - `period`
 - `credits`
-- `language`
+- `language`：`English` 只留全英授課（`isEnglishTaught`），`中文 (Chinese)` 排除全英授課（2026-10-15 修正：
+  原本比對不存在的 `course.language`，選任何語言都是 0 筆）
 - `category`：`通識` 或資料庫原始類別 `必修`
 
 `通識` 會依官方通識分類資料解析；`核心選修`、`一般選修`、`系外選修` 等需要個人
@@ -702,6 +717,9 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 
 `courseIds` 決定候選池，同時代表「使用者明確指定的課」。route 會把它併入
 `explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds` 同樣視為明確指定。
+
+`selectedCourseIds` 中不在候選池的班次（例如系外選修、通識）會從課程目錄補進候選池，排課引擎才能保留它們
+（2026-10-15）。排課主頁的「套用偏好排課」把使用者自己加入課表的班次放在這裡送出；從已存課表載回的課不算。
 
 `retakeCourseIds` 與 `failedRequiredCourseIds` 已移除。重補修不得由 client 或 Agent
 手動指定；後端只依 Profile 的 `courseHistory`，對每個 `courseCode` 取最新

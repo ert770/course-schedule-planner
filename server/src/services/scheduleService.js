@@ -30,7 +30,7 @@ import {
   INTERACTION_EVENT_TYPES,
   INTERACTION_SOURCES,
 } from '../data/interactionEventSchema.js';
-import { recordInteractionEvents } from './interactionEventService.js';
+import { getInteractionEventsForExport, hasPersonalizationConsent, recordInteractionEvents } from './interactionEventService.js';
 import { getSchedulingPreferenceWeights } from './preferenceLearningService.js';
 import { getTagInterestProfile } from './tagInterestService.js';
 import { RECOMMENDATION_REASON_VERSION } from '../skills/recommendationReason.js';
@@ -40,7 +40,13 @@ import {
   resolveTagInterestRankingMode,
 } from '../skills/tagInterestRanking.js';
 import { logger } from '../utils/logger.js';
-import { loadExternalInterestReservation } from './externalInterestReservationService.js';
+import { loadCandidateVectorScores, loadExternalInterestReservation } from './externalInterestReservationService.js';
+import { getCachedCourseCatalog } from './courseCatalogCache.js';
+import { resolveCfInterestMode, resolveInterestAlphas, resolveVectorInterestMode } from '../skills/interestAlphas.js';
+import { buildVectorInterestContext } from '../skills/vectorInterestShadow.js';
+import { CF_MODEL_VERSION, buildUserCourseSignals, scoreCoursesWithCf } from '../skills/itemItemCf.js';
+import { loadLatestCourseNeighbors } from './courseNeighborService.js';
+import { PRIVACY_RETENTION } from '../data/privacyPolicy.js';
 
 // Roadmap #2：讓「這一次推薦」可以被指認。
 //
@@ -319,15 +325,26 @@ export function generateScheduleWithTagInterestContext(
   constraints,
   tagInterestContext,
   scheduler = generateSchedule,
-  externalInterestReservation = null
+  externalInterestReservation = null,
+  vectorInterestContext = null,
+  cfInterestContext = null
 ) {
+  const runtimeOptions = {};
   if (externalInterestReservation) {
-    return scheduler(candidates, constraints, { tagInterestContext, externalInterestReservation });
+    runtimeOptions.tagInterestContext = tagInterestContext;
+    runtimeOptions.externalInterestReservation = externalInterestReservation;
+  } else if (tagInterestContext && tagInterestContext.mode !== 'off') {
+    runtimeOptions.tagInterestContext = tagInterestContext;
   }
-  if (!tagInterestContext || tagInterestContext.mode === 'off') {
-    return scheduler(candidates, constraints);
+  if (vectorInterestContext && vectorInterestContext.mode !== 'off') {
+    runtimeOptions.vectorInterestContext = vectorInterestContext;
   }
-  return scheduler(candidates, constraints, { tagInterestContext });
+  if (cfInterestContext && cfInterestContext.mode !== 'off') {
+    runtimeOptions.cfInterestContext = cfInterestContext;
+  }
+  return Object.keys(runtimeOptions).length === 0
+    ? scheduler(candidates, constraints)
+    : scheduler(candidates, constraints, runtimeOptions);
 }
 
 // 候選池與限制的組裝。
@@ -448,12 +465,110 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
     }
   }
 
+  // 使用者自己加入課表的班次（前端以 selectedCourseIds 送來）必須在候選池裡，排課引擎才能保留它們；
+  // 系外選修、通識等可能不在依學生範圍查出的候選中（2026-10-15 Persona UX 測試發現）。
+  const pinnedIds = (Array.isArray(constraints.selectedCourseIds) ? constraints.selectedCourseIds : []).map(String);
+  if (pinnedIds.length > 0) {
+    const present = new Set(candidates.map(course => String(course.id)));
+    const missing = pinnedIds.filter(id => !present.has(id));
+    if (missing.length > 0) {
+      const missingSet = new Set(missing);
+      const catalog = await (options.loadCourses ?? getCachedCourseCatalog)();
+      candidates = [...candidates, ...catalog.filter(course => missingSet.has(String(course.id)))];
+    }
+  }
+
   const externalInterestReservation = candidates.length > 0 && graduationPlanning?.enabled
     && Number(graduationPlanning.gaps?.external) > 0
     ? await loadExternalInterestReservation(identity, prefs, candidates, {
       mode: options.externalInterestReservationMode ?? process.env.EXTERNAL_INTEREST_RESERVATION_MODE,
     }) : null;
   return { candidates, mergedConstraints, reviewDataLoaded, externalInterestReservation };
+}
+
+/**
+ * 階段 6：s_vec shadow 用的 context。系外保留名額已經算過同一批候選的 s_vec 時直接沿用。
+ * 計算失敗只讓 shadow 記為不可用，不影響排課。
+ */
+export async function loadVectorInterestContext(identity, prefs, candidates, {
+  mode,
+  externalInterestReservation = null,
+  loadScores = loadCandidateVectorScores,
+} = {}) {
+  if (mode === 'off' || candidates.length === 0) return null;
+  const reused = ['s_vec', 'no-consent', 'no-positive-signal'].includes(externalInterestReservation?.source)
+    ? externalInterestReservation
+    : null;
+  const scored = reused ?? await loadScores(identity, prefs, candidates);
+  return buildVectorInterestContext({
+    mode,
+    source: scored?.source ?? 'unavailable',
+    modelVersion: scored?.modelVersion ?? null,
+    alpha: resolveInterestAlphas().vec,
+    candidates,
+    scores: scored?.scores ?? null,
+  });
+}
+
+/**
+ * 階段 7：協同過濾 s_cf 的 shadow context。
+ * 「接收」只需要本人的 personalization_learning：用本人的課程訊號查已彙總的共現表，
+ * 不讀其他人的資料。共現表不存在、還沒建、或本人沒有訊號時記為不可用，不影響排課。
+ */
+export async function loadCfInterestContext(identity, prefs, candidates, {
+  mode,
+  loadNeighbors = loadLatestCourseNeighbors,
+  loadEvents = null,
+  now = new Date(),
+} = {}) {
+  if (mode === 'off' || candidates.length === 0) return null;
+  let source = 'unavailable';
+  let scores = null;
+  let gateMet = null;
+  try {
+    const consented = loadEvents ? true : await hasPersonalizationConsent(identity);
+    if (!consented) {
+      source = 'no-consent';
+    } else {
+      const table = await loadNeighbors();
+      gateMet = table.gateMet ?? null;
+      if (!table.available) {
+        source = table.reason ?? 'unavailable';
+      } else if (table.neighbors.size === 0) {
+        source = 'empty_table';
+      } else {
+        const retentionMs = PRIVACY_RETENTION.interactionEventDays * 86400000;
+        const events = (await (loadEvents ?? getInteractionEventsForExport)(identity)).filter(event => {
+          const time = Date.parse(event.timestamp ?? '');
+          return Number.isFinite(time) && now.getTime() - time <= retentionMs;
+        });
+        const signals = buildUserCourseSignals({
+          courseHistory: prefs?.courseHistory ?? [], events, now: now.toISOString(), activeTerm: ACTIVE_TERM,
+        });
+        if (signals.size === 0) {
+          source = 'no-user-signal';
+        } else {
+          scores = scoreCoursesWithCf(signals, table.neighbors, candidates.map(course => course.catalogCourseCode));
+          source = 'cf';
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn(`協同過濾 shadow 無法計算：${error.message}`, { label: 'Schedule' });
+  }
+  return {
+    ...buildVectorInterestContext({
+      mode,
+      source,
+      modelVersion: CF_MODEL_VERSION,
+      alpha: resolveInterestAlphas().cf,
+      candidates,
+      scores,
+      scoredSource: 'cf',
+      noScoreReason: 'no_neighbor_overlap',
+    }),
+    gateMet,
+  };
 }
 
 /**
@@ -480,6 +595,27 @@ export async function counterfactualForUser(identity, input = {}, options = {}) 
     }),
     reviewDataLoaded,
   };
+}
+
+// 階段 6、7：s_vec／s_cf shadow 的彙總只寫進日誌，不回傳給前端、不改變排序。
+function logInterestShadow(label, stats) {
+  if (!stats) return;
+  const percent = value => (value === null ? '無' : `${Math.round(value * 100)}%`);
+  const gate = stats.gateMet === null || stats.gateMet === undefined
+    ? ''
+    : `，啟用門檻${stats.gateMet ? '已達到' : '未達到'}`;
+  logger.info(
+    `${label} shadow 彙總（α ${stats.alphaVec}，來源 ${stats.source}${gate}）：`
+      + `候選正向 ${stats.candidates.positive}、中性 ${stats.candidates.neutral}、`
+      + `負向 ${stats.candidates.negative}、無分數 ${stats.candidates.noScore}；`
+      + `與 s_tag 相關係數 ${stats.correlation.pearson === null ? '無法計算' : stats.correlation.pearson.toFixed(2)}`
+      + `（${stats.correlation.pairs} 門）；`
+      + `比較 ${stats.poolComparisons} 個決策點，${stats.changedPoolComparisons} 個順序不同、`
+      + `${stats.changedTopChoices} 個第一名不同；`
+      + `方案 ${stats.plans.compared} 個、有分數 ${stats.plans.withEvidence} 個、平均涵蓋 ${percent(stats.plans.meanCoverage)}，`
+      + `${stats.plans.changedPositions} 個名次改變、推薦方案${stats.plans.recommendedChanged ? '會改變' : '不變'}。`,
+    { label: 'Schedule' }
+  );
 }
 
 /**
@@ -513,12 +649,26 @@ export async function generateForUser(identity, input = {}, options = {}) {
   const tagInterestMode = resolveTagInterestRankingMode(
     options.tagInterestMode ?? process.env.TAG_INTEREST_RANKING_MODE
   );
-  const tagInterestContext = await loadTagInterestContextSafely(identity, candidates, {
-    mode: tagInterestMode,
-    prefs,
-  });
+  const vectorInterestMode = resolveVectorInterestMode(
+    options.vectorInterestMode ?? process.env.VECTOR_INTEREST_MODE
+  );
+  const cfInterestMode = resolveCfInterestMode(options.cfInterestMode ?? process.env.CF_INTEREST_MODE);
+  // 三者都要讀互動事件，並行讀取，shadow 不讓排課多等一輪。
+  const [tagInterestContext, vectorInterestContext, cfInterestContext] = await Promise.all([
+    loadTagInterestContextSafely(identity, candidates, { mode: tagInterestMode, prefs }),
+    loadVectorInterestContext(identity, prefs, candidates, {
+      mode: vectorInterestMode,
+      externalInterestReservation,
+      loadScores: options.loadCandidateVectorScores,
+    }),
+    loadCfInterestContext(identity, prefs, candidates, {
+      mode: cfInterestMode,
+      ...(options.loadCourseNeighbors ? { loadNeighbors: options.loadCourseNeighbors } : {}),
+    }),
+  ]);
   const scheduled = generateScheduleWithTagInterestContext(
-    candidates, mergedConstraints, tagInterestContext, generateSchedule, externalInterestReservation
+    candidates, mergedConstraints, tagInterestContext, generateSchedule, externalInterestReservation,
+    vectorInterestContext, cfInterestContext
   );
   if (tagInterestContext?.mode === 'shadow' && scheduled?.tagInterestShadowStats) {
     const stats = scheduled.tagInterestShadowStats;
@@ -533,6 +683,13 @@ export async function generateForUser(identity, input = {}, options = {}) {
         + `比較 ${stats.plans?.compared ?? 0} 個方案，${stats.plans?.changedPositions ?? 0} 個名次改變。`,
       { label: 'Schedule' }
     );
+  }
+  logInterestShadow('s_vec', scheduled?.vectorInterestShadowStats);
+  logInterestShadow('s_cf', scheduled?.cfInterestShadowStats);
+  if (cfInterestContext?.mode === 'active') {
+    // 構想 4.6 的門檻尚未達到時仍 active（使用者決定），日誌記錄來源與門檻狀態以便追蹤。
+    logger.info(`s_cf active：來源 ${cfInterestContext.source}，啟用門檻${cfInterestContext.gateMet ? '已達到' : '未達到'}`,
+      { label: 'Schedule' });
   }
   const result = annotateScheduleIdentifiers(scheduled, requestId);
   await recordExposureSafely(identity, result, requestId, { surface, trigger });

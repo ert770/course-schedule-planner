@@ -50,6 +50,16 @@ function getCourseTimeBlocks(course) {
 function applyCommonFilters(courseList, filters = {}, { filterCategory = true } = {}) {
   let courses = courseList;
 
+  // 只比對課名與課號（全校查詢的「科目名稱」欄）；keyword 則同時比對教師、系所與課程描述。
+  if (filters.name) {
+    const name = String(filters.name).toLowerCase();
+    courses = courses.filter(course =>
+      textIncludes(course.name, name)
+      || textIncludes(course.code, name)
+      || textIncludes(course.catalogCourseCode, name)
+    );
+  }
+
   if (filters.keyword) {
     const keyword = String(filters.keyword).toLowerCase();
     courses = courses.filter(course =>
@@ -104,7 +114,14 @@ function applyCommonFilters(courseList, filters = {}, { filterCategory = true } 
   }
 
   if (filters.language && filters.language !== 'All' && filters.language !== '全部') {
-    courses = courses.filter(course => course.language === filters.language);
+    // 課程資料沒有 language 欄位，只有 isEnglishTaught（全英授課）。先前比對 course.language，
+    // 選任何語言都是 0 筆。查詢頁的選項是「English」與「中文 (Chinese)」。
+    const wanted = String(filters.language).toLowerCase();
+    const english = wanted.includes('english') || wanted.includes('英');
+    const chinese = wanted.includes('chinese') || wanted.includes('中');
+    if (english) courses = courses.filter(course => course.isEnglishTaught === true);
+    else if (chinese) courses = courses.filter(course => course.isEnglishTaught !== true);
+    else courses = courses.filter(course => course.language === filters.language);
   }
 
   return courses;

@@ -31,12 +31,15 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `Chat_Messages` | `message_id`, `subject_id`, `role`, `ciphertext`, `iv`, `auth_tag`, `key_version`, `created_at`, `expires_at` | AES-256-GCM Raw Chat，30 天到期 |
 | `Interaction_Events` | `event_id`, `subject_id`, `event_type`, `occurred_at`, `expires_at`, `idempotency_key`, `catalog_course_code`, `section_id`, `plan_id`, `variant_id`, `source`, `feedback_reason`, `rating`, `interest_feedback_json`, `exposure_json`, `tag_interest_snapshot_json` | Roadmap #2 原始互動與 Roadmap #43 當下標籤快照，180 天到期 |
 | `Learned_Tag_Interests` | `subject_id`, `model_version`, `catalog_version`, `eligibility_version`, `prior_signature`, `profile_json`, `computed_at`, `expires_at` | Roadmap #43 可重算的使用者標籤興趣快取，180 天到期 |
+| `Course_Neighbor_Builds` | `build_id`, `model_version`, `computed_at`, `contributor_count`, `real_contributor_count`, `eligible_real_contributor_count`, `neighbor_pair_count`, `gate_met`, `settings_json` | 協同過濾共現表的建立紀錄（2026-10-14 階段 7，migration 009）；只保留最新一次 |
+| `Course_Neighbors` | `build_id`, `course_code`, `neighbor_code`, `similarity`, `co_count` | 每門課最相近的前 20 門（item-item）；只含共現 ≥ 3 人的配對；不含 subject 或學號 |
 
 `ciphertext`、每筆獨立 96-bit `iv` 與 `auth_tag` 缺一不可；解密驗證失敗必須拒絕資料，
 不得回傳部分內容。`key_version` 讓未來金鑰輪替可辨識資料使用哪一版金鑰。
 
-三種 `purpose`：`service_processing`（必要）、`personalization_learning`（可選）、
-`aggregate_research`（可選）。#2 寫 interaction event 前必須檢查第二項，並將 #29 envelope
+四種 `purpose`：`service_processing`（必要）、`personalization_learning`（可選）、
+`collaborative_learning`（可選，2026-10-14 新增；以 `personalization_learning` 為前提）、
+`aggregate_research`（可選）。`purpose` 是 `VARCHAR(64)`，新增用途不需改表。#2 寫 interaction event 前必須檢查第二項，並將 #29 envelope
 中的 canonical `userId` 換成 `subject_id`；不得將兩者一起持久化。
 
 ### `Interaction_Events`（Roadmap #2）
@@ -60,6 +63,19 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 - **Roadmap #31**：`academic_year`／`semester` 從這輪起不再只是來源標記，也是
   `preferenceLearning.js` 時間衰減的**實質輸入**——`learnPreferenceWeights()` 用它們
   判定一筆事件是否屬於舊學期並降權（見下方 `Learned_Preference_Weights` 的說明）。
+
+### `Course_Neighbor_Builds`、`Course_Neighbors`（協同過濾階段 7）
+
+課程共現表，由 `server/src/services/courseNeighborService.js` 建立（migration `009_course-neighbors`，
+`npm run migrate:course-neighbors`，預設 dry-run）。
+
+- **貢獻者**：現行政策下同時同意 `personalization_learning` 與 `collaborative_learning`、未撤回服務的人。
+  正式表只用真人（最後一次 `collaborative_learning` 同意來源為 `privacy_center`）；Persona／demo 只能在
+  `npm run cf:build-neighbors -- --include-simulated` 的 dry-run 加入。
+- **內容**：只有課號、相似度與共現人數；共現少於 3 人的配對不保留。學號只在建表時讀修課歷史用，不寫入。
+- **重建**：伺服器每 24 小時整張重建（新 build 寫入後刪除舊 build，列由外鍵 `ON DELETE CASCADE` 一併刪除）；
+  有人撤回 `collaborative_learning` 時提前重建。`CF_INTEREST_MODE=off` 時不重建。
+- `Course_Neighbor_Builds.gate_met`：構想 4.6 的啟用門檻（真人 ≥ 15、每人有效互動 ≥ 3、共現 ≥ 3）是否達到。
 
 ### `Learned_Tag_Interests`（Roadmap #43 階段 3）
 

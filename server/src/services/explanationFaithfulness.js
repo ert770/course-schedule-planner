@@ -7,6 +7,7 @@
 // 在談課程」——見本檔 `extractCourseShapedSpans()`；以及 `evidenceRole`，讓被
 // 排課器排除掉的課不能被講成推薦。
 
+import { ALL_TAGS } from '../data/preferenceTags.js';
 import { resolveCourseReferences } from './courseReferenceResolver.js';
 import {
   extractTimeClaims, matchAssertedTeacher, extractCreditValues,
@@ -40,12 +41,16 @@ const SUCCESS_PATTERNS = Object.freeze({
   record_schedule_feedback: /(?:已|成功).{0,10}(?:記錄|收到|儲存).{0,6}(?:回饋|退選)|(?:回饋|退選).{0,6}(?:已記錄|記錄成功)/u,
 });
 
-const FAILURE_DISCLOSURE = /失敗|錯誤|無法|未完成|尚未|沒有成功|逾時|timeout/u;
+// 「目前還不能產生課表，需要確認…」也是在揭露未完成（2026-10-15 Persona 實測被判成未揭露）。
+const FAILURE_DISCLOSURE = /失敗|錯誤|無法|未完成|尚未|沒有成功|逾時|timeout|還不能|還沒(?:有)?(?:辦法)?|不能(?:先)?產生|需要(?:你|先)?確認|等你確認/u;
 const REVIEW_CLAIM = /(?:很|較|比較|非常)?(?:涼|甜|好拿分|容易過)|評價.{0,8}(?:很好|很高|正面|推薦)|學生.{0,8}(?:認為|表示).{0,8}(?:涼|甜|容易)/u;
 const REVIEW_UNKNOWN = /沒有(?:任何)?評價|無評價|評價資料(?:不足|缺少|尚無)|目前(?:無法|不能)判斷|不知道/u;
 const ELIGIBILITY_CLAIM = /(?:確定|一定|可以|可)(?:直接)?修|符合(?:修課)?資格/u;
+// 句子在講「資格不符、不能修」時不是資格宣稱（先前「系統標示為資格不符，所以不推薦」被判成誇大資格）。
+const ELIGIBILITY_NEGATION = /資格不符|不符(?:合)?(?:修課)?資格|不能修|無法修|不可(?:以)?修|沒有(?:修課)?資格|資格待確認|資格尚未確認/u;
 const GRADUATION_CLAIM = /(?:確定|可以|可)?(?:計入|認列).{0,5}畢業學分|符合畢業(?:資格|要求)/u;
-const GRADUATION_RULE_CLAIM = /(?:畢業(?:門檻|要求).{0,12}(\d+)\s*學分)|(\d+)\s*學分.{0,12}(?:才能|即可|可以)?畢業/u;
+// 「N 學分…畢業」只在講門檻（才能／即可／就能畢業）時算；「其中體育 1 學分不計入畢業學分」是方案的事實，不是畢業規則。
+const GRADUATION_RULE_CLAIM = /(?:畢業(?:門檻|要求).{0,12}(\d+)\s*學分)|(\d+)\s*學分.{0,12}(?:才能|即可|就能|就可以|可以)畢業/u;
 const PREFERENCE_CLAIM = /(?:符合|命中|配合).{0,8}(?:你的|使用者)?偏好|因為.{0,12}偏好.{0,8}(?:推薦|選入)/u;
 const SECRET_DISCLOSURE = /(?:OPENAI_API_KEY|SESSION_SECRET|DB_PASSWORD)\s*[:=]\s*[^\s，。；]+|\bsk-[A-Za-z0-9_-]{8,}/u;
 const REASON_QUESTION = /為什麼|推薦理由|推薦原因/u;
@@ -62,7 +67,6 @@ const REASON_PARAPHRASE = /必修|重修|補修|你指定|明確指定|關注課
 // 「推薦形狀」的斷言——捏造偵測（動賓片語規則）與 EXCLUDED_COURSE_PRESENTED_AS_RECOMMENDED
 // 共用同一份，不要各寫一次判斷標準。
 const RECOMMENDATION_VERBS = '推薦|加選|選修|修習';
-const RECOMMENDATION_SHAPE = new RegExp(RECOMMENDATION_VERBS, 'u');
 
 const REASON_ASSERTIONS = Object.freeze([
   { pattern: /推薦.{0,12}(?:主要)?原因.{0,5}(?:必修|必選)/u, value: 'REQUIRED_COURSE' },
@@ -100,7 +104,9 @@ const SUFFIX_SPAN = new RegExp(
   `(?:^|[，。；、：\\s]|${RECOMMENDATION_VERBS}|開設)([^${EXCLUDED_PREFIX_CHARS}]{2,12}?(?:${COURSE_NAME_SUFFIXES}))`,
   'gu'
 );
-const VERB_OBJECT_SPAN = new RegExp(`(?:${RECOMMENDATION_VERBS})\\s*([\\u4e00-\\u9fff]{2,12})(?=[，。；、]|$)`, 'gu');
+// 動賓片語只看「推薦／加選」：「選修」「修習」常出現在「一般選修避開」「必選修規則」這類類別名詞裡，
+// 後面接的是動詞或規則名詞，不是課名（2026-10-15 Persona 實測切出「避開」「違反」）。
+const VERB_OBJECT_SPAN = /(?:推薦|加選)\s*([一-鿿]{2,12})(?=[，。；、]|$)/gu;
 
 // 抽出來的片段就算不在已知課程清單，也可能只是通用詞組而不是特定課名。
 // 兩種判法分開處理，不能混用同一套「結尾符合就算」邏輯：
@@ -117,6 +123,8 @@ const GENERIC_COURSE_PHRASES_EXACT = new Set([
   // 規則會把「推薦」後面接的「原因」抓成受詞——但那是在講推薦這件事本身的
   // 理由，不是在推薦一門叫「原因」的課。
   '原因', '理由',
+  // 「必選修規則」「選修學分」被動賓片語切出來的規則類名詞，不是課名。
+  '規則', '學分', '科目表', '方案', '條件', '方向', '選項',
 ]);
 const GENERIC_COURSE_PHRASES_SUFFIX = [
   '必修課程', '選修課程', '通識課程', '這些課程', '其他課程', '部分課程',
@@ -124,21 +132,66 @@ const GENERIC_COURSE_PHRASES_SUFFIX = [
 ];
 const GENERIC_COUNT_SPAN = /(?:\d+|[一二兩三四五六七八九十幾]+)(?:門|堂|個)/u;
 
+// 指示詞或範圍詞開頭的「以上課程」「不限課程」「這類課程」，以及從「推薦的選項」切出來的「的選項」
+// 都不是特定課名（2026-10-15 Persona 實測的誤判）。
+const GENERIC_PREFIXED_SPAN = /^(?:以上|上述|下列|以下|這類|這些|那些|類似|不限|其他|其餘|同類|相關|任何|所有|全部|各|其中)/u;
+
+// 以「課程」結尾、但夾帶人稱或動詞的片段是一般敘述（「不能直接替你保證課程」「若要增加找到課程」），不是課名。
+const NARRATIVE_COURSE_SPAN = /[你我他替要找到能會讓把被將就]|保證|增加|放寬|確認/u;
+
 function isGenericCoursePhrase(span) {
+  if (span.startsWith('的')) return true;
+  if (span.endsWith('課程') && NARRATIVE_COURSE_SPAN.test(span.slice(0, -2))) return true;
+  if (GENERIC_PREFIXED_SPAN.test(span)) return true;
   if (GENERIC_COUNT_SPAN.test(span)) return true;
   if (GENERIC_COURSE_PHRASES_EXACT.has(span)) return true;
   return GENERIC_COURSE_PHRASES_SUFFIX.some(phrase => span.endsWith(phrase));
 }
 
-function extractCourseShapedSpans(sentence) {
+// 引號在回答裡也常用來轉述使用者的條件或搜尋方向，而不是課名（2026-10-15 Persona 實測：
+// 「英文授課＋資安或演算法」「課堂討論多」「社會議題、哲學」都被當成捏造課程，整則回答被換成備援文字）。
+// 以下三種引號內容不視為課名主張：
+//   - 原封不動出現在使用者訊息裡（轉述使用者的話）；
+//   - 內含條件分隔符（、，＋／；或「或」）——課名本身不會是一串條件；
+//   - 緊接在「符合／依／條件／方向／關鍵字／偏好／需求／搜尋／提到」之後——那是在描述篩選條件。
+// 不帶引號的「…課程」「…概論」等片段（SUFFIX_SPAN）照舊檢查，捏造課名一樣會被攔下。
+const CRITERIA_SEPARATORS = /[、，,＋+／/；;]|或/u;
+// 排課條件的說法（「午休不排課」「重視平時成績」「以期末報告為主」），課名不會帶這些詞。
+const CRITERIA_WORDS = /不排|不要|不能|避開|空出|排空|優先|重視|盡量|為主|集中|早八|午休/u;
+const CRITERIA_CUE_BEFORE_QUOTE = /(?:符合|依照?|條件|方向|關鍵字|偏好|需求|搜尋|提到|想要|喜歡)[^「『"“《【，。]{0,3}$/u;
+// 系統自己的偏好標籤名稱（「挑戰難課」「全英授課」…）不是課名。
+const PREFERENCE_TAG_NAMES = new Set(ALL_TAGS.map(tag => tag.replace(/^#/, '')));
+
+// 建議使用者改用的搜尋關鍵字或擴大的範圍（「例如「網路安全」「密碼學」」「擴大到「系外選修」」）也不是課名主張；
+// 同一個子句裡連續的引號共用前面的提示詞。
+const CLAUSE_CUE = /例如|比如|像是|改為|改查|改用|擴大到|關鍵字|條件|搜尋|篩選/u;
+const COURSE_CATEGORY_NAMES = new Set(['必修', '選修', '核心選修', '一般選修', '系外選修', '通識', '通識課', '通識課程']);
+
+function isCriteriaQuote(value, sentence, index, userMessage) {
+  if (PREFERENCE_TAG_NAMES.has(value) || COURSE_CATEGORY_NAMES.has(value)) return true;
+  if (userMessage && userMessage.includes(value)) return true;
+  if (CRITERIA_SEPARATORS.test(value) || CRITERIA_WORDS.test(value)) return true;
+  const before = sentence.slice(0, index);
+  const clause = before.slice(Math.max(before.lastIndexOf('，'), before.lastIndexOf('。'), before.lastIndexOf('：'), before.lastIndexOf(':')) + 1);
+  if (CLAUSE_CUE.test(clause)) return true;
+  return CRITERIA_CUE_BEFORE_QUOTE.test(sentence.slice(Math.max(0, index - 8), index));
+}
+
+function extractCourseShapedSpans(sentence, { userMessage = '' } = {}) {
   const spans = new Set();
   for (const match of sentence.matchAll(QUOTED_SPAN)) {
     const value = (match.groups.q1 ?? match.groups.q2 ?? match.groups.q3 ?? match.groups.q4 ?? match.groups.q5 ?? '').trim();
-    if (value) spans.add(value);
+    if (value && !isCriteriaQuote(value, sentence, match.index, userMessage)) spans.add(value);
   }
   for (const match of sentence.matchAll(SUFFIX_SPAN)) {
     const value = match[1]?.trim();
-    if (value) spans.add(value);
+    if (!value) continue;
+    // 「課程描述」「課程地圖」裡的「課程」是複合詞的一部分，不是課名結尾（「仍需以課程描述」→「仍需以課程」）。
+    const following = sentence.slice(match.index + match[0].length);
+    if (value.endsWith('課程') && /^(?:描述|地圖|內容|資料|名稱|大綱|類別|代碼|說明|架構|規劃|資訊|簡介)/u.test(following)) continue;
+    // 「概論性課程」「實驗類課程」：後綴後面接「性／類／型」是在形容一類課，不是課名結尾。
+    if (/^[性類型]/u.test(following)) continue;
+    spans.add(value);
   }
   for (const match of sentence.matchAll(VERB_OBJECT_SPAN)) {
     const value = match[1]?.trim();
@@ -155,6 +208,11 @@ function asArray(value) {
 
 function normalizeText(value) {
   return String(value ?? '').trim();
+}
+
+// Markdown 強調符號不是課名的一部分：「**社會企業實作專題**」先前因為前面黏著 ** 被判成捏造課程。
+function stripMarkdownEmphasis(value) {
+  return String(value ?? '').replace(/\*\*|__|`/g, '');
 }
 
 function normalizeCourse(raw, role = null) {
@@ -412,7 +470,7 @@ function evaluateCandidate(sentence, candidate, facts, mentionText) {
     }
   }
 
-  if (ELIGIBILITY_CLAIM.test(sentence) && candidate.eligibility !== 'eligible') {
+  if (ELIGIBILITY_CLAIM.test(sentence) && !ELIGIBILITY_NEGATION.test(sentence) && candidate.eligibility !== 'eligible') {
     contradictions.push({ code: 'ELIGIBILITY_OVERCLAIM', message: `「${candidate.name}」的修課資格尚未確認。` });
   }
   if (GRADUATION_CLAIM.test(sentence) && candidate.countsTowardGraduation !== true) {
@@ -491,10 +549,15 @@ function buildKnownCourseNames(courses) {
   ]).filter(Boolean).map(normalizeText));
 }
 
-function auditFabricatedCourseSpans(sentence, known, violations) {
-  for (const span of extractCourseShapedSpans(sentence)) {
+function auditFabricatedCourseSpans(sentence, known, violations, userMessage = '') {
+  for (const span of extractCourseShapedSpans(sentence, { userMessage })) {
     if (known.has(span)) continue;
     if (isGenericCoursePhrase(span)) continue;
+    // 「人生哲學等課程」是「人生哲學這類課」，課名本體是「人生哲學」。
+    const base = span.replace(/等(?:課程|課)$/u, '');
+    if (base !== span && known.has(base)) continue;
+    // 「校外專業實習(三)」被切在「實習」：已知課名有「片段＋括號序號」就算同一門課。
+    if ([...known].some(name => name.startsWith(`${span}(`) || name.startsWith(`${span}（`))) continue;
     addViolation(violations, 'UNSUPPORTED_COURSE', `回答提到工具結果中不存在的課程「${span}」。`, sentence, null);
   }
 }
@@ -503,8 +566,13 @@ function auditFabricatedCourseSpans(sentence, known, violations) {
 // 「查得到這門課」不等於「這門課被選中」。只在候選**全部**角色都屬於
 // 排除／未排入時才判違規；角色混雜（例如同名但不同 section 一個排入、一個
 // 被排除）時無法確定回覆指的是哪一個，不誤判。
+// 說明「這門課沒有排入／不認列」的句子不是在推薦（「人工智慧概論目前也未列入，因…不認列為系外選修」）；
+// 「選修」在這裡是類別名稱，不是建議修這門課。
+const EXCLUSION_EXPLANATION = /未列入|未排入|沒有排入|沒排入|不列入|被排除|已排除|不認列|不推薦|不建議|無法排入/u;
+const RECOMMEND_ACTION = /推薦|加選|建議(?:你)?(?:修|選)/u;
+
 function auditExcludedCourseRecommended(sentence, reference, violations) {
-  if (!RECOMMENDATION_SHAPE.test(sentence)) return;
+  if (!RECOMMEND_ACTION.test(sentence) || EXCLUSION_EXPLANATION.test(sentence)) return;
   const { candidates } = reference;
   if (candidates.length === 0) return;
   const allNonRecommending = candidates.every(candidate => (
@@ -550,7 +618,7 @@ function auditToolOutcomes(reply, operations, violations) {
 }
 
 export function validateFaithfulnessReply(reply, ledger, { userMessage = '' } = {}) {
-  const text = normalizeText(reply);
+  const text = normalizeText(stripMarkdownEmphasis(reply));
   const operations = ledger?.operations ?? [];
   const courses = ledger?.courses ?? [];
   const claims = [];
@@ -568,7 +636,7 @@ export function validateFaithfulnessReply(reply, ledger, { userMessage = '' } = 
     const resolved = resolveCourseReferences(sentence, courses, { carryOver });
     carryOver = resolved.carryOver;
 
-    auditFabricatedCourseSpans(sentence, known, violations);
+    auditFabricatedCourseSpans(sentence, known, violations, userMessage);
 
     for (const reference of resolved.references) {
       auditCourseReference(sentence, reference, claims, violations);
@@ -649,7 +717,7 @@ function courseSummary(course, { includeReason = false } = {}) {
   return includeReason ? `${facts}；主要推薦原因：${summarizeReason(course)}` : facts;
 }
 
-export function buildSafeFaithfulnessFallback(ledger, { userMessage = '' } = {}) {
+export function buildSafeFaithfulnessFallback(ledger, { userMessage = '', originalReply = '' } = {}) {
   const operations = ledger?.operations ?? [];
   const courses = ledger?.courses ?? [];
   // 找「最近一次仍未完成」的操作，而不是整段歷史裡任何一次失敗——後者會讓
@@ -660,13 +728,27 @@ export function buildSafeFaithfulnessFallback(ledger, { userMessage = '' } = {})
     return `這次操作尚未完成${detail}。請確認資料後再試。`;
   }
   if (courses.length > 0) {
+    // 優先列出原回答真正提到的課（那是模型要推薦的），而不是證據帳本裡的前 8 門——
+    // 帳本混著課表、查詢結果與被排除的課，直接列出來會把使用者剛移除或無關的課也端上來
+    // （2026-10-15 Persona 實測）。
+    const original = normalizeText(stripMarkdownEmphasis(originalReply));
+    const mentioned = original
+      ? courses.filter(course => course.name && original.includes(course.name)
+        && !(course.evidenceRoles?.length > 0 && course.evidenceRoles.every(role => NON_RECOMMENDING_ROLES.has(role))))
+      : [];
+    const chosen = mentioned.length > 0 ? mentioned : courses;
     const asksForReason = REASON_QUESTION.test(userMessage);
-    const listed = courses.slice(0, 8).map((course, index) => (
+    // 使用者沒問評價時不主動提「涼不涼」——先前每一則備援回答都附上這句，與問題無關。
+    const asksForReviews = /評價|涼|甜|好拿分/u.test(userMessage);
+    const listed = chosen.slice(0, 8).map((course, index) => (
       courseSummary(course, { includeReason: asksForReason && index === 0 })
     )).join('\n');
-    const hasMissingReviews = courses.some(course => !course.reviewEvidence);
-    return `目前可確認的課程資料如下：\n${listed}`
-      + (hasMissingReviews ? '\n其中部分課程沒有評價資料，無法判斷是否涼或好拿分。' : '');
+    const hasMissingReviews = chosen.some(course => !course.reviewEvidence);
+    const intro = mentioned.length > 0
+      ? '原本的回答有部分內容無法和課程資料對上，以下只列出資料確認過的課程：'
+      : '目前可確認的課程資料如下：';
+    return `${intro}\n${listed}`
+      + (asksForReviews && hasMissingReviews ? '\n其中部分課程沒有評價資料，無法判斷是否涼或好拿分。' : '');
   }
   return '目前沒有足夠的可驗證資料回答這個問題，請提供更明確的課程或需求。';
 }
@@ -711,7 +793,7 @@ export async function enforceFaithfulReply({
     }
   }
 
-  const fallbackReply = buildSafeFaithfulnessFallback(ledger, { userMessage });
+  const fallbackReply = buildSafeFaithfulnessFallback(ledger, { userMessage, originalReply: reply });
   return {
     reply: fallbackReply,
     audit: validateFaithfulnessReply(fallbackReply, ledger, { userMessage }),

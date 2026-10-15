@@ -82,6 +82,9 @@ export function buildUserTagVector({
   const positive = new Map();
   const negative = new Map();
   const evidence = [];
+  // 使用者明確拒絕過的課（探索卡沒興趣、因內容退選、不喜歡的修過課…）。探索頁不再推薦它們：
+  // 探索卡的沒興趣只把選到的標籤放進負向向量，課的其他標籤仍可能讓它排在前面（2026-10-15 Persona 實測）。
+  const rejectedCourseCodes = new Set();
   const sources = {
     explicitTags: 0, unmappedTopics: [], historyCourses: 0, historyWithoutVector: 0, historyDisliked: 0,
     positiveEvents: 0, negativeEvents: 0,
@@ -130,6 +133,7 @@ export function buildUserTagVector({
   for (const item of weightedEvents) {
     const code = normalizeCode(item.snapshot?.course?.catalogCourseCode ?? item.event?.course?.catalogCourseCode);
     if (code && excluded.has(code)) continue;
+    if (code && item.weight < 0) rejectedCourseCodes.add(code);
     const courseVector = item.event.eventType === 'interest_exploration_feedback'
       ? null
       : index.vectors.get(code)?.weights;
@@ -145,7 +149,7 @@ export function buildUserTagVector({
     }
   }
 
-  return { modelVersion: USER_TAG_VECTOR_MODEL_VERSION, positive, negative, evidence, sources, settings };
+  return { modelVersion: USER_TAG_VECTOR_MODEL_VERSION, positive, negative, evidence, sources, settings, rejectedCourseCodes };
 }
 
 function percentile(values, q) {

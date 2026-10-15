@@ -12,6 +12,7 @@
 import { getAll } from '../db/database.js';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
 import { getLatestAttemptsByCourseCode, getPassedCourseCodes } from '../data/courseHistory.js';
+import { isSeriesLevelReachable, passedSeriesLevels } from '../data/courseSeries.js';
 import { buildStudentScope, parseClassName } from '../skills/courseScope.js';
 import { filterCategorizedCourses } from '../skills/courseQuery.js';
 import {
@@ -25,7 +26,8 @@ import {
   sharedPhrases,
 } from '../skills/courseExploration.js';
 import { getUserPreferences } from './memoryService.js';
-import { loadUserTagVectorContext } from './userTagVectorService.js';
+import { getCourseTagIndex, getTagSimilarity, loadUserTagVectorContext } from './userTagVectorService.js';
+import { softCosine } from '../skills/tagVectorSpace.js';
 import { scoreCoursesForUser, explainCourseForUser } from '../skills/userTagVector.js';
 import { loadCourseTextEmbeddingIndex } from './courseTextEmbeddingService.js';
 import { denseCosine } from '../skills/courseTextVector.js';
@@ -171,10 +173,12 @@ function generalRecognition(section) {
   };
 }
 
-function buildCandidates(courses, category, scope, passedCodes, index, { requireDescription = true } = {}) {
+function buildCandidates(courses, category, scope, passedCodes, index, { requireDescription = true, seriesLevels = null } = {}) {
   const sections = filterCategorizedCourses(courses, { category }, scope).filter(section => (
     // filterCategorizedCourses 已限制當學期、年級與學制。以下是探索自己的安全條件。
     !passedCodes.has(normalizeCode(section.catalogCourseCode))
+    // 系列課沒修過前一級不推薦（見 data/courseSeries.js）。
+    && (!seriesLevels || isSeriesLevelReachable(section.name, seriesLevels))
     && section.eligibility !== 'unknown'
     && section.eligibility !== 'ineligible'
     && !(section.outsideElective?.checked === true && section.outsideElective.eligible === false)
@@ -225,6 +229,8 @@ function unitCount(candidates) {
  * @param input `{ favoriteCourseCode }`，可省略。
  * @param deps 測試用注入：`{ loadCourses, loadProfile, now }`。
  */
+const SEMANTIC_DENSE_WEIGHT = 0.7;
+
 export async function exploreForUser(identity, input = {}, deps = {}) {
   const representation = input.representation ?? 'tfidf';
   if (!['tfidf', 'embedding'].includes(representation)) {
@@ -286,15 +292,32 @@ export async function exploreForUser(identity, input = {}, deps = {}) {
 
   const favoriteVector = index.vectors.get(favorite.courseCode);
   const passedCodes = new Set(getPassedCourseCodes(courseHistory).map(normalizeCode));
-  const outsideCandidates = buildCandidates(courses, CATEGORY_OUTSIDE_ELECTIVE, scope, passedCodes, index);
-  const generalCandidates = buildCandidates(courses, CATEGORY_GENERAL_EDUCATION, scope, passedCodes, index);
+  const seriesLevels = passedSeriesLevels(courseHistory);
+  const outsideCandidates = buildCandidates(courses, CATEGORY_OUTSIDE_ELECTIVE, scope, passedCodes, index, { seriesLevels });
+  const generalCandidates = buildCandidates(courses, CATEGORY_GENERAL_EDUCATION, scope, passedCodes, index, { seriesLevels });
 
+  // 語意相似：課程描述的樣板句（「本課程…潛在應用領域…」）讓文字向量的相似度都擠在 0.5 上下，
+  // 「Web程式設計」出發會排出「水處理工程與設計」（2026-10-15 Persona 實測）。改用混合分數：
+  // 文字向量 × 0.7 ＋ 主題標籤相似度 × 0.3；與起點課沒有任何相同主題標籤的課不列入。
+  // 起點課沒有標籤向量時退回只用文字向量。
+  const tagIndex = semantic ? getCourseTagIndex(courses) : null;
+  const tagSimilarity = semantic ? getTagSimilarity() : null;
+  const favoriteTags = semantic ? tagIndex.vectors.get(favorite.courseCode)?.weights : null;
+  const semanticSimilarity = (left, right, candidate) => {
+    const dense = denseCosine(left, right);
+    if (!favoriteTags?.size) return dense;
+    const candidateTags = tagIndex.vectors.get(candidate.courseCode)?.weights;
+    // 至少要有一個完全相同的主題標籤；相近標籤表太寬（「資訊工程↔資訊系統」「網站設計↔網路設計」）。
+    if (![...favoriteTags.keys()].some(tag => candidateTags?.has(tag))) return 0;
+    const tagSim = softCosine(favoriteTags, candidateTags, tagSimilarity).similarity ?? 0;
+    return SEMANTIC_DENSE_WEIGHT * dense + (1 - SEMANTIC_DENSE_WEIGHT) * tagSim;
+  };
   const rank = candidates => rankSerendipitous({
     favoriteVector,
     candidates,
     unitOf: candidate => candidate.unit,
     k: EXPLORATION_RESULT_LIMIT,
-    ...(semantic ? { similarityOf: denseCosine } : {}),
+    ...(semantic ? { similarityOf: semanticSimilarity } : {}),
   });
   const outside = rank(outsideCandidates);
   const general = rank(generalCandidates);
@@ -405,9 +428,14 @@ export async function exploreByProfile(identity, deps = {}) {
   if (!context.consented) return empty('no-personalization-consent');
   if (!(context.user.positive.size > 0)) return empty('no-profile-signal');
 
-  const options = { requireDescription: false };
-  const outsideCandidates = buildCandidates(courses, CATEGORY_OUTSIDE_ELECTIVE, scope, passedCodes, index, options);
-  const generalCandidates = buildCandidates(courses, CATEGORY_GENERAL_EDUCATION, scope, passedCodes, index, options);
+  const options = { requireDescription: false, seriesLevels: passedSeriesLevels(courseHistory) };
+  // 使用者明確拒絕過的課不再推薦（見 userTagVector 的 rejectedCourseCodes）。
+  const rejected = context.user.rejectedCourseCodes ?? new Set();
+  const notRejected = candidate => !rejected.has(normalizeCode(candidate.courseCode));
+  const outsideCandidates = buildCandidates(courses, CATEGORY_OUTSIDE_ELECTIVE, scope, passedCodes, index, options)
+    .filter(notRejected);
+  const generalCandidates = buildCandidates(courses, CATEGORY_GENERAL_EDUCATION, scope, passedCodes, index, options)
+    .filter(notRejected);
   const scored = scoreCoursesForUser(
     context.user, context.index,
     [...outsideCandidates, ...generalCandidates].map(candidate => candidate.courseCode),

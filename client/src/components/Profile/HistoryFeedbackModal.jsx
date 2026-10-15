@@ -6,7 +6,7 @@
 //
 // mode="initial"：排課主頁自動跳出，只處理還沒回答過的課。「儲存」與「稍後再說」都會把
 //   這批課記下來（稍後再說＝全部普通），同一批課不再自動跳出。
-// mode="edit"：從個人設定打開，列出全部課，只送出有改變的回答。
+// mode="edit"：從個人設定打開，列出全部課，送出有改變的回答與從沒回答過的課。
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { interactionsAPI } from '../../services/api';
@@ -46,8 +46,11 @@ export default function HistoryFeedbackModal({ data, mode = 'initial', onClose, 
   const hiddenCount = groups.slice(VISIBLE_GROUPS_WHEN_COLLAPSED).reduce((sum, group) => sum + group.courses.length, 0);
 
   const submit = async (useNeutralForAll) => {
+    // 編輯模式送出有改變的回答，以及從沒回答過的課（維持「普通」也要記下，否則排課主頁會再問一次）。
     const targets = allCourses.filter(course => (
-      mode === 'initial' || (choices[course.courseCode] ?? 'neutral') !== (course.response ?? 'neutral')
+      mode === 'initial'
+      || course.response === null
+      || (choices[course.courseCode] ?? 'neutral') !== course.response
     ));
     if (targets.length === 0) { onClose(); return; }
     const events = targets.map(course => ({

@@ -184,6 +184,10 @@ export function ScheduleProvider({ children }) {
   // 不會發現自己剛做的移除靜默失效。
   const [sessionAvoidances, setSessionAvoidances] = useState(() => readStoredAvoidances(userIdentity));
   const avoidancesRef = useRef(sessionAvoidances);
+  // 使用者自己加入課表的班次（搜尋、探索、畢業頁的「加入課表」）。重新排課時當成指定課程送出，
+  // 否則「套用偏好排課」會把它們整份換掉（2026-10-15 Persona UX 測試發現）。
+  // 從已存課表載回的課不算：那樣重排會被釘死在舊課表上。
+  const userAddedIdsRef = useRef(new Set());
 
   // 一律經由這個函式更新，狀態與 sessionStorage 才不會有一邊忘了寫。
   const commitAvoidances = useCallback((next) => {
@@ -222,6 +226,12 @@ export function ScheduleProvider({ children }) {
     setSelectedPlanId(recommendation?.variantId ?? normalizedPlans[0]?.id ?? null);
     setRecommendedPlanId(recommendation?.planId ?? normalizedPlans[0]?.planId ?? null);
     setPlanDiversity(diversity);
+  }, []);
+
+  // 目前仍在課表上的、使用者自己加入的班次。
+  const userAddedCourseIds = useCallback(() => {
+    const present = new Set(scheduleRef.current.map(course => courseId(course)));
+    return [...userAddedIdsRef.current].filter(id => present.has(id));
   }, []);
 
   // roadmap #27：切換到方案清單裡的另一個方案。
@@ -263,6 +273,7 @@ export function ScheduleProvider({ children }) {
     accountGenerationRef.current += 1;
     const generation = accountGenerationRef.current;
     replaceSchedule([]);
+    userAddedIdsRef.current = new Set();
     setWatchlist(normalizeWatchlist(user?.watchlist));
     // 避開清單是「這個人這一次規劃」的狀態。換帳號時換成那個帳號自己的那一份，
     // 不能讓上一位使用者移除的課繼續影響下一位。
@@ -342,6 +353,7 @@ export function ScheduleProvider({ children }) {
 
         scheduleRef.current = proposed;
         setSchedule(proposed);
+        userAddedIdsRef.current.add(id);
         emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, course, {
           requestId: requestIdForAction(),
           source: resolveSelectionSource(courseSource(course, {
@@ -372,6 +384,7 @@ export function ScheduleProvider({ children }) {
     const next = scheduleRef.current.filter(course => courseId(course) !== String(id));
     scheduleRef.current = next;
     setSchedule(next);
+    userAddedIdsRef.current.delete(String(id));
 
     // 三件事**彼此獨立**：畫面移除、加入本次避開清單、送出長期學習事件。
     // 先前只有第一與第三件，而第三件要累積到門檻才會影響權重——所以下一次重排
@@ -601,6 +614,7 @@ export function ScheduleProvider({ children }) {
     applyResolvedAvoidances,
     buildAvoidanceConstraints,
     buildPlanningContext,
+    userAddedCourseIds,
     addCourse,
     removeCourse,
     toggleWatchlist,
@@ -618,7 +632,7 @@ export function ScheduleProvider({ children }) {
     selectPlan,
   }), [
     acceptRecommendation, activePlan, addCourse, applyResolvedAvoidances,
-    buildAvoidanceConstraints, buildPlanningContext, clearSessionAvoidances,
+    buildAvoidanceConstraints, buildPlanningContext, clearSessionAvoidances, userAddedCourseIds,
     loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, planDiversity, plans,
     removeCourse, replaceSchedule, saveCurrentSchedule, saving, schedule, sessionAvoidances,

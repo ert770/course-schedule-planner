@@ -310,13 +310,20 @@ export function getAgentTools() {
       description:
         '依目前使用者的後端 profile 查詢課程資料。'
         + '通識領域以工具回傳的 generalEducationDomain 為準，不得由課號前綴猜測，也不得自行傳入班級。'
-        + '若課程 eligibility 為 unknown，只能說「資格待確認」並附上 eligibilityReason，不得宣稱使用者確定可修。',
+        + '若課程 eligibility 為 unknown，只能說「資格待確認」並附上 eligibilityReason，不得宣稱使用者確定可修。'
+        + '關鍵字同時比對課名與課程描述；組合條件（全英授課、類別、星期）用對應參數一次查，不要逐一換關鍵字。'
+        + '一回合最多查 4 次，查不到就直接說查不到。',
       parameters: {
         type: 'object',
         properties: {
           keyword: { type: 'string', description: '課程名稱或關鍵字。' },
           category: { type: 'string', enum: COURSE_CATEGORIES, description: '課程類別。' },
           dayOfWeek: { type: 'integer', description: '星期幾，1=週一 … 5=週五。' },
+          language: {
+            type: 'string',
+            enum: ['English', '中文 (Chinese)'],
+            description: '授課語言。使用者要全英授課時填 English；沒提到就不要填。',
+          },
         },
         additionalProperties: false,
       },
@@ -618,6 +625,10 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 工具使用方式：
 - 需要資料或要產生課表時，直接呼叫對應的工具；每個工具的參數說明寫在工具定義裡，以那份定義為準。
 - 工具回傳結果之後，若已足以回答，就直接用一般文字回覆使用者，不需要再呼叫任何工具。
+- 查詢課程時把條件放進同一次查詢的參數（keyword、category、language、dayOfWeek）；一回合最多查 4 次。
+  查不到符合的課就直接說查不到，並建議可以放寬哪個條件，不要一直換關鍵字重查。
+- 推薦課程時只寫工具結果中真的有的課名；描述使用者的條件時直接用一般文字敘述即可。
+- 使用者順口提到的系所、年級、班級若和目前資料相同，不要呼叫 update_student_profile，也不要問要不要更新，直接回答他的問題。
 - 不要把工具回傳的原始 JSON 貼給使用者，要用中文說明重點。
 - 每個工具的結果都包在同一種信封裡：\`{ schemaVersion, dataSource, term, warnings, errorCode, result }\`，
   實際內容一律在 \`result\` 欄位（陣列或物件都一樣，不必先判斷形狀）。\`dataSource\` 為
