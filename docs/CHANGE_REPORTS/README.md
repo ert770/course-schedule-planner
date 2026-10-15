@@ -4,6 +4,7 @@
 
 ## 2026-10-15
 
+- [AI 對話推薦品質修正（忠實度檢查誤判、查詢次數上限、無效的資料更新提議）](./2026-10-15-ai-chat-recommendation-quality.md)
 - [s_vec／s_cf 切 active，以及四類測試與 10 位 Persona UX 實測](./2026-10-15-active-switch-and-persona-ux-test.md)
 
 ## 2026-10-14

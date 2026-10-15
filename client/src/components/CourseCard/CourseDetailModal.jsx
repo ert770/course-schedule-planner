@@ -71,8 +71,9 @@ function ReasonSection({ reason }) {
         <div className="reason-line">
           <strong>它勝過：</strong>
           <ul className="reason-alternatives">
-            {alternatives.candidates.map(item => (
-              <li key={item.name}>
+            {/* 同一門課的不同班次會同名，用班次 id 當 key（同名時 React 會報重複 key）。 */}
+            {alternatives.candidates.map((item, index) => (
+              <li key={item.sectionId ?? `${item.name}-${index}`}>
                 {item.name}（差 {item.scoreDelta} 分）
                 {item.notScheduledBecause ? `；${item.notScheduledBecause}` : ''}
               </li>
