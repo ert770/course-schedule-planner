@@ -126,8 +126,16 @@ export function validateProfile(profile) {
 // `schemaVersion: PROFILE_SCHEMA_VERSION`，那層 spread 是多餘的。需要正規化任何
 // 來源的 profile 時直接呼叫 `normalizeProfile()`。
 
+// 使用者是否已完成初次設定（系所與年級都有值）。設定頁一定會寫入這兩項；班級由系統帶入，
+// 新使用者存完設定仍可能沒有，所以不列為條件。前端據此決定登入後要不要走引導流程，
+// 取代原本只存在瀏覽器、登出就被清掉的 `setupDone` 標記（2026-10-16）。
+export function isProfileSetupComplete(profile) {
+  return Boolean(profile?.department) && Number.isFinite(Number(profile?.gradeLevel)) && Number(profile.gradeLevel) > 0;
+}
+
 export default {
   PROFILE_SCHEMA_VERSION,
   normalizeProfile,
   validateProfile,
+  isProfileSetupComplete,
 };
