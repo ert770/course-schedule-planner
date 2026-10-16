@@ -254,9 +254,16 @@ Response:
 查無 Profile 列、或該列的 `displayName` 只是排課引擎內部用的合成佔位字串（`User ${user_id}`）
 時，回應不含 `name` 欄位。
 
+`user.setupComplete`（2026-10-16 新增，boolean）：`User_Profiles` 是否已有系所與年級
+（`isProfileSetupComplete()`）。前端據此判斷登入後要不要走「同意頁 → 設定頁」的引導流程，
+登出或換裝置後不必重走。Profile 讀取失敗（例如未接 MySQL）時不含此欄位，前端退回瀏覽器的
+`fcu:<studentId>:setupDone` 標記。隱私同意是否需要重新確認仍由 `GET /api/privacy/consents` 的
+`requiresAction` 判斷，與此欄位無關。
+
 ### `GET /api/auth/me`
 
 從 session 回傳目前登入的 local demo user profile（不含密碼），不接受 query student ID。
+與 `/login` 相同，會帶上 `name`（若有）與 `setupComplete`。
 
 ### `POST /api/auth/logout`
 

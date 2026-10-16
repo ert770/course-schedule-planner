@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildCourseTextEmbeddingIndex } from '../skills/courseTextVector.js';
+import { buildCourseTextEmbeddingIndex, COURSE_TEXT_SYLLABUS_VECTOR_VERSION } from '../skills/courseTextVector.js';
 
 const defaultFile = fileURLToPath(new URL('../../simulation-runs/course-text-embeddings/index.json', import.meta.url));
 let cache;
@@ -17,9 +17,20 @@ export async function loadCourseTextEmbeddingIndex(courses) {
       const artifact = JSON.parse(await fs.readFile(file, 'utf8'));
       cache = { file, mtime: stat.mtimeMs, size: stat.size, artifact };
     }
-    if (cache.indexCourses !== courses) {
-      cache.index = buildCourseTextEmbeddingIndex(courses, cache.artifact);
+    let syllabi = null;
+    if (cache.artifact.textVersion === COURSE_TEXT_SYLLABUS_VECTOR_VERSION) {
+      try {
+        const { getCourseSyllabusVectorDocuments } = await import('../db/database.js');
+        syllabi = await getCourseSyllabusVectorDocuments();
+      } catch (error) {
+        console.warn('課程大綱文字來源暫時無法使用：', error.message);
+        return { available: false, reason: 'syllabus-source-unavailable' };
+      }
+    }
+    if (cache.indexCourses !== courses || cache.indexSyllabi !== syllabi) {
+      cache.index = buildCourseTextEmbeddingIndex(courses, cache.artifact, syllabi ?? []);
       cache.indexCourses = courses;
+      cache.indexSyllabi = syllabi;
     }
     return { available: true, index: cache.index };
   } catch (error) {
