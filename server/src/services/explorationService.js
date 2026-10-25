@@ -12,6 +12,7 @@
 import { getAll } from '../db/database.js';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
 import { getLatestAttemptsByCourseCode, getPassedCourseCodes } from '../data/courseHistory.js';
+import { isSeriesLevelReachable, passedSeriesLevels } from '../data/courseSeries.js';
 import { buildStudentScope, parseClassName } from '../skills/courseScope.js';
 import { filterCategorizedCourses } from '../skills/courseQuery.js';
 import {
@@ -25,12 +26,24 @@ import {
   sharedPhrases,
 } from '../skills/courseExploration.js';
 import { getUserPreferences } from './memoryService.js';
+import { getCourseTagIndex, getTagSimilarity, loadUserTagVectorContext } from './userTagVectorService.js';
+import { softCosine } from '../skills/tagVectorSpace.js';
+import { scoreCoursesForUser, explainCourseForUser } from '../skills/userTagVector.js';
+import { loadCourseTextEmbeddingIndex } from './courseTextEmbeddingService.js';
+import { denseCosine } from '../skills/courseTextVector.js';
 
 export const EXPLORATION_RESULT_LIMIT = 5;
 export const EXPLORATION_CACHE_TTL_MS = 10 * 60 * 1000;
 export const EXPLORATION_METHOD = Object.freeze({
   representation: 'tfidf-char-bigram',
   selection: 'one-per-unit-cosine',
+  k: EXPLORATION_RESULT_LIMIT,
+});
+
+// 「依你的修課與興趣」模式：標籤空間使用者向量（階段 3）＋標籤相近表（階段 2）。
+export const PROFILE_EXPLORATION_METHOD = Object.freeze({
+  representation: 'user-tag-vector-v1',
+  selection: 'one-per-unit-svec',
   k: EXPLORATION_RESULT_LIMIT,
 });
 
@@ -75,7 +88,9 @@ async function loadCatalog({ loadCourses = () => getAll('courses'), now = Date.n
 }
 
 // 已通過的課，每個課號取最近一次修課紀錄；標出哪些有說明可以當起點。
-function buildFavorites(courseHistory, index) {
+const hasVector = vector => Boolean(vector && (vector.norm > 0 || (ArrayBuffer.isView(vector) && vector.length > 0)));
+
+function buildFavorites(courseHistory, index, unavailableReason = 'no-description') {
   const passed = new Set(getPassedCourseCodes(courseHistory).map(normalizeCode));
   const latest = getLatestAttemptsByCourseCode(courseHistory);
   const attempts = latest instanceof Map ? [...latest.values()] : Object.values(latest ?? {});
@@ -84,7 +99,7 @@ function buildFavorites(courseHistory, index) {
     .map(entry => {
       const courseCode = normalizeCode(entry.courseCode);
       const vector = index.vectors.get(courseCode);
-      const available = Boolean(vector && vector.norm > 0);
+      const available = hasVector(vector);
       return {
         courseCode,
         name: entry.courseName,
@@ -93,7 +108,7 @@ function buildFavorites(courseHistory, index) {
         available,
         // 唯一的不可用原因：課程資料中任何學期都查不到這個課號的說明。
         // 「本學期沒開」不是原因——有說明就能當起點。
-        ...(available ? {} : { reason: 'no-description' }),
+        ...(available ? {} : { reason: unavailableReason }),
       };
     })
     .sort((a, b) => (
@@ -116,12 +131,19 @@ function hasSchedule(section) {
   return Array.isArray(section.timeBlocks) ? section.timeBlocks.length > 0 : Boolean(section.dayOfWeek);
 }
 
+// 實習課的課號是講課課號加 P（例：ACCT2031 與 ACCT2031P）。兩者同時出現時併成同一張卡片，
+// 以講課課號為準；只有實習課時維持原課號。
+function lectureCode(courseCode, codes) {
+  return courseCode.endsWith('P') && codes.has(courseCode.slice(0, -1)) ? courseCode.slice(0, -1) : courseCode;
+}
+
 // 依課號把班次分組。排名以課號為單位；加入課表以班次為單位，所以班次物件原樣保留
 // （它們是 filterCategorizedCourses() 的標準輸出，驗證與事件記錄會讀其中的欄位）。
 function groupByCourseCode(sections) {
   const groups = new Map();
+  const codes = new Set(sections.map(section => normalizeCode(section.catalogCourseCode)));
   for (const section of sections) {
-    const courseCode = normalizeCode(section.catalogCourseCode);
+    const courseCode = lectureCode(normalizeCode(section.catalogCourseCode), codes);
     if (!courseCode) continue;
     const group = groups.get(courseCode) ?? { courseCode, sections: [] };
     group.sections.push(section);
@@ -151,10 +173,12 @@ function generalRecognition(section) {
   };
 }
 
-function buildCandidates(courses, category, scope, passedCodes, index) {
+function buildCandidates(courses, category, scope, passedCodes, index, { requireDescription = true, seriesLevels = null } = {}) {
   const sections = filterCategorizedCourses(courses, { category }, scope).filter(section => (
     // filterCategorizedCourses 已限制當學期、年級與學制。以下是探索自己的安全條件。
     !passedCodes.has(normalizeCode(section.catalogCourseCode))
+    // 系列課沒修過前一級不推薦（見 data/courseSeries.js）。
+    && (!seriesLevels || isSeriesLevelReachable(section.name, seriesLevels))
     && section.eligibility !== 'unknown'
     && section.eligibility !== 'ineligible'
     && !(section.outsideElective?.checked === true && section.outsideElective.eligible === false)
@@ -177,7 +201,7 @@ function buildCandidates(courses, category, scope, passedCodes, index) {
         vector: index.vectors.get(group.courseCode) ?? null,
       };
     })
-    .filter(candidate => candidate.vector && candidate.vector.norm > 0);
+    .filter(candidate => !requireDescription || hasVector(candidate.vector));
 }
 
 // sharedTerms 是兩份課程說明裡都出現的字面片段，讓使用者看得出「為什麼是這門」。
@@ -205,17 +229,36 @@ function unitCount(candidates) {
  * @param input `{ favoriteCourseCode }`，可省略。
  * @param deps 測試用注入：`{ loadCourses, loadProfile, now }`。
  */
+const SEMANTIC_DENSE_WEIGHT = 0.7;
+
 export async function exploreForUser(identity, input = {}, deps = {}) {
+  const representation = input.representation ?? 'tfidf';
+  if (!['tfidf', 'embedding'].includes(representation)) {
+    throw explorationError('不支援的課程內容比較方式。', 'INVALID_EXPLORATION_REPRESENTATION');
+  }
   const profile = deps.loadProfile ? await deps.loadProfile(identity) : await getUserPreferences(identity);
   const scope = buildStudentScope(profile);
-  const { courses, index } = await loadCatalog(deps);
+  const { courses, index: lexicalIndex } = await loadCatalog(deps);
+  const semantic = representation === 'embedding';
+  const textContext = semantic
+    ? await (deps.loadTextEmbeddings ?? loadCourseTextEmbeddingIndex)(courses) : null;
+  const index = semantic && textContext.available ? textContext.index : lexicalIndex;
 
   const courseHistory = Array.isArray(profile.courseHistory) ? profile.courseHistory : [];
-  const favorites = buildFavorites(courseHistory, index);
+  const favorites = buildFavorites(courseHistory, index, semantic ? 'no-text-embedding' : 'no-description');
   const base = {
+    mode: 'favorite',
     favorites: favorites.map(({ graduationCategory, ...item }) => item),
-    method: EXPLORATION_METHOD,
+    method: semantic
+      ? (textContext.index?.method ?? { representation: 'course-text-embedding-v1', selection: 'one-per-unit-cosine', k: EXPLORATION_RESULT_LIMIT })
+      : EXPLORATION_METHOD,
   };
+  const empty = emptyReason => ({ ...base, favorite: null, emptyReason,
+    outside: { diversification: 'department', items: [] },
+    general: { diversification: 'domain', items: [] },
+    poolSize: { outsideCourses: 0, outsideUnits: 0, generalCourses: 0, generalUnits: 0 },
+  });
+  if (semantic && !textContext.available) return empty(textContext.reason);
 
   const requested = normalizeCode(input.favoriteCourseCode);
   let favorite;
@@ -226,6 +269,7 @@ export async function exploreForUser(identity, input = {}, deps = {}) {
       throw explorationError('起點必須是你已修過並通過的課程。', 'FAVORITE_NOT_IN_HISTORY');
     }
     if (!favorite.available) {
+      if (semantic) return empty('no-text-embedding-favorite');
       throw explorationError('課程資料中沒有這門課的說明，無法當作探索起點。', 'FAVORITE_UNAVAILABLE');
     }
     source = FAVORITE_SOURCE.USER;
@@ -235,6 +279,7 @@ export async function exploreForUser(identity, input = {}, deps = {}) {
   }
 
   if (!favorite) {
+    if (semantic) return empty(favorites.length === 0 ? 'no-course-history' : 'no-text-embedding-favorite');
     return {
       ...base,
       favorite: null,
@@ -247,26 +292,51 @@ export async function exploreForUser(identity, input = {}, deps = {}) {
 
   const favoriteVector = index.vectors.get(favorite.courseCode);
   const passedCodes = new Set(getPassedCourseCodes(courseHistory).map(normalizeCode));
-  const outsideCandidates = buildCandidates(courses, CATEGORY_OUTSIDE_ELECTIVE, scope, passedCodes, index);
-  const generalCandidates = buildCandidates(courses, CATEGORY_GENERAL_EDUCATION, scope, passedCodes, index);
+  const seriesLevels = passedSeriesLevels(courseHistory);
+  const outsideCandidates = buildCandidates(courses, CATEGORY_OUTSIDE_ELECTIVE, scope, passedCodes, index, { seriesLevels });
+  const generalCandidates = buildCandidates(courses, CATEGORY_GENERAL_EDUCATION, scope, passedCodes, index, { seriesLevels });
 
+  // 語意相似：課程描述的樣板句（「本課程…潛在應用領域…」）讓文字向量的相似度都擠在 0.5 上下，
+  // 「Web程式設計」出發會排出「水處理工程與設計」（2026-10-15 Persona 實測）。改用混合分數：
+  // 文字向量 × 0.7 ＋ 主題標籤相似度 × 0.3；與起點課沒有任何相同主題標籤的課不列入。
+  // 起點課沒有標籤向量時退回只用文字向量。
+  const tagIndex = semantic ? getCourseTagIndex(courses) : null;
+  const tagSimilarity = semantic ? getTagSimilarity() : null;
+  const favoriteTags = semantic ? tagIndex.vectors.get(favorite.courseCode)?.weights : null;
+  const semanticSimilarity = (left, right, candidate) => {
+    const dense = denseCosine(left, right);
+    if (!favoriteTags?.size) return dense;
+    const candidateTags = tagIndex.vectors.get(candidate.courseCode)?.weights;
+    // 至少要有一個完全相同的主題標籤；相近標籤表太寬（「資訊工程↔資訊系統」「網站設計↔網路設計」）。
+    if (![...favoriteTags.keys()].some(tag => candidateTags?.has(tag))) return 0;
+    const tagSim = softCosine(favoriteTags, candidateTags, tagSimilarity).similarity ?? 0;
+    return SEMANTIC_DENSE_WEIGHT * dense + (1 - SEMANTIC_DENSE_WEIGHT) * tagSim;
+  };
   const rank = candidates => rankSerendipitous({
     favoriteVector,
     candidates,
     unitOf: candidate => candidate.unit,
     k: EXPLORATION_RESULT_LIMIT,
+    ...(semantic ? { similarityOf: semanticSimilarity } : {}),
   });
   const outside = rank(outsideCandidates);
   const general = rank(generalCandidates);
+  const present = ranked => semantic ? ranked.items.map(({ vector: _vector, similarity, ...item }) => {
+    const leftTags = new Set(index.documents.get(favorite.courseCode)?.tags ?? []);
+    return { ...item, similarity: Number(similarity.toFixed(4)),
+      semanticMatch: { sourceCourseCode: favorite.courseCode,
+        commonTags: (index.documents.get(item.courseCode)?.tags ?? []).filter(tag => leftTags.has(tag)).slice(0, 5) },
+    };
+  }) : presentItems(ranked, { courseCode: favorite.courseCode, vector: favoriteVector }, index);
 
   return {
     ...base,
     favorite: { courseCode: favorite.courseCode, name: favorite.name, source },
-    outside: { diversification: 'department', items: presentItems(outside, { courseCode: favorite.courseCode, vector: favoriteVector }, index) },
+    outside: { diversification: 'department', items: present(outside) },
     general: {
       // 任何一門通識沒有領域（115 學年度起）時整組不分散，直接取最相似的 k 門不同課號。
       diversification: general.diversified || generalCandidates.length === 0 ? 'domain' : 'none',
-      items: presentItems(general, { courseCode: favorite.courseCode, vector: favoriteVector }, index),
+      items: present(general),
     },
     poolSize: {
       outsideCourses: outsideCandidates.length,
@@ -277,4 +347,117 @@ export async function exploreForUser(identity, input = {}, deps = {}) {
   };
 }
 
-export default { exploreForUser, resetExplorationCache };
+// 依 s_vec 排序，每個單位（系所／通識領域）只取一門；任一候選沒有單位時不分散（同通識 115 學年度規則）。
+function rankByProfile(candidates, scored, k) {
+  const ranked = candidates
+    .map(candidate => ({ candidate, entry: scored.get(candidate.courseCode) }))
+    .filter(({ entry }) => entry && entry.raw !== null && entry.positive > 0 && entry.raw > 0)
+    .sort((a, b) => b.entry.raw - a.entry.raw || a.candidate.courseCode.localeCompare(b.candidate.courseCode));
+  const diversified = candidates.length > 0 && candidates.every(candidate => candidate.unit !== null);
+  const items = [];
+  const usedUnits = new Set();
+  for (const item of ranked) {
+    if (items.length >= k) break;
+    if (diversified) {
+      if (usedUnits.has(item.candidate.unit)) continue;
+      usedUnits.add(item.candidate.unit);
+    }
+    items.push(item);
+  }
+  return { items, diversified };
+}
+
+function presentProfileItems(ranked, context) {
+  return ranked.items.map(({ candidate, entry }) => {
+    const { vector, ...item } = candidate;
+    const explanation = explainCourseForUser(context.user, context.index, candidate.courseCode, {
+      similarity: context.similarity,
+    });
+    return {
+      ...item,
+      score: entry.score === null ? null : Number(entry.score.toFixed(4)),
+      reasons: {
+        tags: explanation.tags.map(tag => ({
+          userTag: tag.userTag, courseTag: tag.courseTag, viaNeighbor: tag.viaNeighbor,
+        })),
+        closestEvidence: explanation.closestEvidence
+          ? {
+            courseCode: explanation.closestEvidence.courseCode,
+            name: explanation.closestEvidence.name || null,
+            source: explanation.closestEvidence.source,
+          }
+          : null,
+      },
+    };
+  });
+}
+
+/**
+ * 「依你的修課與興趣」探索（階段 4）。以標籤空間使用者向量排序系外選修與通識。
+ * 需要 personalization_learning 同意；未同意或沒有任何訊號時回傳空清單與原因，前端改用「從一門課出發」。
+ * 唯讀：不寫互動事件，也不影響自動排課。
+ *
+ * @param deps 測試用注入：`{ loadCourses, loadProfile, loadEvents, now }`。
+ */
+export async function exploreByProfile(identity, deps = {}) {
+  const profile = deps.loadProfile ? await deps.loadProfile(identity) : await getUserPreferences(identity);
+  const scope = buildStudentScope(profile);
+  const { courses, index } = await loadCatalog(deps);
+  const courseHistory = Array.isArray(profile.courseHistory) ? profile.courseHistory : [];
+  const passedCodes = new Set(getPassedCourseCodes(courseHistory).map(normalizeCode));
+  const context = await loadUserTagVectorContext(identity, profile, courses, deps);
+  const base = {
+    mode: 'profile',
+    method: PROFILE_EXPLORATION_METHOD,
+    signals: context.user
+      ? {
+        historyCourses: context.user.sources.historyCourses,
+        positiveEvents: context.user.sources.positiveEvents,
+        negativeEvents: context.user.sources.negativeEvents,
+        explicitTags: context.user.sources.explicitTags,
+      }
+      : null,
+  };
+  const empty = emptyReason => ({
+    ...base,
+    emptyReason,
+    outside: { diversification: 'department', items: [] },
+    general: { diversification: 'domain', items: [] },
+    poolSize: { outsideCourses: 0, outsideUnits: 0, generalCourses: 0, generalUnits: 0 },
+  });
+  if (!context.consented) return empty('no-personalization-consent');
+  if (!(context.user.positive.size > 0)) return empty('no-profile-signal');
+
+  const options = { requireDescription: false, seriesLevels: passedSeriesLevels(courseHistory) };
+  // 使用者明確拒絕過的課不再推薦（見 userTagVector 的 rejectedCourseCodes）。
+  const rejected = context.user.rejectedCourseCodes ?? new Set();
+  const notRejected = candidate => !rejected.has(normalizeCode(candidate.courseCode));
+  const outsideCandidates = buildCandidates(courses, CATEGORY_OUTSIDE_ELECTIVE, scope, passedCodes, index, options)
+    .filter(notRejected);
+  const generalCandidates = buildCandidates(courses, CATEGORY_GENERAL_EDUCATION, scope, passedCodes, index, options)
+    .filter(notRejected);
+  const scored = scoreCoursesForUser(
+    context.user, context.index,
+    [...outsideCandidates, ...generalCandidates].map(candidate => candidate.courseCode),
+    { similarity: context.similarity },
+  );
+  const outside = rankByProfile(outsideCandidates, scored, EXPLORATION_RESULT_LIMIT);
+  const general = rankByProfile(generalCandidates, scored, EXPLORATION_RESULT_LIMIT);
+  return {
+    ...base,
+    emptyReason: null,
+    outside: { diversification: 'department', items: presentProfileItems(outside, context) },
+    general: {
+      diversification: general.diversified || generalCandidates.length === 0 ? 'domain' : 'none',
+      items: presentProfileItems(general, context),
+    },
+    poolSize: {
+      outsideCourses: outsideCandidates.length,
+      outsideUnits: unitCount(outsideCandidates),
+      generalCourses: generalCandidates.length,
+      generalUnits: unitCount(generalCandidates),
+    },
+  };
+}
+
+export default { exploreForUser, exploreByProfile, resetExplorationCache };

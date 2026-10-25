@@ -14,8 +14,11 @@ import privacyRoutes from './routes/privacy.js';
 import interactionRoutes from './routes/interactions.js';
 import explorationRoutes from './routes/exploration.js';
 import interestExplorationRoutes from './routes/interestExploration.js';
+import historyFeedbackRoutes from './routes/historyFeedback.js';
 import { assertSessionSecretConfigured } from './services/sessionService.js';
 import { assertPrivacyConfigured } from './services/privacyService.js';
+import { assertInterestConfig, resolveCfInterestMode } from './skills/interestAlphas.js';
+import { startCourseNeighborSchedule } from './services/courseNeighborService.js';
 import { getHighsRuntime } from './skills/optimization/highsRuntime.js';
 import { setSchedulingHighsRuntime } from './skills/scheduler.js';
 
@@ -46,6 +49,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/interactions', interactionRoutes);
 app.use('/api/exploration', explorationRoutes);
 app.use('/api/interest-exploration', interestExplorationRoutes);
+app.use('/api/history-feedback', historyFeedbackRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -59,6 +63,11 @@ export async function startServer(port = PORT) {
   // 症狀是隨機、難以重現的認證失敗，不是一個清楚可診斷的啟動錯誤。
   assertSessionSecretConfigured();
   assertPrivacyConfigured();
+  // 興趣模型 α 總和超過 0.9、或 VECTOR_INTEREST_MODE 設成尚未開放的值時拒絕啟動（構想 5.1）。
+  assertInterestConfig();
+
+  // 階段 7：課程共現表每 24 小時重建一次；CF 關閉時不重建。資料表尚未建立時自動略過。
+  if (resolveCfInterestMode(process.env.CF_INTEREST_MODE) !== 'off') startCourseNeighborSchedule();
 
   try {
     setSchedulingHighsRuntime(await getHighsRuntime());

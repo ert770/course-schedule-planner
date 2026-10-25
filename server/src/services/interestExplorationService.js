@@ -6,11 +6,14 @@ import {
   isEligibleForInterestLearning,
 } from '../data/interestTagCatalog.js';
 import { getPassedCourseCodes } from '../data/courseHistory.js';
+import { isSeriesLevelReachable, passedSeriesLevels } from '../data/courseSeries.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
 import { getUserPreferences } from './memoryService.js';
 import { filterCategorizedCourses } from '../skills/courseQuery.js';
 import { CATEGORY_REQUIRED } from '../skills/courseCategory.js';
 import { buildStudentScope } from '../skills/courseScope.js';
+import { scoreCoursesForUser } from '../skills/userTagVector.js';
+import { loadUserTagVectorContext } from './userTagVectorService.js';
 
 export const INTEREST_EXPLORATION_CARD_LIMIT = 8;
 
@@ -71,6 +74,7 @@ function publicCard(course, tags) {
 export function buildInterestExplorationCards(courseSections, profile = {}, options = {}) {
   const limit = Math.max(0, Number(options.limit ?? INTEREST_EXPLORATION_CARD_LIMIT) || 0);
   const passedCodes = new Set(getPassedCourseCodes(profile.courseHistory).map(normalizeCode));
+  const seriesLevels = passedSeriesLevels(profile.courseHistory);
   const intent = topicIntent(profile);
   const byCourse = new Map();
 
@@ -80,6 +84,7 @@ export function buildInterestExplorationCards(courseSections, profile = {}, opti
   for (const course of orderedSections) {
     const courseCode = normalizeCode(course.catalogCourseCode);
     if (!courseCode || passedCodes.has(courseCode)) continue;
+    if (!isSeriesLevelReachable(course.name, seriesLevels)) continue;
     if (course.category === CATEGORY_REQUIRED || course.type === CATEGORY_REQUIRED) continue;
     if (course.eligibility === 'unknown' || course.eligibility === 'ineligible') continue;
     if (course.outsideElective?.eligible === false || !hasSchedule(course)) continue;
@@ -107,8 +112,13 @@ export function buildInterestExplorationCards(courseSections, profile = {}, opti
     }
   }
 
+  // 主題相關度相同時，依標籤空間使用者向量（s_vec raw，見 userTagVectorService.js）排序；
+  // 沒有向量分數（未同意或沒有訊號）時維持原本的課號順序。
+  const vectorScores = options.vectorScores instanceof Map ? options.vectorScores : new Map();
+  const vectorScore = code => vectorScores.get(code) ?? 0;
   const candidates = [...byCourse.values()].sort((left, right) => (
     right.relevance - left.relevance
+    || vectorScore(right.card.courseCode) - vectorScore(left.card.courseCode)
     || left.card.courseCode.localeCompare(right.card.courseCode)
   ));
   const selected = [];
@@ -189,7 +199,15 @@ export async function getInterestExplorationCards(identity, deps = {}) {
     includeGeneralEducation: true,
     schedulingPool: true,
   });
-  const cards = buildInterestExplorationCards(eligibleSections, profile, deps);
+  const context = await loadUserTagVectorContext(identity, profile, courses, deps);
+  const vectorScores = new Map();
+  if (context.user && context.user.positive.size > 0) {
+    const codes = [...new Set(eligibleSections.map(course => String(course.catalogCourseCode ?? '').trim().toUpperCase()).filter(Boolean))];
+    for (const [code, entry] of scoreCoursesForUser(context.user, context.index, codes, { similarity: context.similarity })) {
+      if (entry.raw !== null) vectorScores.set(code, entry.raw);
+    }
+  }
+  const cards = buildInterestExplorationCards(eligibleSections, profile, { ...deps, vectorScores });
   return {
     term: ACTIVE_TERM,
     cards,

@@ -663,3 +663,130 @@ describe('F25 伺服器補進 prompt 的課程事實也算證據', () => {
     assert.deepEqual(ids, [999, 1299, 1300]);
   });
 });
+
+// 2026-10-15 Persona 實測：多數備援回答其實是忠實度檢查誤判，不是模型捏造。
+describe('F30 忠實度檢查的誤判修正（Persona 實測）', () => {
+  function queryLedger(courses) {
+    const ledger = createEvidenceLedger();
+    recordToolEvidence(ledger, {
+      toolName: 'query_course_db', callId: 'call-query', dataSource: 'mysql', result: courses,
+    });
+    return ledger;
+  }
+  const ledger = () => queryLedger([
+    course({ sectionId: 301, name: '社會企業實作專題', teacher: '陳淑慧', credits: 2, timeStr: '三 06-07' }),
+    course({ sectionId: 302, name: '人生哲學', teacher: '林大同', credits: 2, timeStr: '四 03-04', eligibility: 'ineligible' }),
+  ]);
+
+  test('F30a 轉述使用者條件的引號內容不是課名', () => {
+    const userMessage = '我想挑戰難一點的課，有沒有英文授課的資安或演算法選修？';
+    const cases = [
+      '目前沒有找到同時符合「英文授課＋資安或演算法」的可選課程。',
+      '最符合「課堂討論多」的通識課，我會優先推薦下面幾門。',
+      '如果你想要更貼近你提到的「社會議題、哲學」方向，可以再告訴我。',
+      '我這次是依「挑戰難度、英文授課、資安／演算法興趣」搜尋。',
+      '你說的「英文授課」課程目前資料很少。',
+      '目前偏好中的「挑戰難課」與「全英授課」我有記下，但不代表一定有符合的課程。',
+      '- 不限課程類別，包含系外選修',
+      '以上課程目前都沒有評價資料。',
+      '這些班次對你的資格不符，因此不列為可直接推薦的選項。',
+      '- 改查相關關鍵字，例如「網路安全」「密碼學」「機器學習」或「計算理論」',
+      '- 擴大到「系外選修」',
+      '- 將關鍵字改為「安全程式設計」「系統安全」或「資訊安全管理」',
+      '目前不能僅依課名確認，仍需以課程描述中的評量方式為準。',
+      '資料庫目前只有 114 學年度必選修規則，因此畢業認列僅供參考。',
+      '其他選修避開',
+      '目前結果顯示午休偏好沒有被一般選修違反；',
+      '目前沒有足夠資料判定哪些課程特別難，不能直接替你保證課程難度。',
+      '若要增加找到課程的機會，可以放寬條件。',
+    ];
+    for (const sentence of cases) {
+      const audit = validateFaithfulnessReply(sentence, ledger(), { userMessage });
+      assert.ok(!audit.violations.some(item => item.code === 'UNSUPPORTED_COURSE'), `${sentence}\n${JSON.stringify(audit.violations)}`);
+    }
+  });
+
+  test('F30b 引號裡的捏造課名仍然會被攔下', () => {
+    for (const sentence of ['另外推薦「量子魔法課程」。', '我推薦「量子魔法」這門課。', '另外推薦量子魔法課程。']) {
+      const audit = validateFaithfulnessReply(sentence, ledger(), { userMessage: '有推薦的通識嗎？' });
+      assert.ok(audit.violations.some(item => item.code === 'UNSUPPORTED_COURSE'), sentence);
+    }
+  });
+
+  test('F30c Markdown 粗體與「X等課程」不影響課名比對', () => {
+    const audit = validateFaithfulnessReply(
+      '4. **社會企業實作專題**｜陳淑慧。另外搜尋到的 **人生哲學**等課程也很適合討論。', ledger()
+    );
+    assert.ok(!audit.violations.some(item => item.code === 'UNSUPPORTED_COURSE'), JSON.stringify(audit.violations));
+  });
+
+  test('F30d 說明「資格不符、所以不推薦」不是誇大資格；真的說可以修仍會被攔', () => {
+    const negated = validateFaithfulnessReply('人生哲學目前標示為資格不符，所以不把它列為可修的推薦。', ledger());
+    assert.ok(!negated.violations.some(item => item.code === 'ELIGIBILITY_OVERCLAIM'), JSON.stringify(negated.violations));
+    const overclaim = validateFaithfulnessReply('人生哲學你可以直接修。', ledger());
+    assert.ok(overclaim.violations.some(item => item.code === 'ELIGIBILITY_OVERCLAIM'));
+  });
+
+  test('F30e 備援回答只列原回答提到的課；沒問評價不提「涼」', async () => {
+    const result = await enforceFaithfulReply({
+      reply: '推薦社會企業實作專題，另外推薦「量子魔法課程」。',
+      ledger: ledger(),
+      userMessage: '有討論多的通識嗎？',
+    });
+    assert.equal(result.fallback, true);
+    assert.match(result.reply, /社會企業實作專題/);
+    assert.doesNotMatch(result.reply, /人生哲學/);
+    assert.doesNotMatch(result.reply, /涼/);
+    assert.equal(result.audit.passed, true);
+  });
+
+  test('F30f 表格沒有教師欄時不把學分或時間當成教師；有教師欄且不符仍會被攔', () => {
+    const noTeacher = validateFaithfulnessReply('| 演算法 | 3 | 一03-04 |', scheduleLedger());
+    assert.ok(!noTeacher.violations.some(item => item.code === 'COURSE_TEACHER_MISMATCH'), JSON.stringify(noTeacher.violations));
+    const wrongTeacher = validateFaithfulnessReply('| 演算法 | 李大華 | 3 | 一03-04 |', scheduleLedger());
+    assert.ok(wrongTeacher.violations.some(item => item.code === 'COURSE_TEACHER_MISMATCH'));
+  });
+
+  test('F30g 括號序號的課名被切在「實習」時仍對得上', () => {
+    const ledger = queryLedger([course({ sectionId: 401, name: '校外專業實習(三)', teacher: '陳錫民', credits: 3, timeStr: '一 05' })]);
+    const audit = validateFaithfulnessReply('- 校外專業實習(三)｜陳錫民｜3 學分', ledger);
+    assert.ok(!audit.violations.some(item => item.code === 'UNSUPPORTED_COURSE'), JSON.stringify(audit.violations));
+  });
+
+  test('F30h 說明課程沒排入、方案學分事實、推薦方向不是違規；真的推薦被排除的課仍會被攔', () => {
+    const ledger = scheduleLedger({}, {
+      excludedCoursesSample: [course({ sectionId: 501, name: '人工智慧概論', teacher: '張三', credits: 3, timeStr: '五 03-04' })],
+    });
+    const fine = [
+      '人工智慧概論目前也未列入，因資料判定大一概論性課程不認列為系外選修。',
+      '目前產生的方案共 24 學分，其中體育 1 學分不計入畢業學分，實際計入 23 學分。',
+      '這次我把「機器學習、Python」當作推薦方向。',
+    ];
+    for (const sentence of fine) {
+      const audit = validateFaithfulnessReply(sentence, ledger);
+      assert.equal(audit.passed, true, `${sentence}
+${JSON.stringify(audit.violations)}`);
+    }
+    const recommended = validateFaithfulnessReply('我推薦你加選人工智慧概論。', ledger);
+    assert.ok(recommended.violations.some(item => item.code === 'EXCLUDED_COURSE_PRESENTED_AS_RECOMMENDED'));
+    const rule = validateFaithfulnessReply('修滿 128 學分才能畢業。', createEvidenceLedger());
+    assert.ok(rule.violations.some(item => item.code === 'GRADUATION_RULE_WITHOUT_EVIDENCE'));
+  });
+
+  test('F30i 「還不能產生課表、需要確認」算揭露未完成；排課條件的引號不是課名', () => {
+    const ledger = createEvidenceLedger();
+    recordToolEvidence(ledger, {
+      toolName: 'run_csp_scheduler', callId: 'call-s', dataSource: 'mysql',
+      result: { success: false, solver: { status: 'data-insufficient' }, clarification: { required: true } },
+    });
+    const audit = validateFaithfulnessReply(
+      '目前還不能產生課表，系統需要確認一項矛盾：你是否要將「午休不排課」視為絕對不可退讓的限制？', ledger
+    );
+    assert.equal(audit.passed, true, JSON.stringify(audit.violations));
+    const quiet = validateFaithfulnessReply('好的，課表排好了。', ledger);
+    assert.ok(quiet.violations.some(item => item.code === 'TOOL_FAILURE_NOT_DISCLOSED' || item.code === 'TOOL_FAILURE_PRESENTED_AS_SUCCESS'));
+    const prefs = validateFaithfulnessReply('「重視平時成績」的關鍵字訊號很弱。', scheduleLedger());
+    assert.ok(!prefs.violations.some(item => item.code === 'UNSUPPORTED_COURSE'), JSON.stringify(prefs.violations));
+  });
+});
+

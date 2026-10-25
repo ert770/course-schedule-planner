@@ -40,12 +40,16 @@ watchlist 等個人資料端點除了 session，還需要目前政策版本的 `
 { "error": "尚未同意目前版本所需的資料用途", "code": "CONSENT_REQUIRED" }
 ```
 
-政策版本過期時 `code` 為 `CONSENT_VERSION_OUTDATED`。`personalization_learning` 與
+政策版本過期時 `code` 為 `CONSENT_VERSION_OUTDATED`。`personalization_learning`、`collaborative_learning` 與
 `aggregate_research` 都是選擇性且預設 false，不影響核心服務。
+
+**2026-10-14 政策升版為 `2026-10-14.v4`**（新增 `collaborative_learning`）：所有人在舊版下的同意都不再有效，
+登入後 `requiresAction: true`、需在隱私中心重新確認一次；確認前個人化學習與排課的個人化訊號都停用。
 
 ### `GET /api/privacy/policy`
 
-公開回傳政策版本、三種用途、processor 與保存期限，不需要登入。
+公開回傳政策版本、四種用途、processor 與保存期限，不需要登入。`collaborative_learning` 另有
+`requires: ["personalization_learning"]`；`retention.collaborativeMinimumCooccurrence` 為 3。
 
 ### `GET /api/privacy/consents`
 
@@ -59,12 +63,18 @@ canonical ID 或 pseudonymous subject ID。
   "consents": {
     "service_processing": true,
     "personalization_learning": false,
+    "collaborative_learning": false,
     "aggregate_research": false
   }
 }
 ```
 
-必要用途必須為 true 才能開始服務；三個值會以同一時間點原子寫入。
+必要用途必須為 true 才能開始服務；各用途的值會以同一時間點原子寫入。
+
+**協同過濾（2026-10-14 階段 7）**：`collaborative_learning` 是「貢獻」——讓本人的修課與課程互動進入課程共現表，
+協助推薦給其他同學。以 `personalization_learning` 為前提：後者為 `false` 時伺服器一律把前者記為 `false`。
+從 `true` 改為 `false` 時，伺服器約 5 秒後重建共現表，新表不含他的資料（不等每日排程）。
+「接收」協同過濾分數只需要 `personalization_learning`。
 
 **Roadmap #31**：`personalization_learning` 從 `true` 改為 `false`（撤回）時，
 本次請求會**連同已學到的權重與作為其輸入的互動事件一起刪除**（等同呼叫下方的
@@ -111,6 +121,7 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
   "source": "insufficient",
   "appliedToScheduling": true,
   "explicitProfileEmpty": false,
+  "hasExplicitPreferences": true,
   "weights": { "interest": 0, "compact": 1, "easy": 0 },
   "explicitProfile": { "interest": 0, "compact": 1, "easy": 0 },
   "sufficiency": {
@@ -123,6 +134,8 @@ Body 必須帶前一步的 `requestId`、`token` 與固定 `confirmationPhrase: 
   "computedAt": "2026-09-04T02:38:14.334Z"
 }
 ```
+
+`hasExplicitPreferences`：使用者是否自己設定過偏好標籤、興趣、關鍵字或避開時段（2026-10-15 新增）。`explicitProfileEmpty` 只代表學習權重的基準軸都是 0，不能用來判斷「尚未表達偏好」。
 
 `source` 為 `no-consent` / `insufficient` / `explicit` / `learned` 四選一；`insufficient`
 時 `weights` 等於 `explicitProfile` 原樣。`appliedToScheduling`（Roadmap #5B 起恆為
@@ -307,6 +320,77 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 學分學程及其他特殊班級）的正式適用對象尚未由校方確認，因此仍可被明確搜尋，
 但回應為 `eligibility: "unknown"`，前端顯示「資格待確認」，不得解讀成確定可修。
 
+### `GET /api/courses/catalog`
+
+供「查詢全校課程」使用，不要求個人系所、年級或班別。從全校課程中依系統目前
+`ACTIVE_TERM` 篩選，再套用下列條件：
+
+- `keyword`（課名、課號、教師、系所或課程描述）
+- `name`（只比對課名與課號；查詢頁「科目名稱」欄位用這個，「課程描述」欄位用 `keyword`。2026-10-15 新增）
+- `code`
+- `instructor`
+- `dayOfWeek`
+- `period`
+- `credits`
+- `language`：`English` 只留全英授課（`isEnglishTaught`），`中文 (Chinese)` 排除全英授課（2026-10-15 修正：
+  原本比對不存在的 `course.language`，選任何語言都是 0 筆）
+- `category`：`通識` 或資料庫原始類別 `必修`
+
+`通識` 會依官方通識分類資料解析；`核心選修`、`一般選修`、`系外選修` 等需要個人
+修課範圍才能判定的分類會回傳 `400 STUDENT_SCOPE_REQUIRED`。端點回傳
+`{ appliedFilters, courses, total }`，課程物件沿用一般搜尋欄位及學期資訊。
+
+這支 API 是全校目錄探索，**不判定目前登入者能否修讀課程，也不承諾課程可計入其畢業
+學分**。加入課表與排課時仍須由既有個人化驗證檢查班級資格、先修、學分及其他規則。
+
+### `GET /api/history-feedback`（協同過濾與 User Embedding 構想階段 5）
+
+歷史修課回饋視窗的課程清單。**唯讀**；需登入與 service consent。未同意 `personalization_learning` 時
+`consented: false`、`groups` 為空陣列。
+
+只列最新一次已通過、畢業分類為選修／通識／系外選修的課（必修與不計學分課不列），且必須在當學期有開課
+（事件快照要從班次讀標籤）並有可比對的標籤（否則回答不影響推薦）。依學期由近到遠分組。
+
+```json
+{
+  "consented": true,
+  "term": { "academicYear": 114, "semester": "下學期" },
+  "groups": [{
+    "academicYear": 113, "semester": 2,
+    "courses": [{
+      "courseCode": "IECS2011", "name": "系統分析與設計", "sectionId": 1234,
+      "graduationCategory": "elective", "response": null, "answeredAt": null
+    }]
+  }],
+  "pendingCount": 18,
+  "excluded": { "noTags": 7, "notOfferedThisTerm": 0 }
+}
+```
+
+- `response`：未到期事件中最後一次的回答（`liked`／`neutral`／`disliked`），沒回答過為 `null`。
+- `pendingCount`：還沒回答過的課數。前端在排課主頁 `pendingCount > 0` 時自動跳出一次；
+  「稍後再說」會把這批課都記為 `neutral`，同一批課不再自動跳出。
+
+回答以 `POST /api/interactions` 送出 `history_course_feedback` 事件：
+
+```json
+{
+  "eventType": "history_course_feedback",
+  "requestId": "<uuid>", "actionId": "<uuid>",
+  "course": { "catalogCourseCode": "IECS2011", "sectionId": 1234 },
+  "term": { "academicYear": 114, "semester": "下學期" },
+  "source": "history_review",
+  "interestFeedback": { "response": "liked", "canonicalTagIds": [] },
+  "versionSnapshot": { "recommendationReasonVersion": null }
+}
+```
+
+- `source` 必須是 `history_review`；`response` 只能是 `liked`／`neutral`／`disliked`；`canonicalTagIds` 必須是空陣列
+  （針對整門課，證據標籤由伺服器快照決定）。
+- **伺服器依 Profile 的修課歷史核對課號**：不是本人已通過的選修／通識／系外選修就 `rejected`。
+- 學習權重：喜歡 +1、不喜歡 −1、普通 0；同一門課以最後一次回答為準，不套用時間衰減（事件 180 天到期）。
+  標籤空間使用者向量中，回答「不喜歡」的課不再給歷史修課的 +0.5。
+
 ### `GET /api/interest-exploration/cards`（Roadmap #43 階段 4）
 
 需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳最多 8 張
@@ -429,7 +513,7 @@ Response:
 | `term`（Roadmap #20） | `{ academicYear, semester, isActiveTerm }`，這門課自己的開課學年學期，以及是否為系統目前的 active term |
 | `scopeReason`（Roadmap #20） | 融合 term／類別／eligibility／系外選修認列結果的完整白話說明，可直接呈現給使用者 |
 | `gradeLevel` | `Courses.target_grade` 的 API 名稱；0＝全年級、1～4＝大一至大四、5＝研究所 |
-| `prerequisites` | 先修資料；`null` 代表資料尚未提供，不代表沒有先修 |
+| `prerequisites` | 先修資料；`null` 代表資料尚未提供，不代表沒有先修。可能是課名陣列（空陣列＝沒有先修），或物件 `{ rules: [{ name, course_id }], required_ids, course_code, course_name }`（見 `DATA_SCHEMA.md`） |
 
 **Active term（Roadmap #20）**：所有課程搜尋、排課與 Agent 查詢只回傳
 `server/src/data/activeTerm.js` 定義的 `ACTIVE_TERM`（預設 114 學年下學期）內的
@@ -634,6 +718,9 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 `courseIds` 決定候選池，同時代表「使用者明確指定的課」。route 會把它併入
 `explicitCourseIds` 傳給排課引擎；`selectedCourseIds`、`mustTakeCourseIds` 同樣視為明確指定。
 
+`selectedCourseIds` 中不在候選池的班次（例如系外選修、通識）會從課程目錄補進候選池，排課引擎才能保留它們
+（2026-10-15）。排課主頁的「套用偏好排課」把使用者自己加入課表的班次放在這裡送出；從已存課表載回的課不算。
+
 `retakeCourseIds` 與 `failedRequiredCourseIds` 已移除。重補修不得由 client 或 Agent
 手動指定；後端只依 Profile 的 `courseHistory`，對每個 `courseCode` 取最新
 `academicYear + semester` 紀錄，自動找出 `passed: false` 且
@@ -830,6 +917,16 @@ Response:
 實際排入的類別門數／學分。`enabled:false` 代表歷史修課、畢業規則或剩餘學期不足，系統
 不會假裝有配額。它也會出現在每個方案中；多方案的類別門數必須與 S₀ 一致。
 
+`graduationPlanning.externalInterestReservation`（2026-10-14 階段 4）：
+`{source,candidateLimit:5,preferredCourses:[{courseCode,score}]}`。
+`source` 為 `s_vec`、`no-consent`、`no-positive-signal`、`unavailable` 或舊政策 `keyword`。
+清單為 greedy 可用系外候選中正 `s_vec` 的前五個不同課號，每系最多一門，班次不重複計數。
+它表示優先嘗試清單，不保證全排入；`externalReservedForInterest` 表示有沒有額外保留系外名額，
+最終排入仍看 `selected`。分數不加入候選／方案的既有計分。
+context 僅由 server 建立，request body 不能指定政策、向量或分數；REST 與 Chat 共用。
+`EXTERNAL_INTEREST_RESERVATION_MODE` 預設 `vector`，設 `keyword` 重現原關鍵字 A/B。
+未同意、沒有正向證據或讀取失敗時不額外保留，但不刪除原有系外候選。
+
 `graduationPlanning.totalGap`／`creditFloorOnly`（2026-10-02，出現在各方案的
 `graduationPlanning`）：`totalGap` 是畢業門檻總學分減已取得總學分（沒有資料時為 `null`）；
 `creditFloorOnly: true` 代表 `totalGap < minCredits`，本學期排到最低學分就停，不再照類別配額往上排。
@@ -889,7 +986,7 @@ metadata」兩節。
 | `reasonVersion` | 理由結構的版本（目前 `2026-09-05.v2`）。同一個值會寫進 `Interaction_Events.recommendation_reason_version`，讓曝光事件能回溯「當時是用哪一版理由算的」 |
 | `selectedBecause` | 主要原因代號：`REQUIRED_COURSE`／`RETAKE_REQUIRED`／`USER_SPECIFIED`／`COREQUISITE_PAIR`／`PREFERENCE_MATCH`／`CREDIT_FILL`／`WATCHING`。用代號不用自由文字，中文由呈現層決定 |
 | `scoringPolicy` | 這個排序決策使用的版本化權重快照；必修預置、關注等不經一般 scorer 的放置路徑為 `null` |
-| `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。元件為 `base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest` |
+| `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。除既有 `base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest` 外，啟用標籤候選排序時可包含 `tagInterest`（標籤興趣對池內基礎分的加減量）；系所年級規則可包含 `crossYearElective`／`outsideOwnDepartment` |
 | `scoreTotal` | 這門課在勝出方案裡的總分。**含**被 `scoreBreakdown` 過濾掉的 0 值元件 |
 | `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣關鍵字）。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
 | `requiredRules` | 必修／分類的判定依據：`formallyRequired`、`category`、`sourceCategory`、`classificationSource`、`track`、`countsTowardGraduation`、`nonGraduationCategory` |
@@ -934,16 +1031,43 @@ metadata」兩節。
   "stopWhen": "no-credit-progress",
   "preferenceScore": 0.214,
   "preferenceBreakdown": { "interest": 0.21, "compact": 0.25, "easy": 0.68 },
-  "reviewCoverage": { "rated": 5, "total": 8, "ratio": 0.625 }
+  "reviewCoverage": { "rated": 5, "total": 8, "ratio": 0.625 },
+  "planTagScore": 0.35,
+  "tagInterestCoverage": 0.75,
+  "planTagMultiplier": 1.21,
+  "combinedPlanScore": 0.259,
+  "alphaPlan": 0.6,
+  "freeChoiceCourseCount": 8,
+  "evidenceCourseCount": 6
 }
 ```
 
 `generationPolicy` 是實際產生該方案的評分規則。系統先建立個人化綜合方案，再只為使用者
 已表態的軸建立加重比較方案，最後建立較多學分方案，總數上限為 5；因此方案不是固定五種，
 呼叫端不得從 `variantId` 猜測使用者偏好。`stopWhen` 為 `no-credit-progress` 或
-`candidate-exhausted`。`plans` 依 `success` → 是否達最低學分 → `preferenceScore` →
-`totalCredits` 排序，`preferenceScore` 一律用原始使用者權重計算，不讓加重策略替自己評分；
-`plans[0]` 即主推方案，其內容會複製到頂層 `schedule`。
+`candidate-exhausted`。`plans` 先依 `success` 與是否達最低學分排序；標籤排序為 `active` 且 profile
+可用時，再依 `combinedPlanScore`，其餘模式依 `preferenceScore`，最後以 `totalCredits` 排序。
+`preferenceScore` 一律用原始使用者權重計算，不讓加重策略替自己評分；標籤合併分不覆寫它。
+`plans[0]` 即主推方案，其內容會複製到頂層 `schedule`。若主推方案有標籤興趣證據，頂層 `message`
+會以「偏好與標籤興趣合併分」說明排序依據；沒有標籤證據時仍顯示既有偏好或學分依據。
+
+`active` 且標籤 profile 可用時，每個方案會多回傳 `planTagScore`、`tagInterestCoverage`、
+`planTagMultiplier`、`combinedPlanScore`、`alphaPlan`、`freeChoiceCourseCount` 及
+`evidenceCourseCount`。`planTagScore` 是有興趣證據的自由選擇課程分數平均；必修、重補修、使用者
+固定選擇與關注課不納入。`tagInterestCoverage` 是有證據的自由選擇課數除以自由選擇課數；沒有自由
+選擇課時為 `null`。沒有任何可計分課時 `planTagScore` 為 `null`、倍率為 1、合併分等於原
+`preferenceScore`。`shadow` 僅在伺服器 log 記錄方案分布及假想名次變動的彙總，不在 API 回應中暴露
+單一方案分數；`off` 不讀取或計算標籤方案分數。
+
+方案倍率使用獨立的 `alphaPlan`（預設 0.6，範圍 0～1）：
+
+```text
+planTagMultiplier = 1 + alphaPlan × planTagScore
+combinedPlanScore = preferenceScore × planTagMultiplier
+```
+
+例如 `preferenceScore=0.5`、`planTagScore=+0.8` 時，倍率為 1.48、合併分為 0.74；標籤分為
+`−0.8` 時倍率為 0.52、合併分為 0.26。方案硬性成功狀態與最低學分判斷仍排在標籤及偏好軟性分數之前。
 
 `preferenceBreakdown.easy`（Roadmap #4）改為由已排入且**有評價**課程的 `adjustedEasiness` 平均而得，
 不再是課程描述關鍵字命中率。**可能為 `null`**——代表這個方案排入的課全部沒有評價，無法評分，
@@ -972,7 +1096,14 @@ metadata」兩節。
   "gapPeriods": 0,
   "preferenceScore": 0.333,
   "preferenceBreakdown": { "interest": 0, "compact": 0.33, "easy": 0.72 },
-  "reviewCoverage": { "rated": 1, "total": 8, "ratio": 0.125 }
+  "reviewCoverage": { "rated": 1, "total": 8, "ratio": 0.125 },
+  "planTagScore": 0.35,
+  "tagInterestCoverage": 0.75,
+  "planTagMultiplier": 1.21,
+  "combinedPlanScore": 0.403,
+  "alphaPlan": 0.6,
+  "freeChoiceCourseCount": 8,
+  "evidenceCourseCount": 6
 }
 ```
 
@@ -982,8 +1113,10 @@ metadata」兩節。
 `gapPeriods` 只算「當天第一節到最後一節之間沒課的節次」，不含上課日之前或之後的空檔——
 「早上沒課」是使用者要的結果，不算空堂。
 
-`preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位完全相同，
-在這裡重複一份是為了讓前端只讀 `planMetrics` 就能組出整張比較表，不必同時讀兩個地方。
+`preferenceScore`／`preferenceBreakdown`／`reviewCoverage` 與 plan 本身同名欄位完全相同；若啟用標籤
+方案排序，`planTagScore`、`tagInterestCoverage`、`planTagMultiplier`、`combinedPlanScore`、
+`alphaPlan`、`freeChoiceCourseCount` 及 `evidenceCourseCount` 也會同步列在 `planMetrics`，讓前端只讀
+`planMetrics` 就能組出方案比較表。
 
 ### `planDiversity`（Roadmap #27）
 
@@ -1619,6 +1752,76 @@ Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `av
 
 錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課）、`400 FAVORITE_UNAVAILABLE`
 （查不到說明）、`400 CLASS_NAME_REQUIRED`（profile 缺班級）。
+
+回應另帶 `mode: "favorite"`。同一課號的講課與實習課（課號多一個 `P`，例：`ACCT2031` 與
+`ACCT2031P`）合併成一個項目，以講課課號為準，兩者的班次都在 `sections`。
+
+#### `GET /api/exploration?representation=embedding`（階段 4 本機文字向量原型）
+
+「從一門課出發」另可選 `representation=tfidf|embedding`（省略為 `tfidf`）。`mode=profile`
+仍使用使用者標籤向量，不使用此參數。未知的 representation 回 `400 INVALID_EXPLORATION_REPRESENTATION`。
+前端「共同用詞／語意相似」切換會保留同一個 `favoriteCourseCode`，兩種方法共用候選與單位分散規則。
+
+`embedding` 讀取本機離線產物，以「課名＋正規標籤名稱＋課程簡介」的文字向量算餘弦相似度。
+請求當下不呼叫外部 API，不寫入 MySQL。起點仍須為使用者已通過的課；候選仍須當學期、資格確定、
+有上課時間、尚未通過。只列正相似的候選，每組最多 5 門，講課與實習課沿用合併規則。
+
+- `method.representation="course-text-embedding-v1"`，有產物時另帶 `embeddingModel`、`dimension`、
+  `catalogVersion`、`generatedAt`，數值為產物實際版本。沒有產物時不填不存在的模型資料。
+- `items[].similarity` 是文字 embedding 餘弦值；與 TF-IDF 值尺度不同，不可解讀為喜歡機率或直接比較高低。
+- `items[].semanticMatch={sourceCourseCode,commonTags}`：`commonTags` 只列兩門課 canonical 標籤的實際交集，
+  最多 5 個。它是附加內容事實，不宣稱為向量分數的因果解釋；此模式不產生 `sharedTerms` 或內部向量。
+- `favorites[].reason="no-text-embedding"`：該課沒有可用且文件雜湊一致的向量；本學期未開不會單獨使起點失效。
+- `emptyReason="text-embeddings-unavailable"`：本機產物不存在。
+- `emptyReason="text-embeddings-invalid"`：產物格式、目錄版本或讀取狀態不相容。
+- `emptyReason="no-text-embedding-favorite"`：指定起點或所有起點的向量缺少／內容已更新。
+  上述狀態回 `200`、`favorite=null`、清單為空；前端提供「改用共同用詞」。不偷偷改用 TF-IDF。
+
+產物路徑與重算方式見 `docs/DATA_SCHEMA.md` 的「課程文字向量本機產物」。這是本機原型，沒有建立
+`Course_Text_Embeddings` MySQL 表。只驗證探索流程與輸出差異，不代表已驗證推薦成效。
+
+#### `GET /api/exploration?mode=profile`（協同過濾與 User Embedding 構想階段 4）
+
+「依你的修課與興趣」探索。以標籤空間使用者向量（`server/src/skills/userTagVector.js`）排序系外選修與
+通識：向量由非必修已通過的歷史修課、收藏／加選／表示有興趣等互動事件與明確興趣組成，**必修不列入**；
+課程分數用階段 2 的標籤相近表與審核過的降權名單。每個系所／通識領域只出一門（通識沒有領域時不分散）。
+**需要 `personalization_learning` 同意**；使用者向量只在記憶體中計算，不寫入任何資料表。唯讀，
+不寫互動事件，也不影響自動排課。
+
+```json
+{
+  "mode": "profile",
+  "emptyReason": null,
+  "signals": { "historyCourses": 18, "positiveEvents": 120, "negativeEvents": 6, "explicitTags": 9 },
+  "outside": {
+    "diversification": "department",
+    "items": [{
+      "courseCode": "COME3046", "name": "機器學習", "credits": 3, "unit": "通訊工程學系",
+      "score": 0.8123,
+      "reasons": {
+        "tags": [
+          { "userTag": "資料科學", "courseTag": "資料科學", "viaNeighbor": false },
+          { "userTag": "機器學習", "courseTag": "深度學習", "viaNeighbor": true }
+        ],
+        "closestEvidence": { "courseCode": "IECS3059", "name": "人工智慧導論", "source": "history" }
+      },
+      "recognition": { "status": "needs-office-confirmation", "checked": true, "needsOfficeConfirmation": true, "warnings": [] },
+      "sections": [{ "id": 2031, "catalogCourseCode": "COME3046" }]
+    }]
+  },
+  "general": { "diversification": "domain", "items": [] },
+  "method": { "representation": "user-tag-vector-v1", "selection": "one-per-unit-svec", "k": 5 },
+  "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
+}
+```
+
+- `emptyReason`：`no-personalization-consent`（未同意個人化學習，不計算）或 `no-profile-signal`
+  （沒有任何非必修修課、互動或可對應的明確興趣）。這兩種情況 `items` 皆為空陣列；前者 `signals` 為 `null`。
+- `score`：−1～1，以候選池內正向相似度第 95 百分位為 1；只列正向相似大於 0 的課。
+- `reasons.tags`：貢獻最大的標籤配對；`viaNeighbor: true` 表示經標籤相近表連結（使用者的標籤與課程的標籤
+  意思相近但不同）。`closestEvidence`：使用者證據中與這門課最接近的**另一門**課，`source` 為
+  `history`（修過）或互動事件類型（例：`course_favorited`、`interest_exploration_feedback`、`course_viewed`）。
+- 其餘欄位（`recognition`、`sections`、`poolSize`、候選條件）與預設模式相同。
 
 ## Graduation
 

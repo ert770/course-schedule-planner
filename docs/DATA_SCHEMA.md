@@ -31,12 +31,15 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 | `Chat_Messages` | `message_id`, `subject_id`, `role`, `ciphertext`, `iv`, `auth_tag`, `key_version`, `created_at`, `expires_at` | AES-256-GCM Raw Chat，30 天到期 |
 | `Interaction_Events` | `event_id`, `subject_id`, `event_type`, `occurred_at`, `expires_at`, `idempotency_key`, `catalog_course_code`, `section_id`, `plan_id`, `variant_id`, `source`, `feedback_reason`, `rating`, `interest_feedback_json`, `exposure_json`, `tag_interest_snapshot_json` | Roadmap #2 原始互動與 Roadmap #43 當下標籤快照，180 天到期 |
 | `Learned_Tag_Interests` | `subject_id`, `model_version`, `catalog_version`, `eligibility_version`, `prior_signature`, `profile_json`, `computed_at`, `expires_at` | Roadmap #43 可重算的使用者標籤興趣快取，180 天到期 |
+| `Course_Neighbor_Builds` | `build_id`, `model_version`, `computed_at`, `contributor_count`, `real_contributor_count`, `eligible_real_contributor_count`, `neighbor_pair_count`, `gate_met`, `settings_json` | 協同過濾共現表的建立紀錄（2026-10-14 階段 7，migration 009）；只保留最新一次 |
+| `Course_Neighbors` | `build_id`, `course_code`, `neighbor_code`, `similarity`, `co_count` | 每門課最相近的前 20 門（item-item）；只含共現 ≥ 3 人的配對；不含 subject 或學號 |
 
 `ciphertext`、每筆獨立 96-bit `iv` 與 `auth_tag` 缺一不可；解密驗證失敗必須拒絕資料，
 不得回傳部分內容。`key_version` 讓未來金鑰輪替可辨識資料使用哪一版金鑰。
 
-三種 `purpose`：`service_processing`（必要）、`personalization_learning`（可選）、
-`aggregate_research`（可選）。#2 寫 interaction event 前必須檢查第二項，並將 #29 envelope
+四種 `purpose`：`service_processing`（必要）、`personalization_learning`（可選）、
+`collaborative_learning`（可選，2026-10-14 新增；以 `personalization_learning` 為前提）、
+`aggregate_research`（可選）。`purpose` 是 `VARCHAR(64)`，新增用途不需改表。#2 寫 interaction event 前必須檢查第二項，並將 #29 envelope
 中的 canonical `userId` 換成 `subject_id`；不得將兩者一起持久化。
 
 ### `Interaction_Events`（Roadmap #2）
@@ -52,13 +55,29 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
   由 `npm run cleanup:privacy` 一併清理。
 - `exposure_json` 存 `surface`／`trigger`／ordered `candidateSet`／`displayedSet`。
 - `tag_interest_snapshot_json` 由 server 依事件當時的課程 `rag_tag`、標籤目錄版本與該使用者必修 scope 產生；client 不得送入或覆寫。它保存 raw tag、可學習 canonical tag IDs、分類路徑與跨課配對資格。所有必修課都不提供興趣證據；已解析的 scope 用來區分本人必修與其他班級必修，scope 未解析時 fail closed。
-- `rating` 只用於 `course_rated`（1～5）；`interest_feedback_json` 只用於 `interest_exploration_feedback`，保存回應類型與使用者明確選取的 canonical tag IDs。兩者與 server 產生的標籤快照一起保留，讓匯出、冪等比較與重算可重現。
+- `rating` 只用於 `course_rated`（1～5）；`interest_feedback_json` 只用於 `interest_exploration_feedback` 與 `history_course_feedback`，保存回應類型與使用者明確選取的 canonical tag IDs（後者恆為空陣列）。兩者與 server 產生的標籤快照一起保留，讓匯出、冪等比較與重算可重現。
 - 舊事件沒有標籤快照時不回頭依今天的目錄猜測；它們仍是 v2 等既有用途的事件，但不會進入 rag-tag 興趣重算。
+- 歷史修課回饋（2026-10-14 起）使用 `history_course_feedback`，`source` 為 `history_review`，回應為 `liked`／`neutral`／`disliked`，針對使用者本人已通過的選修／通識／系外選修（伺服器依修課歷史核對）。不需改表：`event_type`、`source` 皆為 `VARCHAR(32)`，回應存在 `interest_feedback_json`。
 - 初始探索事件使用 `interest_exploration_feedback`，回應為 `interested`／`not_interested`／`learn_more`。明確不感興趣必須列出使用者指定的 `canonicalTagIds`；「想先了解」不產生正負證據。`course_rated` 只把 4～5 分視為正向訊號，低分本身不推定為主題反感。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
 - **Roadmap #31**：`academic_year`／`semester` 從這輪起不再只是來源標記，也是
   `preferenceLearning.js` 時間衰減的**實質輸入**——`learnPreferenceWeights()` 用它們
   判定一筆事件是否屬於舊學期並降權（見下方 `Learned_Preference_Weights` 的說明）。
+
+### `Course_Neighbor_Builds`、`Course_Neighbors`（協同過濾階段 7）
+
+課程共現表，由 `server/src/services/courseNeighborService.js` 建立（migration `009_course-neighbors`，
+`npm run migrate:course-neighbors`，預設 dry-run）。
+
+- **貢獻者**：現行政策下同時同意 `personalization_learning` 與 `collaborative_learning`、未撤回服務的人。
+  正式表只用真人（最後一次 `collaborative_learning` 同意來源為 `privacy_center`）；Persona／demo 只能在
+  `npm run cf:build-neighbors -- --include-simulated` 的 dry-run 加入。
+- **內容**：只有課號、相似度與共現人數；共現少於 3 人的配對不保留。學號只在建表時讀修課歷史用，不寫入。
+- **重建**：伺服器每 24 小時整張重建（新 build 寫入後刪除舊 build，列由外鍵 `ON DELETE CASCADE` 一併刪除）；
+  有人撤回 `collaborative_learning` 時提前重建。`CF_INTEREST_MODE=off` 時不重建。
+- `Course_Neighbor_Builds.gate_met`：構想 4.6 的啟用門檻（真人 ≥ 15、每人有效互動 ≥ 3、共現 ≥ 3）是否達到。
+- **階段 8 模擬共現表**（2026-10-15）：Persona 專用、只在伺服器記憶體，**不寫入這兩張表**，也沒有新欄位；
+  見 `SCHEDULING_LOGIC.md` 的「階段 8 模擬演練」。
 
 ### `Learned_Tag_Interests`（Roadmap #43 階段 3）
 
@@ -388,6 +407,10 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 5＝碩士／博士／研究所。課程查詢與 scheduler 皆使用同一欄位，年級不符時排除。
 `prerequisites` 映射為 `course.prerequisites`；2026-09-11 實查 3,086/3,086 皆為 NULL，
 因此 NULL 必須顯示為「尚未取得官方先修資料」，不得解讀成沒有先修。
+2026-10-15 實查：3,058 門為空陣列 `[]`、28 門為物件
+`{ rules: [{ name, course_id }], required_ids, course_code, course_name }`，NULL 0 門。前端以
+`client/src/utils/coursePrerequisites.js` 統一顯示：NULL →「尚未取得官方先修資料」、空陣列或空 `rules` →「無」、
+物件列出 `rules` 的課名（沒有課名時用課號）。
 
 ### `admission_year` 與版本化畢業規則（roadmap #23）
 
@@ -940,3 +963,47 @@ idempotency 的唯一範圍是 `(userId, idempotencyKey)`：不存在時可 appe
 與相同 logical payload 回傳既有事件（duplicate）；相同 key 但 payload 不同則回
 conflict，不靜默覆寫。`resolveIdempotentAppend()` 目前只對傳入陣列執行這項純邏輯，
 不會自行寫入任何 runtime store。
+
+## 課程文字向量本機產物（2026-10-14，階段 4 原型）
+
+本階段沒有建立 `Course_Text_Embeddings` MySQL 表。衍生資料預設放在
+`server/simulation-runs/course-text-embeddings/index.json`（已由 `.gitignore` 排除），
+可用 `COURSE_TEXT_EMBEDDINGS_PATH` 指定另一個絕對路徑。新 checkout 不會自動取得此產物；
+應依 API 文件的空狀態處理，不假設語意比較已部署。
+
+| 欄位 | 內容 |
+| --- | --- |
+| `schemaVersion` | `1`，本機產物契約版本 |
+| `textVersion` | `course-text-vector-v1`，輸入文字正規化規則 |
+| `catalogVersion` | 產生時的標籤目錄版本，須與 runtime 相同 |
+| `embeddingModel`、`dimension` | 實際使用的模型與輸出維度，不混用不同模型 |
+| `generatedAt`、`actualTokens` | 本次產生時間、此次執行的 API 實際 token 用量（快取重跑為 0） |
+| `courses[]` | `{courseCode,contentHash,vector}`，每個穩定課號一筆；不含使用者資料 |
+
+文字來源為 MySQL 公開課程的課名、canonical 標籤名稱及簡介；同課號取最長的非空名稱與簡介、
+標籤取去重聯集並排序，同長文字用字串排序解決平手。文字上限 1,800 code points，超長時記錄截斷數。
+`contentHash=SHA256(textVersion + 換行 + 實際送出的文字)`，讓內容變動後能逐門判斷舊向量失效。
+相同課號不以班次數增加權重。向量值只接受有限數值、正範數與一致維度；讀取時 L2 正規化。
+
+同資料夾 `<模型名稱>-cache.json` 保存依內容雜湊對應的原始向量，快取未命中才呼叫 API。
+cache 與 index 都先寫暫存檔再 rename；中斷可由已完成的 batch 續做。目錄或模型改版後應離線重算，
+探索請求本身不即時呼叫 API。任何使用者、subject、修課成績、教師或互動事件都不送進此腳本。
+
+```powershell
+cd server
+node scripts/courseTextEmbeddingStage4.js          # SELECT 盤點，不呼叫 API
+node scripts/courseTextEmbeddingStage4.js --apply  # 已取得公開課程傳送授權後才執行
+```
+
+本次實際產物：標籤目錄 v3、`text-embedding-3-large`、3,072 維、2,004 門課；3,560 班次合併。
+2,004 門都有簡介，0 門截斷；首次建立實際消耗 658,197 tokens，固定字串排序後補算 1 門消耗 337 tokens，
+兩次合計 658,534 tokens。此處記錄的是產物與管線狀態，
+不是推薦成效指標。缺檔、版本不合或文件內容變動時的 API 行為見 `API_SPEC.md`。
+
+### 階段 4 系外保留候選 context（2026-10-14）
+
+`externalInterestReservation={source,modelVersion?,scores:Map<catalogCourseCode,{score,raw,positive,negative}>}`
+是 request 期間的 server runtime 資料，不是 MySQL 表，不接受前端提交。
+使用完整課程目錄與同意有效的本人歷史／事件建立向量，再對本次候選算 `s_vec`；未同意或失敗為空 Map。
+回應只保留 `graduationPlanning.externalInterestReservation` 的來源、上限 5 與可用前五門 `{courseCode,score}`；
+不傳出本人原始事件、歷史證據或向量。清單不代表實際入選，需看 `selected`；替代方案可能選別的系外課。

@@ -50,14 +50,21 @@ export function findTableColumnIndex(cells, mentionText) {
   return cells.findIndex(cell => cell.includes(mentionText));
 }
 
-// 假設表格列是「課程｜教師｜學分｜時間」的固定相對順序（課程欄位右邊依序是
-// 教師、學分），從課程欄位的索引位置推教師與學分欄。
+// 課程欄位右邊三格內，依內容判斷哪一格是教師、哪一格是學分，不假設固定欄位順序
+// （2026-10-15 Persona 實測：「| 機率與統計 | 3 | 一03-04 |」沒有教師欄，先前把學分當成教師而判成教師不符）。
+// 教師：2～5 個中文字（可帶「老師／教授」），且不是課程類別、星期或「未定」之類的詞；學分：純數字。
+const NOT_A_TEACHER = /^(?:必修|選修|核心選修|一般選修|系外選修|通識|未定|待定|待確認|無|週.|星期.)$/u;
+const TEACHER_CELL = /^[一-鿿·．]{2,5}(?:老師|教授)?$/u;
+const CREDIT_CELL = /^\s*(\d+(?:\.\d+)?)\s*(?:學分)?\s*$/u;
+
 export function extractTableFacts(cells, columnIndex) {
   if (!cells || columnIndex < 0) return null;
-  const creditText = cells[columnIndex + 2] ?? '';
-  const creditMatch = creditText.match(/^\s*(\d+(?:\.\d+)?)\s*(?:學分)?\s*$/u);
+  const rest = cells.slice(columnIndex + 1, columnIndex + 4).map(cell => String(cell ?? '').trim());
+  const teacherCell = rest.find(cell => TEACHER_CELL.test(cell)
+    && !NOT_A_TEACHER.test(cell.replace(/(?:老師|教授)$/u, '')));
+  const creditMatch = rest.map(cell => cell.match(CREDIT_CELL)).find(Boolean);
   return {
-    teacher: String(cells[columnIndex + 1] ?? '').trim().replace(/(?:老師|教授)$/u, '') || null,
+    teacher: teacherCell ? teacherCell.replace(/(?:老師|教授)$/u, '') : null,
     credits: creditMatch ? Number(creditMatch[1]) : null,
   };
 }

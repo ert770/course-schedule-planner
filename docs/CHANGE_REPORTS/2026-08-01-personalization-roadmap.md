@@ -71,11 +71,11 @@
 | 4 | 把評分方式結構化：新增課程欄位並從 reviews 聚合難度甜度 | ✅ 已完成（2026-08-17） | 無（DDL 欄位另列 D 類） |
 | 5A | 結構化評價分數接進 `scoreCourse`（母體共用） | ✅ 已完成（2026-08-17） | #4 |
 | 5B | per-user 加權方向（同一分數對不同使用者相反符號） | ✅ **已完成（2026-09-05）**——見下方 #5B 段落與[變更報告](./2026-09-05-roadmap-5b-per-user-preference-direction.md)。方向來自顯式的 `#涼課優先`／`#挑戰難課` 標籤（事件 schema 表達不出「太簡單」，方向不從行為推論，見 `docs/DECISIONS.md` ADR-022），強度由學到的權重加強；當時先接方案層，單一門課排序已由 #7 接續完成 | #5A、#29、#33、#2、#30（均已完成） |
-| 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⛔ **等待足夠真實互動樣本**——3 組 synthetic demo 訊號只能驗證資料流，不能替代跨使用者效果樣本 | #2、#29、#31（均已完成）；外部條件為足夠真實互動樣本 |
+| 6 | 協同過濾：用選課紀錄矩陣做 item-item / user-user | ⛔ **等待足夠真實互動樣本**——3 組 synthetic demo 訊號只能驗證資料流，不能替代跨使用者效果樣本。2026-10-14 完成[構想](./2026-10-14-cf-user-embedding-design.md)（新增 `collaborative_learning` 同意、啟用門檻 15 人／每人 3 筆／共現 3 人、α 總和上限 0.9），並完成不依賴其他使用者的前置：[階段 0 量測](./2026-10-14-cf-embedding-stage0-baseline.md)、[階段 1 標籤空間課程向量](./2026-10-14-tag-vector-stage1.md)（`tagVectorSpace.js`，未接進排課）、[階段 2 標籤相近表](./2026-10-14-tag-embedding-stage2.md)（`tagVectorNeighbors.json`，text-embedding-3-large、τ=0.70）與[階段 3 使用者向量與 s_vec](./2026-10-14-user-tag-vector-stage3.md)（`userTagVector.js`，離線評估：真實帳號有訊號的非必修候選課 24.8%→81.4%，歷史修課留一法百分位 0.76；未接進排課），以及[形式標籤降權與同義詞候選](./2026-10-14-tag-downweights-and-synonym-candidates.md)（使用者審核 408 個標籤在向量中降權；同義詞合併 424 個別名待審）、[階段 4 探索頁「依你的修課與興趣」](./2026-10-14-explore-by-profile-stage4.md)（使用者可見，需 personalization_learning 同意；不影響自動排課），[中英對照相近表試驗](./2026-10-14-tag-neighbors-bilingual-trial.md)（留一驗證變差，不採用），以及[同義詞合併](./2026-10-14-tag-synonym-merge.md)後重算的降權名單與相近表；另完成[階段 4 課程文字向量本機原型與 Chrome A/B](./2026-10-14-course-text-exploration-stage4.md)（本機向量不進版控、不接排課；另接入[系外保留候選 s_vec](./2026-10-14-external-reservation-stage4.md)，不增加候選或方案分），以及[階段 5 歷史修課回饋視窗](./2026-10-14-history-feedback-stage5.md)（新事件 `history_course_feedback`，伺服器依修課歷史核對）、[階段 6 s_vec 排課 shadow](./2026-10-14-vector-interest-shadow-stage6.md)（只記錄、不改排序；α 總和超過 0.9 拒絕啟動）、[階段 7 協同過濾管線與 shadow](./2026-10-14-collaborative-filtering-stage7.md)（新同意 `collaborative_learning`、政策升版 v4、`Course_Neighbors` 表、每日重建、s_cf shadow）；**2026-10-15 依使用者決定 s_vec、s_cf 提前切 active**（[報告](./2026-10-15-active-switch-and-persona-ux-test.md)：四類測試與 10 位 Persona 實測），但正式共現表只有 1 位真人、0 組配對，s_cf 實際上尚無作用；構想 4.6 的門檻（真人 ≥ 15）仍未達到。**2026-10-15 依使用者決定以 10 位 Persona 模擬演練階段 8**（[報告](./2026-10-15-cf-stage8-persona-rehearsal.md)：Persona 專用、只放記憶體的模擬共現表 10 位／24 組，CF active 對 Persona 加分但 α_cf 0.1 下 0 次改變選課；#32 離線比較管線完成，結果無法判定），真人效果仍等樣本 | #2、#29、#31（均已完成）；外部條件為足夠真實互動樣本 |
 | 7 | 以個人化權重向量取代 5 個固定 variant | ✅ **已完成（2026-09-05）**——連續帶號權重已接進單門課排序，動態有限策略取代固定 variant，曝光事件保存版本化 policy；見下方 #7 段落與[變更報告](./2026-09-05-roadmap-7-personalized-scoring.md) | #2、#5A、#30（均已完成） |
 | 8 | 先修關係與多學期路徑規劃 | ⛔ **等待先修資料**——多學期規劃未開始，`Courses.prerequisites` 目前 3,086/3,086 全為 NULL。2026-09-18 加了一條依課名推測的替代規則：同一系列的 (一)(二) 不排同學期（`SAME_SERIES_SAME_TERM`），不是先修檢查 | #19、#20、#21（已完成）；#23（部分完成）；外部條件為先修資料 |
 | 9 | 探索機制：小比例隨機與多樣性重排 | ⬜ 未開始（卡 #36） | #2、#21、#30（均已完成）；#36 |
-| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 **部分完成（2026-10-03）**——任務 1 已接上 HiGHS MILP＋Dinkelbach 候選池：S₀ 保留 greedy，三個替代主軸使用學分對齊、87% 同階層偏好品質、階層門數相等與雙向換課 2 門的硬限制；另完成狀態分類、固定課檢查、暫時挑選器、API／UI 說明。2026-09-20 修正主軸訊號判定（評價數下限恢復 `max(2, ⌈S₀÷2⌉)`、三個主軸恢復門檻可達範圍檢查並納入固定課分數），2026-09-20 初測中 5 case 有 4 case 通過，當時集中 persona 受 axis／quality／hierarchy 同時限制而只剩 1 種方案；但 2026-10-02 修正 benchmark 載入、學分補足與 persona 畢業缺口後，正確 benchmark 為 1／5，先前的 4／5 不代表正式排課結果。驗收需重看剩餘四個 case，其中快畢業 persona 可替換的課較少。詳見[任務 1 變更報告](./2026-09-19-roadmap-10-milp-candidate-generation.md)與[訊號判定修正報告](./2026-09-20-roadmap-10-axis-signal-correction.md)。2026-09-21 完成**任務 3A**（Choice Perceptron 的資料層與 shadow learner）：新增 `plan_chosen` 事件與方案特徵向量 `planFeatures`、純函式學習器、離線重播與校準；**完全不改變正式推薦結果**。2026-09-22 唯讀重跑為 288 筆事件、4 筆原始且 4 筆可用 choice、逐軸更新 interest 4／compact 4／easy 3，仍不足以校準與做真實 test，結論維持 **no-data（等待資料）而非 no-go**；已新增[任務 3B 正式啟用計畫](./2026-09-22-roadmap-10-choice-perceptron-3b-plan.md)，把 readiness、paired gate、pilot、opt-out、signed weights 與回退寫清楚，正式模型仍是 v2。2026-09-22 另完成 3B-0 第一段（signed-weight 休眠契約與 per-user 模型解析，預設模式下皆為 no-op，見[報告](./2026-09-22-roadmap-10-3b0-pilot-prerequisites.md)）。2026-10-01 完成**任務 2**：使用者提供 Danna & Woodruff 2009 全文後，方案挑選改採其 D_bin 目標並以窮舉精確求解，取代有順序偏差的暫時挑選器；另把「與已選方案太像」與「候選未通過檢查」從錯誤的「品質下限」文案中分出來（`too-similar-to-selected`＋`conflictsWith`、`candidate-check-failed`）。**線上 K=1 屬退化情形**：真實資料四位使用者的方案集合與推薦方案前後完全相同、benchmark 維持 4／5，沒有任何案例發生候選衝突——這次改的是衝突時捨棄誰與如何說明，不是今天看到的方案。見[任務 2 變更報告](./2026-10-01-roadmap-10-task2-dbin-subset-selection.md)。**2026-10-02**：（一）benchmark 載入器先前漏掉 `graduationPlanning`，量的不是線上行為；（二）畢業配額排完後補到最低學分，且「距離畢業的總學分低於最低學分」時只排到最低學分；（三）三位 demo persona 的修課紀錄原本幾乎全是未分類（缺口被高估成必修 63、選修 28），已用課號對照必選修科目表回填 127 筆。三者修正後 benchmark 為 **1／5**——先前的「4／5」量在錯的路徑與錯的缺口上，不代表線上；四年級下學期的 persona 本來就只需修少量課，方案之間可換的空間很小。demo 帳號 D1249697 由 5 學分 1 個方案變為 13 學分 2 個方案。見[報告](./2026-10-02-graduation-quota-credit-floor-top-up.md)。**2026-10-03 完成任務 4**：新增獨立的「探索」頁（`GET /api/exploration`），採用 Pardos & Jiang (LAK 2020) 的 bag-of-words 與「每個系所取最相似一門」的挑選方式，從一門已修課出發列出系外選修與通識；不改變自動排課結果。沒有 course2vec（缺修課序列），也沒有使用者研究，**不能宣稱提升了 serendipity**。調查時發現自動排課的候選池不含任何系外選修（可修的系外選修有 207 門、35 個系），探索清單是它們目前唯一的出口。見[任務 4 變更報告](./2026-10-03-roadmap-10-task4-exploration-list.md)。尚缺：自動排課候選池納入系外選修（目前系外配額永遠補不到）、benchmark 四個只剩 1 個方案的 case（需重新檢視驗收門檻是否適用於快畢業的學生）、四個帳號都缺的 2 學分必修為何沒有排入、3B-0 其餘部分 | #4、#21、#22、#7、#13C（均已完成）；任務 2 的外部阻塞（Danna & Woodruff 全文）已於 2026-10-01 解除；任務 3B 正式啟用仍受外部阻塞：真實 `plan_chosen` 樣本不足（no-data） |
+| 10 | 修復多方案塌縮：5 個 variant 實際只產出 2 種課表 | 🟡 **部分完成（2026-10-03）**——任務 1 已接上 HiGHS MILP＋Dinkelbach 候選池：S₀ 保留 greedy，三個替代主軸使用學分對齊、87% 同階層偏好品質、階層門數相等與雙向換課 2 門的硬限制；另完成狀態分類、固定課檢查、暫時挑選器、API／UI 說明。2026-09-20 修正主軸訊號判定（評價數下限恢復 `max(2, ⌈S₀÷2⌉)`、三個主軸恢復門檻可達範圍檢查並納入固定課分數），2026-09-20 初測中 5 case 有 4 case 通過，當時集中 persona 受 axis／quality／hierarchy 同時限制而只剩 1 種方案；但 2026-10-02 修正 benchmark 載入、學分補足與 persona 畢業缺口後，正確 benchmark 為 1／5，先前的 4／5 不代表正式排課結果。驗收需重看剩餘四個 case，其中快畢業 persona 可替換的課較少。詳見[任務 1 變更報告](./2026-09-19-roadmap-10-milp-candidate-generation.md)與[訊號判定修正報告](./2026-09-20-roadmap-10-axis-signal-correction.md)。2026-09-21 完成**任務 3A**（Choice Perceptron 的資料層與 shadow learner）：新增 `plan_chosen` 事件與方案特徵向量 `planFeatures`、純函式學習器、離線重播與校準；**完全不改變正式推薦結果**。2026-09-22 唯讀重跑為 288 筆事件、4 筆原始且 4 筆可用 choice、逐軸更新 interest 4／compact 4／easy 3，仍不足以校準與做真實 test，結論維持 **no-data（等待資料）而非 no-go**；已新增[任務 3B 正式啟用計畫](./2026-09-22-roadmap-10-choice-perceptron-3b-plan.md)，把 readiness、paired gate、pilot、opt-out、signed weights 與回退寫清楚，正式模型仍是 v2。2026-09-22 另完成 3B-0 第一段（signed-weight 休眠契約與 per-user 模型解析，預設模式下皆為 no-op，見[報告](./2026-09-22-roadmap-10-3b0-pilot-prerequisites.md)）。2026-10-01 完成**任務 2**：使用者提供 Danna & Woodruff 2009 全文後，方案挑選改採其 D_bin 目標並以窮舉精確求解，取代有順序偏差的暫時挑選器；另把「與已選方案太像」與「候選未通過檢查」從錯誤的「品質下限」文案中分出來（`too-similar-to-selected`＋`conflictsWith`、`candidate-check-failed`）。**線上 K=1 屬退化情形**：真實資料四位使用者的方案集合與推薦方案前後完全相同、benchmark 維持 4／5，沒有任何案例發生候選衝突——這次改的是衝突時捨棄誰與如何說明，不是今天看到的方案。見[任務 2 變更報告](./2026-10-01-roadmap-10-task2-dbin-subset-selection.md)。**2026-10-02**：（一）benchmark 載入器先前漏掉 `graduationPlanning`，量的不是線上行為；（二）畢業配額排完後補到最低學分，且「距離畢業的總學分低於最低學分」時只排到最低學分；（三）三位 demo persona 的修課紀錄原本幾乎全是未分類（缺口被高估成必修 63、選修 28），已用課號對照必選修科目表回填 127 筆。三者修正後 benchmark 為 **1／5**——先前的「4／5」量在錯的路徑與錯的缺口上，不代表線上；四年級下學期的 persona 本來就只需修少量課，方案之間可換的空間很小。demo 帳號 D1249697 由 5 學分 1 個方案變為 13 學分 2 個方案。見[報告](./2026-10-02-graduation-quota-credit-floor-top-up.md)。**2026-10-03 完成任務 4**：新增獨立的「探索」頁（`GET /api/exploration`），採用 Pardos & Jiang (LAK 2020) 的 bag-of-words 與「每個系所取最相似一門」的挑選方式，從一門已修課出發列出系外選修與通識；不改變自動排課結果。沒有 course2vec（缺修課序列），也沒有使用者研究，**不能宣稱提升了 serendipity**。調查時發現自動排課的候選池不含任何系外選修（可修的系外選修有 207 門、35 個系），探索清單是它們目前唯一的出口。見[任務 4 變更報告](./2026-10-03-roadmap-10-task4-exploration-list.md)。**2026-10-07** 自動排課候選池已納入系外選修並保留一個名額給系外（[報告](./2026-10-07-outside-electives-in-pool-and-stricter-interest-match.md)）。**任務 3B 的 Persona 模擬評估（模擬資料，不作啟用依據）**：2026-10-07 以 10 位 Persona 角色扮演產生 252 道方案選擇題，CP 0.500、v2 0.481、always-primary 0.519，結論 inconclusive（[報告](./2026-10-07-roadmap-10-3b-persona-simulation.md)、[詳細比較](./2026-10-07-cp-vs-v2-detailed-comparison.md)）；2026-10-11 兩者各加上標籤興趣排序後再比，CP 56 對 v2 52、保守版 CP 56 對 55，CP 會把使用者沒表態的面向學成反方向，**沒有證據顯示 CP 優於 v2，正式模型維持 v2**（[報告](./2026-10-11-cp-plus-tag-interest-persona-experiment.md)）。尚缺：benchmark 四個只剩 1 個方案的 case（需重新檢視驗收門檻是否適用於快畢業的學生）、四個帳號都缺的 2 學分必修為何沒有排入、3B-0 其餘部分 | #4、#21、#22、#7、#13C（均已完成）；任務 2 的外部阻塞（Danna & Woodruff 全文）已於 2026-10-01 解除；任務 3B 正式啟用仍受外部阻塞：真實 `plan_chosen` 樣本不足（no-data） |
 | 11 | 修復排課失敗時關注課程從回應中消失（TEST_PLAN S2） | ✅ 已完成 | 無 |
 | 12 | 課程類別不完整：資料庫只有必修／選修，缺通識、核心選修、系外選修 | ✅ 已完成 | 無（歷史畢業認列另屬 #23） |
 | 13A | 資工系一般班級必修 scope | ✅ 已完成 | 無 |
@@ -100,7 +100,7 @@
 | 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ✅ **已完成（2026-09-04）**——見下方 #30 段落與[變更報告](./2026-09-04-roadmap-30-preference-learning-pipeline.md)。四條驗收標準全數達成；學習結果先由 #5B 接進方案比較，再由 #7 接進單門課排序 | #2、#5A、#29（均已完成） |
 | 31 | 建立冷啟動、偏好重設、時間衰減與資料不足策略 | ✅ **已完成（2026-09-04）**——見下方 #31 段落與[變更報告](./2026-09-04-roadmap-31-cold-start-reset-decay-and-source.md)。四條驗收標準全數達成；時間衰減在今天的真實資料上是數學上的 no-op（已明講）；#7 已讓 `appliedToScheduling` 涵蓋方案比較與單門課排序 | #18、#30（均已完成） |
-| 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | ⛔ **等待 #6 的真實樣本與 #36 完成**；#7、#31 已完成，synthetic persona 不作跨使用者效果證據 | #6（等待真實樣本）、#7、#31、#36；外部條件為足夠互動樣本 |
+| 32 | 比較 content-based、collaborative filtering 與 hybrid 方法 | 🟡 **比較管線已完成（2026-10-15）**：`scripts/hybridComparisonStage8.js`（時間切分、六種方法、bootstrap），以 10 位 Persona 演練結果為「無法判定」（[報告](./2026-10-15-cf-stage8-persona-rehearsal.md)）；**仍缺**真實樣本與 #36，synthetic persona 不作跨使用者效果證據 | #6（等待真實樣本）、#7、#31、#36；外部條件為足夠互動樣本 |
 | 33 | 建立互動資料隱私、匿名化、consent 與保存規則 | ✅ 已完成（2026-08-22） | #18、#29（均已完成） |
 | 34 | 建立 Agent 自然語言需求理解 eval | ✅ **已完成（2026-09-07）**——四條驗收標準全數達成。題庫 8→13 題單輪（加同名課、越權、無資料、學分矛盾、理解回講強度分流）＋2 題多輪；新增 `clarify`／`refuse`／`interpretation` 三種斷言與 tool schema hard guard；否定式斷言改成 N 次全過（修掉「重試三次過一次就算過」對「不該做什麼」的放水）；`npm run eval:golden-set` 產出含 pass@1／pass@3、model 與 prompt+tools hash 的回歸成績單。見下方 #34 段落與[變更報告](./2026-09-07-roadmap-34-agent-understanding-eval.md) | #24、#25（均已完成） |
 | 35 | 建立 feasibility、constraint violation 與 solver benchmark | ✅ **已完成（2026-09-07）**——四條驗收標準全數達成。跨科系／年級／班級題庫（7 case，涵蓋 feasible／infeasible／greedy-trap／timeout（有解／無解）／data-insufficient 五類）與 `bench:scheduler` 量化報告已交付；過程中發現並修好一個既有缺口：`DAILY_COURSE_CAP` 標 `enforced:true` 但從未被獨立 validator 檢查過。見下方 #35 段落與[變更報告](./2026-09-07-roadmap-35-scheduler-benchmark.md) | #15、#21、#22（均已完成） |
@@ -112,16 +112,16 @@
 | 41 | 修補 #37 回答忠實度閘門的三個實證缺口（Codex adversarial review） | ✅ **已完成（2026-09-07，兩段皆完成）**——第一段：tool retry terminal outcome，operationKey（工具＋參數雜湊）讓同一操作重試成功不再誤判失敗，不同操作的失敗也不會被另一個的成功蓋過（F16-F18）。第二段：課程指涉解析到 section 實體（同名不同班次逐 candidate 一致性，F19-F20）、捏造偵測改抽課名形狀片段（F21-F21b）、evidenceRole 讓被排除的課不能講成推薦（F23-F24b）；瀏覽器 A/B 對真實排課回合誘導捏造課程，audit 攔截並退回安全回答，畫面沒有出現任何捏造內容 | #37（已完成，發現缺口的對象） |
 
 | 42 | 移除課程後的「本次避開清單」＋ Chat Agent 取得規劃狀態 | ✅ **已完成（2026-09-21）**——移除課程原本只寫長期學習事件（要 50 筆才生效），對下一次重排沒有任何作用，同一門課被排回來是必然。新增 request-scoped 的 `constraints.sessionAvoidances`：範圍依退課原因推導（內容／負擔→整個課號、教師→該教師、其餘→該班次），**不需要個人化同意也生效**（未同意的人根本沒有曝光紀錄）；必修、重補修與`selectedCourseIds`／`mustTakeCourseIds` 不得靜默移除，回報 `protected-conflict`；`explicitCourseIds` 則不再被誤當必排。`POST /api/chat` 新增 `planningContext`（目前課表、本次移除、原因），課名／教師一律由後端重查，三態 `planningContextStatus` 讓暫時性錯誤不會清掉使用者仍然有效的避開清單。順手修掉兩個既有缺口：同一次移除會被寫成兩筆 `course_withdrawn`、以及忠實度閘門讓 Agent 問不出它被要求要問的問題。見[變更報告](./2026-09-21-session-avoidance-and-planning-context.md)。**未做**：「其他」原因的自然語言分析（第二段，開工前要先決定 `weak`／`strong` 存在哪裡） | #2、#29、#30、#37（均已完成） |
-| 43 | 從行為學出使用者有興趣的課程主題（rag_tag） | 🟡 **階段 1～4 已完成（2026-10-09）**——分類目錄、資格重算、後端事件／興趣檔案與登入後探索頁已完成。階段 4 以隔離 Edge／假 API 驗證首次設定、回訪、廣泛主題澄清、續做、略過、重新探索及同意狀態分流；未寫入共用 DB。migration 008 尚未套用，因此正式 MySQL 事件持久化待處理；階段 5 離線評估與階段 6 排課介接尚未完成。目錄統計：19 個主分類、78 條路徑、15,113 筆對應、6,846 個原始標籤、6,769 個 canonical tags；可學習 6,736、可跨課匹配 2,144，無未知標籤。詳見[階段 2 定稿報告](./2026-10-09-rag-tag-interest-eligibility-finalized.md)及[階段 3 報告](./2026-10-09-rag-tag-interest-backend-profile-stage3.md)、[階段 4 報告](./2026-10-09-rag-tag-interest-exploration-stage4.md) | #2、#18、#29、#30、#31、#33、#13C、#20（均已完成）；目錄與資格人工核對已完成；執行期必須依個別 student scope 排除必修課；正式事件寫入前需套用 migration 008；真實時間切分評估需累積同意後事件 |
+| 43 | 從行為學出使用者有興趣的課程主題（rag_tag） | ✅ **目前約定範圍已完成（2026-10-11）**：分類目錄、資格、事件／profile、探索頁、Persona 評估、候選與方案層 active/shadow 計分、單方案摘要與 Chrome A/B 均已完成。10 位 Persona 各跑 `off`／`active`，瀏覽器經真實 HTTP API 連 MySQL；DB 持久化筆數與同帳號先後測試限制見[階段 6 報告](./2026-10-11-rag-tag-interest-stage6-browser-ab.md)。依使用者決定，Persona UX 是本專案正式代表使用者驗收方式，後續沿用；資料仍標示為 Persona 模擬案例，不稱作真人事件。專案預設已切為 `active`，可設 `TAG_INTEREST_RANKING_MODE=off` 回復。真人時間切分列為未來場域成效研究，不阻擋目前階段完成。2026-10-14 依使用者審核合併 480 個同義標籤，目錄升為 `rag-tag-catalog-2026-10-14-v3`（6,289 個標準標籤、493 組別名，106 個單課標籤因合併可跨課比對；舊事件快照的標籤 ID 依名稱對應），見[同義詞合併報告](./2026-10-14-tag-synonym-merge.md)。 | #2、#18、#29、#30、#31、#33、#13C、#20（均已完成）；目錄、資格、隔離 MySQL 整合、介接與瀏覽器驗收均已完成；無未完成工程前置或下游任務依賴 #43；真人時間切分為未來研究 |
 
-## 現在可以動工的任務（2026-10-08 第九次盤點，依建議順序排列）
+## 現在可以動工的任務（2026-10-11 盤點，依建議順序排列）
 
 `#10` 的任務 1 已於 2026-09-19 接上正式 MILP 候選池；2026-10-02 修正 benchmark 計算路徑後，目前 5 個 persona case 僅 1 個通過；
 其餘仍需重新診斷。任務 2（方案挑選）與任務 4（探索清單）已完成；3B-0 尚有工作，3B 正式啟用等待真實樣本。
 （2026-10-01 更新：任務 2 已完成、任務 3A 與 3B-0 第一段已完成；仍可動工的是挑戰 persona 的
 集中主軸可行性、3B-0 其餘部分與任務 4。）
 （2026-10-03 更新：任務 4 的探索清單已完成。四個任務中只剩任務 3B 的正式啟用，仍等真實 plan_chosen 樣本。）
-（2026-10-09 更新：#43 階段 1～4 已完成；隔離瀏覽器／假 API 的探索流程 A/B 已通過，未寫共用 DB。下一步為階段 5 角色扮演與離線評估；合成資料可先驗流程，真實時間切分評估需等 migration 008 套用並累積同意後事件。）
+（2026-10-11 更新：#43 目前約定範圍已完成；10 位 Persona 各跑 `off`／`active` 的 Chrome A/B 已經瀏覽器 → 真實 HTTP API → MySQL 驗收。依使用者決定，Persona UX 是後續專案階段的正式代表使用者驗收方式；測試資料仍如實標示為模擬。預設改為 `active`，可用 `TAG_INTEREST_RANKING_MODE=off` 回復。`CI=true npm run verify`：1,480 passed、0 failed、1 skipped；隔離 MySQL 整合 1/1、標籤興趣合成評估 9/9、預設模式單元測試 15/15 通過。完整驗證中的課程資料契約查詢為 `defaultdb` 唯讀 SELECT；寫入型標籤興趣整合只用 `rag_tag_interest_test`。本次重啟後的 Chrome `/login` console error／warning 為 0；預設模式 fallback 由單元測試確認，先前 20 次排課 A/B 的全流程結果詳見[階段 6 報告](./2026-10-11-rag-tag-interest-stage6-browser-ab.md)。）
 
 `#36` 於 2026-09-08 修好五軸 sensitivity sweep 的兩個量測方法根因（評分尺自相
 矛盾、`avoid-time` 量錯指標），五軸 `directionCheck.pass` 現在全數為 true；`#36`
@@ -134,24 +134,19 @@
 
 | 順位 | # | 任務 | 為什麼排在這裡 |
 | ---: | ---: | --- | --- |
-| 1 | 43 | 從行為學出使用者有興趣的課程主題（rag_tag） | 階段 3 後端事件、profile、隱私路由與清理程式已完成；下一步可做登入後初始探索頁。migration 008 尚未套用，前後端端到端驗收前要先部署資料欄位；正式事件學習依使用者必修 scope 排除必修課 |
-| 2 | 10 | 修復多方案塌縮 | 任務 1 的正式 MILP 候選池已完成；2026-10-02 修正 benchmark 載入路徑、學分補足與 persona 畢業缺口後，5 個 case 的正確結果為 1/5，舊 4/5 初測不代表正式排課效果。任務 2（方案挑選，D_bin 窮舉）與任務 4（探索清單）已完成；任務 3A 的真實 learner 曾有 4 筆可用 choice。2026-10-07 的 252 筆 Persona 模擬結果為 inconclusive，CP 維持 shadow；仍可完成挑戰 persona 集中主軸診斷與 3B-0，其後的正式啟用須等真實 paired gate 判定為 go。 |
-| 3 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 前置（#5B、#7、#30、#31）全數完成；離線 B0/B1/P 與五軸 runner 已可重播，五軸方向檢查已於 2026-09-08 全數修正通過。仍需真實去識別互動樣本，才能把 synthetic 結果提升為效果證據；完成後能連帶打開 #9、#32、#38，且是 #38 現在唯一剩下的阻塞，最終 Gate 仍要求證明「個人化優於非個人化 baseline」 |
-| 4 | 39 | 架設正式網站與 Production rollout | `#33`（隱私基礎）已完成，工程上可以開始；排最後是因為第一步是「選哪個部署平台」這個人的決定，不是可以立刻動手的程式工作 |
+| 1 | 10 | 修復多方案塌縮 | 任務 1 的正式 MILP 候選池已完成；2026-10-02 修正 benchmark 載入路徑、學分補足與 persona 畢業缺口後，5 個 case 的正確結果為 1/5，舊 4/5 初測不代表正式排課效果。任務 2（方案挑選，D_bin 窮舉）與任務 4（探索清單）已完成；任務 3A 的真實 learner 曾有 4 筆可用 choice。2026-10-07 的 252 筆 Persona 模擬結果為 inconclusive，CP 維持 shadow；仍可完成挑戰 persona 集中主軸診斷與 3B-0，其後的正式啟用須等真實 paired gate 判定為 go。 |
+| 2 | 36 | 建立 personalization baseline 與 preference sensitivity A/B | 前置（#5B、#7、#30、#31）全數完成；離線 B0/B1/P 與五軸 runner 已可重播，五軸方向檢查已於 2026-09-08 全數修正通過。仍需真實去識別互動樣本，才能把 synthetic 結果提升為效果證據；完成後能連帶打開 #9、#32、#38，且是 #38 現在唯一剩下的阻塞，最終 Gate 仍要求證明「個人化優於非個人化 baseline」 |
+| 3 | 39 | 架設正式網站與 Production rollout | `#33`（隱私基礎）已完成，工程上可以開始；排最後是因為第一步是「選哪個部署平台」這個人的決定，不是可以立刻動手的程式工作 |
 
 **仍然卡住的**，目前列出兩種卡點：
 
-- **卡外部資料，不是排程問題**：`#6`／`#32`（足夠真實互動樣本）、
-  `#23` 剩餘項（歷史科目表、官方認列表、歷史學期課程資料；B～F 課程的學分歸屬）、
-  `#8`（`Courses.prerequisites` 目前 3,086/3,086 全為 NULL）。
-  寫程式解決不了，只能等資料到位。
+- **卡外部資料，不是排程問題**：`#6`／`#32`（足夠真實互動樣本）、`#23` 剩餘項（歷史科目表、官方認列表、歷史學期課程資料；B～F 課程的學分歸屬）、`#8`（`Courses.prerequisites` 目前 3,086/3,086 全為 NULL）。寫程式解決不了，只能等資料到位。Persona UX 驗收已依使用者決定成為 #43 的正式驗收方式；真人時間切分是未來成效研究，不列為 #43 的阻塞。
   （2026-09-18：`#13C`／`#13D` 依專案負責人口頭確認的規則完成，`#20` 隨之完成；`#10`
   已完成現版量測並確認未通過，不再列為外部資料阻塞，已移到上方可立即動工項目。）
 - **卡上面尚未完成的任務**：`#9`（探索機制，仍等 #36 的真實效果證據）、
   `#32`（hybrid 比較，卡 #6、#36 與足夠跨使用者樣本，見上一條）、`#38`（學生使用者測試，
   現在只卡 `#36` 一項）。
   `#34`／`#35`／`#37`／`#40`／`#41` 均已完成，不再是任何項目的阻塞；其餘項目要等各自列出的工程任務或外部資料完成。
-- `#43` 原本的標籤資格資料阻塞已於 2026-10-09 解除，移至上方可立即動工項目；模型尚未接入推薦，不能將資料準備完成當成個人化功能完成。
 
 ## 任務相依的閱讀方式
 
@@ -517,7 +512,13 @@ full / eligibility / other`——`workload` 永遠只能表達「太重、我要
 
 ## #6 協同過濾
 
-**狀態**：⬜ 未開始（2026-09-04：#31 已完成，不再是阻塞；僅卡樣本量）
+**狀態**：⬜ 未開始（2026-09-04：#31 已完成，不再是阻塞；僅卡樣本量）。2026-10-14 已完成構想與
+User Embedding 的階段 0～7（見進度總覽表；階段 7 為協同過濾同意、共現表與 s_cf shadow）。協同過濾的程式已就緒，
+2026-10-15 使用者決定 `s_vec`、`s_cf` 提前切 active（構想原訂 `s_cf` 等真人 ≥ 15）。目前同意的真人 1 位、
+正式共現表 0 組配對，`s_cf` 實際上不加分；達到構想 4.6 的門檻前，協同過濾的效果仍無法評估。
+2026-10-15 另依使用者決定以 10 位 Persona 模擬演練階段 8：Persona 專用、只放伺服器記憶體的模擬共現表
+（10 位／24 組）讓 CF 在 Persona 上 active，真人仍讀正式表；#32 的比較管線同日完成，演練結果為「無法判定」
+（[報告](./2026-10-15-cf-stage8-persona-rehearsal.md)）。
 
 **相依**：#2、#29、#31（均已完成）；外部條件為足夠且去識別化的
 user-course interaction matrix——實測目前真實互動事件僅 92 筆，全來自 1 個帳號，
@@ -2264,7 +2265,7 @@ HTTP + cookie，取代先前手工 identity 物件的隔離測試。
 
 ## #32 比較 content-based、collaborative filtering 與 hybrid 方法
 
-**狀態**：⬜ 未開始（2026-09-05：#7、#31 均已完成；仍卡 #6、#36 與樣本量）
+**狀態**：🟡 比較管線已完成、尚無效果結論（2026-10-15：`server/scripts/hybridComparisonStage8.js`，時間切分、非個人化／s_tag／s_vec／s_cf／hybrid／hybrid 不含 CF、成對 bootstrap；以 10 位 Persona 演練為「無法判定」，見[報告](./2026-10-15-cf-stage8-persona-rehearsal.md)）。仍卡 #6 的真實樣本與 #36
 
 **相依**：#6、#7、#31、#36（#7、#31 已完成）；外部相依為達到事前定義最低門檻的去識別化互動樣本。
 
@@ -2946,7 +2947,7 @@ F19／F19b／F20 取代直接重現，並如實記錄這個邊界。
 
 ### 階段 1：分類目錄與別名解析（2026-10-08，完成）
 
-新增 `server/scripts/importInterestTagCatalog.py`，從已核准的 31 張分類分頁產生 `server/src/data/interestTagCatalog.json`；執行期由 `server/src/data/interestTagCatalog.js` 解析標籤。目錄使用穩定 ID，保留來源工作表／列號、原始 rag_tag 寫法及多對多分類路徑。套用已核准的 13 組語意別名後，目錄有 19 個主分類、78 條分類路徑、15,113 筆來源對應、6,846 個原始標籤及 6,769 個 canonical tags；2,709 個原始寫法和 2,705 個 canonical tags 各自對應多條路徑。
+新增 `server/scripts/importInterestTagCatalog.py`，從已核准的 31 張分類分頁產生 `server/src/data/interestTagCatalog.json`；執行期由 `server/src/data/interestTagCatalog.js` 解析標籤。目錄使用穩定 ID，保留來源工作表／列號、原始 rag_tag 寫法及多對多分類路徑。套用已核准的 13 組語意別名後，2026-10-09 分類修訂版有 19 個主分類、112 條分類路徑、15,113 筆來源對應、6,846 個原始標籤及 6,769 個 canonical tags；2,709 個原始寫法和 2,705 個 canonical tags 各自對應多條路徑。
 
 活頁簿的高頻與單課次數是合併前快照。目錄將學習資格與跨課配對資格維持為 `pending_post_alias_course_recount`，兩個資格值均為 `null`；執行期只接受明確的 `true`，所以目前標籤不會更新使用者興趣或新課程分數。此階段沒有改資料庫、互動事件、API、前端或排課結果。
 
@@ -2962,21 +2963,47 @@ F19／F19b／F20 取代直接重現，並如實記錄這個邊界。
 
 資格定稿與本次驗證見[2026-10-09 定稿報告](./2026-10-09-rag-tag-interest-eligibility-finalized.md)。
 
-### 階段 3：後端事件與使用者興趣檔案（2026-10-09，程式實作完成；migration 待套用）
+### 階段 3：後端事件與使用者興趣檔案（2026-10-09，程式完成；2026-10-10 隔離 MySQL 服務層驗收通過）
 
-新增版本化事件標籤快照、rag-tag 興趣計算與快取服務、`GET /api/privacy/tag-interests`、本人匯出／重設／撤回／帳號刪除清理，以及 `npm run cleanup:privacy` 的 180 天快取清理。事件快照只由 server 依當下課程標籤目錄與個人必修 scope 建立；舊事件沒有快照時不推測。新增 migration 008，未對共用 MySQL 執行。完整檔案與驗證見[階段 3 變更報告](./2026-10-09-rag-tag-interest-backend-profile-stage3.md)。
+新增版本化事件標籤快照、rag-tag 興趣計算與快取服務、`GET /api/privacy/tag-interests`、本人匯出／重設／撤回／帳號刪除清理，以及 `npm run cleanup:privacy` 的 180 天快取清理。事件快照只由 server 依當下課程標籤目錄與個人必修 scope 建立；舊事件沒有快照時不推測。當時新增 migration 008、尚未執行；截至 2026-10-09 唯讀檢查已確認該 schema 在 MySQL 存在，本次沒有執行 DDL。完整程式與原始驗證見[階段 3 變更報告](./2026-10-09-rag-tag-interest-backend-profile-stage3.md)。
 
-roadmap 狀態／相依總表已整體核對：其餘任務狀態與相依不受 #43 階段 3 影響；沒有其他列以 #43 作為已完成前置條件。
+2026-10-10 補上實際持久化驗收：建立並保留獨立 rag_tag_interest_test schema，套用 migration 002、003、006、008；opt-in MySQL 測試 1/1 通過，驗證同意、事件冪等與持久化、快照匯出、profile 重算／快取、重設及合成 subject 清理。沒有修改 defaultdb 業務資料。
+
+首輪續驗前的中間狀態（2026-10-11）：#43 階段 6 前置依賴均已完成；候選層與方案層計分接線、Persona scheduler 重播已完成，部署預設仍為 `off`。當時單方案標籤分／覆蓋率摘要已新增，修正前的 20 次 mock API A/B 只作為缺口基線；10 Persona 真實 HTTP API → MySQL 瀏覽器 A/B 尚未啟動，因 Codex 已儲存的 localhost 權限仍拒絕導航。此中間狀態已由本節末尾的完成驗收與 active 預設記錄更新。當時核對 roadmap 狀態／相依總表：#43 前置項目均已完成，沒有其他總表任務依賴 #43。
+
+### 階段 6 第二階段：同意感知的 profile shadow 資料流（2026-10-10，完成）
+
+第二階段完成時，排課預設 `TAG_INTEREST_RANKING_MODE=off`，不讀取標籤興趣 profile，且維持原本的 scheduler 呼叫形狀。明確設為 `shadow` 時，排課服務重用已載入的 prefs，透過既有 consent-aware profile service 取得資料，為候選班次建立只存在於該 request 記憶體的 `coursesBySectionId` 分數表，並傳入 scheduler runtime options。未同意者只拿明確主題先驗；profile 服務錯誤則把 profile source 標為 unavailable 並 fail-open。當時 scheduler 尚未消費這份 context，因此 shadow 與 off 的課表及方案順序相同；`active` 尚未開放。未新增 API 回應、資料表或事件，也未做 counterfactual 介接。
+
+同意情境的 Persona 基準已確認為「使用者已同意行為學習」；這不是 UI 同意欄預設勾選。完整檔案清單及驗收見[階段 6 第二階段報告](./2026-10-10-rag-tag-interest-ranking-stage2.md)。
+
+### 階段 6 第三階段：候選層興趣計分接線（2026-10-10，程式與後端測試完成；一次真實帳號 A/B 未見差異）
+
+`TAG_INTEREST_RANKING_MODE=active` 現在會在 scheduler 候選選擇與修補路徑使用標籤分數；預設仍是 `off`。只對可自由選擇的本系選修、通識、系外選修候選套用 `poolBaseScore × (1 + 0.6 × courseTagScore)`，再加既有學分、文字偏好、舊興趣關鍵字、集中與難易分。既有畢業配額階段提供池內候選集合，硬性條件仍由同一 scheduler 檢查；已確認的 `−2500` 同年級扣分只留在本系選修池。標籤分數 `null` 不加減分；profile 不可用時整體退回舊分數。
+
+`shadow` 不改正式課表，只計算假想候選排序並以彙總 log 記錄分布與排序變動，不存個別使用者分數或標籤。active 的加減量沿用既有 `recommendationReason.scoreBreakdown.tagInterest`，已更新 `docs/API_SPEC.md`，沒有新增 API 頂層欄位、資料表或事件。後端單元／整合測試、全套 `npm test`、後端語法檢查、前端 build 與 lint 已通過。方案層排序與 Persona 重播尚未做。依使用者授權，以目前帳號完成一次 off／active 瀏覽器對照；兩組結果相同，未見可見排序差異，產生兩筆 recommendation exposure。這次不證明有已知標籤訊號時的效果；後續須用安全的 Persona／隔離測試資料驗證，不再以同一帳號重跑。完整結果見[第三階段變更報告](./2026-10-10-rag-tag-interest-candidate-ranking-stage6.md)。
+
+roadmap 狀態／相依總表已整體核對：#43 的已完成依賴不變，沒有其他總表任務以 #43 為前置條件；其他任務的狀態與相依未因這次候選層接線改變。
+
+### 階段 6 第四階段：方案層標籤興趣計分接線（2026-10-10，程式與後端驗收完成）
+
+`active` 現在會對每個方案計算自由選擇課的 `planTagScore` 與 `tagInterestCoverage`；必修、重補修、使用者固定指定課及關注課不納入。只對有非零先驗／行為證據的課程分數取平均，沒有證據的自由選擇課只進 coverage 分母。獨立 `alphaPlan=0.6` 以 `combinedPlanScore = preferenceScore × (1 + alphaPlan × planTagScore)` 合併；原始 `preferenceScore` 保持不變，成功狀態及最低學分仍優先。`shadow` 只記錄正／中／負／無證據方案數與假想名次變動，不回傳個別方案分數。沒有新增資料表、互動事件、migration 或 `plan-feature-v1` 欄位。
+
+2026-10-10 當時 `off` 仍是預設；2026-10-11 已完成單方案指標修正後的 10 位 Persona、20 次 Chrome `off`／`active` A/B。結果及資料持久化核對見[階段 6 瀏覽器 A/B 報告](./2026-10-11-rag-tag-interest-stage6-browser-ab.md)。
+
+同日以本機 mock API 對探索頁做 consent-on／off 瀏覽器 A/B，驗證正向回饋送出、略過前進但不寫事件，以及未同意仍可前進且不送事件；首頁與探索頁最後重跑均無 console error。前端 mock 與 MySQL 服務層測試分開執行，並非瀏覽器至真實 MySQL 的端到端驗收。
+
+roadmap 狀態／相依總表已整體核對：階段 3／4 驗收不改變其他任務狀態與相依；#43 的前置項目均已完成，沒有其他總表列以 #43 作為前置條件。
 
 ### 後續階段
 
 - **階段 2 資料重算（已完成）**：唯讀報表、人工核對與資格版本化已於 2026-10-09 完成；日後重新匯入 Excel 後仍須重算及核對，不能直接使用合併前頻率。
-- **階段 3：後端事件與使用者興趣檔案（程式實作完成）**：事件快照、冪等、時間衰減、標籤權重分配、重算、profile API 與隱私生命週期已實作；migration 008 尚未套用。
-- **階段 4：登入後初始探索頁**：新增獨立前端頁面，接在偏好設定儲存後；支援表達興趣、指定不感興趣主題、略過與續做。
-- **階段 5：角色扮演與離線評估**：模擬資料獨立保存，用於驗證流程及邊界案例；真實效果採時間切分評估。
-- **階段 6：排課介接**：評估通過後以 feature flag 將標籤分數接入軟性排序，保留硬性排課限制並做瀏覽器 A/B。
+- **階段 3：後端事件與使用者興趣檔案（程式完成；隔離 MySQL 服務層驗收通過）**：事件快照、冪等、時間衰減、標籤權重分配、重算、profile API 與隱私生命週期已實作；2026-10-10 在 rag_tag_interest_test 以合成 subject 通過 1/1 持久化整合。瀏覽器至真實 HTTP API／MySQL 的端到端流程尚未驗收。
+- **階段 4：登入後初始探索頁**：新增獨立前端頁面，接在偏好設定儲存後；支援廣泛主題追問、正負回饋、略過與續做。2026-10-10 以本機 mock API 完成 consent-on／off 瀏覽器 A/B；最後驗收無 console error。
+- **階段 5：角色扮演與離線評估（已完成目前約定的 persona 比較）**：新增 10 位 synthetic persona、同一組 10 門候選課及四組排序比較；輸出 NDCG@3、Precision@3、Recall@3、覆蓋率、多樣性及理由標籤忠實度。8 位 persona 的固定角色扮演瀏覽互動使 v2 通過 10 筆門檻，另 2 位維持冷啟動。指標只反映人工設定案例，不代表真人推薦準確率；依使用者決定，真人時間切分列入未來上線規劃。
+- **階段 6：排課介接（目前約定範圍已完成，2026-10-11）**：純計分、同意感知 profile、候選層與方案層 active/shadow 接線、Persona scheduler 重播、單方案標籤分／覆蓋率與 10 位 Persona Chrome A/B 均完成。A/B 使用真實 HTTP API → MySQL，資料筆數與同帳號先後跑 off／active 的限制見[驗收報告](./2026-10-11-rag-tag-interest-stage6-browser-ab.md)。使用者已指定 Persona UX 為後續階段正式代表使用者驗收方式；資料仍稱 Persona 模擬資料。預設已設為 `active`，明確設定 `off` 可回復，`shadow` 保留作彙總觀測。真人時間切分列未來場域成效研究，不阻擋目前啟用。
 
-**本階段狀態**：階段 1／2 已完成，階段 3 後端程式已完成並通過相關驗證；資料庫 migration 尚未套用。階段 4 初始探索頁、階段 5 評估及階段 6 排課介接仍未實作。未 commit、未 push。
+**最新狀態（2026-10-11）**：#43 目前約定範圍及階段 6 已完成，專案預設 `TAG_INTEREST_RANKING_MODE=active`；設定 `off` 可回復既有排序。正式驗收採使用者指定的 Persona UX 代表使用者標準：10 位 Persona 各跑 `off`／`active`，由 Chrome 經真實 HTTP API 至 MySQL；`Learned_Tag_Interests` 10 列、探索回饋 58 筆、`plan_chosen` 10 筆、`recommendation_accepted` 10 筆、曝光與重排各 21 筆（P08 額外重排一次）。同帳號依序執行，off 階段事件會進入後續 active profile，因此驗證功能與資料流，不作乾淨因果估計。`CI=true npm run verify` 1,480 passed、0 failed、1 skipped；隔離 MySQL 整合 1/1，Persona 標籤評估 9/9，預設模式單元測試 15/15。CI 略過 live model；本次 full verify 的 `defaultdb` 資料契約檢查為唯讀，寫入型標籤 DB 整合只指向 `rag_tag_interest_test`。重啟後本機前後端 health/login 回應正常，Chrome 登入頁 console error／warning 為 0；直接從 CUA 導覽 API 被 `ERR_BLOCKED_BY_CLIENT` 擋下，故這次預設 fallback 的排課畫面未重跑，另由 resolver 單元測試確認。Persona 的行為資料是模擬資料，但依使用者決定作為後續 UX 驗收標準；真人時間切分保留為未來場域成效研究。roadmap 狀態／相依欄已整體核對：#43 前置均完成，沒有其他總表任務以 #43 為前置，其他任務狀態與相依不變。完整結果見[階段 6 驗收報告](./2026-10-11-rag-tag-interest-stage6-browser-ab.md)及[本次 active 預設變更報告](./2026-10-11-rag-tag-interest-active-default.md)。
 ---
 
 ## AI 個人化課程規劃 Agent 的最終完成 Gate

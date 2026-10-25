@@ -262,7 +262,57 @@ function normalizeChoices(choices) {
       code: 'SERVICE_CONSENT_REQUIRED',
     });
   }
+  // 協同過濾以個人化學習為前提：未同意（或撤回）個人化學習時，一併記為不同意。
+  if (!normalized[PRIVACY_PURPOSES.PERSONALIZATION_LEARNING]) {
+    normalized[PRIVACY_PURPOSES.COLLABORATIVE_LEARNING] = false;
+  }
   return normalized;
+}
+
+// 階段 7：協同過濾的貢獻者。現行政策版本下最後一次同時同意 personalization_learning 與
+// collaborative_learning、且未撤回服務的 subject。`simulated` 依最後一次 collaborative_learning
+// 同意的來源判定：只有使用者在隱私中心自己做的決定（privacy_center）算真人。
+export const REAL_CONSENT_SOURCES = Object.freeze(['privacy_center']);
+
+export async function listCollaborativeContributors() {
+  const purposes = [PRIVACY_PURPOSES.PERSONALIZATION_LEARNING, PRIVACY_PURPOSES.COLLABORATIVE_LEARNING];
+  let rows;
+  let withdrawn;
+  if (useMemoryStore()) {
+    rows = [...memoryStore.consents].reverse().filter(row => purposes.includes(row.purpose));
+    withdrawn = new Set([...memoryStore.subjects.values()]
+      .filter(subject => subject.serviceWithdrawnAt).map(subject => subject.subjectId));
+  } else {
+    rows = await queryRows(
+      `SELECT subject_id, purpose, granted, policy_version, source, recorded_sequence
+         FROM Privacy_Consents
+        WHERE purpose IN (?, ?)
+        ORDER BY recorded_sequence DESC`,
+      purposes
+    );
+    withdrawn = new Set((await queryRows(
+      'SELECT subject_id FROM Privacy_Subject_State WHERE service_withdrawn_at IS NOT NULL'
+    )).map(row => row.subject_id));
+  }
+  const latest = new Map();
+  for (const row of rows) {
+    const subjectId = row.subjectId ?? row.subject_id;
+    const bySubject = latest.get(subjectId) ?? {};
+    if (!bySubject[row.purpose]) bySubject[row.purpose] = row;
+    latest.set(subjectId, bySubject);
+  }
+  const contributors = new Map();
+  for (const [subjectId, byPurpose] of latest) {
+    if (withdrawn.has(subjectId)) continue;
+    const current = purpose => {
+      const row = byPurpose[purpose];
+      return Boolean(row?.granted) && (row.policyVersion ?? row.policy_version) === PRIVACY_POLICY_VERSION;
+    };
+    if (!purposes.every(current)) continue;
+    const source = byPurpose[PRIVACY_PURPOSES.COLLABORATIVE_LEARNING].source ?? null;
+    contributors.set(subjectId, { source, simulated: !REAL_CONSENT_SOURCES.includes(source) });
+  }
+  return contributors;
 }
 
 export async function recordConsentChoices(identity, choices, { source = 'privacy_center', requestId = null } = {}) {

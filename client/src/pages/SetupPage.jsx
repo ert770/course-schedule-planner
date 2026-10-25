@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
-import { profileAPI } from '../services/api';
+import { profileAPI, historyFeedbackAPI } from '../services/api';
+import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import { Sparkles, CheckCircle2, Circle, Loader2, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react'; 
 import { getUserIdentity } from '../utils/userIdentity';
 import {
@@ -11,7 +12,27 @@ import {
 
 export default function SetupPage() {
   const navigate = useNavigate();
-  const { user, markSetupDone, isSetupDone, logout } = useAuth();
+  // 【修正點】：將原本尾端的 , logout 移除了，解決 ESLint unused-vars 錯誤
+  const { user, markSetupDone, isSetupDone, privacyStatus } = useAuth();
+  // 階段 5：「我修過的課」——隨時修改對歷史修課的喜好。
+  const [historyFeedback, setHistoryFeedback] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyMessage, setHistoryMessage] = useState('');
+  const personalizationGranted = privacyStatus?.consents?.personalization_learning?.granted === true;
+  const openHistoryFeedback = async () => {
+    setHistoryLoading(true);
+    setHistoryMessage('');
+    try {
+      const data = await historyFeedbackAPI.get();
+      const count = (data?.groups ?? []).reduce((sum, group) => sum + group.courses.length, 0);
+      if (count === 0) setHistoryMessage('目前沒有可以回饋的選修、通識或系外修課紀錄。');
+      else setHistoryFeedback(data);
+    } catch (err) {
+      setHistoryMessage(err.message || '修課紀錄載入失敗，請稍後再試。');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
   const userIdentity = getUserIdentity(user);
   
   // 保留狀態以供 API 使用，但前端隱藏不顯示
@@ -134,7 +155,6 @@ export default function SetupPage() {
           navigate('/interest-exploration', { replace: true });
           return;
         }
-        // 直接跳轉到首頁，不再去排課頁面
         navigate('/', { replace: true });
         return;
       }
@@ -222,6 +242,18 @@ export default function SetupPage() {
               </div>
             </div>
 
+            <div className="setup-section-box history-feedback-setup" id="history-feedback">
+              <div>
+                <h3 className="setup-section-title">我修過的課</h3>
+                <p>告訴系統你修過的選修、通識與系外課喜不喜歡，推薦會參考主題相近的課（必修不列入）。</p>
+                {!personalizationGranted && <p className="history-feedback-hint">需要先在隱私設定同意「從互動持續改善個人化」。</p>}
+                {historyMessage && <p className="history-feedback-hint">{historyMessage}</p>}
+              </div>
+              <button type="button" className="course-card-action" onClick={openHistoryFeedback} disabled={!personalizationGranted || historyLoading}>
+                {historyLoading ? '載入中…' : '調整喜好'}
+              </button>
+            </div>
+
             <div className="setup-preferences-box" style={{ background: 'var(--bg-secondary, #f9fafb)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color, #e5e7eb)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setShowPreferencesModal(!showPreferencesModal)}>
                 <div>
@@ -305,6 +337,14 @@ export default function SetupPage() {
           </div>
         )}
       </div>
+      {historyFeedback && (
+        <HistoryFeedbackModal
+          data={historyFeedback}
+          mode="edit"
+          onClose={() => setHistoryFeedback(null)}
+          onSaved={({ saved }) => setHistoryMessage(saved > 0 ? `已更新 ${saved} 門課的喜好。` : '')}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   searchCoursesForStudent,
+  searchCoursesAcrossCatalog,
   getCourseDetail,
   getDepartments,
   getInstructors,
@@ -61,6 +62,28 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     if (!err.status) console.error('Courses error:', err);
+    res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
+  }
+});
+
+// 全校目錄搜尋不依賴個人班級；加入課表時仍由既有流程驗證修課資格。
+router.get('/catalog', async (req, res) => {
+  try {
+    const filters = {};
+    if (req.query.keyword) filters.keyword = String(req.query.keyword).trim();
+    if (req.query.name) filters.name = String(req.query.name).trim();
+    if (req.query.category) filters.category = String(req.query.category).trim();
+    if (req.query.dayOfWeek) filters.dayOfWeek = Number(req.query.dayOfWeek);
+    if (req.query.period) filters.period = Number(req.query.period);
+    if (req.query.credits) filters.credits = Number(req.query.credits);
+    if (req.query.instructor) filters.instructor = String(req.query.instructor).trim();
+    if (req.query.code) filters.code = String(req.query.code).trim();
+    if (req.query.language) filters.language = String(req.query.language).trim();
+
+    const courses = await searchCoursesAcrossCatalog(filters);
+    res.json({ appliedFilters: filters, courses, total: courses.length });
+  } catch (err) {
+    if (!err.status) console.error('Course catalog error:', err);
     res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 });

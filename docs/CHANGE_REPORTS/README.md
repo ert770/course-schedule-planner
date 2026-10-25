@@ -2,23 +2,74 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-15
+
+- [課程詳情「先修條件」顯示成 [object Object] 的修正](./2026-10-15-course-prerequisites-display.md)
+- [協同過濾階段 8：用 10 位 Persona 模擬演練 CF active 與 #32 比較](./2026-10-15-cf-stage8-persona-rehearsal.md)
+- [Persona 實測剩餘 6 項發現的修正（探索、查詢、推薦理由、儲存提示、個人化來源、語意相似與系列課）](./2026-10-15-persona-findings-fixes.md)
+- [AI 對話推薦品質修正（忠實度檢查誤判、查詢次數上限、無效的資料更新提議）](./2026-10-15-ai-chat-recommendation-quality.md)
+- [s_vec／s_cf 切 active，以及四類測試與 10 位 Persona UX 實測](./2026-10-15-active-switch-and-persona-ux-test.md)
+
+## 2026-10-14
+
+- [協同過濾與 User Embedding：階段 7 協同過濾同意、課程共現表與 s_cf shadow](./2026-10-14-collaborative-filtering-stage7.md)
+- [協同過濾與 User Embedding：階段 6 s_vec 以 shadow 接入排課與 α 總和檢查](./2026-10-14-vector-interest-shadow-stage6.md)
+- [協同過濾與 User Embedding：階段 5 歷史修課回饋視窗（含 Codex 階段 4 審查）](./2026-10-14-history-feedback-stage5.md)
+- [階段 4：系外保留候選改用 s_vec](./2026-10-14-external-reservation-stage4.md)
+
+1. [階段 4：課程文字向量本機原型與探索 A/B](./2026-10-14-course-text-exploration-stage4.md)
+2. [rag_tag 同義詞合併（標籤目錄 v3）](./2026-10-14-tag-synonym-merge.md)
+3. [標籤相近表：中英對照重算（試驗，不採用）](./2026-10-14-tag-neighbors-bilingual-trial.md)
+4. [協同過濾與 User Embedding：階段 4 探索功能改用 s_vec](./2026-10-14-explore-by-profile-stage4.md)
+5. [標籤向量降權套用與同義詞合併候選](./2026-10-14-tag-downweights-and-synonym-candidates.md)
+6. [協同過濾與 User Embedding：階段 3 使用者向量與 s_vec（離線）](./2026-10-14-user-tag-vector-stage3.md)
+7. [協同過濾與 User Embedding：階段 2 標籤相近表（文字 embedding）](./2026-10-14-tag-embedding-stage2.md)
+8. [協同過濾與 User Embedding：階段 1 標籤空間課程向量](./2026-10-14-tag-vector-stage1.md)
+9. [協同過濾與 User Embedding：階段 0 現況量測](./2026-10-14-cf-embedding-stage0-baseline.md)
+10. [構想：協同過濾與 User Embedding 的搭建方式，以及如何接進排課流程](./2026-10-14-cf-user-embedding-design.md)
+
+## 2026-10-11
+
+1. [實驗：「CP ＋ 標籤興趣」對「v2 ＋ 標籤興趣」，10 位 Persona](./2026-10-11-cp-plus-tag-interest-persona-experiment.md)
+2. [把 main（PR #27）合併進 backend；修正搜尋頁切換分頁後殘留舊結果](./2026-10-11-merge-main-pr27-and-search-stale-results.md)
+3. [rag-tag-interest-v1 階段 6：Persona scheduler off／active 重播](./2026-10-11-rag-tag-interest-stage6-persona-replay.md)
+
+## 2026-10-10
+
+1. [rag-tag-interest-v1 階段 6 第三階段：候選層計分接線](./2026-10-10-rag-tag-interest-candidate-ranking-stage6.md)
+2. [rag-tag-interest-v1 階段 6 第二階段：同意感知的 profile shadow 資料流](./2026-10-10-rag-tag-interest-ranking-stage2.md)
+3. [rag-tag-interest-v1 階段 6 第一階段：純候選計分核心](./2026-10-10-rag-tag-interest-ranking-stage1.md)
+4. [rag-tag-interest-v1 階段 6：三個候選池與候選分數資料流](./2026-10-10-rag-tag-interest-three-pools-score-flow.md)
+5. [rag-tag-interest-v1 階段 6：初始興趣倍率設為 0.6](./2026-10-10-rag-tag-interest-alpha-initial-0-6.md)
+6. [rag-tag-interest-v1 階段 6：對稱可調興趣倍率](./2026-10-10-rag-tag-interest-symmetric-adjustable-multiplier.md)
+7. [rag-tag-interest-v1 階段 6：候選興趣分數方向修訂](./2026-10-10-rag-tag-interest-candidate-score-direction.md)
+8. [rag-tag-interest-v1：10 位 Persona 四組排序比較](./2026-10-10-rag-tag-interest-persona-comparison.md)
+9. [rag-tag-interest-v1 MySQL 服務層與探索頁瀏覽器驗收](./2026-10-10-rag-tag-interest-mysql-integration.md)
+10. [rag-tag-interest-v1 階段 6 排課介接設計稿](../PLANS/2026-10-10-rag-tag-interest-v1-stage6-interface-design.md)
+
 ## 2026-10-09
 
-1. [rag_tag「其他／待人工確認」完整重分類](./2026-10-09-rag-tag-pending-reclassification.md)
-2. [rag_tag 興趣資格定稿與 MySQL 重算（階段 2 完成）](./2026-10-09-rag-tag-interest-eligibility-finalized.md)
+1. [rag-tag-interest-v1 階段 5：合成情境與離線評估就緒度](./2026-10-09-rag-tag-interest-offline-evaluation-stage5.md)
+2. [rag_tag「其他／待人工確認」完整重分類](./2026-10-09-rag-tag-pending-reclassification.md)
+3. [rag_tag 興趣資格定稿與 MySQL 重算（階段 2 完成）](./2026-10-09-rag-tag-interest-eligibility-finalized.md)
 
 ## 2026-10-08
 
 1. [rag_tag 逐課資格計算器與唯讀報表（階段 2）](./2026-10-08-rag-tag-interest-eligibility-stage2.md)
 2. [rag_tag 興趣目錄與多路徑標籤解析（階段 1）](./2026-10-08-rag-tag-interest-catalog-stage1.md)
 3. [rag_tag 語意同義詞合併確認](./2026-10-08-rag-tag-semantic-aliases-approved.md)
+4. [rag_tag 排除清單 Excel 修訂：子分類拆分與同義詞對照](./2026-10-08-rag-tag-exclusions-excel-revision.md)
+5. [rag_tag 排除清單 Excel 版與主分類／子分類對照](./2026-10-08-rag-tag-exclusions-excel.md)
+6. [rag_tag 排除清單與保留標籤分類](./2026-10-08-rag-tag-exclusions.md)
 
 ## 2026-10-07
 
-1. [修復 v2 偏好學習對 MILP 方案收不到訊號的問題](./2026-10-07-v2-learner-archetype-attribution.md)
-2. [排課候選池納入系外選修；興趣比對改嚴；保留一個名額給系外](./2026-10-07-outside-electives-in-pool-and-stricter-interest-match.md)
-3. [首頁排課不再用固定的 25 學分蓋掉個人學分上限](./2026-10-07-dashboard-respects-personal-credit-cap.md)
-4. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
+1. [rag_tag 興趣詞彙整理與候選流程（階段 1）](./2026-10-07-rag-tag-vocabulary.md)
+2. [對照組（現行 v2）與實驗組（Choice Perceptron）的詳細比較](./2026-10-07-cp-vs-v2-detailed-comparison.md)
+3. [修復 v2 偏好學習對 MILP 方案收不到訊號的問題](./2026-10-07-v2-learner-archetype-attribution.md)
+4. [排課候選池納入系外選修；興趣比對改嚴；保留一個名額給系外](./2026-10-07-outside-electives-in-pool-and-stricter-interest-match.md)
+5. [首頁排課不再用固定的 25 學分蓋掉個人學分上限](./2026-10-07-dashboard-respects-personal-credit-cap.md)
+6. [Roadmap #10 任務 3B：Persona 帳號與同意紀錄、多使用者評估管線、模擬選擇腳本（試跑階段）](./2026-10-07-roadmap-10-3b-persona-simulation.md)
 
 ## 2026-10-03
 

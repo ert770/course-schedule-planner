@@ -142,3 +142,48 @@ describe('rag-tag-interest-v1 pure model', () => {
     assert.deepEqual(result.matchedTags.map(tag => tag.canonicalTagId), [firstTag.id]);
   });
 });
+
+test('TIL-MERGE 事件快照中已被同義詞合併的標籤 ID，依名稱對應到目前的標準標籤', async () => {
+  const { resolveInterestTag } = await import('../src/data/interestTagCatalog.js');
+  const target = resolveInterestTag('資訊安全');
+  assert.equal(resolveInterestTag('資安').canonicalTagId, target.canonicalTagId, '資安 已併入 資訊安全');
+  const removedId = 'tag_merged_away_for_test';
+  const event = {
+    eventId: 'merge-1', eventType: 'course_favorited', timestamp: '2026-10-01T00:00:00.000Z',
+    course: { catalogCourseCode: 'TEST1001', sectionId: 101 }, term: { academicYear: 114, semester: 'second' },
+    source: 'explicit_selection',
+    tagInterestSnapshot: {
+      schemaVersion: 1, modelVersion: 'rag-tag-interest-v1', requiredStatus: 'not-required',
+      course: { catalogCourseCode: 'TEST1001', sectionId: 101 },
+      tags: [{ canonicalTagId: removedId, canonicalName: '資安', categoryPaths: [], crossCourseMatchEligible: false }],
+      evidenceTagIds: [removedId],
+    },
+  };
+  const profile = computeTagInterestProfile([event], {}, { now: '2026-10-02T00:00:00.000Z' });
+  const ids = profile.tagInterests.map(tag => tag.canonicalTagId);
+  assert.deepEqual(ids, [target.canonicalTagId]);
+  assert.equal(profile.tagInterests[0].canonicalName, '資訊安全');
+  assert.equal(profile.tagInterests[0].crossCourseMatchEligible, target.eligibility.crossCourseMatchEligible);
+});
+
+test('TIL-HF 歷史修課回饋：喜歡 +1、不喜歡 −1、以最後一次為準、不套用時間衰減', () => {
+  const event = (eventId, response, timestamp) => {
+    const draft = {
+      eventId, eventType: 'history_course_feedback', timestamp,
+      course: { catalogCourseCode: 'TEST1001', sectionId: 101 }, term: { academicYear: 114, semester: 'second' },
+      source: 'history_review', interestFeedback: { response, canonicalTagIds: [] },
+    };
+    return { ...draft, tagInterestSnapshot: snapshot(draft) };
+  };
+  const now = '2027-06-01T00:00:00.000Z'; // 一年多以後：若套用 120 天半衰期，權重會降到約 0.1
+  const liked = computeTagInterestProfile([event('h1', 'liked', '2026-03-01T00:00:00.000Z')], {}, { now });
+  assert.equal(liked.tagInterests[0].positiveEvidence, 1);
+  const changed = computeTagInterestProfile([
+    event('h1', 'liked', '2026-03-01T00:00:00.000Z'),
+    event('h2', 'disliked', '2026-04-01T00:00:00.000Z'),
+  ], {}, { now });
+  assert.equal(changed.tagInterests[0].positiveEvidence, 0);
+  assert.equal(changed.tagInterests[0].negativeEvidence, 1);
+  const neutral = computeTagInterestProfile([event('h3', 'neutral', '2026-03-01T00:00:00.000Z')], {}, { now });
+  assert.equal(neutral.tagInterests.length, 0);
+});

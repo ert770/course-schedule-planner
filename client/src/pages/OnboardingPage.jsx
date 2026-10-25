@@ -16,9 +16,11 @@ export default function OnboardingPage() {
   const [consents, setConsents] = useState({
     necessary: true,
     personalized: false,
+    collaborative: false,
     research: false,
   });
   const [personalization, setPersonalization] = useState(null);
+  const [policyVersion, setPolicyVersion] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +28,7 @@ export default function OnboardingPage() {
       .then(status => {
         if (cancelled) return;
         setConsents(consentChoicesFromStatus(status?.consents));
+        setPolicyVersion(status?.policy?.version ?? '');
         setConsentsLoaded(true);
       })
       .catch(err => {
@@ -47,7 +50,13 @@ export default function OnboardingPage() {
 
   const handleCheckboxChange = (key) => {
     if (key === 'necessary') return;
-    setConsents(prev => ({ ...prev, [key]: !prev[key] }));
+    setConsents(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      // 協同過濾以個人化學習為前提：取消個人化學習時一併取消。
+      if (key === 'personalized' && !next.personalized) next.collaborative = false;
+      if (key === 'collaborative' && !prev.personalized) return prev;
+      return next;
+    });
   };
 
   const handleAgreeAndSetup = async () => {
@@ -113,7 +122,7 @@ export default function OnboardingPage() {
           </div>
           <div>
             <h1 className="onboarding-title" style={{ fontSize: '1.25rem', fontWeight: '700', color: '#1e293b', margin: 0 }}>隱私與資料使用</h1>
-            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>政策版本：2026-08-30.v2</span>
+            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>政策版本：{policyVersion || '載入中'}</span>
           </div>
         </div>
 
@@ -161,7 +170,27 @@ export default function OnboardingPage() {
               </label>
             </div>
 
-            {/* 項目 3：匿名研究 */}
+            {/* 項目 3：協同過濾（以個人化學習為前提） */}
+            <div style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#ffffff', transition: 'all 0.2s', opacity: consents.personalized ? 1 : 0.6 }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', cursor: consents.personalized ? 'pointer' : 'not-allowed' }}>
+                <input
+                  id="onboarding-consent-collaborative"
+                  type="checkbox"
+                  checked={consents.collaborative}
+                  disabled={!consents.personalized}
+                  onChange={() => handleCheckboxChange('collaborative')}
+                  style={{ marginTop: '4px', width: '16px', height: '16px', accentColor: '#3b82f6', cursor: consents.personalized ? 'pointer' : 'not-allowed' }}
+                />
+                <div style={{ textAlign: 'left' }}>
+                  <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>協助推薦課程給其他同學 (可選)</strong>
+                  <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0 0', lineHeight: '1.4' }}>
+                    讓我的修課與課程互動紀錄（不含學號與姓名），協助推薦課程給其他同學。只有至少 3 位同學共同的修課組合才會被使用；需先同意上一項。
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* 項目 4：匿名研究 */}
             <div style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#ffffff', transition: 'all 0.2s' }}>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', cursor: 'pointer' }}>
                 <input

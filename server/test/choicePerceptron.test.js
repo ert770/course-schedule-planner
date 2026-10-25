@@ -311,3 +311,52 @@ describe('CP8-CP12 值域、行為與軌跡', () => {
     assert.equal(result.sufficiency.status, 'insufficient');
   });
 });
+
+// 2026-10-11：保守模式。Persona 實驗裡一位明確勾了集中排課的使用者被學成集中 −2。
+describe('CP13 保守模式：明確勾選的面向不被學成相反', () => {
+  // 每一輪都選「比較分散、比較難、興趣較低」的方案。
+  const againstEverything = Array.from({ length: 30 }, (_, index) => {
+    const requestId = `guard-${index}`;
+    const timestamp = `2026-09-${String((index % 28) + 1).padStart(2, '0')}T00:00:00.000Z`;
+    return [
+      exposure(requestId, [
+        feature('a', { interest: 0.1, compact: 0.2, easy: 0.2 }),
+        feature('b', { interest: 0.6, compact: 0.8, easy: 0.8 }),
+      ], { timestamp }),
+      chosen(requestId, 'a', { timestamp }),
+    ];
+  }).flat();
+
+  test('預設不啟用：顯式勾選的方向可以被選擇推翻（既有行為不變）', () => {
+    const result = learnChoicePerceptronWeights(againstEverything, {
+      explicitProfile: { interest: 0, compact: 1, easy: 1 },
+    });
+    assert.equal(result.respectExplicitDirection, false);
+    assert.ok(result.weights.compact < 0);
+    assert.ok(result.weights.easy < 0);
+  });
+
+  test('啟用後：勾選的面向至少維持顯式基準，沒勾選的面向照常學', () => {
+    const result = learnChoicePerceptronWeights(againstEverything, {
+      explicitProfile: { interest: 0, compact: 1, easy: 0 }, respectExplicitDirection: true,
+    });
+    assert.equal(result.weights.compact, 1); // 勾了集中：不低於 1
+    assert.ok(result.weights.easy < 0); // 沒勾輕鬆：可以學成負的
+    assert.ok(result.weights.interest < 0); // 興趣軸沒有顯式基準，不受限
+    assert.ok(result.rawWeights.compact < 0); // 未投影的累加值照實保留，看得出被擋下來
+  });
+
+  test('啟用後：勾了挑戰（−1）不會被學成輕鬆，往同方向仍可加強', () => {
+    const towardEasy = againstEverything.map(event => (
+      event.eventType === 'plan_chosen' ? { ...event, plan: { ...event.plan, planId: 'b' } } : event
+    ));
+    const blocked = learnChoicePerceptronWeights(towardEasy, {
+      explicitProfile: { interest: 0, compact: 0, easy: -1 }, respectExplicitDirection: true,
+    });
+    assert.equal(blocked.weights.easy, -1);
+    const reinforced = learnChoicePerceptronWeights(againstEverything, {
+      explicitProfile: { interest: 0, compact: 0, easy: -1 }, respectExplicitDirection: true,
+    });
+    assert.ok(reinforced.weights.easy < -1 && reinforced.weights.easy >= -CHOICE_WEIGHT_LIMIT);
+  });
+});

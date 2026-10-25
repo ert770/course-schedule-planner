@@ -724,6 +724,14 @@ persona），K=1 的方案集合與推薦方案必須完全相同——候選之
 
 
 離線重播：`npm run bench:choice-perceptron --prefix server -- --markdown`（加 `--real-data` 會唯讀查詢真實可用的 `plan_chosen` 筆數）。
+
+### rag_tag 興趣詞彙整理（Roadmap #43 階段 1）
+
+| 測試檔／情境 | 覆蓋內容 |
+| --- | --- |
+| `server/test/interestTagVocabulary.test.js` | 正規化 NFKC、大小寫、空白與連字號；同課號多班次只計一次；正規化合併與人工 alias；明列通用、超過課程比例門檻與單課標籤分別排除；每門課保留標籤權重總和為 1，稀有標籤分量較高；沒有保留標籤的課不產生權重 |
+| 真實課程目錄唯讀報告 | `node server/scripts/interestTagAliasProposal.js --stats-only --external-model-blocked` 只讀課程目錄並輸出標籤納入／排除清單、課程覆蓋、資工 IECS 覆蓋及權重總和檢查；不呼叫外部模型、不寫互動事件或 alias |
+| 模型傳送防護 | 不帶 `--allow-external-model` 執行候選模式必須在讀取課程目錄前結束；只有取得明確資料分享授權後才可選擇傳送標籤清單 |
 training／validation／test 三分，η 與 choice 門檻只用 validation 選，test 只評估一次。
 
 真實資料量測：

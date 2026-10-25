@@ -107,6 +107,13 @@ export const coursesAPI = {
     });
     return request(`/courses?${params}`);
   },
+  searchCatalog: (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') params.append(key, value);
+    });
+    return request(`/courses/catalog?${params}`);
+  },
   getDetail: (id) => request(`/courses/${id}`),
   getDepartments: () => request('/courses/departments'),
   // 某系所某年級實際存在的班別（例如 資訊三甲）。必修不得換班，需指定班別。
@@ -127,9 +134,14 @@ export const coursesAPI = {
 // Schedule API
 // Roadmap #10 任務 4：系外與通識探索清單（唯讀）。
 export const explorationAPI = {
-  get: (favoriteCourseCode) => {
+  // mode：'profile' 依你的修課與興趣（標籤空間使用者向量）；省略為從一門課出發。
+  get: (favoriteCourseCode, mode, representation = 'tfidf') => {
     const params = new URLSearchParams();
-    if (favoriteCourseCode) params.set('favoriteCourseCode', favoriteCourseCode);
+    if (mode === 'profile') params.set('mode', 'profile');
+    else {
+      if (favoriteCourseCode) params.set('favoriteCourseCode', favoriteCourseCode);
+      params.set('representation', representation);
+    }
     const query = params.toString();
     return request(`/exploration${query ? `?${query}` : ''}`);
   },
@@ -139,6 +151,12 @@ export const explorationAPI = {
 // (`explorationAPI`) 是不同流程。
 export const interestExplorationAPI = {
   getCards: () => request('/interest-exploration/cards'),
+};
+
+// 協同過濾與 User Embedding 構想階段 5：可回饋的歷史修課與目前的回答（唯讀）。
+// 回答本身以 history_course_feedback 事件經 interactionsAPI.record() 送出。
+export const historyFeedbackAPI = {
+  get: () => request('/history-feedback'),
 };
 
 export const scheduleAPI = {

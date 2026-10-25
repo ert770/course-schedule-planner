@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/useAuth';
 import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
 import { useClickOutside } from '../hooks/useClickOutside';
-import { scheduleAPI, chatAPI, profileAPI } from '../services/api';
+import { scheduleAPI, chatAPI, profileAPI, historyFeedbackAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
@@ -17,6 +17,7 @@ import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PlanComparison from '../components/Schedule/PlanComparison';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import SkillTreeModal from '../components/Profile/SkillTreeModal';
+import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award, Compass } from 'lucide-react';
@@ -55,9 +56,13 @@ export default function DashboardPage() {
     clearSessionAvoidances,
     applyResolvedAvoidances,
     buildAvoidanceConstraints,
+    userAddedCourseIds,
     buildPlanningContext,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
+  // 儲存課表的結果提示。ScheduleNotice 在 PR #27 刻意隱藏（橘色警告框），但按了儲存卻沒有任何回饋，
+  // 使用者不知道有沒有存成功（2026-10-15 Persona 實測），因此只為儲存另外顯示一則短暫提示。
+  const [saveToast, setSaveToast] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
   // 偏好狀態就是**目前勾選的標籤集合**，來源是 profile API（即 MySQL
   // `User_Profiles.preference_tags`），與 Setup 頁讀的是同一支 API、同一份資料。
@@ -78,6 +83,8 @@ export default function DashboardPage() {
   const [confirmation, setConfirmation] = useState(null);
   const [removalCandidate, setRemovalCandidate] = useState(null);
   const [showSkillModal, setShowSkillModal] = useState(false);
+  // 階段 5：還有沒回答過的歷史修課時，進排課主頁自動跳出一次。
+  const [historyFeedback, setHistoryFeedback] = useState(null);
 
   const [showUserMenu, setShowUserMenu] = useState(false);
   const chatInputRef = useRef(null);
@@ -131,6 +138,8 @@ export default function DashboardPage() {
         // 本次規劃的避開清單：使用者剛移除的課，這一次重排就不要再出現。
         // 只送 sectionId 與原因代號，課號與教師由後端從 Courses 重查。
         sessionAvoidances: buildAvoidanceConstraints(),
+        // 使用者自己加入的課當成指定課程，重排時保留（否則會被整份換掉）。
+        selectedCourseIds: userAddedCourseIds(),
       };
 
       // 排課讀的是這位學生的偏好與修課歷史，未登入就不該產生課表。
@@ -180,7 +189,7 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userIdentity]);
+  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userAddedCourseIds, userIdentity]);
 
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;
@@ -192,6 +201,16 @@ export default function DashboardPage() {
     initialGenerationUserRef.current = userIdentity;
     generateInitialSchedule();
   }, [generateInitialSchedule, schedule.length, scheduleLoading, userIdentity]);
+
+  // 階段 5：歷史修課回饋。只在同意個人化學習時查；查不到不影響排課。
+  useEffect(() => {
+    let cancelled = false;
+    if (userIdentity === null || !personalizationEnabled) return undefined;
+    historyFeedbackAPI.get()
+      .then(data => { if (!cancelled && data?.pendingCount > 0) setHistoryFeedback(data); })
+      .catch(() => { /* 取不到就不跳出，不影響排課 */ });
+    return () => { cancelled = true; };
+  }, [userIdentity, personalizationEnabled]);
 
   // 標籤目錄不隨使用者變動，載入一次即可。
   useEffect(() => {
@@ -355,11 +374,16 @@ export default function DashboardPage() {
 
   const handleSave = async () => {
     const result = await saveCurrentSchedule();
-    setScheduleNotice(makeNotice({
-      level: result.success ? 'success' : 'error',
-      message: result.success ? '課表已儲存到目前登入帳號。' : result.message,
-    }));
+    const message = result.success ? '課表已儲存。' : (result.message || '課表儲存失敗，請稍後再試。');
+    setScheduleNotice(makeNotice({ level: result.success ? 'success' : 'error', message }));
+    setSaveToast({ success: result.success, message });
   };
+
+  useEffect(() => {
+    if (!saveToast) return undefined;
+    const timer = setTimeout(() => setSaveToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [saveToast]);
 
   return (
     <div className="layout-container" id="dashboard-page">
@@ -469,6 +493,11 @@ export default function DashboardPage() {
               >
                 {saving ? '儲存中…' : '儲存課表'}
               </button>
+              {saveToast && (
+                <span className={`save-toast ${saveToast.success ? 'success' : 'error'}`} role="status" id="save-schedule-toast">
+                  {saveToast.message}
+                </span>
+              )}
               <button className="action-btn primary" onClick={handleRegenerate}>
                 <Sparkles size={16} /> 套用偏好排課
               </button>
@@ -610,6 +639,14 @@ export default function DashboardPage() {
         onClose={() => setShowSkillModal(false)}
         schedule={schedule}
       />
+
+      {historyFeedback && (
+        <HistoryFeedbackModal
+          data={historyFeedback}
+          mode="initial"
+          onClose={() => setHistoryFeedback(null)}
+        />
+      )}
 
       <RemoveReasonDialog
         course={removalCandidate}

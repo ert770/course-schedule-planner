@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   generateSchedule,
+  comparePlans,
   validateSchedule,
   checkConflict,
   matchesInterestKeyword,
@@ -255,6 +256,207 @@ describe('CY1-CY5 同系跨年級選修：可排入，但排在本年級選修�
       .flatMap(item => item.courses.map(course => course.id));
 
     assert.deepEqual(flagged, [404]);
+  });
+});
+
+describe('rag-tag-interest active：只調整候選軟性排序', () => {
+  const juniorCs = {
+    department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲', minCredits: 0, maxCredits: 3,
+  };
+
+  test('同年級優先仍只在本系選修池生效，標籤分不會翻過既定年級規則', () => {
+    const ownYear = makeCourse(81501, {
+      name: '本年級選修', department: '資訊三合', category: '選修', gradeLevel: 3,
+    });
+    const crossYear = makeCourse(81502, {
+      name: '跨年級選修', department: '資訊二合', category: '選修', gradeLevel: 2,
+    });
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: {
+        81501: { score: 0, reason: 'no_user_signal' },
+        81502: { score: 1, reason: 'scored' },
+      },
+    };
+    const result = generateSchedule([crossYear, ownYear], juniorCs, {
+      tagInterestContext: activeContext,
+      planSet: 'primary-only',
+    });
+
+    assert.deepEqual(result.schedule.map(course => course.id), [81501]);
+    assert.ok(result.schedule[0].recommendationReason.scoreBreakdown
+      .every(item => item.component !== 'outsideOwnDepartment' && item.component !== 'category'));
+  });
+
+  test('標籤正分不能取代使用者明確指定課程，也不能繞過衝堂硬條件', () => {
+    const fixed = makeCourse(81511, {
+      name: '明確指定課', department: '資訊三甲', category: '選修', dayOfWeek: 1,
+    });
+    const tagged = makeCourse(81512, {
+      name: '標籤高度符合但衝堂的課', department: '資訊三合', category: '選修', dayOfWeek: 1,
+    });
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: { 81512: { score: 1, reason: 'scored' } },
+    };
+    const result = generateSchedule([tagged, fixed], {
+      ...juniorCs,
+      maxCredits: 6,
+      mustTakeCourseIds: [fixed.id],
+    }, { tagInterestContext: activeContext, planSet: 'primary-only' });
+
+    assert.ok(result.schedule.some(course => course.id === fixed.id));
+    assert.ok(!result.schedule.some(course => course.id === tagged.id));
+    assert.equal(validateScheduleAgainstConstraints(result.schedule, {
+      ...juniorCs, mustTakeCourseIds: [fixed.id],
+    }).valid, true);
+  });
+
+  test('標籤池外課程保留原有類別分，不套用標籤分', () => {
+    const other = makeCourse(81521, {
+      name: '非三個標籤候選池的課', category: '其他', department: '資電學院綜合班',
+    });
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: { 81521: { score: 0.8, reason: 'scored' } },
+    };
+    const baseline = generateSchedule([other], juniorCs, { planSet: 'primary-only' });
+    const result = generateSchedule([other], juniorCs, {
+      tagInterestContext: activeContext,
+      planSet: 'primary-only',
+    });
+
+    assert.equal(result.schedule[0].id, other.id);
+    const components = result.schedule[0].recommendationReason.scoreBreakdown;
+    assert.ok(components.every(item => item.component !== 'tagInterest'));
+    assert.equal(result.schedule[0].recommendationReason.scoreTotal,
+      baseline.schedule[0].recommendationReason.scoreTotal);
+  });
+
+  test('方案興趣分只平均有證據的自由選修，並排除必修、重補修、指定課與關注課', () => {
+    const required = makeCourse(81531, {
+      name: '本人必修', category: '必修', department: '資訊三甲', gradeLevel: 3, dayOfWeek: 1,
+    });
+    const fixed = makeCourse(81532, {
+      name: '使用者指定選修', category: '選修', department: '資訊三合', dayOfWeek: 2,
+    });
+    const retake = makeCourse(81533, {
+      name: '重補修課', category: '選修', department: '資訊三合',
+      catalogCourseCode: 'IECS3003', dayOfWeek: 3,
+    });
+    const freePositive = makeCourse(81534, {
+      name: '自由選修正向標籤', category: '選修', department: '資訊三合', dayOfWeek: 4,
+    });
+    const freeNegative = makeCourse(81535, {
+      name: '自由選修負向標籤', category: '選修', department: '資訊三合', dayOfWeek: 5,
+    });
+    const watched = makeCourse(81536, {
+      name: '關注課', category: '選修', department: '資訊三合', dayOfWeek: 6,
+    });
+    const activeContext = {
+      mode: 'active', profileSource: 'consented-learned',
+      coursesBySectionId: {
+        81531: { score: 1, evidenceTagCount: 1 },
+        81532: { score: -1, evidenceTagCount: 1 },
+        81533: { score: -1, evidenceTagCount: 1 },
+        81534: { score: 0.8, evidenceTagCount: 1 },
+        81535: { score: -0.4, evidenceTagCount: 1 },
+        81536: { score: -1, evidenceTagCount: 1 },
+      },
+    };
+    const result = generateSchedule([
+      required, fixed, retake, freePositive, freeNegative, watched,
+    ], {
+      ...juniorCs,
+      maxCredits: 25,
+      mustTakeCourseIds: [fixed.id],
+      watchingCourseIds: [watched.id],
+      courseHistory: [{
+        academicYear: 113, semester: 2, courseCode: retake.catalogCourseCode,
+        courseName: retake.name, passed: false, requirementType: '必修',
+      }],
+    }, { tagInterestContext: activeContext, planSet: 'primary-only' });
+    const plan = result.plans[0];
+
+    assert.equal(plan.planTagScore, 0.2);
+    assert.equal(plan.tagInterestCoverage, 1);
+    assert.equal(plan.freeChoiceCourseCount, 2);
+    assert.equal(plan.evidenceCourseCount, 2);
+    assert.equal(plan.planTagMultiplier, 1.12);
+    assert.equal(plan.combinedPlanScore, plan.preferenceScore * 1.12);
+    assert.deepEqual(plan.planMetrics.planTagScore, plan.planTagScore);
+    assert.ok(plan.schedule.some(course => course.id === required.id));
+    assert.ok(plan.schedule.some(course => course.id === fixed.id));
+    assert.ok(plan.schedule.some(course => course.id === retake.id));
+    assert.ok(plan.watchedCourses.some(course => course.id === watched.id));
+  });
+
+  test('有效標籤但沒有使用者證據時，方案標籤分為 null 且保留原偏好分', () => {
+    const elective = makeCourse(81541, {
+      name: '沒有興趣事件的選修', department: '資訊三合', category: '選修',
+    });
+    const result = generateSchedule([elective], juniorCs, {
+      tagInterestContext: {
+        mode: 'active', profileSource: 'explicit-prior',
+        coursesBySectionId: {
+          81541: { score: 0, eligibleTagCount: 1, evidenceTagCount: 0 },
+        },
+      },
+      planSet: 'primary-only',
+    });
+
+    assert.equal(result.plans[0].planTagScore, null);
+    assert.equal(result.plans[0].tagInterestCoverage, 0);
+    assert.equal(result.plans[0].planTagMultiplier, 1);
+    assert.equal(result.plans[0].combinedPlanScore, result.plans[0].preferenceScore);
+  });
+
+  test('active 有標籤證據時 alphaPlan 必須大於 0，摘要顯示合併分', () => {
+    const elective = makeCourse(81542, {
+      name: '有興趣證據的選修', department: '資訊三合', category: '選修',
+    });
+    const context = {
+      mode: 'active', profileSource: 'explicit-prior',
+      coursesBySectionId: {
+        81542: { score: 0.8, eligibleTagCount: 1, evidenceTagCount: 1 },
+      },
+    };
+
+    assert.throws(() => generateSchedule([elective], juniorCs, {
+      tagInterestContext: context,
+      tagInterestPlanAlpha: 0,
+      planSet: 'primary-only',
+    }), /alphaPlan 必須大於 0/u);
+
+    const result = generateSchedule([elective], juniorCs, {
+      tagInterestContext: context,
+      planSet: 'primary-only',
+    });
+    assert.match(result.message, /偏好與標籤興趣合併分/u);
+  });
+
+  test('方案比較用合併分數排序，但成功與最低學分仍優先', () => {
+    const positive = {
+      id: 'positive', success: true, totalCredits: 12, minCredits: 12,
+      preferenceScore: 0.5, combinedPlanScore: 0.5 * 1.48,
+    };
+    const negative = {
+      id: 'negative', success: true, totalCredits: 12, minCredits: 12,
+      preferenceScore: 0.5, combinedPlanScore: 0.5 * 0.52,
+    };
+    const belowMinimum = {
+      id: 'below-minimum', success: true, totalCredits: 9, minCredits: 12,
+      preferenceScore: 0.5, combinedPlanScore: 100,
+    };
+    const failed = {
+      id: 'failed', success: false, totalCredits: 25, minCredits: 12,
+      preferenceScore: 1, combinedPlanScore: 1000,
+    };
+
+    assert.deepEqual(
+      [negative, failed, belowMinimum, positive].sort(comparePlans).map(plan => plan.id),
+      ['positive', 'negative', 'below-minimum', 'failed']
+    );
   });
 });
 

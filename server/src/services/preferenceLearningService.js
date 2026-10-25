@@ -111,6 +111,16 @@ function deriveExplicitProfile(prefs) {
   };
 }
 
+// 使用者有沒有自己設定過任何偏好（偏好標籤、興趣、關鍵字、避開時段）。
+// `explicitProfile` 只是學習權重的基準（目前只有「集中排課」會落到權重軸上），不能拿來判斷
+// 「使用者有沒有表達偏好」——先前設了「不排早八、涼課優先」仍顯示「尚未表達偏好」（2026-10-15 Persona 實測）。
+export function hasExplicitPreferences(prefs = {}) {
+  const nonEmpty = value => Array.isArray(value) && value.length > 0;
+  return nonEmpty(prefs?.preferenceTags) || nonEmpty(prefs?.interests)
+    || nonEmpty(prefs?.preferredKeywords) || nonEmpty(prefs?.blockedPeriods)
+    || Boolean(prefs?.preferredTrack);
+}
+
 function toRow(subjectId, result, computedAt) {
   return {
     subjectId,
@@ -506,6 +516,7 @@ export async function getPersonalizationSource(identity, options = {}) {
       source: SUFFICIENCY_STATUS.NO_CONSENT,
       appliedToScheduling: LEARNED_WEIGHTS_APPLIED_TO_SCHEDULING,
       explicitProfileEmpty: null,
+      hasExplicitPreferences: null,
       weights: null,
       explicitProfile: null,
       sufficiency: {
@@ -548,6 +559,7 @@ export async function getPersonalizationSource(identity, options = {}) {
     source,
     appliedToScheduling: LEARNED_WEIGHTS_APPLIED_TO_SCHEDULING,
     explicitProfileEmpty,
+    hasExplicitPreferences: hasExplicitPreferences(prefs),
     weights,
     explicitProfile,
     sufficiency,

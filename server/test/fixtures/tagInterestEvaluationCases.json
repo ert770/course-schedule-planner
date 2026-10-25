@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 1,
+  "datasetType": "synthetic",
+  "evaluationTime": "2026-10-09T00:00:00.000Z",
+  "activeTerm": {
+    "academicYear": 115,
+    "semester": "first"
+  },
+  "scenarios": [
+    {
+      "scenarioId": "broad-topic-cold-start",
+      "description": "廣泛分類只保存分類意圖，不展開成每個細項標籤的興趣。",
+      "preferences": {
+        "interests": ["資訊與計算"]
+      },
+      "events": [],
+      "candidateCourses": [
+        { "courseId": "nlp-course", "ragTags": ["自然語言處理"] }
+      ],
+      "expected": {
+        "categoryIntentNames": ["資訊與計算"],
+        "tagScores": {},
+        "usableEventCount": 0,
+        "excludedEventCount": 0,
+        "candidateScores": {
+          "nlp-course": {
+            "score": 0,
+            "reason": "scored",
+            "eligibleTagCount": 1,
+            "evidenceTagCount": 0,
+            "matchedTagNames": []
+          }
+        }
+      }
+    },
+    {
+      "scenarioId": "positive-multi-tag-exploration",
+      "description": "一張多標籤探索卡的正向權重平均分配給兩個標籤。",
+      "preferences": {},
+      "events": [
+        {
+          "eventType": "interest_exploration_feedback",
+          "response": "interested",
+          "courseTags": ["自然語言處理", "資訊安全"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        }
+      ],
+      "candidateCourses": [
+        { "courseId": "nlp-security-course", "ragTags": ["自然語言處理", "資訊安全"] }
+      ],
+      "expected": {
+        "tagScores": {
+          "自然語言處理": 0.2,
+          "資訊安全": 0.2
+        },
+        "tagEvidence": {
+          "自然語言處理": { "positiveEvidence": 0.5, "negativeEvidence": 0 },
+          "資訊安全": { "positiveEvidence": 0.5, "negativeEvidence": 0 }
+        },
+        "usableEventCount": 1,
+        "excludedEventCount": 0,
+        "candidateScores": {
+          "nlp-security-course": {
+            "score": 0.2,
+            "reason": "scored",
+            "eligibleTagCount": 2,
+            "evidenceTagCount": 2,
+            "matchedTagNames": ["自然語言處理", "資訊安全"]
+          }
+        }
+      }
+    },
+    {
+      "scenarioId": "negative-specific-tag",
+      "description": "拒絕多標籤課程時，只把使用者指定的不感興趣標籤記為負向。",
+      "preferences": {},
+      "events": [
+        {
+          "eventType": "interest_exploration_feedback",
+          "response": "not_interested",
+          "selectedTags": ["自然語言處理"],
+          "courseTags": ["自然語言處理", "資訊安全"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        }
+      ],
+      "candidateCourses": [
+        { "courseId": "mixed-course", "ragTags": ["自然語言處理", "資訊安全"] }
+      ],
+      "expected": {
+        "tagScores": { "自然語言處理": -0.333333 },
+        "tagEvidence": {
+          "自然語言處理": { "positiveEvidence": 0, "negativeEvidence": 1 }
+        },
+        "usableEventCount": 1,
+        "excludedEventCount": 0,
+        "candidateScores": {
+          "mixed-course": {
+            "score": -0.166666,
+            "reason": "scored",
+            "eligibleTagCount": 2,
+            "evidenceTagCount": 1,
+            "matchedTagNames": ["自然語言處理"]
+          }
+        }
+      }
+    },
+    {
+      "scenarioId": "required-course-does-not-teach",
+      "description": "必修課的探索回饋不更新使用者標籤興趣。",
+      "preferences": {},
+      "events": [
+        {
+          "eventType": "interest_exploration_feedback",
+          "response": "interested",
+          "courseTags": ["自然語言處理"],
+          "courseCategory": "必修",
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        }
+      ],
+      "candidateCourses": [
+        { "courseId": "nlp-course", "ragTags": ["自然語言處理"] }
+      ],
+      "expected": {
+        "tagScores": {},
+        "usableEventCount": 0,
+        "excludedEventCount": 1,
+        "snapshotRequiredStatuses": ["required"],
+        "candidateScores": {
+          "nlp-course": {
+            "score": 0,
+            "reason": "scored",
+            "eligibleTagCount": 1,
+            "evidenceTagCount": 0,
+            "matchedTagNames": []
+          }
+        }
+      }
+    },
+    {
+      "scenarioId": "single-course-tag-is-learning-only",
+      "description": "單課標籤可以保留使用者對該標籤的證據，但不能跨課程配對。",
+      "preferences": {},
+      "events": [
+        {
+          "eventType": "interest_exploration_feedback",
+          "response": "interested",
+          "courseTags": ["工業人工智慧"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        }
+      ],
+      "candidateCourses": [
+        { "courseId": "industrial-ai-course", "ragTags": ["工業人工智慧"] }
+      ],
+      "expected": {
+        "tagScores": { "工業人工智慧": 0.333333 },
+        "usableEventCount": 1,
+        "excludedEventCount": 0,
+        "candidateScores": {
+          "industrial-ai-course": {
+            "score": null,
+            "reason": "no_cross_course_match_tags",
+            "eligibleTagCount": 0,
+            "evidenceTagCount": 0,
+            "matchedTagNames": []
+          }
+        }
+      }
+    },
+    {
+      "scenarioId": "browse-cap-and-multi-tag-split",
+      "description": "同課瀏覽總量受上限控制，且平均分配到兩個標籤。",
+      "preferences": {},
+      "events": [
+        {
+          "eventType": "course_viewed",
+          "courseCode": "SYN-BROWSE-001",
+          "courseTags": ["自然語言處理", "資訊安全"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        },
+        {
+          "eventType": "course_viewed",
+          "courseCode": "SYN-BROWSE-001",
+          "courseTags": ["自然語言處理", "資訊安全"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        },
+        {
+          "eventType": "course_viewed",
+          "courseCode": "SYN-BROWSE-001",
+          "courseTags": ["自然語言處理", "資訊安全"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        },
+        {
+          "eventType": "course_viewed",
+          "courseCode": "SYN-BROWSE-001",
+          "courseTags": ["自然語言處理", "資訊安全"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        }
+      ],
+      "candidateCourses": [
+        { "courseId": "nlp-security-course", "ragTags": ["自然語言處理", "資訊安全"] }
+      ],
+      "expected": {
+        "tagScores": {
+          "自然語言處理": 0.036145,
+          "資訊安全": 0.036145
+        },
+        "tagEvidence": {
+          "自然語言處理": { "positiveEvidence": 0.075, "negativeEvidence": 0 },
+          "資訊安全": { "positiveEvidence": 0.075, "negativeEvidence": 0 }
+        },
+        "usableEventCount": 2,
+        "excludedEventCount": 0,
+        "candidateScores": {
+          "nlp-security-course": {
+            "score": 0.036145,
+            "reason": "scored",
+            "eligibleTagCount": 2,
+            "evidenceTagCount": 2,
+            "matchedTagNames": ["自然語言處理", "資訊安全"]
+          }
+        }
+      }
+    },
+    {
+      "scenarioId": "old-term-time-decay",
+      "description": "120 天半衰期與舊學期折減會同時作用於正向事件。",
+      "preferences": {},
+      "events": [
+        {
+          "eventType": "interest_exploration_feedback",
+          "response": "interested",
+          "courseTags": ["自然語言處理"],
+          "term": { "academicYear": 114, "semester": "second" },
+          "timestamp": "2026-06-11T00:00:00.000Z"
+        }
+      ],
+      "candidateCourses": [
+        { "courseId": "nlp-course", "ragTags": ["自然語言處理"] }
+      ],
+      "expected": {
+        "tagScores": { "自然語言處理": 0.111111 },
+        "tagEvidence": {
+          "自然語言處理": { "positiveEvidence": 0.25, "negativeEvidence": 0 }
+        },
+        "usableEventCount": 1,
+        "excludedEventCount": 0,
+        "candidateScores": {
+          "nlp-course": {
+            "score": 0.111111,
+            "reason": "scored",
+            "eligibleTagCount": 1,
+            "evidenceTagCount": 1,
+            "matchedTagNames": ["自然語言處理"]
+          }
+        }
+      }
+    },
+    {
+      "scenarioId": "high-frequency-tag-excluded",
+      "description": "已排除的通用高頻標籤不更新興趣，也不提供跨課配對。",
+      "preferences": {},
+      "events": [
+        {
+          "eventType": "interest_exploration_feedback",
+          "response": "interested",
+          "courseTags": ["機器學習"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        }
+      ],
+      "candidateCourses": [
+        { "courseId": "machine-learning-course", "ragTags": ["機器學習"] }
+      ],
+      "expected": {
+        "tagScores": {},
+        "usableEventCount": 0,
+        "excludedEventCount": 0,
+        "snapshotTagCounts": [0],
+        "snapshotExclusionReasons": ["no_learning_eligible_tags"],
+        "candidateScores": {
+          "machine-learning-course": {
+            "score": null,
+            "reason": "no_cross_course_match_tags",
+            "eligibleTagCount": 0,
+            "evidenceTagCount": 0,
+            "matchedTagNames": []
+          }
+        }
+      }
+    },
+    {
+      "scenarioId": "approved-alias-deduplicated",
+      "description": "已核准語意別名與正規標籤去重後只貢獻一份證據。",
+      "preferences": {},
+      "events": [
+        {
+          "eventType": "interest_exploration_feedback",
+          "response": "interested",
+          "courseTags": ["數據科學", "資料科學"],
+          "timestamp": "2026-10-09T00:00:00.000Z"
+        }
+      ],
+      "candidateCourses": [
+        { "courseId": "data-science-course", "ragTags": ["數據科學", "資料科學"] }
+      ],
+      "expected": {
+        "tagScores": { "資料科學": 0.333333 },
+        "tagEvidence": {
+          "資料科學": { "positiveEvidence": 1, "negativeEvidence": 0 }
+        },
+        "usableEventCount": 1,
+        "excludedEventCount": 0,
+        "snapshotTagCounts": [1],
+        "candidateScores": {
+          "data-science-course": {
+            "score": 0.333333,
+            "reason": "scored",
+            "eligibleTagCount": 1,
+            "evidenceTagCount": 1,
+            "matchedTagNames": ["資料科學"]
+          }
+        }
+      }
+    }
+  ]
+}

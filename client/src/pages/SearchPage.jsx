@@ -48,6 +48,9 @@ export default function SearchPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
   const userMenuRef = useRef(null);
+  // 每次送出搜尋就加一。回應回來時號碼對不上，代表使用者已經換了分頁或送出更新的搜尋，
+  // 那份結果不該再蓋到畫面上。
+  const searchRequestRef = useRef(0);
   useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
 
   const [deptForm, setDeptForm] = useState({
@@ -167,8 +170,22 @@ export default function SearchPage() {
     return () => { cancelled = true; };
   }, [activeTab, watchlist]);
 
+  // 「本系」與「全校」共用同一塊結果區。切換時清掉上一個分頁的結果，否則在全校搜尋
+  // 回應之前，畫面上顯示的仍是剛才的本系課程，看起來像是搜錯了。
+  const switchTab = (nextTab) => {
+    if (nextTab === activeTab) return;
+    if (nextTab !== 'watchlist' && activeTab !== 'watchlist') {
+      searchRequestRef.current += 1;
+      setSearchResults([]);
+      setSearchError('');
+      setIsSearching(false);
+    }
+    setActiveTab(nextTab);
+  };
+
   const handleDeptSearch = async (e) => {
     e.preventDefault();
+    const requestId = ++searchRequestRef.current;
     setIsSearching(true);
     setSearchError('');
     try {
@@ -181,22 +198,27 @@ export default function SearchPage() {
       };
       Object.keys(filters).forEach(k => { if (!filters[k]) delete filters[k]; });
       const data = await coursesAPI.search(filters);
+      if (requestId !== searchRequestRef.current) return;
       setSearchResults(data.courses || []);
     } catch (err) {
+      if (requestId !== searchRequestRef.current) return;
       setSearchError(err.message || '課程搜尋失敗');
     } finally {
-      setIsSearching(false);
+      if (requestId === searchRequestRef.current) setIsSearching(false);
     }
   };
 
   const handleCondSearch = async (e) => {
     e.preventDefault();
+    const requestId = ++searchRequestRef.current;
     setIsSearching(true);
     setSearchError('');
     try {
       const filters = {
-        code: condForm.code, 
-        keyword: condForm.keyword || condForm.description,
+        code: condForm.code,
+        // 「科目名稱」只比對課名與課號；「課程描述」才比對描述等其他欄位（先前兩者都送成 keyword）。
+        name: condForm.keyword,
+        keyword: condForm.description,
         instructor: condForm.instructor, 
         dayOfWeek: condForm.dayOfWeek ? parseInt(condForm.dayOfWeek) : null,
         period: condForm.period, 
@@ -205,12 +227,14 @@ export default function SearchPage() {
       };
       Object.keys(filters).forEach(k => { if (filters[k] === null || filters[k] === '') delete filters[k]; });
       
-      const data = await coursesAPI.search(filters);
+      const data = await coursesAPI.searchCatalog(filters);
+      if (requestId !== searchRequestRef.current) return;
       setSearchResults(data.courses || []);
     } catch (err) {
+      if (requestId !== searchRequestRef.current) return;
       setSearchError(err.message || '課程搜尋失敗');
     } finally {
-      setIsSearching(false);
+      if (requestId === searchRequestRef.current) setIsSearching(false);
     }
   };
 
@@ -335,9 +359,9 @@ export default function SearchPage() {
         >
           <h2>課程查詢</h2>
           <div className="search-tabs">
-            <button className={`search-tab ${activeTab === 'dept' ? 'active' : ''}`} onClick={() => setActiveTab('dept')}>查詢本系課程</button>
-            <button className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`} onClick={() => setActiveTab('cond')}>查詢全校課程</button>
-            <button className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`} onClick={() => setActiveTab('watchlist')}>❤️ 我的關注</button>
+            <button className={`search-tab ${activeTab === 'dept' ? 'active' : ''}`} onClick={() => switchTab('dept')}>查詢本系課程</button>
+            <button className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`} onClick={() => switchTab('cond')}>查詢全校課程</button>
+            <button className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`} onClick={() => switchTab('watchlist')}>❤️ 我的關注</button>
           </div>
 
           {activeTab === 'dept' && (

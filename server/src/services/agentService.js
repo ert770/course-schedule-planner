@@ -61,6 +61,7 @@ function getModel() {
 }
 
 const DEFAULT_MAX_STEPS = 12;
+export const MAX_COURSE_QUERIES_PER_TURN = 4;
 // 每一步都是一次模型往返，而且 `input` 會持續累積（推理項目 + 工具結果）。
 // 不設天花板的話，一個卡住的模型會把延遲與費用拉到無界，也會重新逼近剛修好的
 // context window 問題——設定值寫錯（AGENT_MAX_STEPS=1000）不該變成一次失控的請求。
@@ -333,6 +334,23 @@ export function sanitizeProfileScopeArgs(args = {}) {
   return cleaned;
 }
 
+// 使用者在問題裡順口說「我是大一」時，模型常提議把年級「更新」成目前已經是的值，
+// 結果整則回答變成確認流程、沒回答原本的問題（2026-10-15 Persona 實測）。
+// 與目前 Profile 相同的欄位先拿掉；全部相同就回「不需要更新」（不是錯誤，不算失敗的操作）。
+export function dropUnchangedProfileFields(args = {}, prefs = {}) {
+  const { confirmationToken, ...changes } = args;
+  const same = (field, value) => {
+    const current = prefs?.[field];
+    if (current === undefined || current === null || current === '') return false;
+    return ['gradeLevel', 'admissionYear'].includes(field)
+      ? Number(current) === Number(value)
+      : String(current).trim() === String(value).trim();
+  };
+  const unchanged = Object.keys(changes).filter(field => same(field, changes[field]));
+  for (const field of unchanged) delete changes[field];
+  return { args: confirmationToken ? { ...changes, confirmationToken } : changes, unchanged };
+}
+
 async function runConfirmedWrite({
   identity, args, changeType, stageChange, consumeChange, write, turnId,
 }) {
@@ -593,16 +611,26 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
           },
         });
 
-      case 'update_student_profile':
+      case 'update_student_profile': {
         // 系所／年級／班別決定「哪些課是你的必修、你能修哪些課」，答錯會讓整份
         // 推薦失準，因此與偏好同樣走兩段式確認。
+        const { args: changedArgs, unchanged } = args.confirmationToken
+          ? { args, unchanged: [] }
+          : dropUnchangedProfileFields(sanitizeProfileScopeArgs(args), prefs ?? {});
+        if (!args.confirmationToken && unchanged.length > 0 && Object.keys(changedArgs).length === 0) {
+          return {
+            noChange: true,
+            unchangedFields: unchanged,
+            message: '這些資料和使用者目前的設定相同，不需要更新，也不要詢問是否更新；請直接回答使用者原本的問題。',
+          };
+        }
         return await runConfirmedWrite({
           identity,
           // **把佔位值當成「沒填」處理。** JSON Schema 沒有辦法表達「這個欄位可以
           // 不填」以外的語意，實測模型會用 `admissionYear: 0` 這種佔位值把欄位湊滿。
           // 不清掉的話，使用者會在確認訊息裡看到「入學年度改成 0」這種鬼東西。
           // 寫入層另有一道相同方向的防護（`database.js` 拒絕不合法年度）。
-          args: sanitizeProfileScopeArgs(args),
+          args: args.confirmationToken ? sanitizeProfileScopeArgs(args) : changedArgs,
           changeType: getConfirmationChangeType(name), stageChange, consumeChange, turnId: ctx.turnId,
           write: async staged => {
             await updatePreferences(identity, staged);
@@ -618,6 +646,7 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
             };
           },
         });
+      }
 
       default:
         return { error: `不明的函數呼叫: ${name}`, errorCode: 'UNKNOWN_TOOL' };
@@ -656,7 +685,8 @@ async function resolveLatestRecommendation(identity) {
 // `identity` 為 `resolveIdentity()` 的結果，不是原始 userId。
 // 聊天記憶與偏好更新都以 canonical ID（學號）為鍵，避免同一位學生的對話
 // 依前端送的是學號還是 numeric id 而分裂成兩份。
-export async function handleChat(identity, message, planningContext = null) {
+// `options.onFaithfulness`：診斷與測試用，收到原始回答與檢查結果；伺服器日誌依 #33 不記錄內容。
+export async function handleChat(identity, message, planningContext = null, options = {}) {
   logger.info('收到已驗證的聊天請求', { label: 'AgentCore', messageLength: message.length });
 
   const client = getAIClient();
@@ -776,6 +806,7 @@ export async function handleChat(identity, message, planningContext = null) {
 
   try {
     const maxSteps = resolveMaxSteps();
+    let courseQueryCount = 0;
     for (let step = 0; step < maxSteps; step++) {
       logger.trace(`傳送訊息至模型，步驟：${step}`, { label: 'LLM_Stream' });
 
@@ -804,6 +835,20 @@ export async function handleChat(identity, message, planningContext = null) {
 
       for (const call of toolCalls) {
         logger.info(`LLM 請求呼叫工具：\`${call.name}\``, { label: 'ToolCall' });
+
+        // 一回合最多查 MAX_COURSE_QUERIES_PER_TURN 次課程（2026-10-15 Persona 實測：一個問題連查 20 次、等 95 秒）。
+        // 超過時不執行、也不記成失敗的操作（否則忠實度檢查會要求回答揭露「操作失敗」），只請模型用已查到的結果回答。
+        if (call.name === 'query_course_db' && ++courseQueryCount > MAX_COURSE_QUERIES_PER_TURN) {
+          input.push({
+            type: 'function_call_output',
+            call_id: call.call_id,
+            output: JSON.stringify(buildToolResultEnvelope(call.name, {
+              notice: `本回合已查詢課程 ${MAX_COURSE_QUERIES_PER_TURN} 次。請直接依已查到的結果回答；`
+                + '沒有符合的課就明說沒有，並建議使用者放寬哪個條件，不要再換關鍵字查詢。',
+            })),
+          });
+          continue;
+        }
 
         const args = parseToolArguments(call.arguments);
         let result;
@@ -882,10 +927,13 @@ export async function handleChat(identity, message, planningContext = null) {
     });
     if (!faithful.audit.passed || faithful.repaired || faithful.fallback) {
       logger.warn(
-        `回答忠實度檢查：violations=${faithful.initialAudit.hallucinationCount}, repaired=${faithful.repaired}, fallback=${faithful.fallback}`,
+        `回答忠實度檢查：violations=${faithful.initialAudit.hallucinationCount}`
+          + `（${[...new Set(faithful.initialAudit.violations.map(item => item.code))].join('、')}）`
+          + `, repaired=${faithful.repaired}, fallback=${faithful.fallback}`,
         { label: 'AgentFaithfulness' }
       );
     }
+    options.onFaithfulness?.({ originalReply: finalReply, ...faithful });
     finalReply = faithful.reply;
 
     // 只有整次處理成功才原子保存 user/assistant 一對加密訊息。

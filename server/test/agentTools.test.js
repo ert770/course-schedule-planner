@@ -13,6 +13,7 @@ import {
   executeAgentTool,
   resolveMaxSteps,
   summarizeScheduleForModel,
+  dropUnchangedProfileFields,
 } from '../src/services/agentService.js';
 
 const identity = { canonicalId: 'S1130001' };
@@ -485,3 +486,27 @@ describe('AG15 模型看到的工具結果統一包成信封（Roadmap #25）', 
     assert.ok(!('schemaVersion' in after.data));
   });
 });
+
+// 2026-10-15 Persona 實測：使用者說「我是大一」，模型就提議把年級「更新」成大一，整則回答變成確認流程。
+describe('update_student_profile 與目前資料相同時不提議更新', () => {
+  const prefs = { department: '資訊工程學系', gradeLevel: 1, className: '資訊一甲', admissionYear: 114 };
+
+  test('PU-1 與目前相同的欄位會被拿掉；真的不同的才保留', () => {
+    assert.deepEqual(dropUnchangedProfileFields({ gradeLevel: 1, className: '資訊一乙' }, prefs),
+      { args: { className: '資訊一乙' }, unchanged: ['gradeLevel'] });
+    assert.deepEqual(dropUnchangedProfileFields({ gradeLevel: '1' }, prefs), { args: {}, unchanged: ['gradeLevel'] });
+    assert.deepEqual(dropUnchangedProfileFields({ gradeLevel: 2 }, {}), { args: { gradeLevel: 2 }, unchanged: [] });
+  });
+
+  test('PU-2 全部相同時回「不需要更新」，不暫存變更、也不是錯誤', async () => {
+    let staged = 0;
+    const ctx = { identity: { canonicalId: 'D0000001' }, prefs, studentScope: {}, turnId: 't1' };
+    const result = await executeAgentTool('update_student_profile', { gradeLevel: 1, department: '資訊工程學系' }, ctx, {
+      stageChange: () => { staged += 1; return { token: 'x', expiresAt: null }; },
+    });
+    assert.equal(result.noChange, true);
+    assert.equal(result.error, undefined);
+    assert.equal(staged, 0);
+  });
+});
+
