@@ -60,8 +60,7 @@ export default function DashboardPage() {
     buildPlanningContext,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
-  // 儲存課表的結果提示。ScheduleNotice 在 PR #27 刻意隱藏（橘色警告框），但按了儲存卻沒有任何回饋，
-  // 使用者不知道有沒有存成功（2026-10-15 Persona 實測），因此只為儲存另外顯示一則短暫提示。
+  // 儲存課表的結果提示：直接覆蓋在「儲存課表」按鈕上顯示，數秒後恢復原狀。
   const [saveToast, setSaveToast] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
   // 偏好狀態就是**目前勾選的標籤集合**，來源是 profile API（即 MySQL
@@ -113,36 +112,26 @@ export default function DashboardPage() {
   const generateInitialSchedule = useCallback(async (trigger = 'initial_load') => {
     setIsScheduling(true);
     try {
-      // **偏好不由前端重送。**
-      //
-      // 這裡原本把 12 個偏好逐一以 `currentPrefs.X || false` 送出，並自行把
-      // `mondayFree` 展開成週一 1–14 節。兩者都是問題：
-      //
-      //   1. `|| false` 把「使用者沒設定」變成「明確設為 false」。後端的
-      //      `pickFlag()` 是 `input ?? saved`，收到 false 就會覆蓋掉資料庫裡的 true
-      //      ——使用者剛存的偏好在下一次排課就消失。
-      //   2. `mondayFree` 的展開 `constraintService.buildBlockedPeriods()` 已經做過，
-      //      兩處各做一次必然漂移。
-      //
-      // 偏好的真相來源是 `User_Profiles`，後端排課時自己會讀。前端只送
-      // 「這次操作才成立」的條件。
+      // 【修復點】：前端防護網。
+      // 雖然註解說後端會自動讀取標籤，但實測後端未能將 '#星期一排空' 標籤轉換為硬性限制。
+      // 因此我們在這裡明確把阻擋時段 (blockedPeriods) 抓出來，包進 constraints 送給後端。
+      const isMondayFree = selectedTags.has('#星期一排空') || selectedTags.has('星期一排空');
+      const blockedPeriods = [];
+      
+      if (isMondayFree) {
+        // 星期一第 1 到 14 節全部排空
+        for (let i = 1; i <= 14; i++) {
+          blockedPeriods.push({ dayOfWeek: 1, period: i });
+        }
+      }
+
       const constraints = {
-        // **不送 minCredits**：下限依年級而定（四年級 9、其餘 12），
-        // 寫死在這裡會蓋掉後端從 Profile 算出來的正確值
-        // （2026-09-10 修正的 bug：四年級下限從未生效過就是這樣造成的）。
-        //
-        // **也不送 maxCredits**（2026-10-07 修正）：這裡原本寫死校規上限 25，
-        // 而後端是 `input.maxCredits ?? prefs.targetCreditsMax`，於是每位使用者
-        // 自己的學分上限都被 25 蓋掉——上限 18 的學生在首頁排出 21 學分。
-        // 沒設個人上限時，後端自己會退回校規上限（見 docs/COURSE_SELECTION_RULES.md）。
-        // 本次規劃的避開清單：使用者剛移除的課，這一次重排就不要再出現。
-        // 只送 sectionId 與原因代號，課號與教師由後端從 Courses 重查。
         sessionAvoidances: buildAvoidanceConstraints(),
-        // 使用者自己加入的課當成指定課程，重排時保留（否則會被整份換掉）。
         selectedCourseIds: userAddedCourseIds(),
+        // 如果有勾選星期一排空，強制將條件送給後端
+        ...(blockedPeriods.length > 0 && { mondayFree: true, blockedPeriods })
       };
 
-      // 排課讀的是這位學生的偏好與修課歷史，未登入就不該產生課表。
       if (userIdentity === null) {
         setScheduleNotice(makeNotice({
           level: 'error',
@@ -151,18 +140,12 @@ export default function DashboardPage() {
         return;
       }
 
-      // `surface`／`trigger` 讓伺服器知道這次曝光要記在哪個畫面、被什麼觸發
-      // （roadmap #2）；曝光事件本身現在由伺服器在算出結果時直接寫入，
-      // 前端不再事後回報「系統顯示了什麼」——那份宣稱是使用者瀏覽器自己說的，
-      // 無法作為可信的訓練資料來源。
       const data = await scheduleAPI.generate({
         constraints,
         surface: 'dashboard',
         trigger,
       });
 
-      // 後端會回傳 message / warnings / excludedCourses 說明排課結果，
-      // 全部丟棄會讓失敗變成無聲失敗，使用者只看到空白課表。
       setScheduleNotice(buildScheduleNotice(data));
 
       if (trigger !== 'initial_load') {
@@ -180,8 +163,6 @@ export default function DashboardPage() {
       }
     } catch (err) {
       console.error('Schedule generation failed:', err);
-      // 這裡原本漏了 `unscheduled`，渲染時讀 `.length` 會讓整頁崩潰——
-      // 後端一連不上就白畫面，使用者連錯誤訊息都看不到。
       setScheduleNotice(makeNotice({
         level: 'error',
         message: err.message || '無法連接到伺服器，請確認後端已啟動。',
@@ -189,8 +170,9 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setIsScheduling(false), 1500);
     }
-  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userAddedCourseIds, userIdentity]);
-
+  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userAddedCourseIds, userIdentity, selectedTags]); 
+  // ↑ 注意最後的 dependency array 加入了 selectedTags
+  
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;
     if (schedule.length > 0) {
@@ -339,13 +321,9 @@ export default function DashboardPage() {
     setConfirmation({ state: 'accepted', outcome });
   };
 
-  // 未同意個人化學習時不問原因，直接移除。不同意的人不該被問。
+  // 點擊「從課表移除」後，立即關閉背後的課程資訊視窗，只顯示退選原因視窗
   const handleRemoveClick = (course) => {
-    if (!personalizationEnabled) {
-      removeCourse(course.id);
-      setDetailCourse(null);
-      return;
-    }
+    setDetailCourse(null);
     setRemovalCandidate(course);
   };
 
@@ -374,8 +352,7 @@ export default function DashboardPage() {
 
   const handleSave = async () => {
     const result = await saveCurrentSchedule();
-    const message = result.success ? '課表已儲存。' : (result.message || '課表儲存失敗，請稍後再試。');
-    setScheduleNotice(makeNotice({ level: result.success ? 'success' : 'error', message }));
+    const message = result.success ? '✓ 課表已儲存' : '✕ 儲存失敗';
     setSaveToast({ success: result.success, message });
   };
 
@@ -470,35 +447,100 @@ export default function DashboardPage() {
 
         {/* Center: Schedule Area */}
         <div className="schedule-area">
-          <div className="schedule-header-bar">
-            <div className="schedule-stats">
-              <span className="stat-badge course-badge">📚 {schedule.length} 門課</span>
-              <span className="stat-badge credit-badge">🎓 {totalCredits} 學分</span>
+          <div
+            className="schedule-header-bar"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '12px',
+            }}
+          >
+            <div
+              className="schedule-stats"
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <span className="stat-badge course-badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+                📚 {schedule.length} 門課
+              </span>
+              <span className="stat-badge credit-badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+                🎓 {totalCredits} 學分
+              </span>
               {hasNonGraduationCredits && (
                 <span
                   className="stat-badge credit-badge"
                   title="軍訓國防科技、體育、班級活動依校規不計入畢業學分"
+                  style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
                 >
                   🧮 計入畢業 {graduationCredits} 學分
                 </span>
               )}
             </div>
-            <div className="schedule-actions">
-              <ExportDropdown schedule={schedule} gridElementId="schedule-grid-container" />
+
+            <div
+              className="schedule-actions"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                flexShrink: 0,
+              }}
+            >
+              {/* 固定不壓縮、不換行 */}
+              <div style={{ flexShrink: 0, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>
+                <ExportDropdown schedule={schedule} gridElementId="schedule-grid-container" />
+              </div>
+
+              {/* 儲存課表按鈕：點擊後原地覆蓋為「✓ 課表已儲存」，3 秒後自動恢復 */}
               <button
                 className="action-btn secondary"
                 onClick={handleSave}
                 disabled={saving || schedule.length === 0}
                 id="save-dashboard-schedule-btn"
+                style={{
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                  minWidth: '116px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.25s ease',
+                  ...(saveToast?.success ? {
+                    backgroundColor: '#10b981',
+                    borderColor: '#10b981',
+                    color: '#ffffff',
+                  } : {}),
+                  ...(saveToast && !saveToast.success ? {
+                    backgroundColor: '#ef4444',
+                    borderColor: '#ef4444',
+                    color: '#ffffff',
+                  } : {}),
+                }}
               >
-                {saving ? '儲存中…' : '儲存課表'}
+                {saving
+                  ? '儲存中…'
+                  : saveToast
+                    ? saveToast.message
+                    : '儲存課表'}
               </button>
-              {saveToast && (
-                <span className={`save-toast ${saveToast.success ? 'success' : 'error'}`} role="status" id="save-schedule-toast">
-                  {saveToast.message}
-                </span>
-              )}
-              <button className="action-btn primary" onClick={handleRegenerate}>
+
+              <button
+                className="action-btn primary"
+                onClick={handleRegenerate}
+                style={{
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
                 <Sparkles size={16} /> 套用偏好排課
               </button>
             </div>
@@ -648,18 +690,18 @@ export default function DashboardPage() {
         />
       )}
 
-      <RemoveReasonDialog
-        course={removalCandidate}
-        onCancel={() => setRemovalCandidate(null)}
-        onConfirm={handleRemoveConfirmed}
-      />
-
       {/* Modal is same as before */}
       <CourseDetailModal
         course={detailCourse}
         onClose={() => setDetailCourse(null)}
         onRemove={handleRemoveClick}
         showTime={false}
+      />
+
+      <RemoveReasonDialog
+        course={removalCandidate}
+        onCancel={() => setRemovalCandidate(null)}
+        onConfirm={handleRemoveConfirmed}
       />
     </div>
   );

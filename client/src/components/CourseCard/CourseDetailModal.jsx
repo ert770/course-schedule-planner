@@ -1,5 +1,6 @@
 import { formatCourseTime } from '../../utils/courseTime';
 import { formatCourseGradeLevel } from '../../utils/courseGradeLevel';
+import { formatCoursePrerequisites } from '../../utils/coursePrerequisites';
 
 const SELECTION_LABELS = {
   REQUIRED_COURSE: '這是你的必修課',
@@ -39,15 +40,25 @@ function headlineFor(reason, interestBoosts) {
   return interestBoosts.length > 0 ? '它和你的興趣主題相近' : '同時段的候選中，它的綜合分數最高';
 }
 
+// 修改 CourseDetailModal.jsx 中的 ReasonSection
 function ReasonSection({ reason }) {
-  if (!reason) return null;
+  // 【修復點】：加入更嚴謹的防呆機制，如果 reason 是空物件或沒有關鍵屬性，則不渲染推薦原因區塊
+  if (!reason || Object.keys(reason).length === 0 || (!reason.selectedBecause && !reason.scoreBreakdown)) {
+    return null; 
+  }
 
   const confidence = CONFIDENCE_LABELS[reason.confidence] || CONFIDENCE_LABELS.medium;
   const alternatives = reason.alternativesRejected;
-  // 四捨五入後不到 1 分的加分不算（否則會出現「相近主題 +0」，標題卻說興趣相近）。
-  const interestBoosts = (reason.scoreBreakdown ?? [])
+  
+  // 【修復點】：確保 scoreBreakdown 是一個陣列，即使它是 undefined 也不會造成 .filter 崩潰
+  const safeScoreBreakdown = Array.isArray(reason.scoreBreakdown) ? reason.scoreBreakdown : [];
+  
+  const interestBoosts = safeScoreBreakdown
     .filter(item => INTEREST_COMPONENT_LABELS[item.component] && Math.round(item.value) >= 1)
     .map(item => `${INTEREST_COMPONENT_LABELS[item.component]} +${Math.round(item.value)}`);
+
+  // 【修復點】：確保 matchedPreferences 是一個陣列
+  const safeMatchedPreferences = Array.isArray(reason.matchedPreferences) ? reason.matchedPreferences : [];
 
   return (
     <div className="detail-reason">
@@ -58,10 +69,10 @@ function ReasonSection({ reason }) {
         <span className={`reason-confidence ${confidence.className}`}>{confidence.text}</span>
       </p>
 
-      {reason.matchedPreferences?.length > 0 ? (
+      {safeMatchedPreferences.length > 0 ? (
         <p className="reason-line">
           <strong>命中你的偏好：</strong>
-          {reason.matchedPreferences.map(item => item.label).join('、')}
+          {safeMatchedPreferences.map(item => item.label).join('、')}
         </p>
       ) : (
         <p className="reason-line reason-muted">它沒有命中你設定的排課偏好。</p>
@@ -74,16 +85,18 @@ function ReasonSection({ reason }) {
         </p>
       )}
 
+      {/* 評價證據 */}
       <p className="reason-line">
         <strong>評價證據：</strong>
         {reason.reviewEvidence
           ? `${reason.reviewEvidence.reviewCount} 則評價`
           : '這門課沒有評價資料'}
-        {EASINESS_LABELS[reason.easinessSource]
+        {reason.easinessSource && EASINESS_LABELS[reason.easinessSource]
           ? `（${EASINESS_LABELS[reason.easinessSource]}）`
           : ''}
       </p>
 
+      {/* 限制與代價 */}
       {reason.constraintTradeoffs?.length > 0 && (
         <p className="reason-line reason-tradeoff">
           <strong>代價：</strong>
@@ -91,14 +104,14 @@ function ReasonSection({ reason }) {
         </p>
       )}
 
+      {/* 競爭者資訊 */}
       {alternatives?.status === 'no-competitors' && (
         <p className="reason-line reason-muted">同一個時段沒有其他課與它競爭。</p>
       )}
-      {alternatives?.status === 'had-competitors' && alternatives.candidates.length > 0 && (
+      {alternatives?.status === 'had-competitors' && alternatives.candidates?.length > 0 && (
         <div className="reason-line">
           <strong>它勝過：</strong>
           <ul className="reason-alternatives">
-            {/* 同一門課的不同班次會同名，用班次 id 當 key（同名時 React 會報重複 key）。 */}
             {alternatives.candidates.map((item, index) => (
               <li key={item.sectionId ?? `${item.name}-${index}`}>
                 {item.name}（差 {item.scoreDelta} 分）
@@ -109,6 +122,7 @@ function ReasonSection({ reason }) {
         </div>
       )}
 
+      {/* 依據來源 */}
       {reason.dataSources?.length > 0 && (
         <p className="reason-sources">依據來源：{reason.dataSources.join('、')}</p>
       )}
