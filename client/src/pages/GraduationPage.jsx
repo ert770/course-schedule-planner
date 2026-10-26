@@ -1,12 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/useAuth';
-import { useTheme } from '../contexts/useTheme';
 import { graduationAPI } from '../services/api';
-import { useClickOutside } from '../hooks/useClickOutside';
 import { getUserIdentity } from '../utils/userIdentity';
 import { X, Plus, Search, AlertTriangle, Lightbulb, Calendar, LayoutDashboard, Settings, Moon, Sun, Compass } from 'lucide-react';
 
+import TopNav from '../components/Layout/TopNav';
 // `GET /api/graduation/:studentId` 的學分類別 key 對應中文標題。
 const CREDIT_CATEGORY_LABELS = {
   required: '本系必修',
@@ -17,18 +15,11 @@ const CREDIT_CATEGORY_LABELS = {
 };
 
 export default function GraduationPage() {
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
-  const { theme, toggleTheme } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const userMenuRef = useRef(null);
-
-  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
-
   const loadGraduationData = useCallback(async () => {
     if (userIdentity === null) {
       setData(null);
@@ -77,42 +68,9 @@ export default function GraduationPage() {
     : 0;
 
   return (
-    <div className="layout-container" id="graduation-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-main, #f8fafc)' }}>
-      {/* Top Navbar - 已移除「排課」按鈕，完美對齊首頁格式 */}
-      <header className="top-nav">
-        <div className="nav-brand">
-          <Calendar size={20} className="nav-icon" />
-          <span>課表規劃助手</span>
-        </div>
-        <div className="nav-links">
-          <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
-          <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
-          <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
-        </div>
-        <div className="nav-actions">
-          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
-            <div className="avatar">{(user?.name || '同')[0]}</div>
-            <span>{user?.name || '同學'}</span>
-            
-            {showUserMenu && (
-              <div className="user-dropdown-menu">
-                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
-                  <Settings size={16} style={{marginRight: '8px'}} /> 個人資料設定
-                </button>
-                <button className="user-dropdown-item" onClick={() => navigate('/graduation')} style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', fontWeight: '600' }}>
-                  <Settings size={16} style={{marginRight: '8px', color: '#3b82f6'}} /> 畢業學分進度
-                </button>
-                <button className="user-dropdown-item" onClick={toggleTheme}>
-                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 
-                  切換主題 ({theme === 'dark' ? '淺色' : '深色'})
-                </button>
-                <div style={{height: '1px', background: 'var(--border-color)', margin: '4px 0'}}></div>
-                <button className="user-dropdown-item" onClick={logout}>登出 (Logout)</button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+    <div className="layout-container" id="graduation-page">
+      {/* Top Navbar */}
+      <TopNav />
 
       {/* Main content - 雙欄儀表板佈局 */}
       <div className="graduation-content" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '24px', padding: '24px 32px', maxWidth: '1600px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>

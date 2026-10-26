@@ -746,6 +746,47 @@ async function getMysqlCourses() {
 // 而不是像 `classNameColumnPromise` 那樣永久快取到重啟為止——那種模式
 // 適用於不會無重啟就變動的 schema 欄位，`Course_Reviews` 不是。
 const REVIEWS_CACHE_TTL_MS = Number(process.env.REVIEWS_CACHE_TTL_MS) || 60_000;
+const COURSE_SYLLABUS_CACHE_TTL_MS = Number(process.env.COURSE_SYLLABUS_CACHE_TTL_MS) || 60_000;
+
+async function fetchMysqlCourseSyllabusVectorDocuments() {
+  const rows = await queryRows(`
+    SELECT
+      s.\`source_key\`,
+      s.\`course_code\`,
+      s.\`academic_year\`,
+      s.\`semester\`,
+      s.\`syllabus_text\`
+    FROM \`Course_Syllabi\` s
+    INNER JOIN (
+      SELECT \`course_code\`, MAX(\`academic_year\` * 10 + \`semester\`) AS \`latest_term\`
+      FROM \`Course_Syllabi\`
+      WHERE \`course_code\` IS NOT NULL AND \`syllabus_text\` <> ''
+      GROUP BY \`course_code\`
+    ) latest
+      ON BINARY latest.\`course_code\` = BINARY s.\`course_code\`
+      AND latest.\`latest_term\` = s.\`academic_year\` * 10 + s.\`semester\`
+    WHERE s.\`syllabus_text\` <> ''
+    ORDER BY s.\`course_code\`, CHAR_LENGTH(s.\`syllabus_text\`) DESC, s.\`source_key\`
+  `);
+  return rows.map(row => ({
+    sourceKey: row.source_key,
+    catalogCourseCode: row.course_code,
+    academicYear: Number(row.academic_year),
+    semester: Number(row.semester),
+    syllabusText: row.syllabus_text,
+  }));
+}
+
+const getCachedMysqlCourseSyllabusVectorDocuments = createTtlCache(
+  fetchMysqlCourseSyllabusVectorDocuments,
+  COURSE_SYLLABUS_CACHE_TTL_MS,
+);
+
+// 只供後端產生／驗證文字向量使用；回傳每個穩定課號最新學期的公開大綱文字，
+// 不把原始 JSON、教師、班次時間或教室帶入向量文件。
+export async function getCourseSyllabusVectorDocuments() {
+  return getCachedMysqlCourseSyllabusVectorDocuments();
+}
 
 async function fetchMysqlReviewsUncached() {
   // 評價資料表為 `Course_Reviews`（單數），以 selection_code 關聯 Course_Sections。

@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
-import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
-import { useClickOutside } from '../hooks/useClickOutside';
 import { scheduleAPI, chatAPI, profileAPI, historyFeedbackAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
@@ -14,7 +11,6 @@ import { formatCourseTime } from '../utils/courseTime';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
-import PlanComparison from '../components/Schedule/PlanComparison';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import SkillTreeModal from '../components/Profile/SkillTreeModal';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
@@ -22,6 +18,7 @@ import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../
 import { getUserIdentity } from '../utils/userIdentity';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award, Compass } from 'lucide-react';
 
+import TopNav from '../components/Layout/TopNav';
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
 //
 // 這裡原本寫死一份 `PREFS`，用的是**排課旗標的 key**（`preferCompact` 等）
@@ -29,10 +26,8 @@ import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, 
 // 同一份資訊在前端兩處、後端一處各自維護，漂移只是時間問題，而它已經發生了。
 
 export default function DashboardPage() {
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
-  const { theme, toggleTheme } = useTheme();
   const {
     schedule,
     loading: scheduleLoading,
@@ -60,7 +55,8 @@ export default function DashboardPage() {
     buildPlanningContext,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
-  // 儲存課表的結果提示：直接覆蓋在「儲存課表」按鈕上顯示，數秒後恢復原狀。
+  // 儲存課表的結果提示（2026-10-15 Persona 實測：按儲存沒有任何回饋）。
+  // 排課提示框只顯示錯誤（見下方 ScheduleNotice）；儲存結果只走這則短暫提示。
   const [saveToast, setSaveToast] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
   // 偏好狀態就是**目前勾選的標籤集合**，來源是 profile API（即 MySQL
@@ -84,15 +80,9 @@ export default function DashboardPage() {
   const [showSkillModal, setShowSkillModal] = useState(false);
   // 階段 5：還有沒回答過的歷史修課時，進排課主頁自動跳出一次。
   const [historyFeedback, setHistoryFeedback] = useState(null);
-
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const chatInputRef = useRef(null);
   const chatScrollRef = useRef(null);
   const initialGenerationUserRef = useRef(null);
-  const userMenuRef = useRef(null);
-
-  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
-
   useEffect(() => {
     // Scroll chat to bottom
     if (chatScrollRef.current) {
@@ -352,7 +342,8 @@ export default function DashboardPage() {
 
   const handleSave = async () => {
     const result = await saveCurrentSchedule();
-    const message = result.success ? '✓ 課表已儲存' : '✕ 儲存失敗';
+    const message = result.success ? '課表已儲存。' : (result.message || '課表儲存失敗，請稍後再試。');
+    // 儲存結果只用按鈕旁的短暫提示；排課提示框（2026-10-26 恢復）專門顯示排課結果，避免同一句話出現兩次。
     setSaveToast({ success: result.success, message });
   };
 
@@ -365,43 +356,7 @@ export default function DashboardPage() {
   return (
     <div className="layout-container" id="dashboard-page">
       {/* Top Navbar */}
-      <header className="top-nav">
-        <div className="nav-brand">
-          <Calendar size={20} className="nav-icon" />
-          <span>課表規劃助手</span>
-        </div>
-        <div className="nav-links">
-          <button className="nav-btn active"><LayoutDashboard size={16}/> 首頁</button>
-          <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
-          <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
-        </div>
-        <div className="nav-actions">
-          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
-            <div className="avatar">{(user?.name || '同')[0]}</div>
-            <span>{user?.name || '同學'}</span>
-
-            {showUserMenu && (
-              <div className="user-dropdown-menu">
-                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
-                  <Settings size={16} style={{marginRight: '8px'}} /> 個人資料設定
-                </button>
-                <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
-                  <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
-                </button>
-                <button className="user-dropdown-item" onClick={() => navigate('/privacy')}>
-                  <Settings size={16} style={{marginRight: '8px'}} /> 隱私與資料
-                </button>
-                <button className="user-dropdown-item" onClick={toggleTheme}>
-                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>}
-                  切換主題 ({theme === 'dark' ? '淺色' : '深色'})
-                </button>
-                <div style={{height: '1px', background: 'var(--border-color)', margin: '4px 0'}}></div>
-                <button className="user-dropdown-item" onClick={logout}>登出 (Logout)</button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      <TopNav active="home" />
 
       <div className="dashboard-content">
         {/* Left Sidebar: Preferences and Skill Tree */}
@@ -548,7 +503,7 @@ export default function DashboardPage() {
 
           {/* roadmap #27：`.schedule-area` 是 `overflow:hidden`、`.schedule-wrapper`
               是 `flex:1`——這個區塊（確認列／提示／方案切換／方案比較）加了
-              PlanSwitcher 與 PlanComparison 之後文字量可能很大，若不設邊界，
+              PlanSwitcher 之後文字量可能很大，若不設邊界，
               `.schedule-wrapper` 的可用高度會被擠到只剩幾十像素，課表格實質上
               消失不見。用自己的捲動邊界把它圍起來，確保課表格永遠有合理空間。 */}
           <div className="schedule-top-stack">
@@ -560,8 +515,10 @@ export default function DashboardPage() {
               onDismiss={() => setConfirmation(null)}
             />
 
+            {/* 排課後的橘色說明（方案數、未排入、學分說明）依使用者要求不顯示（2026-10-26）；
+                只保留紅色錯誤（未登入、連不上伺服器），出錯時畫面才不會毫無反應。 */}
             <ScheduleNotice
-              notice={scheduleNotice}
+              notice={scheduleNotice?.level === 'error' ? scheduleNotice : null}
               onDismiss={() => setScheduleNotice(null)}
               domId="schedule-notice"
             />
@@ -581,14 +538,6 @@ export default function DashboardPage() {
               onSelectPlan={handleSelectPlan}
             />
 
-            {/* constraints 不送 minCredits 與 maxCredits：交給後端依年級與個人上限判斷，
-                反事實比較才會與上面的課表用同一組學分範圍。 */}
-            <PlanComparison
-              plans={plans}
-              recommendedPlanId={recommendedPlanId}
-              constraints={{}}
-              surface="dashboard"
-            />
           </div>
 
           <div className="schedule-wrapper">
