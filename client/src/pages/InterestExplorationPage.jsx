@@ -76,7 +76,7 @@ export default function InterestExplorationPage() {
         if (cancelled) return;
         const savedState = getInterestExplorationState(identity);
         if (savedState.status === 'completed' || savedState.status === 'skipped') {
-          navigate('/schedule', { replace: true });
+          navigate('/', { replace: true });
           return;
         }
         const deck = arrangeSavedDeck(result.cards || [], savedState.courseCodes);
@@ -153,7 +153,7 @@ export default function InterestExplorationPage() {
       currentIndex,
       courseCodes: cards.map(item => item.courseCode),
     });
-    navigate('/schedule', { replace: true });
+    navigate('/', { replace: true });
   };
 
   const advance = (nextNotice = '') => {
@@ -169,7 +169,7 @@ export default function InterestExplorationPage() {
         currentIndex: nextIndex,
         courseCodes: cards.map(item => item.courseCode),
       });
-      navigate('/schedule', { replace: true });
+      navigate('/', { replace: true });
       return;
     }
     setCurrentIndex(nextIndex);

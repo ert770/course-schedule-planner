@@ -6,19 +6,17 @@
 //
 // 另有「依你的修課與興趣」模式（預設）：以標籤空間使用者向量（修過的非必修課、收藏、加選、
 // 表示有興趣）排序，卡片附上共同主題與最接近的那門課當理由。需同意個人化學習。
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Compass, LayoutDashboard, Moon, Plus, Search, Settings, Sun } from 'lucide-react';
-import { useAuth } from '../contexts/useAuth';
-import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
-import { useClickOutside } from '../hooks/useClickOutside';
 import { explorationAPI } from '../services/api';
 import { EXPLORATION_SOURCE } from '../services/selectionSource';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import { formatCourseTime } from '../utils/courseTime';
 import '../App.css';
 
+import TopNav from '../components/Layout/TopNav';
 // 認列狀態的文字。通過機械條件不等於已確認可抵畢業學分，所以不寫「可計入畢業學分」。
 const RECOGNITION_TEXT = {
   'needs-office-confirmation': '符合系外選修條件，仍須向系辦確認是否認列',
@@ -140,8 +138,6 @@ function ExploreGroup({ title, hint, group, emptyText, ...cardProps }) {
 
 export default function ExplorePage() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const { schedule, validating, addCourse } = useSchedule();
 
   const [data, setData] = useState(null);
@@ -152,11 +148,6 @@ export default function ExplorePage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState(null);
   const [detailCourse, setDetailCourse] = useState(null);
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const userMenuRef = useRef(null);
-
-  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
-
   useEffect(() => {
     let cancelled = false;
     explorationAPI.get(favoriteCode || undefined, mode, representation)
@@ -218,40 +209,7 @@ export default function ExplorePage() {
 
   return (
     <div className="layout-container" id="explore-page">
-      <header className="top-nav">
-        <div className="nav-brand">
-          <Calendar size={20} className="nav-icon" />
-          <span>課表規劃助手</span>
-        </div>
-        <div className="nav-links">
-          <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
-          <button className="nav-btn" onClick={() => navigate('/search')}><Search size={16}/> 尋找課程</button>
-          <button className="nav-btn active"><Compass size={16}/> 探索</button>
-        </div>
-        <div className="nav-actions">
-          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
-            <div className="avatar">{(user?.name || '同')[0]}</div>
-            <span>{user?.name || '同學'}</span>
-            {showUserMenu && (
-              <div className="user-dropdown-menu">
-                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
-                  <Settings size={16} style={{ marginRight: '8px' }} /> 個人資料設定
-                </button>
-                <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
-                  <Settings size={16} style={{ marginRight: '8px' }} /> 畢業學分進度
-                </button>
-                <button className="user-dropdown-item" onClick={toggleTheme}>
-                  {theme === 'dark'
-                    ? <Sun size={16} style={{ marginRight: '8px' }} />
-                    : <Moon size={16} style={{ marginRight: '8px' }} />} 切換主題
-                </button>
-                <div style={{ height: '1px', background: 'var(--border-color)', margin: '4px 0' }}></div>
-                <button className="user-dropdown-item" onClick={logout}>登出 (Logout)</button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      <TopNav active="explore" />
 
       <div className="explore-content">
         <div className="explore-intro">

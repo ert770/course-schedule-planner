@@ -95,7 +95,7 @@
 | 24 | 建立結構化需求模型、矛盾偵測與澄清對話 | ✅ 已完成（2026-08-31，兩輪）——四條驗收標準全數達成（第 4 條前提為「無歧義的需求」） | #18、#21（均已完成） |
 | 25 | 改用 structured/native tool calling 與輸入輸出驗證 | ✅ 已完成（2026-08-31）——四條驗收標準全數達成：OpenAI 原生 tool calling／JSON Schema、誠實 intent/data、同回合 scope 重建、矛盾參數排課前擋下、正式 tool allowlist（`agentToolRegistry.js`）、非法 course ID 過濾（`watchingCourseIds`）與統一結果信封均已完成 | #20、#21、#24（均已完成） |
 | 26 | 建立每門課的 evidence-based recommendation reason | ✅ 已完成（2026-08-31）——8 個欄位全數交付並接到前端與 Agent；`recommendationReasonVersion` 已填。當時內容量受 #13C 的候選池限制（demo 帳號 8 門課有 7 門「沒有競爭者」）；#13C 已於 2026-09-18 完成，候選池放大，落選者內容需重新觀察。2026-09-18 起 `scoreBreakdown` 另有 `crossYearElective`／`outsideOwnDepartment` 兩個階層分數項 | #4、#5A、#21、#22、#13C（均已完成） |
-| 27 | 完成多方案比較 UI 與 counterfactual explanation | ✅ **已完成（2026-09-03）**——見下方 #27 段落與[變更報告](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)。方案切換、比較表、counterfactual 端點皆已上線；**「保留部分課程再重排」仍未做**。2026-09-21 的 #42 讓後端拿得到「畫面目前留著哪些課」（`planningContext.currentCourses`），那是這項功能原本缺的那塊資料，但「保留這幾門、其餘重排」本身尚未實作 | #26 已完成；#10 已提供多方案介面與塌縮資訊，足供本任務使用；#42 已補上目前課表的傳遞 |
+| 27 | 完成多方案比較 UI 與 counterfactual explanation | ✅ **已完成（2026-09-03）**——見下方 #27 段落與[變更報告](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)。方案切換、比較表、counterfactual 端點皆已上線；**2026-10-26 依使用者要求自前端移除比較表與 counterfactual 面板**（[變更報告](./2026-10-26-ui-ux-audit.md)），方案切換改為 1 個方案也顯示並附可收合的方案說明；`/api/schedule/counterfactual` 端點保留但前端已無呼叫端；**「保留部分課程再重排」仍未做**。2026-09-21 的 #42 讓後端拿得到「畫面目前留著哪些課」（`planningContext.currentCourses`），那是這項功能原本缺的那塊資料，但「保留這幾門、其餘重排」本身尚未實作 | #26 已完成；#10 已提供多方案介面與塌縮資訊，足供本任務使用；#42 已補上目前課表的傳遞 |
 | 28 | 統一 Dashboard、Schedule、Chat 的登入使用者 context | ✅ **已完成（2026-09-03）**——見下方 #28 段落與[變更報告](./2026-09-03-roadmap-28-account-isolation.md)。兩帳號實機驗收全數通過；過程中發現並修復共用 MySQL 的日期時區 bug（刪除功能原本一律失敗） | 無（#18、#2 均已完成） |
 | 29 | 定義 interaction event schema 與回饋原因 | ✅ 已完成（2026-08-21） | #18 |
 | 30 | 建立可重現的 per-user preference update pipeline | ✅ **已完成（2026-09-04）**——見下方 #30 段落與[變更報告](./2026-09-04-roadmap-30-preference-learning-pipeline.md)。四條驗收標準全數達成；學習結果先由 #5B 接進方案比較，再由 #7 接進單門課排序 | #2、#5A、#29（均已完成） |
@@ -1941,6 +1941,8 @@ id，實際查證後範圍縮小到只有 `watchingCourseIds`，避免了重複 
 ## #27 完成多方案比較 UI 與 counterfactual explanation
 
 **狀態**：✅ **已完成（2026-09-03）**——見[變更報告](./2026-09-03-roadmap-27-plan-comparison-and-counterfactual.md)。
+
+> 2026-10-26 更新：比較表（`PlanComparison.jsx`）與 counterfactual 面板已依使用者要求自前端移除（2026-10-11 的 PR #27 介面瘦身時已先清空內容）；方案切換列保留，並改為不論方案數都顯示、附可收合的方案說明與其他取向未產生的原因。後端 `planMetrics` 與 counterfactual 端點仍在。見[變更報告](./2026-10-26-ui-ux-audit.md)。
 
 **相依**：#26 已完成；#10 已提供本任務需要的多方案介面與塌縮資訊，但完整多樣性驗收仍為
 部分完成，不影響 #27 已交付的比較 UI 與 counterfactual 功能。

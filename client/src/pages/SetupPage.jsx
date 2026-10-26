@@ -216,7 +216,8 @@ export default function SetupPage() {
       <div className="setup-card animate-fadeInUp" style={{ position: 'relative', maxWidth: '850px', width: '100%' }}>
         
         <button 
-          onClick={() => navigate('/onboarding')}
+          // 已設定過的使用者從選單進來調整偏好，返回首頁；第一次的引導流程才返回同意頁。
+          onClick={() => navigate(isSetupDone() ? '/' : '/onboarding')}
           style={{
             position: 'absolute', top: '16px', left: '16px',
             background: 'none', border: 'none', cursor: 'pointer',
@@ -225,7 +226,7 @@ export default function SetupPage() {
           }}
           onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
           onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-          title="返回上一步"
+          title={isSetupDone() ? '返回首頁' : '返回上一步'}
         >
           <ArrowLeft size={22} />
         </button>
