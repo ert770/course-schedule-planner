@@ -2,15 +2,38 @@ import { createHash } from 'node:crypto';
 import { resolveInterestTags, interestTagCatalog } from '../data/interestTagCatalog.js';
 
 export const COURSE_TEXT_VECTOR_VERSION = 'course-text-vector-v1';
+export const COURSE_TEXT_SYLLABUS_VECTOR_VERSION = 'course-text-vector-v2';
 export const COURSE_TEXT_MAX_CODE_POINTS = 1800;
 const codeOf = value => String(value ?? '').trim().toUpperCase();
 const clean = value => String(value ?? '').replace(/<\/?[a-z][^>]*>/giu, ' ').replace(/\s+/gu, ' ').trim();
 const ordinal = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const longest = values => [...values].sort((a, b) => b.length - a.length || ordinal(a, b))[0] ?? '';
 
+function latestSyllabusByCourse(syllabi) {
+  const latest = new Map();
+  for (const syllabus of Array.isArray(syllabi) ? syllabi : []) {
+    const code = codeOf(syllabus.catalogCourseCode ?? syllabus.courseCode);
+    const text = clean(syllabus.syllabusText);
+    if (!code || !text) continue;
+    const year = Number(syllabus.academicYear);
+    const semester = Number(syllabus.semester);
+    if (!Number.isInteger(year) || !Number.isInteger(semester)) continue;
+    const rank = year * 10 + semester;
+    const current = latest.get(code);
+    const row = { rank, text, sourceKey: String(syllabus.sourceKey ?? '') };
+    if (!current || rank > current.rank
+      || (rank === current.rank && (text.length > current.text.length
+        || (text.length === current.text.length && ordinal(row.sourceKey, current.sourceKey) < 0)))) {
+      latest.set(code, row);
+    }
+  }
+  return new Map([...latest].map(([code, row]) => [code, row.text]));
+}
+
 // 公開課程資訊；不含教師、使用者、成績或班次。相同穩定課號只建立一份文件。
-export function buildCourseTextDocuments(courses = []) {
+export function buildCourseTextDocuments(courses = [], syllabi = [], { includeSyllabi = false } = {}) {
   const grouped = new Map();
+  const syllabusByCourse = includeSyllabi ? latestSyllabusByCourse(syllabi) : new Map();
   for (const course of courses) {
     const code = codeOf(course.catalogCourseCode);
     if (!code) continue;
@@ -24,13 +47,17 @@ export function buildCourseTextDocuments(courses = []) {
     const name = longest(group.names);
     const description = longest(group.descriptions);
     const tags = [...group.tags].sort();
-    if (!name && !description && tags.length === 0) return [];
-    const fullText = [`課名：${name}`, `主題：${tags.join('、')}`, `簡介：${description}`].join('\n');
+    const syllabusText = syllabusByCourse.get(courseCode) ?? '';
+    if (!name && !description && tags.length === 0 && !syllabusText) return [];
+    const textParts = [`課名：${name}`, `主題：${tags.join('、')}`, `簡介：${description}`];
+    if (includeSyllabi) textParts.push(`課程大綱：${syllabusText}`);
+    const fullText = textParts.join('\n');
     const points = Array.from(fullText);
     const text = points.slice(0, COURSE_TEXT_MAX_CODE_POINTS).join('');
-    const contentHash = createHash('sha256').update(`${COURSE_TEXT_VECTOR_VERSION}\n${text}`).digest('hex');
+    const textVersion = includeSyllabi ? COURSE_TEXT_SYLLABUS_VECTOR_VERSION : COURSE_TEXT_VECTOR_VERSION;
+    const contentHash = createHash('sha256').update(`${textVersion}\n${text}`).digest('hex');
     return [{ courseCode, name, tags, text, contentHash, truncated: points.length > COURSE_TEXT_MAX_CODE_POINTS,
-      hasDescription: Boolean(description) }];
+      hasDescription: Boolean(description), hasSyllabus: Boolean(syllabusText) }];
   });
 }
 
@@ -44,15 +71,21 @@ export function normalizeDenseVector(values, dimension) {
 }
 
 // 目錄或文件更新後，不把舊向量假裝成目前的課程表示法。
-export function buildCourseTextEmbeddingIndex(courses, artifact) {
-  if (artifact?.schemaVersion !== 1 || artifact.textVersion !== COURSE_TEXT_VECTOR_VERSION
+export function buildCourseTextEmbeddingIndex(courses, artifact, syllabi = []) {
+  const includeSyllabi = artifact?.textVersion === COURSE_TEXT_SYLLABUS_VECTOR_VERSION;
+  if (artifact?.schemaVersion !== 1
+    || ![COURSE_TEXT_VECTOR_VERSION, COURSE_TEXT_SYLLABUS_VECTOR_VERSION].includes(artifact.textVersion)
     || artifact.catalogVersion !== interestTagCatalog.catalogVersion
     || !Number.isInteger(artifact.dimension) || artifact.dimension < 1 || artifact.dimension > 4096
     || typeof artifact.embeddingModel !== 'string' || !artifact.embeddingModel
     || !Number.isFinite(Date.parse(artifact.generatedAt)) || !Array.isArray(artifact.courses)) {
     throw new TypeError('課程文字向量產物的格式或目錄版本不相容');
   }
-  const documents = new Map(buildCourseTextDocuments(courses).map(doc => [doc.courseCode, doc]));
+  if (includeSyllabi && (!Array.isArray(syllabi) || syllabi.length === 0)) {
+    throw new TypeError('課程文字向量產物需要資料庫中的教學大綱');
+  }
+  const documents = new Map(buildCourseTextDocuments(courses, syllabi, { includeSyllabi })
+    .map(doc => [doc.courseCode, doc]));
   const vectors = new Map();
   const seen = new Set();
   let staleCourses = 0;
@@ -66,7 +99,8 @@ export function buildCourseTextEmbeddingIndex(courses, artifact) {
     vectors.set(code, vector);
   }
   return { vectors, documents, staleCourses, method: {
-    representation: 'course-text-embedding-v1', selection: 'one-per-unit-cosine', k: 5,
+    representation: includeSyllabi ? 'course-text-embedding-v2' : 'course-text-embedding-v1',
+    selection: 'one-per-unit-cosine', k: 5,
     embeddingModel: artifact.embeddingModel, dimension: artifact.dimension,
     catalogVersion: artifact.catalogVersion, generatedAt: artifact.generatedAt,
   } };

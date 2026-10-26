@@ -2,8 +2,19 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-10-26
+
+- [UI／UX 全面檢查：導覽列統一、方案切換與說明恢復、移除方案比較與橘色通知](./2026-10-26-ui-ux-audit.md)
+- [設定頁恢復「主要修課路徑」「想接觸的課程主題」選項與「重新探索課程主題」按鈕](./2026-10-26-setup-interest-options-restored.md)
+
+## 2026-10-16
+
+- [同意頁「個人化來源」顯示錯誤，以及已設定使用者每次登入都要重走引導流程](./2026-10-16-onboarding-source-label-and-setup-state.md)
+- [課程文字向量 v2（含教學大綱）產生與探索／排課 A/B](./2026-10-16-course-text-vector-v2-ab.md)
+
 ## 2026-10-15
 
+- [歷年教學大綱：讀取組員匯入的 Course_Syllabi 與文字向量 v2 接線](./2026-10-15-course-syllabi-db-import.md)
 - [課程詳情「先修條件」顯示成 [object Object] 的修正](./2026-10-15-course-prerequisites-display.md)
 - [協同過濾階段 8：用 10 位 Persona 模擬演練 CF active 與 #32 比較](./2026-10-15-cf-stage8-persona-rehearsal.md)
 - [Persona 實測剩餘 6 項發現的修正（探索、查詢、推薦理由、儲存提示、個人化來源、語意相似與系列課）](./2026-10-15-persona-findings-fixes.md)

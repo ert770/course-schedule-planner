@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
-import { useTheme } from '../contexts/useTheme';
 import { useSchedule } from '../contexts/useSchedule';
-import { useClickOutside } from '../hooks/useClickOutside';
 import { coursesAPI, profileAPI } from '../services/api';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
@@ -13,6 +10,7 @@ import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
 import { formatCourseGradeLevel } from '../utils/courseGradeLevel';
 
+import TopNav from '../components/Layout/TopNav';
 const GRADE_CLASS_MAP = {
   '1': ['資訊一甲', '資訊一乙', '資訊一丙', '合'],
   '2': ['資訊二甲', '資訊二乙', '資訊二丙', '資訊二丁', '合'],
@@ -22,10 +20,8 @@ const GRADE_CLASS_MAP = {
 };
 
 export default function SearchPage() {
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
-  const { theme, toggleTheme } = useTheme();
   const {
     schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed, personalizationEnabled
   } = useSchedule();
@@ -34,7 +30,6 @@ export default function SearchPage() {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [actionNotice, setActionNotice] = useState(null);
   const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
@@ -46,13 +41,9 @@ export default function SearchPage() {
   const [sidebarWidth, setSidebarWidth] = useState(340);
   const [isResizing, setIsResizing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  
-  const userMenuRef = useRef(null);
   // 每次送出搜尋就加一。回應回來時號碼對不上，代表使用者已經換了分頁或送出更新的搜尋，
   // 那份結果不該再蓋到畫面上。
   const searchRequestRef = useRef(0);
-  useClickOutside(userMenuRef, () => setShowUserMenu(false), showUserMenu);
-
   const [deptForm, setDeptForm] = useState({
     department: '資訊工程學系',
     gradeLevel: '4',
@@ -309,39 +300,7 @@ export default function SearchPage() {
 
   return (
     <div className="layout-container" id="search-page">
-      <header className="top-nav">
-        <div className="nav-brand">
-          <Calendar size={20} className="nav-icon" />
-          <span>課表規劃助手</span>
-        </div>
-        <div className="nav-links">
-          <button className="nav-btn" onClick={() => navigate('/')}><LayoutDashboard size={16}/> 首頁</button>
-          <button className="nav-btn active"><Search size={16}/> 尋找課程</button>
-          <button className="nav-btn" onClick={() => navigate('/explore')}><Compass size={16}/> 探索</button>
-        </div>
-        <div className="nav-actions">
-          <div className="nav-user" ref={userMenuRef} onClick={() => setShowUserMenu(!showUserMenu)}>
-            <div className="avatar">{(user?.name || '同')[0]}</div>
-            <span>{user?.name || '同學'}</span>
-            
-            {showUserMenu && (
-              <div className="user-dropdown-menu">
-                <button className="user-dropdown-item" onClick={() => navigate('/setup')}>
-                  <Settings size={16} style={{marginRight: '8px'}} /> 個人資料設定
-                </button>
-                <button className="user-dropdown-item" onClick={() => navigate('/graduation')}>
-                  <Settings size={16} style={{marginRight: '8px'}} /> 畢業學分進度
-                </button>
-                <button className="user-dropdown-item" onClick={toggleTheme}>
-                  {theme === 'dark' ? <Sun size={16} style={{marginRight: '8px'}}/> : <Moon size={16} style={{marginRight: '8px'}}/>} 切換主題
-                </button>
-                <div style={{height: '1px', background: 'var(--border-color)', margin: '4px 0'}}></div>
-                <button className="user-dropdown-item" onClick={logout}>登出 (Logout)</button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      <TopNav active="search" />
 
       <div className="search-content" style={{ display: 'flex', overflow: 'hidden', position: 'relative', height: '100%' }}>
         

@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { interestTagCatalog } from '../src/data/interestTagCatalog.js';
 import { buildCourseTextDocuments, buildCourseTextEmbeddingIndex, denseCosine,
-  normalizeDenseVector, COURSE_TEXT_VECTOR_VERSION, COURSE_TEXT_MAX_CODE_POINTS } from '../src/skills/courseTextVector.js';
+  normalizeDenseVector, COURSE_TEXT_VECTOR_VERSION, COURSE_TEXT_SYLLABUS_VECTOR_VERSION,
+  COURSE_TEXT_MAX_CODE_POINTS } from '../src/skills/courseTextVector.js';
 import { loadCourseTextEmbeddingIndex, resetCourseTextEmbeddingCache } from '../src/services/courseTextEmbeddingService.js';
 
 const courses = [{ catalogCourseCode: 'A', name: '人工智慧', ragTag: ['人工智慧'], description: '機器學習方法' }];
@@ -34,6 +35,23 @@ test('CT2 長文字以 code point 限制，內容變更會使雜湊變更', () =
   assert.notEqual(long.contentHash, buildCourseTextDocuments(courses)[0].contentHash);
 });
 
+test('CT2a 歷年大綱取最新學期且同學期選擇最完整文字，舊版文件保持不變', () => {
+  const syllabi = [
+    { catalogCourseCode: 'A', academicYear: 113, semester: 2, syllabusText: '舊學期主題' },
+    { catalogCourseCode: 'A', academicYear: 114, semester: 1, syllabusText: '新版大綱' },
+    { catalogCourseCode: 'A', academicYear: 114, semester: 1, syllabusText: '新版大綱包含更多課程內容' },
+  ];
+  const legacy = buildCourseTextDocuments(courses)[0];
+  const legacyWithUnusedSource = buildCourseTextDocuments(courses, syllabi)[0];
+  assert.equal(legacyWithUnusedSource.contentHash, legacy.contentHash);
+
+  const current = buildCourseTextDocuments(courses, syllabi, { includeSyllabi: true })[0];
+  assert.equal(current.text.includes('新版大綱包含更多課程內容'), true);
+  assert.equal(current.text.includes('舊學期主題'), false);
+  assert.notEqual(current.contentHash, legacy.contentHash);
+  assert.equal(current.hasSyllabus, true);
+});
+
 test('CT3 正規化與餘弦相似度，零向量、NaN 與維度不一致不得進產物', () => {
   const v = normalizeDenseVector([3, 4], 2);
   assert.ok(Math.abs(denseCosine(v, v) - 1) < 1e-6);
@@ -52,6 +70,22 @@ test('CT4 舊目錄與格式不相容、重複課號會拒絕；課程內容過�
   assert.throws(() => buildCourseTextEmbeddingIndex(courses, { ...artifact, textVersion: 'old' }));
   assert.throws(() => buildCourseTextEmbeddingIndex(courses, { ...artifact, courses: [...artifact.courses, ...artifact.courses] }));
   assert.throws(() => buildCourseTextEmbeddingIndex(courses, { ...artifact, courses: [{ ...artifact.courses[0], vector: [0, 0] }] }));
+});
+
+test('CT4a v2 大綱向量需有 DB 大綱來源，並以相同來源驗證雜湊', () => {
+  const syllabi = [{ catalogCourseCode: 'A', academicYear: 114, semester: 2,
+    syllabusText: '自然語言處理與語言模型' }];
+  const documents = buildCourseTextDocuments(courses, syllabi, { includeSyllabi: true });
+  const artifact = {
+    schemaVersion: 1, textVersion: COURSE_TEXT_SYLLABUS_VECTOR_VERSION,
+    catalogVersion: interestTagCatalog.catalogVersion, embeddingModel: 'text-embedding-3-large',
+    dimension: 2, generatedAt: '2026-10-14T00:00:00Z',
+    courses: documents.map(doc => ({ courseCode: doc.courseCode, contentHash: doc.contentHash, vector: [3, 4] })),
+  };
+  assert.equal(buildCourseTextEmbeddingIndex(courses, artifact, syllabi).vectors.size, 1);
+  assert.throws(() => buildCourseTextEmbeddingIndex(courses, artifact, []), /教學大綱/);
+  assert.equal(buildCourseTextEmbeddingIndex(courses, artifact,
+    [{ ...syllabi[0], syllabusText: '內容已更新' }]).vectors.size, 0);
 });
 
 test('CT5 本機產物缺少、損壞及重新產生，讀取路徑均有明確結果', async () => {

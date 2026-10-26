@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
-import { profileAPI, historyFeedbackAPI } from '../services/api';
+import { profileAPI, historyFeedbackAPI, coursesAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import { Sparkles, CheckCircle2, Circle, Loader2, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react'; 
 import { getUserIdentity } from '../utils/userIdentity';
@@ -53,6 +53,10 @@ export default function SetupPage() {
   const [tagGroups, setTagGroups] = useState([]);
   const [preferredTrack, setPreferredTrack] = useState('');
   const [selectedInterests, setSelectedInterests] = useState(new Set());
+  // 修課路徑與主題選項（PR #27 拿掉後於 2026-10-26 依使用者要求恢復）。
+  const [interestOptions, setInterestOptions] = useState({ tracks: [], topics: [] });
+  const [interestOptionsLoading, setInterestOptionsLoading] = useState(false);
+  const [interestOptionsError, setInterestOptionsError] = useState(false);
   const [customInterests, setCustomInterests] = useState('');
   const [generating, setGenerating] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -106,6 +110,39 @@ export default function SetupPage() {
 
     return () => { cancelled = true; };
   }, [userIdentity]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setInterestOptionsLoading(true);
+
+    coursesAPI.getInterestOptions(department, gradeLevel, className)
+      .then(data => {
+        if (!cancelled) {
+          setInterestOptions({ tracks: data.tracks || [], topics: data.topics || [] });
+          setInterestOptionsError(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInterestOptions({ tracks: [], topics: [] });
+          setInterestOptionsError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setInterestOptionsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [department, gradeLevel, className]);
+
+  const toggleInterest = (interest) => {
+    setSelectedInterests(prev => {
+      const next = new Set(prev);
+      if (next.has(interest)) next.delete(interest);
+      else next.add(interest);
+      return next;
+    });
+  };
 
   const toggleTag = (tag) => {
     setSelectedTags(prev => {
@@ -167,12 +204,20 @@ export default function SetupPage() {
     }
   };
 
+  // 已設定過的使用者重新打開興趣卡面（PR #27 拿掉後於 2026-10-26 恢復）。
+  const reopenInterestExploration = () => {
+    if (userIdentity === null) return;
+    startInterestExploration(userIdentity);
+    navigate('/interest-exploration');
+  };
+
   return (
     <div className="setup-page" id="setup-page">
       <div className="setup-card animate-fadeInUp" style={{ position: 'relative', maxWidth: '850px', width: '100%' }}>
         
         <button 
-          onClick={() => navigate('/onboarding')}
+          // 已設定過的使用者從選單進來調整偏好，返回首頁；第一次的引導流程才返回同意頁。
+          onClick={() => navigate(isSetupDone() ? '/' : '/onboarding')}
           style={{
             position: 'absolute', top: '16px', left: '16px',
             background: 'none', border: 'none', cursor: 'pointer',
@@ -181,7 +226,7 @@ export default function SetupPage() {
           }}
           onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
           onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-          title="返回上一步"
+          title={isSetupDone() ? '返回首頁' : '返回上一步'}
         >
           <ArrowLeft size={22} />
         </button>
@@ -278,6 +323,66 @@ export default function SetupPage() {
                       選擇想深入的方向，系統會參考課程主題調整推薦排序；這是偏好，不會排除其他必修課。
                     </p>
 
+                    {interestOptions.tracks.length > 0 && (
+                      <div style={{ marginBottom: '14px' }}>
+                        <h5 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '8px' }}>
+                          主要修課路徑（單選）
+                        </h5>
+                        <div className="setup-pref-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {interestOptions.tracks.map(track => (
+                            <button
+                              type="button"
+                              key={track}
+                              className={`setup-tag ${preferredTrack === track ? 'selected' : ''}`}
+                              onClick={() => setPreferredTrack(prev => prev === track ? '' : track)}
+                              aria-pressed={preferredTrack === track}
+                              id={`interest-track-${track}`}
+                              style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px' }}
+                            >
+                              {track}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ marginBottom: '12px' }}>
+                      <h5 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '8px' }}>
+                        想接觸的課程主題（可複選）
+                      </h5>
+                      {interestOptionsLoading ? (
+                        <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>正在整理目前可選課程的主題…</p>
+                      ) : interestOptionsError ? (
+                        <p style={{ fontSize: '0.8rem', color: '#b45309' }}>暫時無法載入興趣選項，請稍後再試。</p>
+                      ) : interestOptions.topics.length > 0 ? (
+                        <div className="setup-pref-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {[...new Set([
+                            ...interestOptions.topics.map(topic => topic.name),
+                            ...selectedInterests,
+                          ])].map(topic => (
+                            <button
+                              type="button"
+                              key={topic}
+                              className={`setup-tag ${selectedInterests.has(topic) ? 'selected' : ''}`}
+                              onClick={() => toggleInterest(topic)}
+                              aria-pressed={selectedInterests.has(topic)}
+                              id={`interest-topic-${topic}`}
+                              title={interestOptions.topics.find(option => option.name === topic)?.courseCount
+                                ? `目前有 ${interestOptions.topics.find(option => option.name === topic).courseCount} 門候選課程`
+                                : undefined}
+                              style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px' }}
+                            >
+                              {topic}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                          {className ? '目前候選課程沒有可用的主題標籤。' : '選好班別後會顯示目前候選課程的主題。'}
+                        </p>
+                      )}
+                    </div>
+
                     <input
                       value={customInterests}
                       onChange={event => setCustomInterests(event.target.value)}
@@ -334,6 +439,17 @@ export default function SetupPage() {
               <Sparkles size={18} />
               {profileLoaded ? '完成並保存偏好設定 ✨' : '載入設定中...'}
             </button>
+
+            {profileLoaded && isSetupDone() && (
+              <button
+                type="button"
+                onClick={reopenInterestExploration}
+                id="setup-reopen-exploration"
+                style={{ padding: '7px 0', border: 'none', background: 'transparent', color: '#3b82f6', cursor: 'pointer', fontSize: '0.88rem' }}
+              >
+                重新探索課程主題
+              </button>
+            )}
           </div>
         )}
       </div>

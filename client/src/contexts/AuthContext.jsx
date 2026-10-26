@@ -104,17 +104,26 @@ export function AuthProvider({ children }) {
   const markSetupDone = () => {
     const identity = getUserIdentity(user);
     if (identity !== null) localStorage.setItem(userKey(identity, 'setupDone'), 'true');
+    // 伺服器下次回傳 /auth/me 前，先同步本地的 setupComplete，避免剛存完設定又被導回引導流程。
+    if (user && user.setupComplete !== true) {
+      const next = { ...user, setupComplete: true };
+      setUser(next);
+      localStorage.setItem('fcu_user', JSON.stringify(next));
+    }
   };
 
   const isOnboarded = () => {
     const identity = getUserIdentity(user);
     return identity !== null && localStorage.getItem(userKey(identity, 'onboarded')) === 'true';
   };
-  const isSetupDone = () => Boolean(
-    canBypassSetupForE2E(user)
-    || (getUserIdentity(user) !== null
-      && localStorage.getItem(userKey(getUserIdentity(user), 'setupDone')) === 'true')
-  );
+  // 以伺服器的 `setupComplete`（Profile 已有系所與年級）為準：登出、換裝置後仍算設定過。
+  // 伺服器沒有回傳這個欄位時（例如未接 MySQL），才退回瀏覽器裡的 `setupDone` 標記。
+  const isSetupDone = () => {
+    if (canBypassSetupForE2E(user)) return true;
+    if (typeof user?.setupComplete === 'boolean') return user.setupComplete;
+    const identity = getUserIdentity(user);
+    return identity !== null && localStorage.getItem(userKey(identity, 'setupDone')) === 'true';
+  };
 
   return (
     <AuthContext.Provider value={{

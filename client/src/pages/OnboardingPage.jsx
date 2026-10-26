@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { privacyAPI } from '../services/api';
 import { consentChoicesFromStatus, consentChoicesToPayload } from '../services/privacyConsentAdapter';
+import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import { ShieldCheck, Loader2, ArrowLeft } from 'lucide-react'; // 新增 ArrowLeft
 
 export default function OnboardingPage() {
@@ -210,7 +211,9 @@ export default function OnboardingPage() {
 
             {personalization && (
               <div style={{ padding: '14px 18px', borderRadius: '12px', background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: '0.85rem', color: '#1e40af', textAlign: 'left' }}>
-                <strong>目前個人化來源：</strong> {personalization.label || '未啟用個人化學習'}
+                <strong>目前個人化來源：</strong>
+                {/* API 沒有 label 欄位；與首頁、隱私頁共用同一個元件，依 source／sufficiency 顯示正確文字。 */}
+                <PreferenceSourceBadge variant="compact" personalization={personalization} />
               </div>
             )}
 

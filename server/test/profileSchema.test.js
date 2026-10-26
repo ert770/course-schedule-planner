@@ -4,6 +4,7 @@ import {
   PROFILE_SCHEMA_VERSION,
   normalizeProfile,
   validateProfile,
+  isProfileSetupComplete,
 } from '../src/data/profileSchema.js';
 import {
   mergeSemesterPlanningPreferences,
@@ -98,5 +99,20 @@ describe('P3-B v0 欄位名不再被靜默接受（相容層已退役）', () =>
     const module = await import('../src/data/profileSchema.js');
     assert.equal(module.migrateProfileV0ToV1, undefined);
     assert.equal(module.default.migrateProfileV0ToV1, undefined);
+  });
+});
+
+describe('P3-C 是否已完成初次設定（2026-10-16）', () => {
+  test('系所與年級都有值才算設定完成；班級不是條件', () => {
+    assert.equal(isProfileSetupComplete({ department: '資訊工程學系', gradeLevel: 4, className: '資訊四合' }), true);
+    assert.equal(isProfileSetupComplete({ department: '資訊工程學系', gradeLevel: 1, className: null }), true);
+  });
+
+  test('沒有 Profile 列的新使用者（normalize 後系所與年級為 null）不算設定完成', () => {
+    assert.equal(isProfileSetupComplete(normalizeProfile({ userId: 'D9999999' })), false);
+    assert.equal(isProfileSetupComplete({ department: '資訊工程學系', gradeLevel: null }), false);
+    assert.equal(isProfileSetupComplete({ department: null, gradeLevel: 3 }), false);
+    assert.equal(isProfileSetupComplete({ department: '資訊工程學系', gradeLevel: 0 }), false);
+    assert.equal(isProfileSetupComplete(null), false);
   });
 });

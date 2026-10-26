@@ -964,7 +964,48 @@ idempotency 的唯一範圍是 `(userId, idempotencyKey)`：不存在時可 appe
 conflict，不靜默覆寫。`resolveIdempotentAppend()` 目前只對傳入陣列執行這項純邏輯，
 不會自行寫入任何 runtime store。
 
-## 課程文字向量本機產物（2026-10-14，階段 4 原型）
+## `Course_Syllabi` 歷年教學大綱（2026-10-15）
+
+歷年 JSON 大綱存在同一個 MySQL 的獨立 `Course_Syllabi` 表，不寫入 `Course_Sections`。
+`Course_Sections` 每一列都是排課候選；把舊學期班次插入該表會讓歷史班次進入目前候選，
+因此大綱保存與排課班次分離。
+
+**這張表由組員依《112-114學年度教學大綱資料匯入規格》建立並匯入（2026-10-15 23:06 建表）。**
+本專案程式**只讀取**它，不提供建表或匯入工具；本專案先前另寫的 migration 010 與匯入腳本
+欄位定義不同，已不使用，避免與現有表衝突。
+
+匯入採新增歷史資料，不覆蓋 `Courses` 或 `Course_Sections` 的現有欄位。課名、學分、必選修、教師、時間與教室不重複保存；`course_code`、學年／學期與 `selection_code` 只用於課程及歷史班次關聯。
+
+| Column | 型別 | 用途 |
+| --- | --- | --- |
+| `source_key` | `CHAR(64)`，主鍵 | 來源識別的 SHA-256；冪等 upsert 鍵 |
+| `academic_year`、`semester` | `SMALLINT`、`TINYINT` | 民國學年；1 上學期、2 下學期 |
+| `course_code` | `VARCHAR(45)`，可為 NULL | 來源 `info.sub_id3`，邏輯對應 `Courses.subid3`；缺值時為 NULL |
+| `selection_code` | `VARCHAR(4)`，可為 NULL | 歷史選課代碼（保留前導 0），不覆蓋現行選課代碼 |
+| `syllabus_content` | `JSON`，可為 NULL | 只存白名單內容：課程簡介與補充說明、評分明細／敘述、教學目標、每週進度與閱讀、教材、參考書、使用工具、核心能力等；不存教師聯絡、時間、教室、學術誠信或 SDGs 欄位 |
+| `syllabus_text` | `LONGTEXT`，可為 NULL | 由白名單主題內容整理的文字；不含評分與作業規定 |
+| `source_file` | `TEXT` | 相對來源檔名，供追溯 |
+| `content_hash` | `CHAR(64)` | 白名單內容正規化後的 SHA-256 |
+
+索引：`(course_code, academic_year, semester)`、`(academic_year, semester, selection_code)`。
+
+實際筆數（唯讀查詢，2026-10-16）：
+
+| 學期 | 筆數 | 缺課號 | 沒有主題正文 |
+| --- | ---: | ---: | ---: |
+| 113-1 | 4,537 | 48 | 853 |
+| 113-2 | 4,414 | 49 | 890 |
+| 114-1 | 3,979 | 1 | 345 |
+| 114-2 | 3,560 | 0 | 11 |
+| 合計 | 16,490 | 98 | 2,099 |
+
+112 學年度尚未匯入。113-1 的 4,537 筆與來源 `113-1教學大綱.zip` 的 JSON 數完全相同；本專案先前盤點的 4,408 份
+來自未解壓完整的資料夾（缺 zip 依檔名排序最後的 129 個檔案），不是資料庫多出重複資料。
+
+文字向量服務只讀 `course_code`、`academic_year`、`semester`、`syllabus_text`、`source_key`：
+每個穩定課號取最新且有內容的學期，再從該學期同課號班次挑最長的大綱文字。
+
+## 課程文字向量本機產物（2026-10-14，階段 4 原型；大綱來源為選配 v2）
 
 本階段沒有建立 `Course_Text_Embeddings` MySQL 表。衍生資料預設放在
 `server/simulation-runs/course-text-embeddings/index.json`（已由 `.gitignore` 排除），
@@ -980,8 +1021,11 @@ conflict，不靜默覆寫。`resolveIdempotentAppend()` 目前只對傳入陣�
 | `generatedAt`、`actualTokens` | 本次產生時間、此次執行的 API 實際 token 用量（快取重跑為 0） |
 | `courses[]` | `{courseCode,contentHash,vector}`，每個穩定課號一筆；不含使用者資料 |
 
-文字來源為 MySQL 公開課程的課名、canonical 標籤名稱及簡介；同課號取最長的非空名稱與簡介、
-標籤取去重聯集並排序，同長文字用字串排序解決平手。文字上限 1,800 code points，超長時記錄截斷數。
+`course-text-vector-v1` 的文字來源為 MySQL 公開課程的課名、canonical 標籤名稱及簡介；
+同課號取最長的非空名稱與簡介、標籤取去重聯集並排序，同長文字用字串排序解決平手。
+選配的 `course-text-vector-v2` 另加入上述最新學期大綱文字。向量產生工具以
+`--include-syllabi` 選擇 v2；執行時只在本機已有 v2 index 時讀取 `Course_Syllabi`，
+既有 v1 index 不受大綱資料表缺席或未匯入影響。兩版本文字上限皆為 1,800 code points，超長時記錄截斷數。
 `contentHash=SHA256(textVersion + 換行 + 實際送出的文字)`，讓內容變動後能逐門判斷舊向量失效。
 相同課號不以班次數增加權重。向量值只接受有限數值、正範數與一致維度；讀取時 L2 正規化。
 
@@ -993,7 +1037,11 @@ cache 與 index 都先寫暫存檔再 rename；中斷可由已完成的 batch �
 cd server
 node scripts/courseTextEmbeddingStage4.js          # SELECT 盤點，不呼叫 API
 node scripts/courseTextEmbeddingStage4.js --apply  # 已取得公開課程傳送授權後才執行
+node scripts/courseTextEmbeddingStage4.js --include-syllabi          # dry-run 大綱版輸入
+node scripts/courseTextEmbeddingStage4.js --apply --include-syllabi   # 需另行確認大綱文字 API 授權
 ```
+
+v2 向量尚未產生：需在另行確認大綱文字的 API 傳送與費用後執行 `--apply --include-syllabi`。探索流程仍使用現有 v1 本機產物。
 
 本次實際產物：標籤目錄 v3、`text-embedding-3-large`、3,072 維、2,004 門課；3,560 班次合併。
 2,004 門都有簡介，0 門截斷；首次建立實際消耗 658,197 tokens，固定字串排序後補算 1 門消耗 337 tokens，

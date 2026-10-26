@@ -1,5 +1,6 @@
 import { formatCourseTime } from '../../utils/courseTime';
 import { formatCourseGradeLevel } from '../../utils/courseGradeLevel';
+import { formatCoursePrerequisites } from '../../utils/coursePrerequisites';
 
 const SELECTION_LABELS = {
   REQUIRED_COURSE: '這是你的必修課',

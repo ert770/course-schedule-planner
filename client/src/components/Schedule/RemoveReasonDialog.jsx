@@ -43,10 +43,12 @@ if (!course) return null;
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
-            {[...REMOVAL_REASONS, { value: '', label: '不提供原因' }].map(option => {
+            {/* 不提供「不提供原因」選項，開啟時也不預設任何原因（2026-10-26 使用者要求）：
+                原因是選填，沒選就直接確認；已選的原因再點一次可以取消。 */}
+            {REMOVAL_REASONS.map(option => {
               const isSelected = selectedReason === option.value;
               return (
-                <label key={option.value || 'no-reason'} style={{
+                <label key={option.value} style={{
                   display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px',
                   borderRadius: '8px', border: '1px solid ' + (isSelected ? '#3b82f6' : '#e2e8f0'),
                   backgroundColor: isSelected ? '#eff6ff' : '#f8fafc', cursor: 'pointer', transition: 'all 0.2s'
@@ -57,6 +59,7 @@ if (!course) return null;
                     value={option.value}
                     checked={isSelected}
                     onChange={() => setSelectedReason(option.value)}
+                    onClick={() => { if (isSelected) setSelectedReason(''); }}
                     style={{ width: '15px', height: '15px', accentColor: '#3b82f6', cursor: 'pointer' }}
                   />
                   <span style={{ fontSize: '0.85rem', fontWeight: isSelected ? '600' : '400', color: isSelected ? '#1e40af' : '#334155', lineHeight: '1.2' }}>
