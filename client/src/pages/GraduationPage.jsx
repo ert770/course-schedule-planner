@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/useAuth';
-import { graduationAPI, scheduleAPI } from '../services/api';
+import { graduationAPI } from '../services/api';
 import { getUserIdentity } from '../utils/userIdentity';
-import { X, Plus, Trash2, Search, AlertTriangle, Lightbulb, Calendar, LayoutDashboard, Settings, Moon, Sun, Compass, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Search, AlertTriangle, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
 
 import TopNav from '../components/Layout/TopNav';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
@@ -148,7 +148,9 @@ export default function GraduationPage() {
     let existingCourses = [];
     try {
       existingCourses = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    } catch {}
+    } catch {
+      // 略過儲存讀取錯誤
+    }
 
     const isAlreadyAdded = addedCourseIds.has(courseId) || existingCourses.some(c => c.id === courseId || c.code === courseId);
 
@@ -185,7 +187,7 @@ export default function GraduationPage() {
     loadGraduationData();
   };
 
-  // 處理點擊「查看詳情」（傳遞完整的 time 與 schedule 確保 Modal 不會顯示時間未定）
+  // 處理點擊「查看詳情」
   const handleViewDetail = (itemObj) => {
     const matched = getMatchedCourse(itemObj);
     setSelectedCourse({
@@ -350,7 +352,7 @@ export default function GraduationPage() {
       {/* Main content - 雙欄儀表板佈局 */}
       <div className="graduation-content" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '24px', padding: '24px 32px', maxWidth: '1600px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
         
-        {/* Left Column: Credit overview & Gaps & Watchlist (獨立滾動軸，左欄展開不影響右欄或自由選修) */}
+        {/* Left Column: Credit overview & Gaps & Watchlist */}
         <div 
           className="graduation-left" 
           style={{ 
@@ -398,7 +400,7 @@ export default function GraduationPage() {
                 </div>
               </div>
 
-              {/* Gap cards grid - 左右雙欄獨立排列，確保點擊右欄選單不影響左欄自由選修位置 */}
+              {/* Gap cards grid - 左右雙欄獨立排列 */}
               <div className="grad-gaps-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'flex-start' }}>
                 {/* 左欄：本系必修、外系選修、自由選修 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -509,7 +511,6 @@ export default function GraduationPage() {
                 (data?.recommendations || []).map((rec, i) => {
                   const matched = getMatchedCourse(rec);
                   const courseId = matched.id || matched.code || matched.sectionId;
-                  const courseName = matched.name || matched.courseName || rec.gapLabel || '推薦課程';
                   const isAdded = courseId ? addedCourseIds.has(courseId) : false;
 
                   return (
