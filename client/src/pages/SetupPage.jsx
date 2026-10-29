@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
-import { profileAPI, historyFeedbackAPI, coursesAPI } from '../services/api';
+import { profileAPI, historyFeedbackAPI, coursesAPI, scheduleAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import { Sparkles, CheckCircle2, Circle, Loader2, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react'; 
 import { getUserIdentity } from '../utils/userIdentity';
@@ -12,7 +12,6 @@ import {
 
 export default function SetupPage() {
   const navigate = useNavigate();
-  // 【修正點】：將原本尾端的 , logout 移除了，解決 ESLint unused-vars 錯誤
   const { user, markSetupDone, isSetupDone, privacyStatus } = useAuth();
   // 階段 5：「我修過的課」——隨時修改對歷史修課的喜好。
   const [historyFeedback, setHistoryFeedback] = useState(null);
@@ -183,7 +182,19 @@ export default function SetupPage() {
             .filter(Boolean),
         ])],
       };
+      
+      // 1. 儲存個人偏好設定
       await profileAPI.update(prefData);
+
+      // 2. 【新增】：儲存偏好後立刻觸發排課生成 API，確保首頁課表即時套用最新條件（例如星期一排空等）
+      try {
+        await scheduleAPI.generate({
+          tags: [...selectedTags],
+        });
+      } catch (genErr) {
+        console.warn('自動生成課表失敗，但偏好已儲存：', genErr);
+      }
+
       markSetupDone();
       if (!wasSetupDone) {
         const exploration = getInterestExplorationState(userIdentity);
@@ -236,8 +247,8 @@ export default function SetupPage() {
             <div className="setup-generating-spinner">
               <Loader2 size={48} className="spin-animation" />
             </div>
-            <h2>正在保存你的偏好設定…</h2>
-            <p>保存完成後，會接著進入初始課程主題探索</p>
+            <h2>正在保存你的偏好設定並生成課表…</h2>
+            <p>保存完成後，將自動套用您的排課偏好</p>
           </div>
         ) : (
           <div className="setup-content" style={{ display: 'flex', flexDirection: 'column', gap: '20px', paddingTop: '20px' }}>
@@ -276,7 +287,7 @@ export default function SetupPage() {
               <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)' }}>設定流程進度：</span>
               <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10b981', fontSize: '0.85rem' }}>
-                  <CheckCircle2 size={16} /> <span>1. 登入成功</span>
+                  <CheckCircle2 size={16} /> <span>登入成功</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#3b82f6', fontSize: '0.85rem', fontWeight: '600' }}>
                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#3b82f6' }} /> <span>2. 偏好設定</span>

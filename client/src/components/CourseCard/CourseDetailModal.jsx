@@ -194,7 +194,10 @@ export default function CourseDetailModal({ course, onClose, onRemove, showTime 
         {onRemove && (
           <button
             className="action-btn secondary modal-remove-course"
-            onClick={() => onRemove(course)}
+            onClick={() => {
+              onClose(); // 同步關閉詳細資訊視窗，讓退選原因對話框彈出流暢無卡頓
+              onRemove(course);
+            }}
           >
             從課表移除
           </button>
