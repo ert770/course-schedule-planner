@@ -115,7 +115,7 @@ export async function getInterestTopicGroups(filters, deps = {}) {
     scope,
     courses,
     grouped,
-    topicGroups: buildInterestTopicGroups(grouped),
+    topicGroups: buildInterestTopicGroups(grouped, { department: scope.department }),
     scopeReady: ready,
     candidateCourseCount: courses.length,
     groupCourseCounts: {

@@ -14,6 +14,7 @@ import {
   DIRECT_SUBCATEGORIES,
   EXCLUDED_MAIN_CATEGORY_NAMES,
   FOLLOWUP_CANDIDATE_LIMIT,
+  HIDDEN_SUBCATEGORIES,
   INTEREST_MENU_GROUPS,
   MENU_OPTION_LIMIT,
 } from './interestMenuConfig.js';
@@ -127,10 +128,15 @@ export function getInterestCategoryCandidates(courses, level, categoryId, {
 // 同一組「池內可選標籤集合」完全相同的子類別併成一個選項。標籤集合相同代表命中的課程也相同，
 // 留著只會讓學生看到好幾個內容一樣的選項。
 //
-// 名稱一律用目錄原名，不另做顯示名稱對照（使用者 2026-11-20 決定不做）。代表者的選法：白名單優先，
-// 其次是名稱較長的（較長的名稱通常較具體，例如「資料與資訊系統」比「AI」「程式」更貼近內容），
-// 最後以 ID 排序讓結果可重現。
-function mergeIdenticalCategories(categories) {
+// **併在一起的選項用內容命名**（使用者 2026-11-20 決定）：「大類別：最常出現的 3 個標籤」，由資料產生，
+// 不是人工對照表。原因是目錄的子類別這一層在很多大類別裡沒有區分度——「視覺藝術」「媒體」「建築與空間
+// 美學」三個子類別的標籤清單完全相同（各 274 個），全目錄有 38.4% 的標籤在同一個大類別底下被分到 3 個以上
+// 子類別。併在一起之後根本沒有「正確的目錄名稱」可選；挑名稱最長的曾讓 10 門系統設計、數位媒體、網站設計的課
+// 顯示成「建築與空間美學」。沒有被併過、或在 `direct` 白名單內的選項仍用目錄原名。
+//
+// 代表者（決定 ID）的選法與名稱無關，只求可重現：白名單優先，其次名稱較長，最後以 ID 排序。
+function mergeIdenticalCategories(categories, department) {
+  const hiddenKeys = new Set(HIDDEN_SUBCATEGORIES[department] ?? []);
   const bySignature = new Map();
   for (const category of categories) {
     const signature = [...category.tags.keys()].sort().join('|');
@@ -148,13 +154,27 @@ function mergeIdenticalCategories(categories) {
     return {
       ...representative,
       aliasIds: aliases.map(member => member.id),
+      merged: aliases.length > 0,
+      memberNames: ranked.map(member => member.name),
+      mainCategories: [...new Set(ranked.map(member => member.mainCategory))],
       isDirectListed: ranked.some(member => directKeys.has(categoryKey(member))),
+      // 只有整組成員都在隱藏清單內才隱藏（見 `interestMenuConfig.js`）。
+      isHidden: hiddenKeys.size > 0 && ranked.every(member => hiddenKeys.has(categoryKey(member))),
     };
-  });
+  }).filter(category => !category.isHidden);
+}
+
+// 「大類別：最常出現的 3 個標籤」。標籤依課程數排序（同數量依名稱），超過 3 個加「 等」。
+const NAME_TAG_COUNT = 3;
+function contentName(mainCategories, tags) {
+  const shown = tags.slice(0, NAME_TAG_COUNT).map(tag => tag.name).join('、');
+  return `${mainCategories.join('、')}：${shown}${tags.length > NAME_TAG_COUNT ? ' 等' : ''}`;
 }
 
 function toOption(category, { group, level }) {
   const tags = describeTags(category);
+  // 併過的選項沒有可靠的目錄名稱，改用內容命名；白名單內的選項（資訊安全與隱私）用目錄原名。
+  const byContent = category.merged === true && category.isDirectListed !== true;
   const direct = group.key === 'department'
     && category.isDirectListed === true
     && tags.length >= 1
@@ -162,9 +182,13 @@ function toOption(category, { group, level }) {
 
   return {
     id: category.id,
-    name: category.name,
+    name: byContent ? contentName(category.mainCategories, tags) : category.name,
+    nameSource: byContent ? 'content' : 'catalog',
+    ...(category.merged ? { catalogNames: category.memberNames } : {}),
     level,
     mainCategory: category.mainCategory,
+    // 併在一起的選項可能同時屬於好幾個大類別（標籤清單相同、卻掛在不同大類別的子類別底下）。
+    mainCategories: category.mainCategories ?? [category.mainCategory],
     mode: direct ? 'direct' : 'followup',
     courseCount: category.courses.size,
     tagCount: tags.length,
@@ -177,14 +201,17 @@ function toOption(category, { group, level }) {
 
 /**
  * @param groupedCourses `{ department, generalEducation, outside }`，各是課程陣列。
+ * @param options.department 學生的系所全名，決定本系選單套用哪一份隱藏清單。
  * @returns Array<{ key, label, level, options }>；沒有任何選項的組不回傳。
  */
-export function buildInterestTopicGroups(groupedCourses = {}, { limit = MENU_OPTION_LIMIT } = {}) {
+export function buildInterestTopicGroups(groupedCourses = {}, {
+  department = null, limit = MENU_OPTION_LIMIT,
+} = {}) {
   const groups = [];
   for (const group of INTEREST_MENU_GROUPS) {
     const categories = aggregateInterestCategories(groupedCourses[group.key] ?? [], group.level);
     const merged = group.level === 'sub'
-      ? mergeIdenticalCategories(categories)
+      ? mergeIdenticalCategories(categories, department)
       : categories;
 
     const options = merged
