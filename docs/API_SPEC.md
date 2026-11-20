@@ -1543,6 +1543,24 @@ Profile 另接受 `remainingSemesters`（1～8 的整數或 `null`）：
 排課結果在 `true`／`false` 下完全相同。真正讓它生效（回 `user-opted-out`）並補上前端
 介面是 3B 的範圍——提前生效會讓 3A 不再是「不改變正式推薦結果」的 shadow 階段。
 
+Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」的選擇結果，2026-11-20 起；
+目前只有資料層與驗證，設定頁與追問流程尚未接上）：
+
+```json
+{
+  "interestSelections": [
+    { "group": "outside", "categoryId": "main_…", "level": "main", "mode": "followup", "tagIds": ["tag_…"] }
+  ]
+}
+```
+
+每一筆以 `(group, categoryId)` 為鍵，`group` 只接受 `department`、`generalEducation`、`outside`；
+`categoryId` 必須是非空字串；`tagIds` 省略或空陣列代表只選了類別、尚未追問；最多 48 筆。
+不是陣列、項目不是物件、未知 `group`、空的 `categoryId`、非字串的 `tagIds` 一律回 `400`。
+送空陣列代表清空所有選擇。它保存在 `preferences_json.values.interestSelections`，更新時不會
+洗掉 `interests` 與其他鍵。**這一步只驗形狀**：類別與標籤是否存在於目錄、標籤是否屬於所選組別，
+由後續的保存驗證處理。
+
 `department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
 
 ```json

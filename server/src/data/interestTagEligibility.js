@@ -6,6 +6,22 @@ import {
 } from './interestTagVocabulary.js';
 import { resolveInterestTags, interestTagCatalog } from './interestTagCatalog.js';
 
+/**
+ * 這個標籤能不能出現在「課程主題」選單、追問與先驗裡。
+ *
+ * 必須**同時**可學習（`interestLearningEligible`，排除 too_common、explicit_generic）與可跨課
+ * 配對（`crossCourseMatchEligible`，排除只出現在單一課程的標籤）。排課時
+ * `scoreCourseTagInterest()` 只計可跨課配對的標籤，所以只可學習、不可跨課的標籤即使存進先驗，
+ * 也不會改變任何別的課的分數：選單若放出這種標籤，就會出現「選得進去、排課不採用」。
+ * 選單、追問題目、保存驗證與先驗建構四處必須共用這一個判定，不能各寫一份。
+ *
+ * 接受標準目錄的標籤（`tag.eligibility`）與 `resolveInterestTags()` 解析後的標籤。
+ */
+export function isSelectableInterestTag(tag) {
+  return tag?.eligibility?.interestLearningEligible === true
+    && tag?.eligibility?.crossCourseMatchEligible === true;
+}
+
 function stableCourseKey(course) {
   for (const value of [
     course?.catalogCourseCode,
@@ -175,4 +191,4 @@ export function buildInterestTagEligibility(courses = [], options = {}) {
   };
 }
 
-export default { buildInterestTagEligibility };
+export default { buildInterestTagEligibility, isSelectableInterestTag };

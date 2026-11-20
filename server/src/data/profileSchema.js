@@ -115,6 +115,7 @@ export function validateProfile(profile) {
   }
   if (!Array.isArray(profile.interests)) errors.push('interests 必須是陣列');
   if (!Array.isArray(profile.preferredKeywords)) errors.push('preferredKeywords 必須是陣列');
+  if (!Array.isArray(profile.interestSelections)) errors.push('interestSelections 必須是陣列');
   if (!profile.preferencesJson || typeof profile.preferencesJson !== 'object' || Array.isArray(profile.preferencesJson)) {
     errors.push('preferencesJson 必須是物件');
   }

@@ -116,3 +116,29 @@ describe('P3-C 是否已完成初次設定（2026-10-16）', () => {
     assert.equal(isProfileSetupComplete(null), false);
   });
 });
+
+describe('Step A：interestSelections 進入 Profile 的 canonical shape', () => {
+  const selection = { group: 'outside', categoryId: 'main_x', level: 'main', mode: 'followup', tagIds: ['tag_1'] };
+
+  test('IP1 沒有選擇結果的 Profile 得到空陣列，且通過驗證', () => {
+    const profile = normalizeProfile({ userId: 'D1' });
+    assert.deepEqual(profile.interestSelections, []);
+    assert.equal(validateProfile(profile).valid, true);
+  });
+
+  test('IP2 preferences_json 內的選擇結果會攤到頂層，並可重複正規化', () => {
+    const profile = normalizeProfile({
+      userId: 'D1',
+      preferencesJson: { schemaVersion: 1, values: { interestSelections: [selection] } },
+    });
+    assert.deepEqual(profile.interestSelections, [selection]);
+    assert.deepEqual(normalizeProfile(profile).interestSelections, [selection]);
+  });
+
+  test('IP3 繞過 normalize 自己組出的 Profile，interestSelections 不是陣列會被驗證擋下', () => {
+    const profile = { ...normalizeProfile({ userId: 'D1' }), interestSelections: 'x' };
+    const result = validateProfile(profile);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(error => /interestSelections 必須是陣列/u.test(error)));
+  });
+});

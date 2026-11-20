@@ -118,6 +118,7 @@ export function hasExplicitPreferences(prefs = {}) {
   const nonEmpty = value => Array.isArray(value) && value.length > 0;
   return nonEmpty(prefs?.preferenceTags) || nonEmpty(prefs?.interests)
     || nonEmpty(prefs?.preferredKeywords) || nonEmpty(prefs?.blockedPeriods)
+    || nonEmpty(prefs?.interestSelections)
     || Boolean(prefs?.preferredTrack);
 }
 

@@ -371,7 +371,7 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 | --- | --- | --- |
 | `must_take_courses` | JSON NULL | `profile.mustTakeCourses`；Profile API 已接讀寫 |
 | `avoid_instructors` | JSON NULL | `profile.avoidInstructors`；持久化並接入排課限制 |
-| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。**Roadmap #23** 另加 `values.remainingSemesters`（1～8 的整數）：使用者明確設定的剩餘學期數；缺少時依年級與 active term 推算。各欄位只接受正式型別，更新時各自只動自己的鍵，互不覆蓋。**3A 的開關只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
+| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。**Roadmap #23** 另加 `values.remainingSemesters`（1～8 的整數）：使用者明確設定的剩餘學期數；缺少時依年級與 active term 推算。各欄位只接受正式型別，更新時各自只動自己的鍵，互不覆蓋。**課程主題選擇（2026-11-20）** 另加 `values.interestSelections`：陣列，每筆 `{ group, categoryId, level, mode, tagIds }`，`group` 為 `department`／`generalEducation`／`outside`，以 `(group, categoryId)` 為鍵（同名分類在不同組別各自保存，取消一組不影響另一組）；`tagIds` 是使用者確認的標準標籤 ID，之後會合併去重成標籤興趣的先驗。形狀由 `interestPreferences.js` 正規化，是否存在於目錄與是否屬於所選組別由後續的保存驗證處理**3A 的開關只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
 | `password_hash` | varchar(255) NULL | 刻意不搬 `users.json.password` 明碼；雜湊方案另案處理 |
 | `watchlist` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
 | `skill_tree` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
