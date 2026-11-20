@@ -231,13 +231,16 @@ export function buildExplicitTagInterest(prefs = {}) {
       : `sub:${category.subcategoryId}`;
     if (!categories.has(key)) categories.set(key, category);
   }
-  for (const { tag } of selected.tags) {
+  for (const { tag, scoringExempt } of selected.tags) {
     if (tagPriors.has(tag.id)) continue;
     tagPriors.set(tag.id, {
       canonicalTagId: tag.id, canonicalName: tag.name, prior: 1,
       categoryPaths: categoryPathsFor(tag),
       crossCourseMatchEligible: tag.eligibility?.crossCourseMatchEligible === true,
       source: 'selection',
+      // 策畫選項明確選的 too_common 標籤（例如「人工智慧」）：目錄不讓它跨課配對，但使用者親手選了，
+      // 排課計分時對這位使用者例外採用（ADR-026）。行為學習仍然不學它。
+      ...(scoringExempt ? { selectionScoringExempt: true } : {}),
     });
   }
 
@@ -514,6 +517,7 @@ export function computeTagInterestProfile(events = [], prefs = {}, options = {})
       lastEventAt: tag.lastEventAt,
       sources: [...tag.sources].sort(),
       hasEvidence: tag.positiveEvidence + tag.negativeEvidence > 0,
+      ...(prior?.selectionScoringExempt === true ? { selectionScoringExempt: true } : {}),
     };
   }).sort((left, right) => left.canonicalTagId.localeCompare(right.canonicalTagId));
 
@@ -541,10 +545,18 @@ export function computeTagInterestProfile(events = [], prefs = {}, options = {})
   };
 }
 
-/** Score a new course from cross-course eligible canonical tags only. */
+/**
+ * Score a new course from cross-course eligible canonical tags only.
+ *
+ * 例外（ADR-026）：這位使用者從策畫選項明確選的 too_common 標籤（profile 的 tagInterests 帶
+ * `selectionScoringExempt`）也算進來。只影響有這個先驗的使用者；沒選的人分數完全不變。
+ */
 export function scoreCourseTagInterest(profile, rawTags) {
+  const interests = new Map((profile?.tagInterests ?? [])
+    .map(tag => [tag.canonicalTagId, tag]));
   const resolved = resolveInterestTags(rawTags).tags
-    .filter(tag => tag.eligibility?.crossCourseMatchEligible === true);
+    .filter(tag => tag.eligibility?.crossCourseMatchEligible === true
+      || interests.get(tag.canonicalTagId)?.selectionScoringExempt === true);
   if (resolved.length === 0) {
     return {
       score: null,
@@ -555,8 +567,6 @@ export function scoreCourseTagInterest(profile, rawTags) {
     };
   }
 
-  const interests = new Map((profile?.tagInterests ?? [])
-    .map(tag => [tag.canonicalTagId, tag]));
   const matchedTags = resolved.map(tag => {
     const interest = interests.get(tag.canonicalTagId);
     return {

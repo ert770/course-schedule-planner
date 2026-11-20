@@ -124,30 +124,42 @@ router.get('/instructors', async (req, res) => {
 // `topicGroups` 是分組選單（本系／通識／系外），範圍與 S_tag 實際作用的畢業分類桶一致，
 // 見 `services/interestMenuService.js`。舊的平面清單 `topics`／`topicCourseCount` 已於 2026-11-20
 // 設定頁改讀 `topicGroups` 時移除。
-router.get('/interest-options', async (req, res) => {
-  try {
-    const { department, gradeLevel, className } = req.query;
-    const gradeNumber = Number(gradeLevel);
-    if (typeof department !== 'string' || !department.trim() || !Number.isInteger(gradeNumber)) {
-      return res.status(400).json({ error: 'department 與 gradeLevel 為必填' });
-    }
+/**
+ * `GET /interest-options` 的處理邏輯，抽出來讓測試可以注入假的候選池（`deps.getMenu`），不必連資料庫。
+ * @returns `{ status, body }`
+ */
+export async function buildInterestOptionsResponse(query = {}, { getMenu = getInterestTopicGroups } = {}) {
+  const { department, gradeLevel, className } = query;
+  const gradeNumber = Number(gradeLevel);
+  if (typeof department !== 'string' || !department.trim() || !Number.isInteger(gradeNumber)) {
+    return { status: 400, body: { error: 'department 與 gradeLevel 為必填' } };
+  }
 
-    let menu = null;
-    if (typeof className === 'string' && className.trim()) {
-      menu = await getInterestTopicGroups({
-        department: department.trim(),
-        gradeLevel: gradeNumber,
-        className: className.trim(),
-      });
-    }
+  let menu = null;
+  if (typeof className === 'string' && className.trim()) {
+    menu = await getMenu({
+      department: department.trim(),
+      gradeLevel: gradeNumber,
+      className: className.trim(),
+    });
+  }
 
-    res.json({
+  return {
+    status: 200,
+    body: {
       // 三條路徑是資工系正式課程地圖，其他系所不顯示成自己的官方分類。
       tracks: department.trim() === '資訊工程學系' ? [...CS_TRACKS] : [],
       topicGroups: menu?.topicGroups ?? [],
       scopeReady: Boolean(menu?.scopeReady),
       candidateCourseCount: menu?.candidateCourseCount ?? 0,
-    });
+    },
+  };
+}
+
+router.get('/interest-options', async (req, res) => {
+  try {
+    const { status, body } = await buildInterestOptionsResponse(req.query);
+    res.status(status).json(body);
   } catch (err) {
     if (!err.status) console.error('Interest options error:', err);
     res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });

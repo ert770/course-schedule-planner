@@ -1004,3 +1004,35 @@ Consequences:
 - The 其他 bucket is not scored; scoring it needs graduation-credit rules and is a separate task.
 - Incidental tags can still appear in follow-up options; representative courses are shown so the student can judge.
 - If the privacy text is later revised to name this purpose, the `fixed` switch can stay as an operator escape hatch.
+
+## ADR-026: Explicitly Selected too_common Tags Are Scored, Via a Curated "人工智慧" Option
+
+Date: 2026-11-20
+
+Context:
+
+CS students often want the department's AI courses, but the setup-page topic menu could not express that:
+
+- The catalog subcategory "AI" shares an identical 137-tag list with "程式" and "資料與資訊系統", so it is merged into the content-named option "資訊與計算：資訊科技、軟體開發、資訊安全 等" and never appears as "AI".
+- 人工智慧 (99 courses, 4.9% of all courses), 機器學習 (3.1%) and Python (4.0%) exceed the 2% threshold and are `too_common`: not learnable, not cross-course matchable, so they can neither be selected nor scored.
+- As a result 《人工智慧導論》 is scored only through 資料科學, 金融科技 and 醫療科技; selecting 深度學習 or 生成式AI boosts 《人工智慧自然語言導論》 but never 《人工智慧導論》.
+
+The `too_common` rule exists because a tag on a large share of all courses carries little signal when learned from browsing or enrolment behaviour. That reason does not apply to a user who explicitly ticks "人工智慧": inside the CS department pool the tag sits on only two or three AI courses.
+
+Decision:
+
+1. **Curated direct option.** `CURATED_DIRECT_OPTIONS` (`interestMenuConfig.js`) lists hand-picked topics the catalog cannot express. The first is `curated_ai` "人工智慧" for 資訊工程學系: 人工智慧、機器學習、深度學習、生成式AI、自然語言處理、語言模型、電腦視覺. It is shown first in the 本系 group, outside the 8-option limit, as a `direct` option listing only the tags actually present in the student's pool. Its `categoryId` is `curated_ai` (not a catalog ID, to avoid colliding with the merged option that already holds the "AI" subcategory); `categoryInterests` records the catalog subcategory 資訊與計算／AI.
+2. **Explicit-selection scoring exemption.** A `too_common` tag on a curated list is accepted when selected through that curated option. Its prior carries `selectionScoringExempt: true`, and `scoreCourseTagInterest()` counts that tag as matchable for that user. Users who did not select it score exactly as before. Behaviour learning still ignores `too_common` tags.
+3. **Scope of the exemption.** Only `too_common`, only tags on a curated list, only via the curated option. `explicit_generic` and `single_course` tags are never exempt. Sending 人工智慧 under the catalog "AI" subcategory is still rejected (`tag_not_selectable`). Python stays off the list and unscored (user decision, 2026-11-20).
+
+Rejected alternatives:
+
+- Expanding the curated option only to already-scorable tags (深度學習、生成式AI、…、資料科學): does not reach 《人工智慧導論》 except weakly via 資料科學, which also hits unrelated courses.
+- Making `too_common` department-relative for everyone: changes behaviour learning and every user's scores; too broad.
+- Editing 《人工智慧導論》's rag tags in the shared course table: course data is not owned by this feature.
+
+Consequences:
+
+- Measured over the CS accounts (service-level A/B, 2026-11-20): with the option selected, 人工智慧導論 S_tag rises from 0 to 0.44, 人工智慧自然語言導論 to 0.83, 電腦視覺與擴增實境 to 0.17. Several Persona schedules then include 人工智慧導論 or 人工智慧自然語言導論 where they did not before; others do not change because their elective quota is already filled.
+- Spill-over: every course school-wide carrying 人工智慧 or 機器學習 is boosted for that user, including 系外 courses such as 人工智慧 and 深度學習概論 from STEM units. Accepted for now (系外 explicitly deferred by the user); it is the same menu-only STEM limitation as ADR-025, with a larger reach.
+- New curated options must name every tag explicitly and be reviewed against the actual pool, like the `direct` whitelist.

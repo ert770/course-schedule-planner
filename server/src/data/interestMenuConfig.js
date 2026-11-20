@@ -79,6 +79,29 @@ export const HIDDEN_SUBCATEGORIES = Object.freeze({
 // 即使在白名單裡，展開的標籤超過這個數量就退回追問（目錄更版後內容可能變了，不能盲目展開）。
 export const DIRECT_MAX_TAGS = 12;
 
+// ── 人工策畫的直接確認選項（ADR-026）──────────────────────────────────────────
+//
+// 目錄的子類別無法表達的主題，改用人工列出的標籤清單。目前只有資工系的「人工智慧」：
+//   - 目錄的「AI」子類別與「程式」「資料與資訊系統」標籤清單完全相同（各 137 個），已被併進
+//     「資訊與計算：資訊科技、軟體開發、資訊安全 等」，選單上看不到 AI。
+//   - 《人工智慧導論》帶的「人工智慧」「機器學習」在全校超過 2% 的課出現（too_common），既不能選也不計分，
+//     這門課可計分的標籤只剩資料科學、金融科技、醫療科技，選了深度學習也加不到它。
+//
+// `tagNames` 是標準標籤名稱。其中屬於 too_common 的標籤（人工智慧、機器學習）**只有從這裡被明確選擇時**
+// 才建立先驗並計分；行為學習仍然不學這些標籤（見 `curatedInterestOptions.js`）。
+// `id` 不用目錄 ID，避免與併進「AI」子類別的那個選項撞在同一個 (group, categoryId)；
+// 對應的目錄分類由 `mainCategory`／`subcategory` 指定，`categoryInterests` 記成那個子類別。
+export const CURATED_DIRECT_OPTIONS = Object.freeze([
+  Object.freeze({
+    id: 'curated_ai',
+    name: '人工智慧',
+    departments: Object.freeze(['資訊工程學系']),
+    mainCategory: '資訊與計算',
+    subcategory: 'AI',
+    tagNames: Object.freeze(['人工智慧', '機器學習', '深度學習', '生成式AI', '自然語言處理', '語言模型', '電腦視覺']),
+  }),
+]);
+
 // ── 系外選單的理工排除 ──────────────────────────────────────────────────────
 //
 // 系外選單與追問不推理工類學院的課。只適用系外組；排除的是**選單與追問**，不是排課計分：
@@ -114,6 +137,7 @@ export default {
   EXCLUDED_MAIN_CATEGORY_NAMES,
   DIRECT_SUBCATEGORIES,
   DIRECT_MAX_TAGS,
+  CURATED_DIRECT_OPTIONS,
   HIDDEN_SUBCATEGORIES,
   STEM_COLLEGES,
   STEM_EXTRA_UNITS,

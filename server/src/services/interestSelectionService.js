@@ -15,6 +15,11 @@
 
 import { getInterestCategoryCandidates } from '../data/interestTopicGroups.js';
 import { lookupInterestCategory } from '../data/interestSelections.js';
+import {
+  collectCuratedOptionTags,
+  curatedOptionsForDepartment,
+  getCuratedInterestOption,
+} from '../data/curatedInterestOptions.js';
 import { normalizeInterestSelections } from '../data/interestPreferences.js';
 import { logger } from '../utils/logger.js';
 import { getInterestTopicGroups } from './interestMenuService.js';
@@ -32,6 +37,17 @@ export const SELECTION_WARNING = Object.freeze({
 });
 
 const keyOf = item => `${item.group}\u0000${item.categoryId}`;
+
+// 策畫選項（ADR-026）：必須適用這位學生的系所，標籤對照它在本系候選池裡實際命中的清單。
+// 形狀與 `getInterestCategoryCandidates()` 相同（`{ category, tags }`），讓呼叫端不必分兩種處理。
+function curatedCandidates(optionId, courses, department) {
+  const option = getCuratedInterestOption(optionId);
+  if (!option || !curatedOptionsForDepartment(department).some(item => item.id === option.id)) {
+    return { category: null, tags: [] };
+  }
+  const { courses: hit, tags } = collectCuratedOptionTags(courses, option);
+  return { category: hit.size > 0 ? option : null, tags };
+}
 const sameTagSet = (left, right) => (
   left.length === right.length && [...left].sort().join('|') === [...right].sort().join('|')
 );
@@ -93,7 +109,9 @@ export async function sanitizeInterestSelectionsForSave(
       warnings.push({ group: item.group, categoryId: item.categoryId, reason: SELECTION_WARNING.WRONG_LEVEL });
       continue;
     }
-    const found = getInterestCategoryCandidates(menu.grouped[item.group] ?? [], level, item.categoryId, { limit: ALL_TAGS });
+    const found = category.curatedOptionId
+      ? curatedCandidates(category.curatedOptionId, menu.grouped[item.group] ?? [], filters?.department)
+      : getInterestCategoryCandidates(menu.grouped[item.group] ?? [], level, item.categoryId, { limit: ALL_TAGS });
     if (!found.category) {
       warnings.push({ group: item.group, categoryId: item.categoryId, reason: SELECTION_WARNING.CATEGORY_NOT_IN_POOL });
       continue;

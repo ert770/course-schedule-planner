@@ -780,8 +780,10 @@ spike 報告（`server/test/reports/highs-spike-latest.json`）的 GO 判斷同�
 | `server/test/interestFollowupService.test.js`（18） | 請求驗證；GPT 回傳清單外 ID 被濾掉；無 key、`fixed`、逾時、格式錯誤都走後備；題目清理；舊答案一律重新顯示；快取 |
 | `server/test/interestSelectionService.test.js`（13） | 保存驗證：標籤不屬於該組該類別被丟掉；未變動的選擇不重驗；候選池失敗為 `unverified`；警告原因 |
 | `server/test/interestTagEligibility.test.js`（4） | `isSelectableInterestTag` 共用資格判定 |
+| `server/test/curatedInterestOptions.test.js`（19） | ADR-026：`curated_ai` 對應目錄「AI」子類別；只有清單內的 too_common 可選與計分豁免（Python 不行）；只對資工系、候選池有命中時顯示，排第一且不佔名額；從目錄「AI」子類別送人工智慧仍拒絕；先驗帶 `selectionScoringExempt`；《人工智慧導論》未選時 3 個計分標籤、選了人工智慧與機器學習變 5 個且分數 0.4；保存驗證的系所、層級與候選池檢查 |
+| `server/test/interestRoutes.test.js`（18） | 路由處理函式注入假候選池、偏好與追問服務：`/interest-options` 的 400、缺班別不查候選池、只回 `topicGroups`、修課路徑只給資工；`/interest-followups` 的 429（不呼叫服務）、限流以使用者為鍵、400、`previousSelections` 傳遞、送出內容不含使用者 ID；保存時以驗證結果取代送來的選擇、範圍以本次欄位優先、`unverified` 回傳。真的 app（不連資料庫）：缺班別 200、缺系所 400、未登入 401、未同意 428、同意後 400 與第 7 次 429 |
 
-路由層（`/interest-options`、`/interest-followups`、`POST /api/profile` 的保存回應）沒有自動化測試，由瀏覽器驗收涵蓋；這是已知缺口。前端沒有元件測試，以 `npm run build`、`npm run lint` 與瀏覽器實測為準。
+兩個新測試檔都做過突變測試：拿掉計分豁免、拿掉「以驗證結果取代送來的選擇」各會讓 1 個測試失敗。前端沒有元件測試，以 `npm run build`、`npm run lint` 與瀏覽器實測為準。
 
 ### 帳號隔離驗收（Roadmap #28）
 

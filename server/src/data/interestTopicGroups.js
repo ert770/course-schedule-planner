@@ -9,6 +9,7 @@
 
 import { resolveInterestTags } from './interestTagCatalog.js';
 import { isSelectableInterestTag } from './interestTagEligibility.js';
+import { buildCuratedTopicOptions } from './curatedInterestOptions.js';
 import {
   DIRECT_MAX_TAGS,
   DIRECT_SUBCATEGORIES,
@@ -214,11 +215,17 @@ export function buildInterestTopicGroups(groupedCourses = {}, {
       ? mergeIdenticalCategories(categories, department)
       : categories;
 
-    const options = merged
+    const ranked = merged
       .map(category => toOption(category, { group, level: group.level }))
       .sort((a, b) => b.courseCount - a.courseCount || b.tagCount - a.tagCount
         || compareText(a.name, b.name))
       .slice(0, Math.max(0, Number(limit) || 0));
+    // 人工策畫的選項（ADR-026）排在本系最前面、不佔依課程數排序的名額：它是刻意要讓學生看到的主題，
+    // 課程數少（資工只有兩三門 AI 課）不代表不重要。
+    const curated = group.key === 'department'
+      ? buildCuratedTopicOptions(groupedCourses.department ?? [], department)
+      : [];
+    const options = [...curated, ...ranked];
 
     if (options.length > 0) {
       groups.push({ key: group.key, label: group.label, level: group.level, options });

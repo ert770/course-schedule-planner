@@ -12,6 +12,11 @@
 
 import { interestTagCatalog } from './interestTagCatalog.js';
 import { isSelectableInterestTag } from './interestTagEligibility.js';
+import {
+  getCuratedInterestOption,
+  isCuratedSelectableTag,
+  isSelectionScoringExemptTag,
+} from './curatedInterestOptions.js';
 
 export const SELECTION_IGNORE_REASON = Object.freeze({
   UNKNOWN_CATEGORY: 'unknown_category',
@@ -24,9 +29,22 @@ const mainById = new Map(interestTagCatalog.mainCategories.map(item => [item.id,
 const subById = new Map(interestTagCatalog.subcategories.map(item => [item.id, item]));
 const tagById = new Map(interestTagCatalog.canonicalTags.map(item => [item.id, item]));
 
-/** 分類 ID → `{ type: 'main' | 'subcategory', ... }`；目錄裡沒有就回 null。 */
+/**
+ * 分類 ID → `{ type: 'main' | 'subcategory', ... }`；目錄裡沒有就回 null。
+ * 人工策畫的選項（例如 `curated_ai`）對應到它在目錄裡的子類別，另帶 `curatedOptionId`。
+ */
 export function lookupInterestCategory(categoryId) {
   const id = String(categoryId ?? '').trim();
+  const curated = getCuratedInterestOption(id);
+  if (curated) {
+    return {
+      type: 'subcategory',
+      mainCategoryId: curated.mainCategoryId,
+      subcategoryId: curated.subcategoryId,
+      name: curated.subcategory,
+      curatedOptionId: curated.id,
+    };
+  }
   const main = mainById.get(id);
   if (main) {
     return { type: 'main', mainCategoryId: main.id, subcategoryId: null, name: main.name };
@@ -52,7 +70,8 @@ function tagBelongsToCategory(tag, category) {
  * @param selections `normalizeInterestSelections()` 的結果。
  * @returns {{
  *   categories: Array,              // 目錄裡存在的分類，去重；不含底下的標籤
- *   tags: Array<{ tag, from: Array<{ group, categoryId }> }>, // 合格標籤，依 ID 去重
+ *   tags: Array<{ tag, from: Array<{ group, categoryId }>, scoringExempt }>, // 合格標籤，依 ID 去重；
+ *         scoringExempt 表示這是策畫選項明確選的 too_common 標籤，排課時才計分（ADR-026）
  *   ignored: Array<{ group, categoryId, tagId?, reason }>,
  * }}
  */
@@ -69,18 +88,34 @@ export function resolveInterestSelections(selections = []) {
       continue;
     }
     const categoryKey = `${category.type}:${category.subcategoryId ?? category.mainCategoryId}`;
-    if (!categories.has(categoryKey)) categories.set(categoryKey, category);
+    if (!categories.has(categoryKey)) {
+      const { curatedOptionId: _curated, ...stored } = category;
+      categories.set(categoryKey, stored);
+    }
+    const curated = category.curatedOptionId ? getCuratedInterestOption(category.curatedOptionId) : null;
 
     for (const tagId of Array.isArray(selection.tagIds) ? selection.tagIds : []) {
       const tag = tagById.get(String(tagId ?? '').trim());
       if (!tag) {
         ignored.push({ group, categoryId, tagId, reason: SELECTION_IGNORE_REASON.UNKNOWN_TAG });
+      } else if (curated) {
+        // 策畫選項：標籤必須在它的清單內；清單內的 too_common 標籤也接受（ADR-026）。
+        if (!curated.tagIds.includes(tag.id)) {
+          ignored.push({ group, categoryId, tagId, reason: SELECTION_IGNORE_REASON.TAG_NOT_IN_CATEGORY });
+        } else if (!isCuratedSelectableTag(curated, tag)) {
+          ignored.push({ group, categoryId, tagId, reason: SELECTION_IGNORE_REASON.TAG_NOT_SELECTABLE });
+        } else {
+          if (!tags.has(tag.id)) tags.set(tag.id, { tag, from: [], scoringExempt: false });
+          const entry = tags.get(tag.id);
+          entry.from.push({ group, categoryId });
+          entry.scoringExempt = isSelectionScoringExemptTag(tag);
+        }
       } else if (!isSelectableInterestTag(tag)) {
         ignored.push({ group, categoryId, tagId, reason: SELECTION_IGNORE_REASON.TAG_NOT_SELECTABLE });
       } else if (!tagBelongsToCategory(tag, category)) {
         ignored.push({ group, categoryId, tagId, reason: SELECTION_IGNORE_REASON.TAG_NOT_IN_CATEGORY });
       } else {
-        if (!tags.has(tag.id)) tags.set(tag.id, { tag, from: [] });
+        if (!tags.has(tag.id)) tags.set(tag.id, { tag, from: [], scoringExempt: false });
         tags.get(tag.id).from.push({ group, categoryId });
       }
     }

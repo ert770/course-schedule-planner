@@ -646,6 +646,10 @@ Response:
   能影響排課的標籤。每組依課程數由多到少，最多 8 個；同一門課開多個班只算一次。
 - `mode: "direct"` 只給設定檔明列的白名單（目前只有「資訊安全與隱私」）：勾選後不追問，`tags` 是候選池
   裡實際命中的標籤，供前端顯示給學生確認。其餘一律 `followup`，不帶 `tags`。
+- **人工策畫選項（2026-11-20，ADR-026）**：資訊工程學系的本系組最前面另有「人工智慧」（`id: "curated_ai"`、
+  `nameSource: "curated"`、`mode: "direct"`），不佔依課程數排序的 8 個名額。`tags` 是人工清單（人工智慧、機器學習、
+  深度學習、生成式AI、自然語言處理、語言模型、電腦視覺）在候選池裡實際命中的標籤，**包含 `too_common` 的人工智慧
+  與機器學習**；這兩個標籤只有從這個選項明確選擇時才計分。其他系所、或候選池沒有命中時不出現。
 - **系外組不含理工類學院**（資電、工程與科學、建設三個學院，加上環境工程與科學學系、航太與系統工程學系、
   人工智慧技術與應用學士學位學程、應用數學系、創能學院綜合班）。這只排除選單，不影響排課計分。
 - 候選池以系所、年級、班別與學期為鍵快取 10 分鐘（重建一次約 2 秒）；班別沒選好時不猜測，`topicGroups`
@@ -1640,8 +1644,7 @@ Profile 另接受 `remainingSemesters`（1～8 的整數或 `null`）：
 排課結果在 `true`／`false` 下完全相同。真正讓它生效（回 `user-opted-out`）並補上前端
 介面是 3B 的範圍——提前生效會讓 3A 不再是「不改變正式推薦結果」的 shadow 階段。
 
-Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」的選擇結果，2026-11-20 起；
-目前只有資料層與驗證，設定頁與追問流程尚未接上）：
+Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」的選擇結果，2026-11-20 起）：
 
 ```json
 {
@@ -1664,6 +1667,8 @@ Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」
 
 ```json
 { "success": true, "preferences": {}, "interestSelectionsStatus": "verified", "interestSelectionWarnings": [] }
+`categoryId` 也可以是人工策畫選項（`curated_ai`，只限本系組、只限適用的系所）：標籤對照它的人工清單在候選池裡
+實際命中的部分，清單內的 `too_common` 標籤也接受（ADR-026）。
 ```
 
 `interestSelectionsStatus` 是 `unchanged`（沒有任何變動）、`verified`（已對照候選池）或 `unverified`（候選池載入失敗

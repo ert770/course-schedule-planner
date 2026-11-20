@@ -88,7 +88,7 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 
 - `Interaction_Events.tag_interest_snapshot_json` 是 rag-tag 興趣事件的來源快照；它跟原事件一同寫入、冪等及套用 180 天保存期限，分類目錄改版不會改寫新事件的標籤對應。
 - `profile_json` 保存稀疏的 `categoryInterests`、`tagInterests`、正負證據、先驗、分數、來源與版本。它是快取，不是唯一真相；重算以互動事件快照和使用者明確偏好為準。
-- `tag_score = (κ × p₀ + P − N) / (κ + P + N)`；目前原型 `κ=2`。只對精確對應的明確標籤偏好建立 tag prior；廣泛主分類／子分類只保留在 `categoryInterests`，不展開成底下所有標籤。2026-11-20 起另有一條依 ID 的來源：`preferences_json.values.interestSelections`（見 `user_preferences` 一節）每一筆的 `categoryId` 進 `categoryInterests`（仍不展開），使用者明確選的 `tagIds` 合併去重後得到 `p₀ = 1`，`tagPriors` 的該筆帶 `source: 'selection'`。只接受目錄裡存在、屬於所選分類、而且同時可學習與可跨課配對的標籤；不合格的項目被忽略。有負向證據時 `p₀ = 1` 不代表 `tag_score = 1`（例如 `N = 1` 時約為 0.333）。
+- `tag_score = (κ × p₀ + P − N) / (κ + P + N)`；目前原型 `κ=2`。只對精確對應的明確標籤偏好建立 tag prior；廣泛主分類／子分類只保留在 `categoryInterests`，不展開成底下所有標籤。2026-11-20 起另有一條依 ID 的來源：`preferences_json.values.interestSelections`（見 `user_preferences` 一節）每一筆的 `categoryId` 進 `categoryInterests`（仍不展開），使用者明確選的 `tagIds` 合併去重後得到 `p₀ = 1`，`tagPriors` 的該筆帶 `source: 'selection'`。只接受目錄裡存在、屬於所選分類、而且同時可學習與可跨課配對的標籤；不合格的項目被忽略。有負向證據時 `p₀ = 1` 不代表 `tag_score = 1`（例如 `N = 1` 時約為 0.333）。**例外（ADR-026）**：`categoryId` 為人工策畫選項 `curated_ai` 時，標籤對照它的人工清單，清單內的 `too_common` 標籤（人工智慧、機器學習）也建立先驗；`categoryInterests` 記成目錄的「資訊與計算／AI」子類別。這類先驗與對應的 `tagInterests` 項目帶 `selectionScoringExempt: true`，`scoreCourseTagInterest()` 對這位使用者把該標籤算進可配對標籤（目錄不允許跨課配對也一樣）；沒選的使用者計分不變，行為學習仍然不學 `too_common` 標籤。
 - `P`、`N` 是每筆事件先乘 120 天半衰期與舊學期 `0.5` 折減，再把總權重平均分給事件快照中的合格標籤。required scope 未解析時，分類為必修的課程 fail closed，不更新興趣。
 - 新課程興趣分只平均 `crossCourseMatchEligible=true` 的標籤。課程只有單課標籤時沒有跨課興趣分；該標籤仍可保留在個人興趣證據與課程內解釋。
 - `expires_at` 沿用 180 天保存規則，`npm run cleanup:privacy` 同時清理到期標籤興趣快取；撤回 `personalization_learning`、重設個人化、刪除帳號與本人匯出都涵蓋此 profile。
