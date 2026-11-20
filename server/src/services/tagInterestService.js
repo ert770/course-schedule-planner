@@ -40,7 +40,8 @@ function rowToProfile(row) {
   };
 }
 
-function priorSignature(profile) {
+// 匯出供測試使用：先驗（明確主題、類別、標籤先驗）改變時簽章必須跟著變，快取才會重算。
+export function priorSignature(profile) {
   return createHash('sha256').update(JSON.stringify({
     explicitTopics: profile.explicitTopics,
     categoryInterests: profile.categoryInterests,

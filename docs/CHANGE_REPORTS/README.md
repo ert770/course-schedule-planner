@@ -4,6 +4,7 @@
 
 ## 2026-11-20
 
+- [課程主題選擇改版 Step B：interestSelections 進入 S_tag 先驗](./2026-11-20-interest-selections-step-b.md)
 - [課程主題選擇改版 Step A：interestSelections 資料模型](./2026-11-20-interest-selections-step-a.md)
 - [設定頁「剩餘學期數」標籤註明包含當學期](./2026-11-20-remaining-semesters-label.md)
 
