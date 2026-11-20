@@ -256,7 +256,7 @@ export default function SetupPage() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)', margin: 0 }}>剩餘學期數：</label>
+                  <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)', margin: 0 }}>剩餘學期數（包含當學期）：</label>
                   <select
                     value={remainingSemesters}
                     onChange={e => setRemainingSemesters(e.target.value)}
