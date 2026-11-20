@@ -2,6 +2,19 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-11-20
+
+- [課程主題選單新增「人工智慧」選項、明確選擇的太常見標籤計分，並補路由測試](./2026-11-20-curated-ai-topic-and-route-tests.md)
+- [課程主題選擇改版 Step G：驗收、「調整」對話框修正與 student_id 回填](./2026-11-20-interest-selections-step-g.md)
+- [課程主題選擇改版 Step F：ADR、資料結構與測試計畫文件](./2026-11-20-interest-selections-step-f.md)
+- [課程主題選擇改版 Step E：設定頁三組選單與追問對話框](./2026-11-20-interest-selections-step-e.md)
+- [課程主題選擇改版 Step D：追問服務與保存驗證](./2026-11-20-interest-selections-step-d.md)
+- [課程主題選擇改版 Step C 後續：本系隱藏清單與內容命名](./2026-11-20-interest-selections-step-c-followup.md)
+- [課程主題選擇改版 Step C：選單分組、設定檔與候選池快取](./2026-11-20-interest-selections-step-c.md)
+- [課程主題選擇改版 Step B：interestSelections 進入 S_tag 先驗](./2026-11-20-interest-selections-step-b.md)
+- [課程主題選擇改版 Step A：interestSelections 資料模型](./2026-11-20-interest-selections-step-a.md)
+- [設定頁「剩餘學期數」標籤註明包含當學期](./2026-11-20-remaining-semesters-label.md)
+
 ## 2026-10-26
 
 - [UI／UX 全面檢查：導覽列統一、方案切換與說明恢復、移除方案比較與橘色通知](./2026-10-26-ui-ux-audit.md)

@@ -88,7 +88,7 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 
 - `Interaction_Events.tag_interest_snapshot_json` 是 rag-tag 興趣事件的來源快照；它跟原事件一同寫入、冪等及套用 180 天保存期限，分類目錄改版不會改寫新事件的標籤對應。
 - `profile_json` 保存稀疏的 `categoryInterests`、`tagInterests`、正負證據、先驗、分數、來源與版本。它是快取，不是唯一真相；重算以互動事件快照和使用者明確偏好為準。
-- `tag_score = (κ × p₀ + P − N) / (κ + P + N)`；目前原型 `κ=2`。只對精確對應的明確標籤偏好建立 tag prior；廣泛主分類／子分類只保留在 `categoryInterests`，不展開成底下所有標籤。
+- `tag_score = (κ × p₀ + P − N) / (κ + P + N)`；目前原型 `κ=2`。只對精確對應的明確標籤偏好建立 tag prior；廣泛主分類／子分類只保留在 `categoryInterests`，不展開成底下所有標籤。2026-11-20 起另有一條依 ID 的來源：`preferences_json.values.interestSelections`（見 `user_preferences` 一節）每一筆的 `categoryId` 進 `categoryInterests`（仍不展開），使用者明確選的 `tagIds` 合併去重後得到 `p₀ = 1`，`tagPriors` 的該筆帶 `source: 'selection'`。只接受目錄裡存在、屬於所選分類、而且同時可學習與可跨課配對的標籤；不合格的項目被忽略。有負向證據時 `p₀ = 1` 不代表 `tag_score = 1`（例如 `N = 1` 時約為 0.333）。**例外（ADR-026）**：`categoryId` 為人工策畫選項 `curated_ai` 時，標籤對照它的人工清單，清單內的 `too_common` 標籤（人工智慧、機器學習）也建立先驗；`categoryInterests` 記成目錄的「資訊與計算／AI」子類別。這類先驗與對應的 `tagInterests` 項目帶 `selectionScoringExempt: true`，`scoreCourseTagInterest()` 對這位使用者把該標籤算進可配對標籤（目錄不允許跨課配對也一樣）；沒選的使用者計分不變，行為學習仍然不學 `too_common` 標籤。
 - `P`、`N` 是每筆事件先乘 120 天半衰期與舊學期 `0.5` 折減，再把總權重平均分給事件快照中的合格標籤。required scope 未解析時，分類為必修的課程 fail closed，不更新興趣。
 - 新課程興趣分只平均 `crossCourseMatchEligible=true` 的標籤。課程只有單課標籤時沒有跨課興趣分；該標籤仍可保留在個人興趣證據與課程內解釋。
 - `expires_at` 沿用 180 天保存規則，`npm run cleanup:privacy` 同時清理到期標籤興趣快取；撤回 `personalization_learning`、重設個人化、刪除帳號與本人匯出都涵蓋此 profile。
@@ -371,7 +371,7 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 | --- | --- | --- |
 | `must_take_courses` | JSON NULL | `profile.mustTakeCourses`；Profile API 已接讀寫 |
 | `avoid_instructors` | JSON NULL | `profile.avoidInstructors`；持久化並接入排課限制 |
-| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。**Roadmap #23** 另加 `values.remainingSemesters`（1～8 的整數）：使用者明確設定的剩餘學期數；缺少時依年級與 active term 推算。各欄位只接受正式型別，更新時各自只動自己的鍵，互不覆蓋。**3A 的開關只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
+| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。**Roadmap #23** 另加 `values.remainingSemesters`（1～8 的整數）：使用者明確設定的剩餘學期數；缺少時依年級與 active term 推算。各欄位只接受正式型別，更新時各自只動自己的鍵，互不覆蓋。**課程主題選擇（2026-11-20）** 另加 `values.interestSelections`：陣列，每筆 `{ group, categoryId, level, mode, tagIds }`，`group` 為 `department`／`generalEducation`／`outside`，以 `(group, categoryId)` 為鍵（同名分類在不同組別各自保存，取消一組不影響另一組）；`tagIds` 是使用者確認的標準標籤 ID，之後會合併去重成標籤興趣的先驗。形狀由 `interestPreferences.js` 正規化，是否存在於目錄與是否屬於所選組別由後續的保存驗證處理**3A 的開關只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
 | `password_hash` | varchar(255) NULL | 刻意不搬 `users.json.password` 明碼；雜湊方案另案處理 |
 | `watchlist` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
 | `skill_tree` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
@@ -727,7 +727,7 @@ npm run seed:demo-personas --prefix server -- --apply --confirm-shared-mysql
 
 2026-10-09 核對快照：3,560 班次合併成 2,004 個穩定課號，6,769 個 canonical tags；6,736 個可學習、2,144 個可跨課匹配。6 個通用、27 個高頻、4,592 個單課標籤。高頻規則是嚴格 `>2%`；單課可學習但不可跨課匹配。必修排除仍須依個別使用者 scope 在事件層實作。重新執行 Excel 匯入工具會重建 pending 目錄，之後需重新執行 MySQL 唯讀報表及人工核對才能寫回資格。
 
-這份目錄尚未接入興趣事件、API、前端或排課器；不是目前線上排序的新資料來源。
+這份目錄的資格快照已接入興趣學習與排課（S_tag，見前文標籤興趣一節）。2026-11-20 起另接入設定頁：`GET /api/courses/interest-options` 依類別（本系子類別、通識與系外大類別）從候選課程池組出選單，`POST /api/profile/interest-followups` 依類別產生追問，使用者選的具體標籤保存在 `preferences_json.values.interestSelections` 並成為 S_tag 的先驗。選單、追問、保存驗證都用同一個 `isSelectableInterestTag`（可學習且可跨課配對）。
 
 排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。
 

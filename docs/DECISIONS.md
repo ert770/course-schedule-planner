@@ -969,3 +969,70 @@ Consequences:
 - PB11 can verify data availability without changing candidate eligibility.
 - A future review source can be compared by evidence coverage before interpreting ranking
   changes as personalization.
+
+## ADR-025: Settings-Page Interest Follow-Ups Call OpenAI at Runtime, Scoped to Catalog Names Only
+
+Date: 2026-11-20
+
+Context:
+
+The setup page's "想接觸的課程主題" now offers categories from the tag catalog (本系 subcategories, 通識 and 系外 main categories) and, after the user saves, asks a follow-up question per category. The specific tags the user picks get a prior `p0 = 1` in S_tag. This is the first non-chat, runtime OpenAI call in the project. The privacy policy text (`privacyPolicy.js`) states the purpose as "提供排課與 AI 對話服務" and lists the processor purpose as "AI 對話與課程規劃回覆", which does not literally cover "generating setup-page options". The processor itself (OpenAI) did not change, so ADR-021 (a processor change requires a version bump) is not triggered.
+
+Decision:
+
+1. **Scope of the call.** The backend owns the selectable tag list (top 20 by course count, from the candidate pool). GPT only writes one question per category and orders the list. It cannot add, rename or remove tags; every returned ID is validated against the backend list. Only category names, tag names and course counts are sent. No user ID, profile, history or free text.
+2. **No policy bump.** Reuse the existing `service_processing` consent (`requireServiceConsent`), do not bump `PRIVACY_POLICY_VERSION`. The wording gap above is accepted and recorded here. Mitigation: `INTEREST_FOLLOWUP_MODE=fixed` (default `gpt`) never calls OpenAI and uses a fixed question; the same fallback applies without `OPENAI_API_KEY`, on timeout (12 s, no retry), or on malformed output. Follow-up failure never blocks saving.
+3. **Limited exception to "a category is never expanded into tags".** Only an explicit whitelist of small, coherent 本系 subcategories (`DIRECT_SUBCATEGORIES`, initially 資訊安全與隱私) is turned into tag priors directly, shown to the user for confirmation. "Small" alone is not enough: the survey found small subcategories with mixed content (人力資源與營運, 經濟金融, 航太與製造). Every other category is follow-up only, and a category itself stays in `categoryInterests`.
+4. **STEM exclusion is menu-only.** The 系外 menu and follow-ups exclude the 資電, 工程與科學 and 建設 colleges plus an explicit extra list (環境工程與科學學系, 航太與系統工程學系, 人工智慧技術與應用學士學位學程, 應用數學系, 創能學院綜合班). Scoring stays global tag matching, so STEM courses can still gain S_tag through a shared tag. Measured spill-over for 資工三年級: 1–7 STEM courses per category.
+5. **Keys are (group, categoryId).** `interestSelections` is stored per group so that 通識 "語言" and 系外 "語言" stay separate; tag priors are the deduplicated union of all `tagIds`. Save validation checks tags against the user's candidate pool; when the pool cannot be built the response is `unverified` and no new tags are accepted.
+
+Findings behind the menu design:
+
+- The subcategory layer has no discrimination: several subcategories share an identical tag list (e.g. AI, 程式, 資料與資訊系統). The menu therefore merges options whose pool tag sets are identical and names each merged option by content ("大類別：most frequent 3 tags", plus " 等" when more than 3).
+- Misleading-looking 通識 options come from incidental course `rag_tag` values, not from tag normalization.
+
+Rejected alternatives:
+
+- A hand-maintained display-name map for subcategories (replaced by content naming).
+- A catch-all "其他" option group (3 groups only; the 其他 graduation bucket — 應用外語, 體育, 學院綜合班, 學分學程 — is not touched by S_tag).
+- Merging or hiding 通識 資訊與計算 / 工程與製造 for CS students (not adopted; recorded as a known limitation).
+- Bumping the privacy policy version for this purpose.
+
+Consequences:
+
+- Follow-up latency is about 4–5 s on the first call and about 0.4 s when cached (24 h in-memory cache).
+- The 其他 bucket is not scored; scoring it needs graduation-credit rules and is a separate task.
+- Incidental tags can still appear in follow-up options; representative courses are shown so the student can judge.
+- If the privacy text is later revised to name this purpose, the `fixed` switch can stay as an operator escape hatch.
+
+## ADR-026: Explicitly Selected too_common Tags Are Scored, Via a Curated "人工智慧" Option
+
+Date: 2026-11-20
+
+Context:
+
+CS students often want the department's AI courses, but the setup-page topic menu could not express that:
+
+- The catalog subcategory "AI" shares an identical 137-tag list with "程式" and "資料與資訊系統", so it is merged into the content-named option "資訊與計算：資訊科技、軟體開發、資訊安全 等" and never appears as "AI".
+- 人工智慧 (99 courses, 4.9% of all courses), 機器學習 (3.1%) and Python (4.0%) exceed the 2% threshold and are `too_common`: not learnable, not cross-course matchable, so they can neither be selected nor scored.
+- As a result 《人工智慧導論》 is scored only through 資料科學, 金融科技 and 醫療科技; selecting 深度學習 or 生成式AI boosts 《人工智慧自然語言導論》 but never 《人工智慧導論》.
+
+The `too_common` rule exists because a tag on a large share of all courses carries little signal when learned from browsing or enrolment behaviour. That reason does not apply to a user who explicitly ticks "人工智慧": inside the CS department pool the tag sits on only two or three AI courses.
+
+Decision:
+
+1. **Curated direct option.** `CURATED_DIRECT_OPTIONS` (`interestMenuConfig.js`) lists hand-picked topics the catalog cannot express. The first is `curated_ai` "人工智慧" for 資訊工程學系: 人工智慧、機器學習、深度學習、生成式AI、自然語言處理、語言模型、電腦視覺. It is shown first in the 本系 group, outside the 8-option limit, as a `direct` option listing only the tags actually present in the student's pool. Its `categoryId` is `curated_ai` (not a catalog ID, to avoid colliding with the merged option that already holds the "AI" subcategory); `categoryInterests` records the catalog subcategory 資訊與計算／AI.
+2. **Explicit-selection scoring exemption.** A `too_common` tag on a curated list is accepted when selected through that curated option. Its prior carries `selectionScoringExempt: true`, and `scoreCourseTagInterest()` counts that tag as matchable for that user. Users who did not select it score exactly as before. Behaviour learning still ignores `too_common` tags.
+3. **Scope of the exemption.** Only `too_common`, only tags on a curated list, only via the curated option. `explicit_generic` and `single_course` tags are never exempt. Sending 人工智慧 under the catalog "AI" subcategory is still rejected (`tag_not_selectable`). Python stays off the list and unscored (user decision, 2026-11-20).
+
+Rejected alternatives:
+
+- Expanding the curated option only to already-scorable tags (深度學習、生成式AI、…、資料科學): does not reach 《人工智慧導論》 except weakly via 資料科學, which also hits unrelated courses.
+- Making `too_common` department-relative for everyone: changes behaviour learning and every user's scores; too broad.
+- Editing 《人工智慧導論》's rag tags in the shared course table: course data is not owned by this feature.
+
+Consequences:
+
+- Measured over the CS accounts (service-level A/B, 2026-11-20): with the option selected, 人工智慧導論 S_tag rises from 0 to 0.44, 人工智慧自然語言導論 to 0.83, 電腦視覺與擴增實境 to 0.17. Several Persona schedules then include 人工智慧導論 or 人工智慧自然語言導論 where they did not before; others do not change because their elective quota is already filled.
+- Spill-over: every course school-wide carrying 人工智慧 or 機器學習 is boosted for that user, including 系外 courses such as 人工智慧 and 深度學習概論 from STEM units. Accepted for now (系外 explicitly deferred by the user); it is the same menu-only STEM limitation as ADR-025, with a larger reach.
+- New curated options must name every tag explicitly and be reviewed against the actual pool, like the `direct` whitelist.

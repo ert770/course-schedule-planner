@@ -588,27 +588,72 @@ Response:
 ### `GET /api/courses/interest-options`
 
 回傳設定頁可詢問使用者的課程方向。`department`、`gradeLevel` 必填；`className`
-尚未提供時仍回傳該系的官方修課路徑，但 `topics` 為空。班別完整時，`topics`
-由目前排課候選課程的 `Course_Sections.rag_tag` 統計而來，不在前端寫死。
+尚未提供時仍回傳該系的官方修課路徑，但 `topicGroups` 為空、`scopeReady` 為 `false`。班別完整時，
+`topicGroups` 由這位學生的排課候選課程的 `Course_Sections.rag_tag`（經標籤目錄解析）統計而來，不在前端寫死。
 同一課程的不同 section 對相同主題只計一次。
+
+**舊的平面清單 `topics` 與 `topicCourseCount` 已於 2026-11-20 移除**（設定頁改讀 `topicGroups`）。
 
 ```json
 {
   "tracks": ["嵌入式系統類", "技術應用類", "網路與安全類"],
-  "topics": [
-    { "name": "人工智慧", "courseCount": 12 },
-    { "name": "資訊安全", "courseCount": 8 }
-  ],
   "scopeReady": true,
-  "candidateCourseCount": 365,
-  "topicCourseCount": 53
+  "candidateCourseCount": 589,
+  "topicGroups": []
 }
 ```
 
-上述三條官方路徑只適用資訊工程學系；其他系所的 `tracks` 為空陣列。
-`topics` 只統計本系選修或已有正式修課路徑的課程，避免完整候選池中的通識與跨院課
-把專業方向淹沒；`candidateCourseCount` 仍表示完整排課候選數，`topicCourseCount` 是實際
-用來產生主題的課程數。
+上述三條官方路徑只適用資訊工程學系；其他系所的 `tracks` 為空陣列。`candidateCourseCount` 是完整排課候選數。
+
+**`topicGroups`（分組選單，2026-11-20）**：三組選單，下面是各欄位的說明與範例。
+
+```json
+{
+  "topicGroups": [
+    {
+      "key": "department", "label": "本系", "level": "sub",
+      "options": [
+        {
+          "id": "sub_…", "name": "資訊安全與隱私", "level": "sub", "mainCategory": "資訊與計算",
+          "mode": "direct", "courseCount": 5, "tagCount": 2, "aliasIds": [],
+          "sampleCourses": ["電子商務安全", "安全程式設計", "系統安全"],
+          "tags": [{ "tagId": "tag_…", "name": "資訊安全", "courseCount": 5, "sampleCourses": ["系統安全"] }]
+        },
+        { "id": "sub_…", "name": "網路、系統與程式工具", "mode": "followup", "courseCount": 19, "tagCount": 20, "aliasIds": [] }
+      ]
+    },
+    { "key": "generalEducation", "label": "通識", "level": "main", "options": [] },
+    { "key": "outside", "label": "系外（不含理工類學院）", "level": "main", "options": [] }
+  ]
+}
+```
+
+- 三組的範圍直接取自排課器的畢業分類桶：`department`＝本系選修、`generalEducation`＝通識、
+  `outside`＝系外選修。必修與「其他」桶（應用外語、體育、學院綜合班、學分學程）不列入，因為
+  標籤興趣（S_tag）只作用於前三個桶，勾了也不會影響排課。沒有任何選項的組不回傳。
+- 本系用**子類別**，通識與系外用**大類別**。同一組「池內可選標籤集合」完全相同的子類別併成一個選項，
+  其餘 ID 放在 `aliasIds`，`mainCategories` 是它們所屬的大類別（可能不只一個）。
+  **併過的選項用內容命名**：`name` 是「大類別：最常出現的 3 個標籤」，標籤超過 3 個加「 等」，由資料
+  產生，`nameSource` 為 `content`，並附 `catalogNames`（被併進來的目錄子類別名稱，方便追查）。原因是目錄的
+  子類別層在很多大類別裡沒有區分度：例如「視覺藝術」「媒體」「建築與空間美學」的標籤清單完全相同（各 274 個），
+  全目錄有 38.4% 的標籤在同一個大類別底下被分到 3 個以上子類別，併在一起後沒有「正確的目錄名稱」可選。
+  沒有被併過、以及 `direct` 白名單內的選項用目錄原名（`nameSource` 為 `catalog`）；通識與系外用大類別，
+  名稱就是大類別名稱。「學習階段與課程情境」「課程活動與評量」兩個大類別不當選項。
+- 本系選單有**依系所的隱藏清單**（`HIDDEN_SUBCATEGORIES`，見 `server/src/data/interestMenuConfig.js`）：
+  清單內的子類別在候選池裡命中的標籤混雜，不列成選項。只有「整組併在一起的成員都在清單內」才隱藏；
+  隱藏只影響選單，不影響追問候選與保存驗證。目前只有資訊工程學系有清單。
+- 只統計**同時可學習且可跨課配對**的標籤（單課標籤與 `too_common` 標籤不算），所以每個選項至少有一個
+  能影響排課的標籤。每組依課程數由多到少，最多 8 個；同一門課開多個班只算一次。
+- `mode: "direct"` 只給設定檔明列的白名單（目前只有「資訊安全與隱私」）：勾選後不追問，`tags` 是候選池
+  裡實際命中的標籤，供前端顯示給學生確認。其餘一律 `followup`，不帶 `tags`。
+- **人工策畫選項（2026-11-20，ADR-026）**：資訊工程學系的本系組最前面另有「人工智慧」（`id: "curated_ai"`、
+  `nameSource: "curated"`、`mode: "direct"`），不佔依課程數排序的 8 個名額。`tags` 是人工清單（人工智慧、機器學習、
+  深度學習、生成式AI、自然語言處理、語言模型、電腦視覺）在候選池裡實際命中的標籤，**包含 `too_common` 的人工智慧
+  與機器學習**；這兩個標籤只有從這個選項明確選擇時才計分。其他系所、或候選池沒有命中時不出現。
+- **系外組不含理工類學院**（資電、工程與科學、建設三個學院，加上環境工程與科學學系、航太與系統工程學系、
+  人工智慧技術與應用學士學位學程、應用數學系、創能學院綜合班）。這只排除選單，不影響排課計分。
+- 候選池以系所、年級、班別與學期為鍵快取 10 分鐘（重建一次約 2 秒）；班別沒選好時不猜測，`topicGroups`
+  為空、`scopeReady` 為 `false`。
 
 ### `GET /api/courses/:id`
 
@@ -1496,6 +1541,62 @@ tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`err
 
 完整班級缺少或無法解析時，`courseSearchScope` 的三個欄位均為 `null`。
 
+### `POST /api/profile/interest-followups`
+
+設定頁「想接觸的課程主題」的追問題目（2026-11-20 起）。學生勾選類別、按「完成並保存偏好設定」之後，每個類別問一題，
+學生勾選的**具體標籤**才會得到 S_tag 先驗（類別本身不展開）。需要登入與服務同意；每位使用者每分鐘最多 6 次
+（超過回 `429`、`code: "RATE_LIMITED"`）。
+
+Request（`department`、`gradeLevel`、`className` 用來重建這位學生的候選池，與 `GET /api/courses/interest-options` 相同；
+一次最多 6 個分類，重複的 `(group, categoryId)` 只留一筆）：
+
+```json
+{
+  "department": "資訊工程學系",
+  "gradeLevel": 3,
+  "className": "資訊三甲",
+  "selections": [{ "group": "outside", "categoryId": "main_…" }]
+}
+```
+
+Response：
+
+```json
+{
+  "followups": [
+    {
+      "group": "outside",
+      "categoryId": "main_…",
+      "categoryName": "語言、文學與溝通",
+      "question": "你想接觸哪些語言、文學或溝通主題？",
+      "source": "gpt",
+      "totalTagCount": 29,
+      "options": [
+        { "tagId": "tag_…", "name": "日語", "courseCount": 1, "sampleCourses": ["日語短劇"], "previouslySelected": false }
+      ]
+    },
+    { "group": "outside", "categoryId": "main_不存在", "unavailable": true, "reason": "category_not_in_pool" }
+  ],
+  "scopeReady": true,
+  "mode": "gpt"
+}
+```
+
+- **選項一律來自後端的清單**：這位學生候選池裡該類別的可選標籤（同時可學習且可跨課配對），依課程數排序取前 20 個
+  當候選，學生最多看到 12 個。每個選項附代表課程與課程數（前端顯示「會加分給 N 門課」）。**學生以前選過、仍然
+  有效的標籤一律重新顯示**（`previouslySelected: true`），不受 12 個上限與排序影響，否則舊答案無法編輯。
+- **GPT 只寫問題與調整順序**，不能新增、改名、翻譯或移除標籤；回傳的編號不在清單內的丟掉、漏掉的依課程數補在後面。
+  提示詞要求把工具與軟體名稱（PowerPoint、Chat GPT）、泛用詞與只是課堂附帶提到的主題排在最後（見
+  `docs/PROMPT_DESIGN.md`）。送給 OpenAI 的只有**類別名稱、標籤名稱與課程數**，沒有使用者 ID、Profile、歷史、系所或班別。
+- `source` 是 `gpt` 或 `fixed`。**固定問句後備**：沒有 `OPENAI_API_KEY`、`INTEREST_FOLLOWUP_MODE=fixed`、逾時（12 秒，
+  不重試）、呼叫失敗、輸出格式不對、題目過長或含網址，該類別改用「『類別』裡你對哪些主題有興趣？」，選項來源與流程相同。
+  頂層 `fallbackReason` 為 `mode_fixed`、`no_api_key`、`gpt_timeout`、`gpt_error` 或 `partial_gpt_output`；**追問失敗不回錯誤，
+  也不能擋住保存**。
+- 題目依「類別＋候選標籤」快取在伺服器記憶體 24 小時，所有使用者共用（內容沒有個人資料）。失敗不快取。
+- 分類不在這位學生這一組的候選池時，該筆回 `unavailable: true`、`reason: "category_not_in_pool"`；班別沒選好時回
+  `{ "followups": [], "scopeReady": false }`。
+- 錯誤：`400`（欄位缺漏或型別錯誤，例如 `selections 最多 6 筆`）、`429`（限流）。
+
 ### `POST /api/profile`
 
 只更新 session 使用者的 `User_Profiles` 支援欄位。request 不需也不應傳 `userId`。
@@ -1542,6 +1643,38 @@ Profile 另接受 `remainingSemesters`（1～8 的整數或 `null`）：
 **這一輪只做持久化，開關尚未生效**：`getSchedulingPreferenceWeights()` 還沒有讀它，
 排課結果在 `true`／`false` 下完全相同。真正讓它生效（回 `user-opted-out`）並補上前端
 介面是 3B 的範圍——提前生效會讓 3A 不再是「不改變正式推薦結果」的 shadow 階段。
+
+Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」的選擇結果，2026-11-20 起）：
+
+```json
+{
+  "interestSelections": [
+    { "group": "outside", "categoryId": "main_…", "level": "main", "mode": "followup", "tagIds": ["tag_…"] }
+  ]
+}
+```
+
+每一筆以 `(group, categoryId)` 為鍵，`group` 只接受 `department`、`generalEducation`、`outside`；
+`categoryId` 必須是非空字串；`tagIds` 省略或空陣列代表只選了類別、尚未追問；最多 48 筆。
+不是陣列、項目不是物件、未知 `group`、空的 `categoryId`、非字串的 `tagIds` 一律回 `400`。
+送空陣列代表清空所有選擇。它保存在 `preferences_json.values.interestSelections`，更新時不會
+洗掉 `interests` 與其他鍵。
+
+**保存前的驗證（2026-11-20）**：送了 `interestSelections` 時，伺服器對照這位學生的候選池（`department`、
+`gradeLevel`、`className` 取自這次請求，沒帶就用已保存的 Profile）：分類必須存在、層級與組別相符（本系用子類別、
+通識與系外用大類別）、在這一組的候選池裡有這個分類；標籤必須是該分類在這一組候選池裡的可選標籤，不在的丟掉。
+**與已保存的某一筆完全相同的選擇不重驗、原樣保留**，新學期候選池對不上舊答案時不會被默默刪掉。回應多兩個欄位：
+
+```json
+{ "success": true, "preferences": {}, "interestSelectionsStatus": "verified", "interestSelectionWarnings": [] }
+`categoryId` 也可以是人工策畫選項（`curated_ai`，只限本系組、只限適用的系所）：標籤對照它的人工清單在候選池裡
+實際命中的部分，清單內的 `too_common` 標籤也接受（ADR-026）。
+```
+
+`interestSelectionsStatus` 是 `unchanged`（沒有任何變動）、`verified`（已對照候選池）或 `unverified`（候選池載入失敗
+或班別沒選好，**不接受新的標籤**：變動的選擇保留已保存的標籤、新增的只記類別，**不擋住其他欄位保存**）。
+`interestSelectionWarnings` 每一項是 `{ group, categoryId, tagId?, reason }`，`reason` 為 `unknown_category`、
+`wrong_level`、`category_not_in_pool`、`tag_not_in_pool` 或 `verification_unavailable`。
 
 `department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
 

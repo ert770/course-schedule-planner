@@ -1,6 +1,7 @@
 import { normalizeSemesterLabel } from '../data/activeTerm.js';
 import { interestTagCatalog, resolveInterestTag, resolveInterestTags } from '../data/interestTagCatalog.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
+import { resolveInterestSelections } from '../data/interestSelections.js';
 import { isRequiredForStudent } from './courseScope.js';
 
 export const TAG_INTEREST_MODEL_VERSION = 'rag-tag-interest-v1';
@@ -215,11 +216,40 @@ export function buildExplicitTagInterest(prefs = {}) {
     }
   }
 
+  // 設定頁「想接觸的課程主題」的選擇結果（`interestSelections`，依 ID 而非名稱，避開 39 個
+  // 子類別與標籤同名的歧義）。
+  //   - 分類：只進 `categoryInterests`，**仍然不展開成底下的標籤**。
+  //   - 標籤：只有使用者明確點選的具體標籤（追問時勾的，或小而一致的子類別確認後展開的）
+  //     才得到先驗 p0 = 1。同一個標籤從多組多筆選到，只算一次。
+  //   - 只接受可選標籤（可學習且可跨課配對）：排課只計可跨課配對的標籤，其他的存進先驗
+  //     也不會改變任何別的課的分數。
+  // 名稱路徑（上面的迴圈）行為完全不變；兩條路徑選到同一個標籤時，以先建立的那筆為準。
+  const selected = resolveInterestSelections(readInterestPreferences(prefs).interestSelections);
+  for (const category of selected.categories) {
+    const key = category.type === 'main'
+      ? `main:${category.mainCategoryId}`
+      : `sub:${category.subcategoryId}`;
+    if (!categories.has(key)) categories.set(key, category);
+  }
+  for (const { tag, scoringExempt } of selected.tags) {
+    if (tagPriors.has(tag.id)) continue;
+    tagPriors.set(tag.id, {
+      canonicalTagId: tag.id, canonicalName: tag.name, prior: 1,
+      categoryPaths: categoryPathsFor(tag),
+      crossCourseMatchEligible: tag.eligibility?.crossCourseMatchEligible === true,
+      source: 'selection',
+      // 策畫選項明確選的 too_common 標籤（例如「人工智慧」）：目錄不讓它跨課配對，但使用者親手選了，
+      // 排課計分時對這位使用者例外採用（ADR-026）。行為學習仍然不學它。
+      ...(scoringExempt ? { selectionScoringExempt: true } : {}),
+    });
+  }
+
   return {
     explicitTopics: terms,
     categoryInterests: [...categories.values()],
     tagPriors: [...tagPriors.values()],
     unmappedTopics,
+    ignoredSelections: selected.ignored,
     priorMass: TAG_INTEREST_PRIOR_MASS,
   };
 }
@@ -487,6 +517,7 @@ export function computeTagInterestProfile(events = [], prefs = {}, options = {})
       lastEventAt: tag.lastEventAt,
       sources: [...tag.sources].sort(),
       hasEvidence: tag.positiveEvidence + tag.negativeEvidence > 0,
+      ...(prior?.selectionScoringExempt === true ? { selectionScoringExempt: true } : {}),
     };
   }).sort((left, right) => left.canonicalTagId.localeCompare(right.canonicalTagId));
 
@@ -514,10 +545,18 @@ export function computeTagInterestProfile(events = [], prefs = {}, options = {})
   };
 }
 
-/** Score a new course from cross-course eligible canonical tags only. */
+/**
+ * Score a new course from cross-course eligible canonical tags only.
+ *
+ * 例外（ADR-026）：這位使用者從策畫選項明確選的 too_common 標籤（profile 的 tagInterests 帶
+ * `selectionScoringExempt`）也算進來。只影響有這個先驗的使用者；沒選的人分數完全不變。
+ */
 export function scoreCourseTagInterest(profile, rawTags) {
+  const interests = new Map((profile?.tagInterests ?? [])
+    .map(tag => [tag.canonicalTagId, tag]));
   const resolved = resolveInterestTags(rawTags).tags
-    .filter(tag => tag.eligibility?.crossCourseMatchEligible === true);
+    .filter(tag => tag.eligibility?.crossCourseMatchEligible === true
+      || interests.get(tag.canonicalTagId)?.selectionScoringExempt === true);
   if (resolved.length === 0) {
     return {
       score: null,
@@ -528,8 +567,6 @@ export function scoreCourseTagInterest(profile, rawTags) {
     };
   }
 
-  const interests = new Map((profile?.tagInterests ?? [])
-    .map(tag => [tag.canonicalTagId, tag]));
   const matchedTags = resolved.map(tag => {
     const interest = interests.get(tag.canonicalTagId);
     return {

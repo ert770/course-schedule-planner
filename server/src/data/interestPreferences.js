@@ -1,7 +1,3 @@
-import { CS_TRACKS } from './csCurriculum.js';
-
-export const INTEREST_TOPIC_LIMIT = 16;
-
 function normalizeString(value) {
   return String(value ?? '').trim();
 }
@@ -9,6 +5,43 @@ function normalizeString(value) {
 export function normalizeInterestList(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map(normalizeString).filter(Boolean))];
+}
+
+// 設定頁「想接觸的課程主題」的選擇結果，依「組別＋分類」保存。
+//
+// 為什麼不用兩個全域陣列（分類 ID、標籤 ID）：通識的「語言」與系外的「語言」是不同的
+// 選單，各自選了日語與韓語時，兩個陣列無法還原答案分別屬於哪一組，取消其中一組也撤不乾淨。
+// 這裡每一筆自成一組 `{ group, categoryId, level, mode, tagIds }`，以 `(group, categoryId)`
+// 為鍵；提供給 S_tag 的先驗則是所有筆的 `tagIds` 合併去重（見 `tagInterestLearning.js`）。
+//
+// 這個檔只做「形狀」正規化。標籤與分類是否存在於目錄、標籤是否屬於所選組別，由
+// `interestSelections.js` 對照目錄與候選池驗證——那邊要讀標籤目錄，而標籤目錄本身又
+// import 這個檔，所以兩者不能放在同一個模組裡（會循環 import）。
+export const INTEREST_SELECTION_GROUPS = Object.freeze(['department', 'generalEducation', 'outside']);
+export const INTEREST_SELECTION_MODES = Object.freeze(['direct', 'followup']);
+
+export function normalizeInterestSelections(value) {
+  if (!Array.isArray(value)) return [];
+  // 同一個 (group, categoryId) 以後出現的為準：重送整份清單時，最後一次作答才算數。
+  const byKey = new Map();
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const group = normalizeString(item.group);
+    const categoryId = normalizeString(item.categoryId);
+    if (!INTEREST_SELECTION_GROUPS.includes(group) || !categoryId) continue;
+    const level = item.level === 'sub' || item.level === 'main'
+      ? item.level
+      : (categoryId.startsWith('sub_') ? 'sub' : 'main');
+    const mode = item.mode === 'direct' ? 'direct' : 'followup';
+    byKey.set(`${group}\u0000${categoryId}`, {
+      group,
+      categoryId,
+      level,
+      mode,
+      tagIds: normalizeInterestList(item.tagIds),
+    });
+  }
+  return [...byKey.values()];
 }
 
 // 匯出供 personalizationPreferences.js 共用——preferences_json 的 canonical shape
@@ -42,6 +75,9 @@ export function readInterestPreferences(source = {}) {
     preferredKeywords: normalizeInterestList(
       source.preferredKeywords ?? values.preferredKeywords
     ),
+    interestSelections: normalizeInterestSelections(
+      source.interestSelections ?? values.interestSelections
+    ),
   };
 }
 
@@ -58,44 +94,18 @@ export function mergeInterestPreferences(preferencesJson, updates = {}) {
   if (Object.hasOwn(updates, 'preferredKeywords')) {
     values.preferredKeywords = normalizeInterestList(updates.preferredKeywords);
   }
+  if (Object.hasOwn(updates, 'interestSelections')) {
+    values.interestSelections = normalizeInterestSelections(updates.interestSelections);
+  }
 
   return { ...next, values };
 }
 
-// rag_tag 是每個開課 section 的主題標籤。相同課程若有多個 section，只計一次，
-// 避免開班較多的科目把興趣選項排名灌高。
-export function buildInterestOptions(courses = [], { topicLimit = INTEREST_TOPIC_LIMIT } = {}) {
-  const counts = new Map();
-  const seenCourseTopics = new Set();
-
-  for (const course of courses) {
-    const courseKey = normalizeString(course.courseId || course.code || course.id);
-    for (const topic of normalizeInterestList(course.ragTag)) {
-      const uniqueKey = `${courseKey}\u0000${topic}`;
-      if (seenCourseTopics.has(uniqueKey)) continue;
-      seenCourseTopics.add(uniqueKey);
-      counts.set(topic, (counts.get(topic) || 0) + 1);
-    }
-  }
-
-  const topics = [...counts.entries()]
-    .map(([name, courseCount]) => ({ name, courseCount }))
-    .sort((left, right) => (
-      right.courseCount - left.courseCount
-      || left.name.localeCompare(right.name, 'zh-Hant')
-    ))
-    .slice(0, Math.max(0, Number(topicLimit) || 0));
-
-  return {
-    tracks: [...CS_TRACKS],
-    topics,
-  };
-}
-
 export default {
-  INTEREST_TOPIC_LIMIT,
+  INTEREST_SELECTION_GROUPS,
+  INTEREST_SELECTION_MODES,
   normalizeInterestList,
+  normalizeInterestSelections,
   readInterestPreferences,
   mergeInterestPreferences,
-  buildInterestOptions,
 };
