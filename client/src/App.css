@@ -1214,3 +1214,21 @@
 .save-toast.success { color: var(--accent-green, #15803d); background: color-mix(in srgb, var(--accent-green, #15803d) 12%, transparent); }
 .save-toast.error { color: var(--accent-red, #b91c1c); background: color-mix(in srgb, var(--accent-red, #b91c1c) 12%, transparent); }
 
+/* 設定頁「想接觸的課程主題」：三組選單與追問對話框（2026-11-20）。對話框外框沿用 history-feedback-* 的樣式。 */
+.interest-topic-group-label { margin: 0 0 6px; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
+.interest-topic-confirm { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-primary); }
+.interest-topic-confirm > p { margin: 0 0 6px; font-size: 0.78rem; color: var(--text-secondary); }
+.interest-topic-confirm-row, .interest-followup-option { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 5px 0; font-size: 0.85rem; cursor: pointer; }
+.interest-topic-confirm-row input, .interest-followup-option input { margin: 0; flex-shrink: 0; align-self: center; }
+.interest-topic-answered { margin: 6px 0 0; font-size: 0.78rem; color: var(--text-secondary); }
+.interest-topic-answered button { margin-left: 8px; padding: 0; border: none; background: none; color: var(--accent-blue); cursor: pointer; font-size: 0.78rem; }
+.interest-followup-loading { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--text-secondary); font-size: 0.88rem; }
+.interest-followup-empty, .interest-followup-more { margin: 4px 0; font-size: 0.8rem; color: var(--text-muted); }
+.interest-followup-group { padding-bottom: 12px; border-bottom: 1px dashed var(--border-color); }
+.interest-followup-group:last-child { border-bottom: none; }
+.interest-followup-group h4 { margin: 0 0 2px; font-size: 0.95rem; color: var(--text-primary); }
+.interest-followup-category { margin: 0 0 8px; font-size: 0.75rem; color: var(--text-muted); }
+.interest-followup-options { display: flex; flex-direction: column; }
+.interest-followup-option.selected .interest-followup-option-name { color: var(--accent-blue); font-weight: 600; }
+.interest-followup-option-name { font-weight: 500; }
+.interest-followup-option-meta { font-size: 0.75rem; color: var(--text-muted); flex-basis: 100%; padding-left: 24px; line-height: 1.5; }

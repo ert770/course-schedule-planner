@@ -2,7 +2,6 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildInterestOptions,
   mergeInterestPreferences,
   normalizeInterestList,
   normalizeInterestSelections,
@@ -162,31 +161,6 @@ describe('課程主題選擇結果 interestSelections（Step A：資料模型）
 
     const twice = readInterestPreferences(overridden);
     assert.deepEqual(twice.interestSelections, overridden.interestSelections);
-  });
-});
-
-describe('課程 rag_tag 興趣選項', () => {
-  test('同一課程的不同 section 對相同主題只計一次', () => {
-    const result = buildInterestOptions([
-      { id: 1, courseId: 'CS101', ragTag: ['人工智慧', 'Python'] },
-      { id: 2, courseId: 'CS101', ragTag: ['人工智慧'] },
-      { id: 3, courseId: 'CS102', ragTag: ['人工智慧', '資安'] },
-    ]);
-
-    assert.equal(result.topics[0].name, '人工智慧');
-    assert.deepEqual(
-      Object.fromEntries(result.topics.map(topic => [topic.name, topic.courseCount])),
-      { 人工智慧: 2, 資安: 1, Python: 1 }
-    );
-    assert.ok(result.tracks.includes('網路與安全類'));
-  });
-
-  test('主題數量受上限控制', () => {
-    const result = buildInterestOptions([
-      { courseId: 'A', ragTag: ['甲', '乙', '丙'] },
-    ], { topicLimit: 2 });
-
-    assert.equal(result.topics.length, 2);
   });
 });
 

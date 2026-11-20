@@ -200,6 +200,14 @@ export const profileAPI = {
   // 偏好標籤目錄。不帶身分——回傳的是標籤定義本身，不是任何人的資料。
   // 前端各頁不再自己寫死清單，避免像先前 Dashboard 那樣漏掉 `#不點名`。
   getPreferenceTags: () => request('/profile/preference-tags'),
+  // 設定頁「想接觸的課程主題」的追問題目（見 server/src/services/interestFollowupService.js）。
+  // payload：{ department, gradeLevel, className, selections: [{ group, categoryId }] }，一次最多 6 個分類。
+  // 失敗（含 OpenAI 逾時）時後端回固定問句，不回錯誤；呼叫端仍要處理網路錯誤。
+  getInterestFollowups: (payload) =>
+    request('/profile/interest-followups', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
 
 // Reviews API

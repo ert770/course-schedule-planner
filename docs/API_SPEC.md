@@ -588,30 +588,24 @@ Response:
 ### `GET /api/courses/interest-options`
 
 回傳設定頁可詢問使用者的課程方向。`department`、`gradeLevel` 必填；`className`
-尚未提供時仍回傳該系的官方修課路徑，但 `topics` 為空。班別完整時，`topics`
-由目前排課候選課程的 `Course_Sections.rag_tag` 統計而來，不在前端寫死。
+尚未提供時仍回傳該系的官方修課路徑，但 `topicGroups` 為空、`scopeReady` 為 `false`。班別完整時，
+`topicGroups` 由這位學生的排課候選課程的 `Course_Sections.rag_tag`（經標籤目錄解析）統計而來，不在前端寫死。
 同一課程的不同 section 對相同主題只計一次。
+
+**舊的平面清單 `topics` 與 `topicCourseCount` 已於 2026-11-20 移除**（設定頁改讀 `topicGroups`）。
 
 ```json
 {
   "tracks": ["嵌入式系統類", "技術應用類", "網路與安全類"],
-  "topics": [
-    { "name": "人工智慧", "courseCount": 12 },
-    { "name": "資訊安全", "courseCount": 8 }
-  ],
   "scopeReady": true,
-  "candidateCourseCount": 365,
-  "topicCourseCount": 53
+  "candidateCourseCount": 589,
+  "topicGroups": []
 }
 ```
 
-上述三條官方路徑只適用資訊工程學系；其他系所的 `tracks` 為空陣列。
-`topics` 只統計本系選修或已有正式修課路徑的課程，避免完整候選池中的通識與跨院課
-把專業方向淹沒；`candidateCourseCount` 仍表示完整排課候選數，`topicCourseCount` 是實際
-用來產生主題的課程數。
+上述三條官方路徑只適用資訊工程學系；其他系所的 `tracks` 為空陣列。`candidateCourseCount` 是完整排課候選數。
 
-**`topicGroups`（2026-11-20 新增，分組選單）**：班別完整時另回三組選單，取代上面的 `topics`
-（`topics` 與 `topicCourseCount` 暫時保留，設定頁改讀 `topicGroups` 之後會移除）。
+**`topicGroups`（分組選單，2026-11-20）**：三組選單，下面是各欄位的說明與範例。
 
 ```json
 {

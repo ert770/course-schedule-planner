@@ -7,9 +7,9 @@ import {
   getInstructors,
   getClassNames,
 } from '../skills/courseQuery.js';
-import { buildCourseQueryScope, isOwnDepartmentElective } from '../skills/courseScope.js';
+import { buildCourseQueryScope } from '../skills/courseScope.js';
 import { getInterestTopicGroups } from '../services/interestMenuService.js';
-import { buildInterestOptions } from '../data/interestPreferences.js';
+import { CS_TRACKS } from '../data/csCurriculum.js';
 
 const router = Router();
 
@@ -121,9 +121,9 @@ router.get('/instructors', async (req, res) => {
 // 興趣選項不能在前端寫死：官方修課路徑來自課程地圖，課程主題則依這位學生的排課候選池統計
 // （Course_Sections.rag_tag 經標籤目錄解析）。班別未選好時仍回傳修課路徑，但不猜測候選課程主題。
 //
-// `topicGroups` 是新的分組選單（本系／通識／系外），範圍與 S_tag 實際作用的畢業分類桶一致，
-// 見 `services/interestMenuService.js`。`topics` 與 `topicCourseCount` 是舊的平面清單，設定頁
-// 改讀 `topicGroups` 之後會移除，目前只為了讓還沒更新的前端繼續可用。
+// `topicGroups` 是分組選單（本系／通識／系外），範圍與 S_tag 實際作用的畢業分類桶一致，
+// 見 `services/interestMenuService.js`。舊的平面清單 `topics`／`topicCourseCount` 已於 2026-11-20
+// 設定頁改讀 `topicGroups` 時移除。
 router.get('/interest-options', async (req, res) => {
   try {
     const { department, gradeLevel, className } = req.query;
@@ -141,19 +141,12 @@ router.get('/interest-options', async (req, res) => {
       });
     }
 
-    // 舊的平面清單：只使用本系選修與已有正式 track 的課程主題。
-    const topicCourses = menu?.scope
-      ? menu.courses.filter(course => course.track || isOwnDepartmentElective(course, menu.scope))
-      : [];
-    const options = buildInterestOptions(topicCourses);
     res.json({
-      ...options,
       // 三條路徑是資工系正式課程地圖，其他系所不顯示成自己的官方分類。
-      tracks: department.trim() === '資訊工程學系' ? options.tracks : [],
+      tracks: department.trim() === '資訊工程學系' ? [...CS_TRACKS] : [],
       topicGroups: menu?.topicGroups ?? [],
       scopeReady: Boolean(menu?.scopeReady),
       candidateCourseCount: menu?.candidateCourseCount ?? 0,
-      topicCourseCount: topicCourses.length,
     });
   } catch (err) {
     if (!err.status) console.error('Interest options error:', err);
