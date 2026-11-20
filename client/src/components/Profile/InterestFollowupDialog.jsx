@@ -1,6 +1,6 @@
 // 設定頁「想接觸的課程主題」的追問對話框。
 //
-// 學生勾了課程主題類別、按下「完成並保存偏好設定」之後，每個新勾的類別問一題：這個類別裡你對哪些具體主題有興趣？
+// 在課程興趣步驟確認細項，或在保存時補問尚未確認的類別。
 // 選項是後端依這位學生的候選課程準備的可選標籤（見 server/src/services/interestFollowupService.js）：
 //   - 每個選項附代表課程與課程數（「會加分給 N 門課」），學生自己判斷；
 //   - 題目可能是 GPT 寫的，也可能是固定問句（沒有金鑰、逾時、失敗時），流程相同；
@@ -8,7 +8,7 @@
 //     頁面沒有這個類別的答案時，才用伺服器標記的 `previouslySelected`（已保存的答案）。
 //
 // mode="save"：保存流程中跳出，有「略過，直接保存」——略過時新勾的類別只記類別、沒有標籤。
-// mode="edit"：從已保存的選擇按「調整」打開，只更新畫面上的選擇，不直接保存。
+// mode="step" 確認後進入排課條件，mode="edit" 則留在課程興趣。
 //
 // 對話框自己處理 loading 與錯誤：保存按鈕按下後頁面不能被整頁 spinner 取代（那樣對話框會一起消失）。
 // 追問載入失敗不能擋住保存：錯誤時仍可「略過，直接保存」。
@@ -41,9 +41,11 @@ export default function InterestFollowupDialog({
     let cancelled = false;
     const { selections, ...scope } = JSON.parse(requestKey);
 
-    Promise.all(chunk(selections, MAX_CATEGORIES_PER_REQUEST).map(part => (
-      profileAPI.getInterestFollowups({ ...scope, selections: part })
-    )))
+    // Strict Mode 的第一次 setup 會立即 cleanup，避免在這次重複送出追問。
+    Promise.resolve()
+      .then(() => cancelled ? [] : Promise.all(chunk(selections, MAX_CATEGORIES_PER_REQUEST).map(part => (
+        profileAPI.getInterestFollowups({ ...scope, selections: part })
+      ))))
       .then(results => {
         if (cancelled) return;
         const all = results.flatMap(result => result.followups ?? []);
@@ -114,7 +116,7 @@ export default function InterestFollowupDialog({
           {status === 'error' && (
             <div className="search-action-notice error" role="alert">
               {errorMessage}
-              {mode === 'save' && '你可以略過這一步，直接保存其他設定，之後再到偏好設定補選主題。'}
+              {mode !== 'edit' && ' 你可以先略過細項，之後再補選。'}
             </div>
           )}
 
@@ -165,9 +167,9 @@ export default function InterestFollowupDialog({
         </div>
 
         <div className="history-feedback-footer">
-          {mode === 'save' ? (
+          {mode !== 'edit' ? (
             <button type="button" className="course-card-action" onClick={onSkip} id="interest-followup-skip">
-              略過，直接保存
+              {mode === 'step' ? '先略過細項' : '略過細項並保存'}
             </button>
           ) : (
             <button type="button" className="course-card-action" onClick={onCancel}>取消</button>
@@ -180,7 +182,7 @@ export default function InterestFollowupDialog({
               disabled={status !== 'ready'}
               id="interest-followup-confirm"
             >
-              {mode === 'save' ? '確定並保存' : '確定'}
+              {mode === 'save' ? '確定並保存' : mode === 'step' ? '確定並繼續' : '確定細項'}
             </button>
           )}
         </div>

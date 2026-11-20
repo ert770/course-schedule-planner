@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, BookOpenCheck, Check, Compass, Loader2, Sparkles } from 'lucide-react'; // 新增 ArrowLeft
+import { ArrowRight, BookOpenCheck, Check, Loader2, Sparkles } from 'lucide-react';
+import PreferenceJourneySteps, { PreferenceBackButton } from '../components/Layout/PreferenceJourneySteps';
 import { useAuth } from '../contexts/useAuth';
 import { getUserIdentity } from '../utils/userIdentity';
 import { interactionsAPI, interestExplorationAPI, profileAPI } from '../services/api';
@@ -62,6 +63,8 @@ export default function InterestExplorationPage() {
   const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState(new Set());
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -96,10 +99,12 @@ export default function InterestExplorationPage() {
           clarifiedCategoryIds: savedState.clarifiedCategoryIds,
         });
       })
-      .catch(err => setError(err.message || '無法載入初始探索課程。'))
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [identity, navigate]);
+  }, [identity, navigate, loadAttempt]);
 
   const card = cards[currentIndex] ?? null;
   const topics = useMemo(() => [
@@ -237,31 +242,12 @@ export default function InterestExplorationPage() {
 
   return (
     <main className="interest-exploration-page">
-      <section className="interest-exploration-shell" aria-labelledby="interest-exploration-title" style={{ position: 'relative' }}>
-        
-        {/* 返回鍵 */}
-        <button 
-          onClick={() => navigate('/setup')}
-          style={{
-            position: 'absolute', top: '24px', left: '24px',
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '8px', borderRadius: '50%', transition: 'background 0.2s', zIndex: 10
-          }}
-          onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-          onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-          title="返回偏好設定"
-        >
-          <ArrowLeft size={22} />
-        </button>
-
-        <header className="interest-exploration-header">
-          <div className="interest-exploration-icon"><Compass size={23} /></div>
-          <p className="interest-exploration-eyebrow">排課前的短探索</p>
-          <h1 id="interest-exploration-title">先看看哪些課程主題吸引你</h1>
-          <p className="interest-exploration-intro">
-            這些是真實開課資料中的選修課。每張卡片可回饋、先了解或略過；不會影響必修與其他排課條件。
-          </p>
+      <section className="interest-exploration-shell" aria-labelledby="interest-exploration-title">
+        <PreferenceBackButton onClick={() => navigate('/setup')}>返回偏好設定</PreferenceBackButton>
+        <PreferenceJourneySteps current={3} />
+        <header className="preference-page-header">
+          <h1 id="interest-exploration-title">探索你可能想修的課</h1>
+          <p>看看課程內容和主題。你可以留下回饋、略過單張，或隨時結束探索。</p>
           {targetTerm && <p className="interest-exploration-term">探索學期：{targetTerm.academicYear} 學年度{targetTerm.semester}</p>}
         </header>
 
@@ -286,7 +272,17 @@ export default function InterestExplorationPage() {
         {error && <div className="interest-exploration-error" role="alert">{error}</div>}
         {notice && <div className="interest-exploration-notice" role="status">{notice}</div>}
 
-        {categoryPrompts.length > 0 ? (
+        {loadFailed ? (
+          <section className="interest-exploration-empty" aria-labelledby="interest-load-error">
+            <h2 id="interest-load-error">目前無法載入探索課程</h2>
+            <p>你可以重新載入這一步，或直接前往課表。</p>
+            <button type="button" className="interest-button positive" onClick={() => {
+              setLoadFailed(false);
+              setLoading(true);
+              setLoadAttempt(previous => previous + 1);
+            }}>重新載入</button>
+          </section>
+        ) : categoryPrompts.length > 0 ? (
           <section className="interest-category-prompt" aria-labelledby="interest-category-prompt-title">
             <div className="interest-category-prompt-heading">
               <Sparkles size={19} />
@@ -343,13 +339,16 @@ export default function InterestExplorationPage() {
                 <span>{card.courseCode}</span>
               </div>
               <h2>{card.name}</h2>
-              <div className="interest-course-meta">
-                <span>{card.department || '開課單位未提供'}</span>
-                <span>{card.credits} 學分</span>
-                <span>{card.instructor || '教師資料未提供'}</span>
-                <span>{courseTime(card)}</span>
-                {card.track && <span>修課路徑：{translateTag(card.track)}</span>}
-              </div>
+              <details className="interest-course-details">
+                <summary>查看授課資訊</summary>
+                <div className="interest-course-meta">
+                  <span>{card.department || '開課單位未提供'}</span>
+                  <span>{card.credits} 學分</span>
+                  <span>{card.instructor || '教師資料未提供'}</span>
+                  <span>{courseTime(card)}</span>
+                  {card.track && <span>修課路徑：{translateTag(card.track)}</span>}
+                </div>
+              </details>
               <div className="interest-course-tags" aria-label="這門課的可學習主題標籤">
                 {card.tags.map(tag => (
                   <span className="interest-course-tag" key={tag.canonicalTagId}>
@@ -415,8 +414,10 @@ export default function InterestExplorationPage() {
         )}
 
         <footer className="interest-exploration-footer">
-          <span>離開後會保留目前進度，之後可從偏好設定重新探索。</span>
-          <button type="button" onClick={() => finish('skipped')}>略過探索，直接排課</button>
+          <span>若想稍後繼續，返回偏好設定會保留目前進度。</span>
+          <button type="button" disabled={busy} onClick={() => finish('skipped')}>
+            {currentIndex > 0 ? '結束探索，前往課表' : '略過探索，前往課表'}
+          </button>
         </footer>
       </section>
     </main>

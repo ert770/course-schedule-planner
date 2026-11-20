@@ -15,21 +15,6 @@
   box-shadow: var(--shadow-lg);
 }
 
-.interest-exploration-header { text-align: center; }
-.interest-exploration-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  margin-bottom: 12px;
-  border-radius: 15px;
-  background: rgba(74, 124, 247, .12);
-  color: var(--accent-blue);
-}
-.interest-exploration-eyebrow { margin: 0 0 8px; color: var(--accent-blue); font-size: .82rem; font-weight: 700; }
-.interest-exploration-header h1 { margin: 0; font-size: clamp(1.45rem, 4vw, 2rem); }
-.interest-exploration-intro { max-width: 560px; margin: 12px auto 0; color: var(--text-secondary); line-height: 1.7; }
 .interest-exploration-term { margin: 9px 0 0; color: var(--text-muted); font-size: .8rem; }
 .interest-exploration-topics { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 22px 0; color: var(--text-secondary); font-size: .86rem; }
 .interest-exploration-topics > div { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -48,6 +33,9 @@
 .interest-course-card-topline { display: flex; justify-content: space-between; gap: 12px; color: var(--text-muted); font-size: .8rem; }
 .interest-course-card h2 { margin: 13px 0 12px; font-size: 1.45rem; line-height: 1.4; }
 .interest-course-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; color: var(--text-secondary); font-size: .82rem; }
+.interest-course-details { margin-top: 8px; text-align: left; color: var(--text-secondary); font-size: .85rem; }
+.interest-course-details > summary { width: fit-content; cursor: pointer; color: var(--accent-blue); }
+.interest-course-details[open] > .interest-course-meta { margin-top: 8px; }
 .interest-course-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
 .interest-course-tag { border-radius: 10px; }
 .interest-course-tag small { color: var(--text-muted); }
@@ -78,6 +66,8 @@
 .interest-exploration-empty > svg { color: var(--accent-blue); }
 .interest-exploration-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-top: 20px; color: var(--text-muted); font-size: .8rem; }
 .interest-exploration-footer button { padding: 6px 0; border: 0; background: transparent; color: var(--accent-blue); font-weight: 650; cursor: pointer; }
+.interest-exploration-footer button:disabled { opacity: .58; cursor: wait; }
+.interest-exploration-page :is(button, summary):focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 3px; }
 .interest-exploration-loading { display: flex; min-height: 80vh; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary); }
 
 @media (max-width: 600px) {
