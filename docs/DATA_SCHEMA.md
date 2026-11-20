@@ -727,7 +727,7 @@ npm run seed:demo-personas --prefix server -- --apply --confirm-shared-mysql
 
 2026-10-09 核對快照：3,560 班次合併成 2,004 個穩定課號，6,769 個 canonical tags；6,736 個可學習、2,144 個可跨課匹配。6 個通用、27 個高頻、4,592 個單課標籤。高頻規則是嚴格 `>2%`；單課可學習但不可跨課匹配。必修排除仍須依個別使用者 scope 在事件層實作。重新執行 Excel 匯入工具會重建 pending 目錄，之後需重新執行 MySQL 唯讀報表及人工核對才能寫回資格。
 
-這份目錄尚未接入興趣事件、API、前端或排課器；不是目前線上排序的新資料來源。
+這份目錄的資格快照已接入興趣學習與排課（S_tag，見前文標籤興趣一節）。2026-11-20 起另接入設定頁：`GET /api/courses/interest-options` 依類別（本系子類別、通識與系外大類別）從候選課程池組出選單，`POST /api/profile/interest-followups` 依類別產生追問，使用者選的具體標籤保存在 `preferences_json.values.interestSelections` 並成為 S_tag 的先驗。選單、追問、保存驗證都用同一個 `isSelectableInterestTag`（可學習且可跨課配對）。
 
 排課、課程詳情與評價 API 都使用 `sectionId` 作為路由與 request body 中的課程識別值。
 

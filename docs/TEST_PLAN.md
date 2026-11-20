@@ -768,6 +768,21 @@ spike 報告（`server/test/reports/highs-spike-latest.json`）的 GO 判斷同�
 | IL-17f | 接受一個從未顯示過的方案 | 仍然要被拒絕（`rejected`）——修法不能連基本的來源驗證都放寬 |
 | IL-17g | 舊曝光事件沒有 `displayedPlanIds` | 退回只認主推 `planId`，維持相容 |
 
+### 課程主題選擇改版（Roadmap #43 延伸，2026-11-20）
+
+| 測試檔 | 覆蓋內容 |
+| --- | --- |
+| `server/test/interestPreferences.test.js`（15） | `interestSelections` 形狀正規化，以 (group, categoryId) 去重、後出現者為準；read／merge；舊的名稱路徑不變 |
+| `server/test/interestSelections.test.js`（18） | 對照標籤目錄解析分類與標籤；忽略原因 unknown_category／unknown_tag／tag_not_selectable／tag_not_in_category |
+| `server/test/interestSelectionPipeline.test.js`（9） | 管線整合（不連資料庫）：選擇 → `tagPriors` p0=1 → 標籤分 → 單課 S_tag → 候選排序；有無選擇的對照組；沒有該標籤的課分數不變；跨組合併去重；有負向證據時標籤分低於 1；`priorSignature` 隨選擇改變 |
+| `server/test/interestTopicGroups.test.js`（23） | 三組分組、同標籤集去重與內容命名、本系隱藏清單、direct 白名單、每組 8 個上限 |
+| `server/test/interestMenuService.test.js`（16） | 理工排除（明列單位）、桶分類、候選池快取與 `ready` 旗標 |
+| `server/test/interestFollowupService.test.js`（18） | 請求驗證；GPT 回傳清單外 ID 被濾掉；無 key、`fixed`、逾時、格式錯誤都走後備；題目清理；舊答案一律重新顯示；快取 |
+| `server/test/interestSelectionService.test.js`（13） | 保存驗證：標籤不屬於該組該類別被丟掉；未變動的選擇不重驗；候選池失敗為 `unverified`；警告原因 |
+| `server/test/interestTagEligibility.test.js`（4） | `isSelectableInterestTag` 共用資格判定 |
+
+路由層（`/interest-options`、`/interest-followups`、`POST /api/profile` 的保存回應）沒有自動化測試，由瀏覽器驗收涵蓋；這是已知缺口。前端沒有元件測試，以 `npm run build`、`npm run lint` 與瀏覽器實測為準。
+
 ### 帳號隔離驗收（Roadmap #28）
 
 `server/test/accountIsolation.test.js` 的 AC1-AC6——與既有 IL-9、privacy chat 隔離、

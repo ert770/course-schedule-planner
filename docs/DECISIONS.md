@@ -969,3 +969,38 @@ Consequences:
 - PB11 can verify data availability without changing candidate eligibility.
 - A future review source can be compared by evidence coverage before interpreting ranking
   changes as personalization.
+
+## ADR-025: Settings-Page Interest Follow-Ups Call OpenAI at Runtime, Scoped to Catalog Names Only
+
+Date: 2026-11-20
+
+Context:
+
+The setup page's "想接觸的課程主題" now offers categories from the tag catalog (本系 subcategories, 通識 and 系外 main categories) and, after the user saves, asks a follow-up question per category. The specific tags the user picks get a prior `p0 = 1` in S_tag. This is the first non-chat, runtime OpenAI call in the project. The privacy policy text (`privacyPolicy.js`) states the purpose as "提供排課與 AI 對話服務" and lists the processor purpose as "AI 對話與課程規劃回覆", which does not literally cover "generating setup-page options". The processor itself (OpenAI) did not change, so ADR-021 (a processor change requires a version bump) is not triggered.
+
+Decision:
+
+1. **Scope of the call.** The backend owns the selectable tag list (top 20 by course count, from the candidate pool). GPT only writes one question per category and orders the list. It cannot add, rename or remove tags; every returned ID is validated against the backend list. Only category names, tag names and course counts are sent. No user ID, profile, history or free text.
+2. **No policy bump.** Reuse the existing `service_processing` consent (`requireServiceConsent`), do not bump `PRIVACY_POLICY_VERSION`. The wording gap above is accepted and recorded here. Mitigation: `INTEREST_FOLLOWUP_MODE=fixed` (default `gpt`) never calls OpenAI and uses a fixed question; the same fallback applies without `OPENAI_API_KEY`, on timeout (12 s, no retry), or on malformed output. Follow-up failure never blocks saving.
+3. **Limited exception to "a category is never expanded into tags".** Only an explicit whitelist of small, coherent 本系 subcategories (`DIRECT_SUBCATEGORIES`, initially 資訊安全與隱私) is turned into tag priors directly, shown to the user for confirmation. "Small" alone is not enough: the survey found small subcategories with mixed content (人力資源與營運, 經濟金融, 航太與製造). Every other category is follow-up only, and a category itself stays in `categoryInterests`.
+4. **STEM exclusion is menu-only.** The 系外 menu and follow-ups exclude the 資電, 工程與科學 and 建設 colleges plus an explicit extra list (環境工程與科學學系, 航太與系統工程學系, 人工智慧技術與應用學士學位學程, 應用數學系, 創能學院綜合班). Scoring stays global tag matching, so STEM courses can still gain S_tag through a shared tag. Measured spill-over for 資工三年級: 1–7 STEM courses per category.
+5. **Keys are (group, categoryId).** `interestSelections` is stored per group so that 通識 "語言" and 系外 "語言" stay separate; tag priors are the deduplicated union of all `tagIds`. Save validation checks tags against the user's candidate pool; when the pool cannot be built the response is `unverified` and no new tags are accepted.
+
+Findings behind the menu design:
+
+- The subcategory layer has no discrimination: several subcategories share an identical tag list (e.g. AI, 程式, 資料與資訊系統). The menu therefore merges options whose pool tag sets are identical and names each merged option by content ("大類別：most frequent 3 tags", plus " 等" when more than 3).
+- Misleading-looking 通識 options come from incidental course `rag_tag` values, not from tag normalization.
+
+Rejected alternatives:
+
+- A hand-maintained display-name map for subcategories (replaced by content naming).
+- A catch-all "其他" option group (3 groups only; the 其他 graduation bucket — 應用外語, 體育, 學院綜合班, 學分學程 — is not touched by S_tag).
+- Merging or hiding 通識 資訊與計算 / 工程與製造 for CS students (not adopted; recorded as a known limitation).
+- Bumping the privacy policy version for this purpose.
+
+Consequences:
+
+- Follow-up latency is about 4–5 s on the first call and about 0.4 s when cached (24 h in-memory cache).
+- The 其他 bucket is not scored; scoring it needs graduation-credit rules and is a separate task.
+- Incidental tags can still appear in follow-up options; representative courses are shown so the student can judge.
+- If the privacy text is later revised to name this purpose, the `fixed` switch can stay as an operator escape hatch.
