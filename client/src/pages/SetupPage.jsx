@@ -206,6 +206,14 @@ export default function SetupPage() {
     });
   };
 
+  // 對話框的預設勾選以頁面上目前的答案為準，不能只靠伺服器的 `previouslySelected`：
+  // 後者只知道「已保存」的選擇，在「調整」選好、還沒保存就重開時，剛選的會全部不見，
+  // 這時按「確定」還會把它們清成 0 個（2026-11-20 瀏覽器驗收發現）。
+  const currentTagIdsFor = (selections) => Object.fromEntries(selections.flatMap(({ group, categoryId }) => {
+    const current = topicSelections.find(item => item.group === group && item.categoryId === categoryId);
+    return current ? [[followupKey(group, categoryId), current.tagIds ?? []]] : [];
+  }));
+
   // 按下「完成並保存偏好設定」：有新勾的 followup 類別就先追問，沒有就直接保存。
   const handleSubmit = () => {
     if (userIdentity === null) {
@@ -225,6 +233,8 @@ export default function SetupPage() {
           className,
           selections: pending.map(({ group, categoryId }) => ({ group, categoryId })),
         },
+        // 保存失敗後再按保存，已答但未存的類別仍算「新勾」，要帶回剛才的答案。
+        initialTagIds: currentTagIdsFor(pending),
       });
       return;
     }
@@ -259,6 +269,7 @@ export default function SetupPage() {
         className,
         selections: [{ group: selection.group, categoryId: selection.categoryId }],
       },
+      initialTagIds: currentTagIdsFor([selection]),
     });
   };
 
@@ -658,6 +669,7 @@ export default function SetupPage() {
         <InterestFollowupDialog
           request={followupDialog.request}
           mode={followupDialog.mode}
+          initialTagIds={followupDialog.initialTagIds}
           onConfirm={applyFollowupAnswers}
           onSkip={skipFollowup}
           onCancel={() => setFollowupDialog(null)}

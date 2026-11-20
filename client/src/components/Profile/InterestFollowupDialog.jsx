@@ -4,7 +4,8 @@
 // 選項是後端依這位學生的候選課程準備的可選標籤（見 server/src/services/interestFollowupService.js）：
 //   - 每個選項附代表課程與課程數（「會加分給 N 門課」），學生自己判斷；
 //   - 題目可能是 GPT 寫的，也可能是固定問句（沒有金鑰、逾時、失敗時），流程相同；
-//   - 以前選過、仍然有效的標籤預設勾好，才編輯得到舊答案。
+//   - 預設勾選以頁面傳入的 `initialTagIds`（頁面上目前的答案，含還沒保存的）為準；
+//     頁面沒有這個類別的答案時，才用伺服器標記的 `previouslySelected`（已保存的答案）。
 //
 // mode="save"：保存流程中跳出，有「略過，直接保存」——略過時新勾的類別只記類別、沒有標籤。
 // mode="edit"：從已保存的選擇按「調整」打開，只更新畫面上的選擇，不直接保存。
@@ -24,7 +25,11 @@ function chunk(items, size) {
   return out;
 }
 
-export default function InterestFollowupDialog({ request, mode = 'save', onConfirm, onSkip, onCancel }) {
+const NO_INITIAL_TAG_IDS = {};
+
+export default function InterestFollowupDialog({
+  request, mode = 'save', initialTagIds = NO_INITIAL_TAG_IDS, onConfirm, onSkip, onCancel,
+}) {
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [followups, setFollowups] = useState([]);
   const [checked, setChecked] = useState({});
@@ -43,13 +48,17 @@ export default function InterestFollowupDialog({ request, mode = 'save', onConfi
         if (cancelled) return;
         const all = results.flatMap(result => result.followups ?? []);
         setFollowups(all);
-        // 以前選過、仍然有效的標籤預設勾好。
+        // 頁面上目前的答案優先（含還沒保存的），沒有才用已保存的答案。
+        // 頁面的答案整份保留，即使某個標籤不在這次列出的選項裡，按「確定」也不會被默默丟掉。
         setChecked(Object.fromEntries(all
           .filter(item => !item.unavailable)
-          .map(item => [
-            followupKey(item.group, item.categoryId),
-            new Set(item.options.filter(option => option.previouslySelected).map(option => option.tagId)),
-          ])));
+          .map(item => {
+            const key = followupKey(item.group, item.categoryId);
+            const initial = Object.hasOwn(initialTagIds, key)
+              ? initialTagIds[key]
+              : item.options.filter(option => option.previouslySelected).map(option => option.tagId);
+            return [key, new Set(initial)];
+          })));
         setStatus('ready');
       })
       .catch(error => {
@@ -59,7 +68,7 @@ export default function InterestFollowupDialog({ request, mode = 'save', onConfi
       });
 
     return () => { cancelled = true; };
-  }, [requestKey]);
+  }, [requestKey, initialTagIds]);
 
   const toggle = (key, tagId) => {
     setChecked(prev => {

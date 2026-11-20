@@ -4,6 +4,7 @@
 
 ## 2026-11-20
 
+- [課程主題選擇改版 Step G：驗收、「調整」對話框修正與 student_id 回填](./2026-11-20-interest-selections-step-g.md)
 - [課程主題選擇改版 Step F：ADR、資料結構與測試計畫文件](./2026-11-20-interest-selections-step-f.md)
 - [課程主題選擇改版 Step E：設定頁三組選單與追問對話框](./2026-11-20-interest-selections-step-e.md)
 - [課程主題選擇改版 Step D：追問服務與保存驗證](./2026-11-20-interest-selections-step-d.md)
