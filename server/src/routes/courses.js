@@ -6,9 +6,9 @@ import {
   getDepartments,
   getInstructors,
   getClassNames,
-  searchCoursesForSchedule,
 } from '../skills/courseQuery.js';
 import { buildCourseQueryScope, isOwnDepartmentElective } from '../skills/courseScope.js';
+import { getInterestTopicGroups } from '../services/interestMenuService.js';
 import { buildInterestOptions } from '../data/interestPreferences.js';
 
 const router = Router();
@@ -118,9 +118,12 @@ router.get('/instructors', async (req, res) => {
   }
 });
 
-// 興趣選項不能在前端寫死：官方修課路徑來自課程地圖，細部主題則直接統計
-// 目前排課候選的 Course_Sections.rag_tag。班別未選好時仍回傳修課路徑，
-// 但不猜測候選課程主題。
+// 興趣選項不能在前端寫死：官方修課路徑來自課程地圖，課程主題則依這位學生的排課候選池統計
+// （Course_Sections.rag_tag 經標籤目錄解析）。班別未選好時仍回傳修課路徑，但不猜測候選課程主題。
+//
+// `topicGroups` 是新的分組選單（本系／通識／系外），範圍與 S_tag 實際作用的畢業分類桶一致，
+// 見 `services/interestMenuService.js`。`topics` 與 `topicCourseCount` 是舊的平面清單，設定頁
+// 改讀 `topicGroups` 之後會移除，目前只為了讓還沒更新的前端繼續可用。
 router.get('/interest-options', async (req, res) => {
   try {
     const { department, gradeLevel, className } = req.query;
@@ -129,31 +132,27 @@ router.get('/interest-options', async (req, res) => {
       return res.status(400).json({ error: 'department 與 gradeLevel 為必填' });
     }
 
-    let courses = [];
-    let scope = null;
+    let menu = null;
     if (typeof className === 'string' && className.trim()) {
-      const filters = {
+      menu = await getInterestTopicGroups({
         department: department.trim(),
         gradeLevel: gradeNumber,
         className: className.trim(),
-      };
-      scope = buildCourseQueryScope(filters);
-      courses = await searchCoursesForSchedule(filters, scope);
+      });
     }
 
-    // 問「想往哪個方向」時只使用本系選修與已有正式 track 的課程主題。
-    // 完整 scheduling pool 含大量通識與跨院課，直接統計會讓「語言學習／文化研究」
-    // 壓過人工智慧、資安等專業方向，問題本身就失去用途。
-    const topicCourses = scope
-      ? courses.filter(course => course.track || isOwnDepartmentElective(course, scope))
+    // 舊的平面清單：只使用本系選修與已有正式 track 的課程主題。
+    const topicCourses = menu?.scope
+      ? menu.courses.filter(course => course.track || isOwnDepartmentElective(course, menu.scope))
       : [];
     const options = buildInterestOptions(topicCourses);
     res.json({
       ...options,
       // 三條路徑是資工系正式課程地圖，其他系所不顯示成自己的官方分類。
       tracks: department.trim() === '資訊工程學系' ? options.tracks : [],
-      scopeReady: Boolean(scope?.resolved),
-      candidateCourseCount: courses.length,
+      topicGroups: menu?.topicGroups ?? [],
+      scopeReady: Boolean(menu?.scopeReady),
+      candidateCourseCount: menu?.candidateCourseCount ?? 0,
       topicCourseCount: topicCourses.length,
     });
   } catch (err) {

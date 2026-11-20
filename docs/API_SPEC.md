@@ -610,6 +610,45 @@ Response:
 把專業方向淹沒；`candidateCourseCount` 仍表示完整排課候選數，`topicCourseCount` 是實際
 用來產生主題的課程數。
 
+**`topicGroups`（2026-11-20 新增，分組選單）**：班別完整時另回三組選單，取代上面的 `topics`
+（`topics` 與 `topicCourseCount` 暫時保留，設定頁改讀 `topicGroups` 之後會移除）。
+
+```json
+{
+  "topicGroups": [
+    {
+      "key": "department", "label": "本系", "level": "sub",
+      "options": [
+        {
+          "id": "sub_…", "name": "資訊安全與隱私", "level": "sub", "mainCategory": "資訊與計算",
+          "mode": "direct", "courseCount": 5, "tagCount": 2, "aliasIds": [],
+          "sampleCourses": ["電子商務安全", "安全程式設計", "系統安全"],
+          "tags": [{ "tagId": "tag_…", "name": "資訊安全", "courseCount": 5, "sampleCourses": ["系統安全"] }]
+        },
+        { "id": "sub_…", "name": "網路、系統與程式工具", "mode": "followup", "courseCount": 19, "tagCount": 20, "aliasIds": [] }
+      ]
+    },
+    { "key": "generalEducation", "label": "通識", "level": "main", "options": [] },
+    { "key": "outside", "label": "系外（不含理工類學院）", "level": "main", "options": [] }
+  ]
+}
+```
+
+- 三組的範圍直接取自排課器的畢業分類桶：`department`＝本系選修、`generalEducation`＝通識、
+  `outside`＝系外選修。必修與「其他」桶（應用外語、體育、學院綜合班、學分學程）不列入，因為
+  標籤興趣（S_tag）只作用於前三個桶，勾了也不會影響排課。沒有任何選項的組不回傳。
+- 本系用**子類別**，通識與系外用**大類別**。同一組「池內可選標籤集合」完全相同的子類別併成一個選項，
+  其餘 ID 放在 `aliasIds`；名稱一律用目錄原名，不做顯示名稱對照。
+  「學習階段與課程情境」「課程活動與評量」兩個大類別不當選項。
+- 只統計**同時可學習且可跨課配對**的標籤（單課標籤與 `too_common` 標籤不算），所以每個選項至少有一個
+  能影響排課的標籤。每組依課程數由多到少，最多 8 個；同一門課開多個班只算一次。
+- `mode: "direct"` 只給設定檔明列的白名單（目前只有「資訊安全與隱私」）：勾選後不追問，`tags` 是候選池
+  裡實際命中的標籤，供前端顯示給學生確認。其餘一律 `followup`，不帶 `tags`。
+- **系外組不含理工類學院**（資電、工程與科學、建設三個學院，加上環境工程與科學學系、航太與系統工程學系、
+  人工智慧技術與應用學士學位學程、應用數學系、創能學院綜合班）。這只排除選單，不影響排課計分。
+- 候選池以系所、年級、班別與學期為鍵快取 10 分鐘（重建一次約 2 秒）；班別沒選好時不猜測，`topicGroups`
+  為空、`scopeReady` 為 `false`。
+
 ### `GET /api/courses/:id`
 
 `id` is `Course_Sections.section_id`.
