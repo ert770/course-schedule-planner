@@ -4,6 +4,7 @@
 
 ## 2026-11-20
 
+- [課程主題選擇改版 Step D：追問服務與保存驗證](./2026-11-20-interest-selections-step-d.md)
 - [課程主題選擇改版 Step C 後續：本系隱藏清單與內容命名](./2026-11-20-interest-selections-step-c-followup.md)
 - [課程主題選擇改版 Step C：選單分組、設定檔與候選池快取](./2026-11-20-interest-selections-step-c.md)
 - [課程主題選擇改版 Step B：interestSelections 進入 S_tag 先驗](./2026-11-20-interest-selections-step-b.md)

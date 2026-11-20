@@ -706,6 +706,30 @@ solver 狀態，以及課程、評價與 `recommendationReason` 欄位。這避�
 - 不得忽略使用者明確限制。
 - 不得自行編造 `requestId` 或 `sectionId`；只能用 prompt 裡「最近一次推薦」給的值。
 
+## 設定頁課程主題追問（非聊天的 OpenAI 呼叫）
+
+設定頁「想接觸的課程主題」的追問題目是專案第一個**非聊天**的 runtime OpenAI 呼叫，實作在
+`server/src/services/interestFollowupService.js`，與聊天 Agent 無關：沒有工具、沒有對話歷史、沒有 `requestId`。
+
+- **呼叫方式**：Responses API（`client.responses.create`）、`text.format` 為 `json_schema` 且 `strict: true`、不送 `temperature`、
+  model 取自 `OPENAI_MODEL`、每次呼叫逾時 12 秒、`maxRetries: 0`（見 `openaiClient.js`）。失敗一律改用固定問句，不重試、不擋保存。
+- **送出的內容**：`{ categories: [{ categoryRef, name, tags: [{ ref, name, courseCount }] }] }`。編號是這次請求內的臨時編號。
+  **只有類別名稱、標籤名稱與課程數**，沒有使用者 ID、Profile、修課歷史、系所或班別（測試 FU5 逐項釘住）。
+- **輸出格式**：`{ categories: [{ categoryRef, question, orderedTagRefs }] }`。
+- **分工**：後端掌握可選標籤清單，GPT 只寫問題與調整順序。回傳的編號必須在清單內，不在的丟掉、重複的丟掉、漏掉的依課程數補在
+  後面；問題壓成單行純文字，過長（> 80 字）、含網址或為空就視為不可用，該類別改用固定問句。這符合「Agent 不得編造不存在的課程或標籤」：
+  GPT 說了什麼都要對回後端清單。
+- **系統提示詞（`FOLLOWUP_INSTRUCTIONS`）的要點**：
+  1. 每個類別一句繁體中文口語問題，不超過 40 字，不承諾課程、教師、學分或成績，不提使用者個人資料。
+  2. 只能使用輸入的 ref 編號，每個最多出現一次；越能代表類別主題的排越前面（例如語言類把不同語種排前面）。
+  3. **（方案 D）工具與軟體名稱（PowerPoint、Chat GPT）、泛用詞（科技、創新、案例分析）與只是課堂附帶提到的主題排在最後面。**
+  4. 不可新增、改名或翻譯標籤，也不可輸出輸入以外的編號。
+  5. 輸入沒有任何個人資料，不要要求使用者提供個人資料。
+- **快取**：同一個「類別＋候選標籤」的題目在伺服器記憶體快取 24 小時，所有使用者共用；失敗不快取。
+- **關閉**：`INTEREST_FOLLOWUP_MODE=fixed` 完全不呼叫 OpenAI；沒有 `OPENAI_API_KEY` 也自動走固定問句。
+- 這**不是聊天 Agent 的工具**，所以不需要改 `promptService.js` 的 `getAgentTools()`、`agentToolRegistry.js` 與 `prompt.test.js`。
+  修改 `FOLLOWUP_INSTRUCTIONS` 或輸出格式時，同步更新本節與 `server/test/interestFollowupService.test.js`。
+
 ## 維護規則
 
 若新增工具：

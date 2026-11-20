@@ -1543,6 +1543,62 @@ tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`err
 
 完整班級缺少或無法解析時，`courseSearchScope` 的三個欄位均為 `null`。
 
+### `POST /api/profile/interest-followups`
+
+設定頁「想接觸的課程主題」的追問題目（2026-11-20 起）。學生勾選類別、按「完成並保存偏好設定」之後，每個類別問一題，
+學生勾選的**具體標籤**才會得到 S_tag 先驗（類別本身不展開）。需要登入與服務同意；每位使用者每分鐘最多 6 次
+（超過回 `429`、`code: "RATE_LIMITED"`）。
+
+Request（`department`、`gradeLevel`、`className` 用來重建這位學生的候選池，與 `GET /api/courses/interest-options` 相同；
+一次最多 6 個分類，重複的 `(group, categoryId)` 只留一筆）：
+
+```json
+{
+  "department": "資訊工程學系",
+  "gradeLevel": 3,
+  "className": "資訊三甲",
+  "selections": [{ "group": "outside", "categoryId": "main_…" }]
+}
+```
+
+Response：
+
+```json
+{
+  "followups": [
+    {
+      "group": "outside",
+      "categoryId": "main_…",
+      "categoryName": "語言、文學與溝通",
+      "question": "你想接觸哪些語言、文學或溝通主題？",
+      "source": "gpt",
+      "totalTagCount": 29,
+      "options": [
+        { "tagId": "tag_…", "name": "日語", "courseCount": 1, "sampleCourses": ["日語短劇"], "previouslySelected": false }
+      ]
+    },
+    { "group": "outside", "categoryId": "main_不存在", "unavailable": true, "reason": "category_not_in_pool" }
+  ],
+  "scopeReady": true,
+  "mode": "gpt"
+}
+```
+
+- **選項一律來自後端的清單**：這位學生候選池裡該類別的可選標籤（同時可學習且可跨課配對），依課程數排序取前 20 個
+  當候選，學生最多看到 12 個。每個選項附代表課程與課程數（前端顯示「會加分給 N 門課」）。**學生以前選過、仍然
+  有效的標籤一律重新顯示**（`previouslySelected: true`），不受 12 個上限與排序影響，否則舊答案無法編輯。
+- **GPT 只寫問題與調整順序**，不能新增、改名、翻譯或移除標籤；回傳的編號不在清單內的丟掉、漏掉的依課程數補在後面。
+  提示詞要求把工具與軟體名稱（PowerPoint、Chat GPT）、泛用詞與只是課堂附帶提到的主題排在最後（見
+  `docs/PROMPT_DESIGN.md`）。送給 OpenAI 的只有**類別名稱、標籤名稱與課程數**，沒有使用者 ID、Profile、歷史、系所或班別。
+- `source` 是 `gpt` 或 `fixed`。**固定問句後備**：沒有 `OPENAI_API_KEY`、`INTEREST_FOLLOWUP_MODE=fixed`、逾時（12 秒，
+  不重試）、呼叫失敗、輸出格式不對、題目過長或含網址，該類別改用「『類別』裡你對哪些主題有興趣？」，選項來源與流程相同。
+  頂層 `fallbackReason` 為 `mode_fixed`、`no_api_key`、`gpt_timeout`、`gpt_error` 或 `partial_gpt_output`；**追問失敗不回錯誤，
+  也不能擋住保存**。
+- 題目依「類別＋候選標籤」快取在伺服器記憶體 24 小時，所有使用者共用（內容沒有個人資料）。失敗不快取。
+- 分類不在這位學生這一組的候選池時，該筆回 `unavailable: true`、`reason: "category_not_in_pool"`；班別沒選好時回
+  `{ "followups": [], "scopeReady": false }`。
+- 錯誤：`400`（欄位缺漏或型別錯誤，例如 `selections 最多 6 筆`）、`429`（限流）。
+
 ### `POST /api/profile`
 
 只更新 session 使用者的 `User_Profiles` 支援欄位。request 不需也不應傳 `userId`。
@@ -1605,8 +1661,21 @@ Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」
 `categoryId` 必須是非空字串；`tagIds` 省略或空陣列代表只選了類別、尚未追問；最多 48 筆。
 不是陣列、項目不是物件、未知 `group`、空的 `categoryId`、非字串的 `tagIds` 一律回 `400`。
 送空陣列代表清空所有選擇。它保存在 `preferences_json.values.interestSelections`，更新時不會
-洗掉 `interests` 與其他鍵。**這一步只驗形狀**：類別與標籤是否存在於目錄、標籤是否屬於所選組別，
-由後續的保存驗證處理。
+洗掉 `interests` 與其他鍵。
+
+**保存前的驗證（2026-11-20）**：送了 `interestSelections` 時，伺服器對照這位學生的候選池（`department`、
+`gradeLevel`、`className` 取自這次請求，沒帶就用已保存的 Profile）：分類必須存在、層級與組別相符（本系用子類別、
+通識與系外用大類別）、在這一組的候選池裡有這個分類；標籤必須是該分類在這一組候選池裡的可選標籤，不在的丟掉。
+**與已保存的某一筆完全相同的選擇不重驗、原樣保留**，新學期候選池對不上舊答案時不會被默默刪掉。回應多兩個欄位：
+
+```json
+{ "success": true, "preferences": {}, "interestSelectionsStatus": "verified", "interestSelectionWarnings": [] }
+```
+
+`interestSelectionsStatus` 是 `unchanged`（沒有任何變動）、`verified`（已對照候選池）或 `unverified`（候選池載入失敗
+或班別沒選好，**不接受新的標籤**：變動的選擇保留已保存的標籤、新增的只記類別，**不擋住其他欄位保存**）。
+`interestSelectionWarnings` 每一項是 `{ group, categoryId, tagId?, reason }`，`reason` 為 `unknown_category`、
+`wrong_level`、`category_not_in_pool`、`tag_not_in_pool` 或 `verification_unavailable`。
 
 `department` 若有帶，必須是**非空字串**（去除包裹引號與空白後仍有內容）。物件、陣列、數字、布林或空字串一律回 `400`：
 

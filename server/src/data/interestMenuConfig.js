@@ -14,8 +14,21 @@ export const INTEREST_MENU_GROUPS = Object.freeze([
 // 每一組最多顯示幾個選項，依課程數由多到少。
 export const MENU_OPTION_LIMIT = 8;
 
-// 追問時每個分類最多給 GPT／使用者看幾個候選標籤。
+// ── 追問（follow-up）──────────────────────────────────────────────────────────
+// 追問時每個分類最多給 GPT 看幾個候選標籤（依課程數排序後取前 N 個）。
 export const FOLLOWUP_CANDIDATE_LIMIT = 20;
+// 學生實際看到的選項數（依 GPT 的排序取前 N 個）；學生以前選過、仍然有效的標籤不受這個上限限制。
+export const FOLLOWUP_DISPLAY_LIMIT = 12;
+// 一次請求最多追問幾個分類。
+export const FOLLOWUP_MAX_CATEGORIES = 6;
+// 呼叫 OpenAI 的逾時；超過就改用固定問句，不擋住保存。
+export const FOLLOWUP_GPT_TIMEOUT_MS = 12_000;
+// 同一個分類、同一份候選標籤的題目在伺服器記憶體快取多久（所有使用者共用，不含任何個人資料）。
+export const FOLLOWUP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// 每位使用者每分鐘最多幾次追問請求。
+export const FOLLOWUP_REQUESTS_PER_MINUTE = 6;
+// GPT 寫的問題超過這個長度（或含網址）就視為不可用，改用固定問句。
+export const FOLLOWUP_QUESTION_MAX_LENGTH = 80;
 
 // 這兩個大類別描述的是「課程怎麼上」而不是「主題」，不當選項。
 export const EXCLUDED_MAIN_CATEGORY_NAMES = Object.freeze([
@@ -92,6 +105,12 @@ export default {
   INTEREST_MENU_GROUPS,
   MENU_OPTION_LIMIT,
   FOLLOWUP_CANDIDATE_LIMIT,
+  FOLLOWUP_DISPLAY_LIMIT,
+  FOLLOWUP_MAX_CATEGORIES,
+  FOLLOWUP_GPT_TIMEOUT_MS,
+  FOLLOWUP_CACHE_TTL_MS,
+  FOLLOWUP_REQUESTS_PER_MINUTE,
+  FOLLOWUP_QUESTION_MAX_LENGTH,
   EXCLUDED_MAIN_CATEGORY_NAMES,
   DIRECT_SUBCATEGORIES,
   DIRECT_MAX_TAGS,
