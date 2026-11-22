@@ -586,10 +586,15 @@ export default function SetupPage() {
                       </p>
                     )}
 
+                  </div>
+
+                  <details className="setup-other-interests" id="interest-keywords">
+                    <summary>
+                      其他興趣{selectedInterests.size > 0 && <span>（{selectedInterests.size} 個已保存關鍵字）</span>}
+                    </summary>
+                    <p>可以補充上方沒列到的興趣。點選已保存的關鍵字即可移除。</p>
                     {selectedInterests.size > 0 && (
-                      <div style={{ marginTop: '10px' }} id="interest-keywords">
-                        <h6 className="interest-topic-group-label">已設定的興趣關鍵字（點一下可移除）</h6>
-                        <div className="setup-pref-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      <div className="setup-pref-tags">
                           {[...selectedInterests].map(topic => (
                             <button
                               type="button"
@@ -603,17 +608,16 @@ export default function SetupPage() {
                               {topic}
                             </button>
                           ))}
-                        </div>
                       </div>
                     )}
-                  </div>
-
-                  <input
-                    value={customInterests}
-                    onChange={event => setCustomInterests(event.target.value)}
-                    placeholder="其他興趣，例如：生成式 AI、雲端；多筆以頓號分隔"
-                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc' }}
-                  />
+                    <label htmlFor="setup-custom-interests">補充興趣關鍵字</label>
+                    <input
+                      id="setup-custom-interests"
+                      value={customInterests}
+                      onChange={event => setCustomInterests(event.target.value)}
+                      placeholder="例如：生成式 AI、雲端；多筆以頓號分隔"
+                    />
+                  </details>
                   <button
                     type="button"
                     onClick={() => {
