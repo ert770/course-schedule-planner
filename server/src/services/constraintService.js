@@ -2,8 +2,21 @@
 // 避免兩處各自漂移導致參數只在其中一條路徑生效。
 
 import { PERIODS_PER_DAY, normalizeBlockedPeriods } from '../utils/periods.js';
+import { readInterestPreferences } from '../data/interestPreferences.js';
+import { resolveInterestSelections } from '../data/interestSelections.js';
 
 const MONDAY = 1;
+
+// 課程主題問答勾選的標籤（ADR-031）：`[{ id, name }]`，依 ID 去重。只選方向、沒勾標籤時是空陣列
+// （方向不計分）。呼叫端直接給 `input.interestTagIds`（測試用）時以它為準。
+function pickInterestTagIds(requestValue, prefs) {
+  if (Array.isArray(requestValue)) {
+    return requestValue.filter(item => item && typeof item.id === 'string')
+      .map(item => ({ id: item.id, name: String(item.name ?? item.id) }));
+  }
+  return resolveInterestSelections(readInterestPreferences(prefs).interestSelections).tags
+    .map(({ tag }) => ({ id: tag.id, name: tag.name }));
+}
 
 // 陣列型偏好：空陣列不帶任何資訊，視同「未指定」並退回已儲存偏好。
 // 若用 `||`，空陣列在 JS 是 truthy，會把使用者存好的偏好整個蓋掉。
@@ -157,6 +170,9 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // 移除 fallback 後沒有興趣關鍵字時 `interests` 為空陣列，
     // `hasExpressedPreference` 會據實回報，而不是靠比不中的標籤假裝有偏好。
     interests: pickList(input.interests, prefs.interests),
+    // 課程主題問答勾選的標籤，與上面的關鍵字一起構成排課的「興趣」軸（ADR-031）。
+    // 關鍵字仍保留：AI 聊天的單次排課（「這次想排資安」）靠它。
+    interestTagIds: pickInterestTagIds(input.interestTagIds, prefs),
 
     digitalCreditsNeeded: pickFlag(input.digitalCreditsNeeded, prefs.digitalCreditsNeeded),
 

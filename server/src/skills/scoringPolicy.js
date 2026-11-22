@@ -35,7 +35,9 @@ export function resolveEasyDirection(constraints) {
 
 export function resolveScoringPolicy(constraints = {}) {
   const directions = {
-    interest: [...list(constraints.preferredKeywords), ...list(constraints.interests), constraints.preferredTrack]
+    // 課程主題問答勾選的標籤（interestTagIds，ADR-031）也算表達了興趣。
+    interest: [...list(constraints.preferredKeywords), ...list(constraints.interests), constraints.preferredTrack,
+      ...list(constraints.interestTagIds)]
       .filter(Boolean).length > 0 ? 1 : 0,
     compact: constraints.preferCompact ? 1 : 0,
     easy: resolveEasyDirection(constraints).direction,

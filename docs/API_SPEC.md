@@ -1052,7 +1052,7 @@ metadata」兩節。
 | `scoringPolicy` | 這個排序決策使用的版本化權重快照；必修預置、關注等不經一般 scorer 的放置路徑為 `null` |
 | `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。除既有 `base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest` 外，啟用標籤候選排序時可包含 `tagInterest`（標籤興趣對池內基礎分的加減量）；系所年級規則可包含 `crossYearElective`／`outsideOwnDepartment` |
 | `scoreTotal` | 這門課在勝出方案裡的總分。**含**被 `scoreBreakdown` 過濾掉的 0 值元件 |
-| `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣關鍵字）。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
+| `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣）。`interest` 的 `preferenceId` 有兩種：`interests` 是興趣關鍵字（含 AI 聊天單次排課的關鍵字），`label` 是關鍵字本身；`interestSelections`（2026-11-22 起，ADR-031）是課程主題問答勾選的標籤，`label` 是標籤名稱。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
 | `requiredRules` | 必修／分類的判定依據：`formallyRequired`、`category`、`sourceCategory`、`classificationSource`、`track`、`countsTowardGraduation`、`nonGraduationCategory` |
 | `reviewEvidence` | 同上表的 `reviewEvidence`；`null` 代表沒有評價 |
 | `easinessSource` | 同上表的 `easinessSource` |

@@ -38,6 +38,7 @@ import {
   EASY_SCORE_MAX,
 } from './courseReviewStats.js';
 import { CONSTRAINTS, DEFAULT_TIME_PREFERENCE_PRIORITY } from '../data/constraintSchema.js';
+import { resolveInterestTags } from '../data/interestTagCatalog.js';
 import { courseGradeLevelLabel, isCourseGradeEligible } from '../data/courseGradeLevel.js';
 import { validateScheduleAgainstConstraints } from './scheduleValidator.js';
 import {
@@ -79,7 +80,6 @@ const DEFAULT_MAX_CREDITS = 25;
 const OVERLOAD_MAX_CREDITS = 30;
 // 資料庫實際含週六與週日課程（週六 81 筆、週日 9 筆），因此以七天為準。
 const WEEK_DAYS = 7;
-const INTEREST_KEYWORD_SCORE = 40;
 const MAX_EASY_COURSE_SCORE = 100;
 const PREFERENCE_SCORE_EPSILON = 0.001;
 const UNSCHEDULED_NAMES_IN_WARNING = 3;
@@ -268,7 +268,7 @@ export function buildBreadthSequence(graduationPlanning, { reserveExternal = fal
 // 這次的興趣有沒有命中任何可排的系外選修。候選已經過 prepareCandidates()，
 // 不能認列的系外選修（非使用者指定）不在裡面。
 function interestHitsOutsideElective(candidates, constraints, scope) {
-  if (collectInterestKeywords(constraints).length === 0) return false;
+  if (interestTermCount(constraints) === 0) return false;
   return candidates.some(course => (
     getGraduationBucket(course, scope) === GRADUATION_BUCKET.EXTERNAL
     && collectInterestHits(course, constraints).length > 0
@@ -1002,8 +1002,51 @@ export function matchesInterestKeyword(course, keyword) {
   });
 }
 
+// 課程主題問答勾選的標籤（`constraints.interestTagIds`，ADR-031）。
+// 與關鍵字一起構成「興趣」軸。兩種來源**各自**算命中比例，取較大者（見 interestFraction）：
+// 合併成一個分母會稀釋關鍵字——2026-11-22 全帳號實測，有 2 個關鍵字的帳號加上 9 個勾選標籤後，
+// 關鍵字課的興趣分由 188 掉到 17，AI 聊天單次排課的關鍵字（「這次想排資安」）也會被同樣稀釋。
+// 關鍵字比字面（見上），標籤比 ID，不會因同名或改名而誤判。
+function selectedInterestTags(constraints) {
+  return toArray(constraints.interestTagIds).filter(tag => tag && typeof tag.id === 'string');
+}
+
+// 課程的標準標籤 ID 依課程物件快取：同一次排課會對同一門課問很多次。
+const courseTagIdCache = new WeakMap();
+function courseCanonicalTagIds(course) {
+  if (!course || typeof course !== 'object') return new Set();
+  let ids = courseTagIdCache.get(course);
+  if (!ids) {
+    ids = new Set(resolveInterestTags(toArray(course.ragTag)).tags.map(tag => tag.canonicalTagId));
+    courseTagIdCache.set(course, ids);
+  }
+  return ids;
+}
+
+// 這門課命中的勾選標籤名稱（推薦理由列出時用 preferenceId 'interestSelections'）。
+function collectSelectedTagHits(course, constraints) {
+  const selected = selectedInterestTags(constraints);
+  if (selected.length === 0) return [];
+  const ids = courseCanonicalTagIds(course);
+  return selected.filter(tag => ids.has(tag.id)).map(tag => tag.name);
+}
+
+function interestTermCount(constraints) {
+  return collectInterestKeywords(constraints).length + selectedInterestTags(constraints).length;
+}
+
+// 單門課的興趣程度（0～1）：max(關鍵字命中數／關鍵字數, 勾選標籤命中數／勾選標籤數)。
+// 只有關鍵字時與 2026-11-22 以前的「命中數／關鍵字數」完全相同。
+function interestFraction(course, constraints) {
+  const keywords = collectInterestKeywords(constraints);
+  const tags = selectedInterestTags(constraints);
+  const keywordPart = keywords.length ? collectKeywordHits(course, constraints).length / keywords.length : 0;
+  const tagPart = tags.length ? collectSelectedTagHits(course, constraints).length / tags.length : 0;
+  return clamp01(Math.max(keywordPart, tagPart));
+}
+
 // 回傳這門課實際命中的興趣關鍵字（roadmap #26 的解釋原料）。
-function collectInterestHits(course, constraints) {
+function collectKeywordHits(course, constraints) {
   const keywords = collectInterestKeywords(constraints);
 
   if (keywords.length === 0) return [];
@@ -1011,11 +1054,11 @@ function collectInterestHits(course, constraints) {
   return keywords.filter(keyword => matchesInterestKeyword(course, keyword));
 }
 
-// 與 `collectContentPreferenceHits()` 同一個做法：命中明細是解釋的原料，
-// 分數只是它的加總。判定只有一份，不讓解釋與評分各自實作。
-function getInterestScore(course, constraints) {
-  return collectInterestHits(course, constraints).length * INTEREST_KEYWORD_SCORE;
+// 興趣軸的命中：關鍵字命中＋勾選標籤命中。
+function collectInterestHits(course, constraints) {
+  return [...collectKeywordHits(course, constraints), ...collectSelectedTagHits(course, constraints)];
 }
+
 
 // roadmap #5B：難度方向的判定（`EASY_DIRECTION`／`resolveEasyDirection`）已搬進
 // `scoringPolicy.js`，這裡與 `resolveScoringPolicy()` 共用同一份實作，不重寫
@@ -1033,14 +1076,11 @@ function clamp01(value) {
 }
 
 function getInterestCoverage(plan, constraints) {
-  const keywords = collectInterestKeywords(constraints);
-  if (keywords.length === 0 || plan.schedule.length === 0) return 0;
+  if (interestTermCount(constraints) === 0 || plan.schedule.length === 0) return 0;
 
-  const maxPerCourse = keywords.length * INTEREST_KEYWORD_SCORE;
-  const average = plan.schedule
-    .reduce((sum, course) => sum + getInterestScore(course, constraints), 0) / plan.schedule.length;
-
-  return clamp01(average / maxPerCourse);
+  // 命中明細是解釋的原料，分數由同一份判定（interestFraction）算出，不讓解釋與評分各自實作。
+  return clamp01(plan.schedule
+    .reduce((sum, course) => sum + interestFraction(course, constraints), 0) / plan.schedule.length);
 }
 
 function getCompactness(plan) {
@@ -1201,8 +1241,9 @@ function computeScoreComponents(
   const usedDays = new Set(schedule.flatMap(c => [...getUsedDays(c)]));
   const courseDays = [...getUsedDays(course)];
   const features = normalizeCourseFeatures({
-    interestHits: collectInterestHits(course, constraints).length,
-    interestCount: collectInterestKeywords(constraints).length,
+    // normalizeCourseFeatures 算 interestHits／interestCount；直接給 0～1 的比例與 1。
+    interestHits: interestFraction(course, constraints),
+    interestCount: interestTermCount(constraints) > 0 ? 1 : 0,
     easiness: resolveEasiness(course).score,
     neutralEasiness: neutralEasyScore,
     easyMax: EASY_SCORE_MAX,
@@ -1680,7 +1721,8 @@ function addCourseToPlan(plan, course, constraints, reason, options = {}) {
       scoreComponents: options.scoreComponents ?? null,
       scoringPolicy: options.scoringPolicy ?? null,
       contentHits: collectContentPreferenceHits(course, constraints),
-      interestHits: collectInterestHits(course, constraints),
+      interestHits: collectKeywordHits(course, constraints),
+      selectedTagHits: collectSelectedTagHits(course, constraints),
       alternatives: options.alternatives ?? null,
       // 必修無條件豁免舒適偏好是**付出的代價**，不是附帶說明：
       // 使用者設了不排早八或避開教師卻拿到該課，要看得到原因。既有三個
@@ -2664,12 +2706,10 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
   // 的同一份候選與狀態。只在 opt-in 時擷取，掛成不可列舉屬性，不進 API 回應；
   // 靜態檢查直接用正式的 evaluateCoursePlacement()，不另寫第二套規則。
   if (diagnosticOptions.includeMipInputs) {
-    const interestKeywords = collectInterestKeywords(constraints);
+    const termCount = interestTermCount(constraints);
     const normalizedInterest = course => {
-      if (interestKeywords.length === 0) return 0;
-      return clamp01(
-        getInterestScore(course, constraints) / (interestKeywords.length * INTEREST_KEYWORD_SCORE)
-      );
+      if (termCount === 0) return 0;
+      return interestFraction(course, constraints);
     };
     const describe = course => ({
       course,
@@ -2712,7 +2752,7 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
           .filter(course => course.corequisiteRole === 'internship' && !placedIds.has(Number(course.id)))
           .map(describe),
         featureSummary: {
-          hasInterestKeywords: interestKeywords.length > 0,
+          hasInterestKeywords: termCount > 0,
           fixedCount: fixedScheduledFeatures.length,
           fixedInterestSum: fixedScheduledFeatures.reduce((sum, entry) => sum + entry.interestScore, 0),
           fixedRatedCount: fixedScheduledFeatures.filter(entry => entry.rated).length,
@@ -3911,7 +3951,8 @@ function cloneMilpCourse(entry, variant, constraints) {
       scoreComponents: entry.scoreComponents ?? null,
       scoringPolicy: variant.scoringPolicy,
       contentHits: collectContentPreferenceHits(course, constraints),
-      interestHits: collectInterestHits(course, constraints),
+      interestHits: collectKeywordHits(course, constraints),
+      selectedTagHits: collectSelectedTagHits(course, constraints),
       alternatives: { status: COMPETITION_STATUS.NOT_APPLICABLE_MILP, candidates: [] },
     }),
     _creditsForSummary: credits,

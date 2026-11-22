@@ -935,7 +935,7 @@ REST 路徑沒有 preflight（該檔第 (13) 項的註解已說明這道防線�
 - 涼課／高分優先（`preferEasyCourses`）或挑戰難課（`preferChallengingCourses`，
   Roadmap #5B）——兩者方向相反，同時為 `true` 時排課引擎視為未表態並在
   `warnings` 說明矛盾。見「涼度評分與評價覆蓋率」與下方「Per-user 加權方向」。
-- 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`）。
+- 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`），以及課程主題問答勾選的標籤（`interestTagIds`，2026-11-22 起，見下方「課程主題問答勾選的標籤」）。
 - 8 個內容偏好——免期中考（`noMidterm`）、免分組報告（`noGroupReport`）、討論課
   （`discussion`）、重視平時成績（`weightDaily`）、實作評量（`practicalExam`）、
   期末報告（`finalReport`）、英文授課（`englishTaught`）、學到較多內容（`learnMore`），
@@ -977,6 +977,24 @@ REST 路徑沒有 preflight（該檔第 (13) 項的註解已說明這道防線�
 
 設定頁讓使用者勾選的細部主題本身就是 `rag_tag` 的原值，走「相同」這條，不受影響。
 興趣命中只提高單門課與方案的偏好分數，不會排除未命中的課，也不會壓過必修與重補修。
+
+### 課程主題問答勾選的標籤（2026-11-22，ADR-031）
+
+`constraintService.js` 會把 profile 裡課程主題問答（`interestSelections`）勾選的標籤轉成
+`constraints.interestTagIds`（`[{ id, name }]`，依 ID 去重）。只選方向、沒勾標籤時是空陣列，方向本身不計分。
+
+- **興趣方向**：有勾選標籤就是 1，和有關鍵字一樣（`scoringPolicy.js`）。
+- **命中**：課程的 `ragTag` 解析成標準標籤 ID 後，在勾選清單裡就算命中，比 ID、不比字面。
+- **單門課的興趣程度** = max(關鍵字命中數／關鍵字數, 勾選標籤命中數／勾選標籤數)。
+  - 兩種來源各自算比例、取較大值，**不合併成一個分母**。合併會稀釋關鍵字：實測有 2 個關鍵字的帳號加上 9 個勾選標籤後，關鍵字課的興趣分由 188 掉到 17。
+  - 只有關鍵字時，與改動前的「命中數／關鍵字數」完全相同。
+- **用到的地方**：單課偏好分、方案的興趣覆蓋率、MILP 的興趣導向方案。
+- **推薦理由**：`matchedPreferences` 的 `preferenceId` 是 `interestSelections`，`label` 是標籤名稱。
+- **關鍵字比對保留**：AI 聊天的單次排課（「這次想排資安」）靠它。
+
+**已知問題（2026-11-23，未修）**：AI 聊天這次給了關鍵字時，已存的勾選標籤仍在興趣軸上和聊天關鍵字競爭。實測有勾選的帳號，聊天關鍵字的主方案命中率平均下降：D1249697 由 0.131 降到 0.095，D0009003 由 0.143 降到 0.131；沒勾選的帳號不受影響。
+
+候選修法：聊天這次有給 `interests`／`preferredKeywords` 時，興趣軸只用這次的關鍵字，S_tag 與 s_vec 照常讀勾選。
 
 ## Hard/Soft Constraint Schema（Roadmap #21）
 

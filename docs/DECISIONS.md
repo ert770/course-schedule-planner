@@ -1121,3 +1121,26 @@ Consequences:
 
 - Accounts with only legacy keywords get no explicit-interest component in s_vec; history and events still apply.
 - The legacy fields remain stored and are still read by S_tag and the scheduler's keyword matching until the last pipeline step; the user decided to delete the fields and their data after all four steps.
+
+## ADR-031: Questionnaire-Ticked Tags Join the Scheduler Interest Axis
+
+Date: 2026-11-23
+
+Context:
+
+The scheduler's interest axis (scoring-policy direction, per-course interest feature, plan interest coverage, the MILP interest archetype, recommendation `matchedPreferences`) was driven only by keywords: the legacy profile fields `interests`/`preferredKeywords`/`preferredTrack` and keywords the AI Agent passes for a single run. A student who only answered the course-topic questionnaire had interest weight 0 and no interest-oriented plan.
+
+Decision:
+
+- `constraintService` turns the profile's `interestSelections` into `constraints.interestTagIds` (`{ id, name }`, de-duplicated). Directions without ticked tags yield an empty list (directions do not score).
+- Ticked tags set the interest direction to 1, like keywords.
+- A course hits a ticked tag when its `ragTag` resolves to that canonical id. The per-course interest feature is `max(keywordHits / keywordCount, tagHits / tagCount)`. A first version used one shared denominator (keywords + tags); the all-account run showed it diluted keyword courses (188 to 17 for an account with 2 keywords and 9 ticked tags), so the two sources are normalised separately. With keywords only the feature equals the previous `hits / count`.
+- Recommendation reasons list tag hits with `preferenceId: 'interestSelections'`; keyword hits keep `'interests'`.
+- Keyword matching stays, because the AI Agent's single-run keywords depend on it.
+
+Consequences:
+
+- Verified with `scripts/personalizationAccountsReport.js` (12 accounts, real and simulated selections, 3 runs per version, because a single scheduler run is not deterministic) and `scripts/agentSchedulerScenarioReport.js` (3 accounts × 53 Agent scenarios, 2 runs per version). See docs/CHANGE_REPORTS/2026-11-23-interest-pipeline-scoring-policy.md.
+- Known and accepted by the user (2026-11-23) for this commit:
+  - With simulated selections, 5 of 12 accounts show a lower average S_tag in the recommended plan, mainly because the interest-oriented plan is now recommended or changed; ticked-tag hits went up.
+  - For accounts with ticked tags, Agent single-run keywords compete with the saved tags, lowering keyword hit rate (D1249697 0.131 to 0.095, D0009003 0.143 to 0.131). Candidate fix: when the Agent passes keywords for this run, the interest axis uses only those keywords; S_tag and s_vec still read the saved selections.

@@ -21,7 +21,8 @@ import {
   summarizeRun,
 } from './personalizationMetrics.js';
 
-const PERSONALIZATION_ARRAY_FIELDS = ['interests', 'preferredKeywords', 'preferredTrack'];
+// interestTagIds：課程主題問答勾選的標籤，同屬興趣軸（ADR-031）。
+const PERSONALIZATION_ARRAY_FIELDS = ['interests', 'preferredKeywords', 'preferredTrack', 'interestTagIds'];
 
 export function stripPersonalization(constraints = {}) {
   const stripped = { ...constraints };
@@ -33,7 +34,8 @@ export function stripPersonalization(constraints = {}) {
 
 function explicitProfileFromConstraints(constraints) {
   return {
-    interest: (constraints.interests?.length || constraints.preferredKeywords?.length || constraints.preferredTrack) ? 1 : 0,
+    interest: (constraints.interests?.length || constraints.preferredKeywords?.length || constraints.preferredTrack
+      || constraints.interestTagIds?.length) ? 1 : 0,
     compact: constraints.preferCompact ? 1 : 0,
     // 學習模型的 easy 權重是強度；方向仍由顯式標籤在 scheduler 決定。
     easy: 0,
@@ -172,6 +174,7 @@ export function buildAxisConditions(caseDefinition, axisId) {
     delete off.interests;
     delete off.preferredKeywords;
     delete off.preferredTrack;
+    delete off.interestTagIds;
   }
   if (axisId === 'easy') {
     delete off.preferEasyCourses;

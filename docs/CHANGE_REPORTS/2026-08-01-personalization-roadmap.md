@@ -3009,11 +3009,12 @@ roadmap 狀態／相依總表已整體核對：階段 3／4 驗收不改變其�
 
 **2026-11-22 延伸（課程主題問答接管線）**：課程主題問答的結果 `interestSelections` 分四段接進推薦管線。
 
-- 已完成三段：
+- 四段都已完成：
   - **探索卡**：挑課相關度只讀問答結果，依 ID 比對（ADR-029，見[報告](./2026-11-22-interest-pipeline-exploration-cards.md)）。
   - **S_tag**：程式早已接好，這次補服務層測試與排課 A/B（見[報告](./2026-11-22-interest-pipeline-s-tag.md)）。
   - **s_vec**：明確興趣只讀問答勾選的標籤（ADR-030，見[報告](./2026-11-22-interest-pipeline-s-vec.md)）。
-- 還缺一段：排課的興趣方向（`scoringPolicy`）。
+  - **排課興趣軸（`scoringPolicy`）**：勾選標籤併入興趣軸（ADR-031，見[報告](./2026-11-23-interest-pipeline-scoring-policy.md)）。
+    已知問題：AI 聊天這次給了關鍵字時，有勾選的帳號的聊天關鍵字命中率會下降，尚未修。
 - 四段完成後，依使用者決定移除舊的 `interests`／`preferredKeywords` 欄位與資料。
 
 #43 狀態不變；沒有排課器改動；總表其他任務的狀態與相依已核對，不受影響。
