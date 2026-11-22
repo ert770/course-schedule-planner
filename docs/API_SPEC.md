@@ -411,7 +411,7 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 - 課程屬於 `preferredTrack` 時 +1。
 - 以上各項可疊加。
 
-`interests`、`preferredKeywords` 不再影響相關度。不過 s_vec 目前仍會讀這兩個欄位，所以它們仍可能在同分排序時發揮作用。方向只用來排探索卡，不寫進任何分數。
+`interests`、`preferredKeywords` 不再影響相關度，s_vec 也從 2026-11-22 起不再讀這兩個欄位（ADR-030）。方向只用來排探索卡，不寫進任何分數。
 `cards` 保留最多八張的舊版平面清單，`categoryPrompts` 保留給舊版消費端。
 `GET /api/exploration` 是系外／通識相似度清單，與此初始興趣探索流程不同。
 

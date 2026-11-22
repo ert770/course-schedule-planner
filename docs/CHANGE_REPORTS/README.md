@@ -4,6 +4,7 @@
 
 ## 2026-11-22
 
+- [課程主題問答接管線：s_vec 段](./2026-11-22-interest-pipeline-s-vec.md)
 - [課程主題問答接管線：S_tag 段（服務層測試與排課實測）](./2026-11-22-interest-pipeline-s-tag.md)
 - [課程主題問答接管線第 1 段：探索卡依問答結果挑課](./2026-11-22-interest-pipeline-exploration-cards.md)
 - [課程主題問答：三層沙漏細項頁（預算分群、熱門、搜尋）](./2026-11-22-interest-questionnaire-funnel-detail-page.md)

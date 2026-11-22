@@ -1102,3 +1102,22 @@ Consequences:
 - Accounts with only legacy keywords and no questionnaire answers get exploration cards in s_vec / course-code order.
 - s_vec itself still reads the legacy keywords, so they can still affect tie-breaking until the s_vec pipeline step is done.
 - `buildInterestCategoryPrompts` still reads legacy keywords; the client stopped reading `categoryPrompts`, so it is left as is pending a separate decision.
+
+## ADR-030: s_vec Explicit Interest Reads Questionnaire-Ticked Tags Only
+
+Date: 2026-11-22
+
+Context:
+
+The tag-space user vector behind s_vec (`skills/userTagVector.js`) built its explicit-interest part from the legacy free-text fields `interests` and `preferredKeywords`, resolved by name. Questionnaire answers (`interestSelections`) never reached it, while legacy keywords still pushed courses up through s_vec even after ADR-029 removed them from exploration relevance. s_vec feeds exploration-card tie-breaking, the outside-elective reservation (top positive s_vec courses), the scheduler's `vectorInterest` term and the profile-based explore page.
+
+Decision:
+
+- The explicit-interest vector is built from the tags the student ticked in the questionnaire, resolved by id with `resolveInterestSelections()`, filtered by `isVectorEligibleTag` (too_common tags ticked under the curated AI option stay usable), unit-normalised and weighted by `priorMass` as before.
+- Directions without ticked tags add nothing (scoring option A).
+- The legacy name path and `sources.unmappedTopics` are removed. History courses, events and scoring are unchanged.
+
+Consequences:
+
+- Accounts with only legacy keywords get no explicit-interest component in s_vec; history and events still apply.
+- The legacy fields remain stored and are still read by S_tag and the scheduler's keyword matching until the last pipeline step; the user decided to delete the fields and their data after all four steps.
