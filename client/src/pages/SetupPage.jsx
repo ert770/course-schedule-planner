@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { profileAPI, historyFeedbackAPI, coursesAPI, scheduleAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
-import InterestFollowupDialog from '../components/Profile/InterestFollowupDialog';
+import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
 import PreferenceJourneySteps, { PreferenceBackButton } from '../components/Layout/PreferenceJourneySteps';
-import { followupKey } from '../utils/interestSelections';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { getUserIdentity } from '../utils/userIdentity';
 import {
@@ -59,18 +58,12 @@ export default function SetupPage() {
   const [tagGroups, setTagGroups] = useState([]);
   const [preferredTrack, setPreferredTrack] = useState('');
   const [selectedInterests, setSelectedInterests] = useState(new Set());
-  // 修課路徑與主題選項（PR #27 拿掉後於 2026-10-26 依使用者要求恢復）。
-  // 課程主題改成三組（本系、通識、系外），選項是這位學生候選課程的類別（2026-11-20）。
-  const [interestOptions, setInterestOptions] = useState({ tracks: [], topicGroups: [] });
-  const [interestOptionsLoading, setInterestOptionsLoading] = useState(false);
-  const [interestOptionsError, setInterestOptionsError] = useState(false);
+  // 主要修課路徑（PR #27 拿掉後於 2026-10-26 依使用者要求恢復）。課程主題改由問答元件自己向後端取題（ADR-027）。
+  const [interestOptions, setInterestOptions] = useState({ tracks: [] });
   const [customInterests, setCustomInterests] = useState('');
   // 課程主題的選擇結果：[{ group, categoryId, level, mode, tagIds }]，以 (group, categoryId) 為鍵。
   // 通識與系外都有「語言」時各自一筆，取消其中一組不影響另一組。
   const [topicSelections, setTopicSelections] = useState([]);
-  // 已保存或在本次表單確認過的選擇，可主動再次調整。
-  const [reviewedSelectionKeys, setReviewedSelectionKeys] = useState(new Set());
-  const [followupDialog, setFollowupDialog] = useState(null);
   // 保存成功但有主題標籤沒能保存時，先讓使用者看到說明再離開。
   const [saveNotice, setSaveNotice] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -120,7 +113,6 @@ export default function SetupPage() {
         setPreferredTrack(profile.preferredTrack || '');
         const savedSelections = Array.isArray(profile.interestSelections) ? profile.interestSelections : [];
         setTopicSelections(savedSelections);
-        setReviewedSelectionKeys(new Set(savedSelections.map(item => followupKey(item.group, item.categoryId))));
         setSelectedInterests(new Set([
           ...(Array.isArray(profile.interests) ? profile.interests : []),
           ...(Array.isArray(profile.preferredKeywords) ? profile.preferredKeywords : []),
@@ -136,73 +128,11 @@ export default function SetupPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setInterestOptionsLoading(true);
-
     coursesAPI.getInterestOptions(department, gradeLevel, className)
-      .then(data => {
-        if (!cancelled) {
-          setInterestOptions({ tracks: data.tracks || [], topicGroups: data.topicGroups || [] });
-          setInterestOptionsError(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setInterestOptions({ tracks: [], topicGroups: [] });
-          setInterestOptionsError(true);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setInterestOptionsLoading(false);
-      });
-
+      .then(data => { if (!cancelled) setInterestOptions({ tracks: data.tracks || [] }); })
+      .catch(() => { if (!cancelled) setInterestOptions({ tracks: [] }); });
     return () => { cancelled = true; };
   }, [department, gradeLevel, className]);
-
-  // 這個選項（或它併進來的別名）目前是否已被選。
-  const matchesOption = (selection, group, option) => (
-    selection.group === group
-    && (selection.categoryId === option.id || (option.aliasIds ?? []).includes(selection.categoryId))
-  );
-  const findSelection = (group, option) => topicSelections.find(item => matchesOption(item, group, option));
-
-  const toggleTopic = (group, option) => {
-    const current = findSelection(group, option);
-    if (current) {
-      setReviewedSelectionKeys(previous => {
-        const next = new Set(previous);
-        next.delete(followupKey(current.group, current.categoryId));
-        return next;
-      });
-    }
-    setTopicSelections(prev => {
-      if (prev.some(item => matchesOption(item, group, option))) {
-        // 只撤掉這一組這一個類別；別組同名的類別與共享的標籤不受影響。
-        return prev.filter(item => !matchesOption(item, group, option));
-      }
-      return [...prev, {
-        group,
-        categoryId: option.id,
-        level: option.level,
-        mode: option.mode,
-        // direct 選項列出命中的細項；followup 選項讓使用者另選細項。
-        tagIds: option.mode === 'direct' ? (option.tags ?? []).map(tag => tag.tagId) : [],
-      }];
-    });
-  };
-
-  const toggleDirectTag = (selection, tagId) => {
-    setTopicSelections(prev => prev.map(item => {
-      if (item.group !== selection.group || item.categoryId !== selection.categoryId) return item;
-      const has = item.tagIds.includes(tagId);
-      return { ...item, tagIds: has ? item.tagIds.filter(id => id !== tagId) : [...item.tagIds, tagId] };
-    }));
-  };
-
-  // 已保存、但不在目前選單裡的選擇（選單換了、候選池變了）：不顯示原始 ID，只提示並可整批移除。
-  const allOptions = interestOptions.topicGroups.flatMap(group => group.options.map(option => ({ group: group.key, option })));
-  const orphanSelections = topicSelections.filter(selection => (
-    !allOptions.some(({ group, option }) => matchesOption(selection, group, option))
-  ));
 
   const toggleInterest = (interest) => {
     setSelectedInterests(prev => {
@@ -222,77 +152,21 @@ export default function SetupPage() {
     });
   };
 
-  // 對話框的預設勾選以頁面上目前的答案為準，不能只靠伺服器的 `previouslySelected`：
-  // 後者只知道「已保存」的選擇，在「調整」選好、還沒保存就重開時，剛選的會全部不見，
-  // 這時按「確定」還會把它們清成 0 個（2026-11-20 瀏覽器驗收發現）。
-  const currentTagIdsFor = (selections) => Object.fromEntries(selections.flatMap(({ group, categoryId }) => {
-    const current = topicSelections.find(item => item.group === group && item.categoryId === categoryId);
-    return current ? [[followupKey(group, categoryId), current.tagIds ?? []]] : [];
-  }));
-
-  const pendingTopics = topicSelections.filter(item => (
-    item.mode === 'followup' && !reviewedSelectionKeys.has(followupKey(item.group, item.categoryId))
-  ));
-  const canAskAboutTopics = Boolean(department && Number(gradeLevel) > 0 && className);
-
-  const openFollowup = (mode, selections) => {
-    setFollowupDialog({
-      mode,
-      request: {
-        department,
-        gradeLevel: Number(gradeLevel),
-        className,
-        selections: selections.map(({ group, categoryId }) => ({ group, categoryId })),
-      },
-      initialTagIds: currentTagIdsFor(selections),
-    });
-  };
-
-  const continueSetup = () => {
-    if (setupStep === 1 && pendingTopics.length && canAskAboutTopics) {
-      openFollowup('step', pendingTopics);
-      return;
-    }
-    goToStep(setupStep + 1);
-  };
+  const continueSetup = () => goToStep(setupStep + 1);
 
   const handleSubmit = () => {
     if (userIdentity === null) {
       setSaveError('尚未登入，請重新登入後再保存偏好。');
       return;
     }
-    if (pendingTopics.length && canAskAboutTopics) {
-      openFollowup('save', pendingTopics);
-      return;
-    }
     persist(topicSelections);
   };
 
-  const closeFollowup = (selections, reviewedKeys) => {
-    const mode = followupDialog.mode;
-    setReviewedSelectionKeys(previous => new Set([...previous, ...reviewedKeys]));
-    setFollowupDialog(null);
-    if (mode === 'step') goToStep(2);
-    if (mode === 'save') persist(selections);
-  };
-
-  const applyFollowupAnswers = (answers) => {
-    const next = topicSelections.map(item => {
-      const answer = answers[followupKey(item.group, item.categoryId)];
-      return answer ? { ...item, tagIds: answer } : item;
-    });
-    setTopicSelections(next);
-    const keys = followupDialog.request.selections.map(item => followupKey(item.group, item.categoryId));
-    closeFollowup(next, keys);
-  };
-
-  const skipFollowup = () => {
-    const keys = followupDialog.request.selections.map(item => followupKey(item.group, item.categoryId));
-    closeFollowup(topicSelections, keys);
-  };
-
-  const openFollowupEditor = (selection) => {
-    if (canAskAboutTopics) openFollowup('edit', [selection]);
+  // 問答確認頁按下確認：已設定過的帳號直接保存（與「保存變更」相同），首次設定則進到排課條件，最後一起保存。
+  const confirmTopics = (selections) => {
+    setTopicSelections(selections);
+    if (editing) persist(selections);
+    else goToStep(2);
   };
 
   const finishAfterSave = (wasSetupDone) => {
@@ -498,94 +372,15 @@ export default function SetupPage() {
 
                   <div style={{ marginBottom: '12px' }} id="interest-topic-groups">
                     <h5 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '8px' }}>
-                      想接觸的課程主題（可複選）
+                      想接觸的課程主題
                     </h5>
-                    <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 10px' }}>
-                      勾選類別後，可以立刻選擇細項，也可以在進入排課條件前一次確認。
-                    </p>
-                    {interestOptionsLoading ? (
-                      <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>正在整理目前可選課程的主題…</p>
-                    ) : interestOptionsError ? (
-                      <p style={{ fontSize: '0.8rem', color: '#b45309' }}>暫時無法載入興趣選項，請稍後再試。</p>
-                    ) : interestOptions.topicGroups.length > 0 ? (
-                      interestOptions.topicGroups.map(group => (
-                        <div key={group.key} className="interest-topic-group" id={`interest-group-${group.key}`} style={{ marginBottom: '12px' }}>
-                          <h6 className="interest-topic-group-label">{group.label}</h6>
-                          <div className="setup-pref-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                            {group.options.map(option => {
-                              const selected = Boolean(findSelection(group.key, option));
-                              return (
-                                <button
-                                  type="button"
-                                  key={option.id}
-                                  className={`setup-tag ${selected ? 'selected' : ''}`}
-                                  onClick={() => toggleTopic(group.key, option)}
-                                  aria-pressed={selected}
-                                  id={`interest-topic-${group.key}-${option.id}`}
-                                  title={`${option.courseCount} 門候選課程、${option.tagCount} 個可選主題；例如：${(option.sampleCourses ?? []).join('、')}`}
-                                  style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px' }}
-                                >
-                                  {option.name}
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {/* 已勾選的選項：direct 顯示展開的標籤供確認；已保存過的 followup 顯示已選幾個，可調整。 */}
-                          {group.options.map(option => {
-                            const selection = findSelection(group.key, option);
-                            if (!selection) return null;
-                            if (selection.mode === 'direct') {
-                              return (
-                                <div key={`confirm-${option.id}`} className="interest-topic-confirm" id={`interest-confirm-${option.id}`}>
-                                  <p>「{option.name}」會加分給下面這些主題的課，不要的可以取消：</p>
-                                  {(option.tags ?? []).map(tag => (
-                                    <label key={tag.tagId} className="interest-topic-confirm-row">
-                                      <input
-                                        type="checkbox"
-                                        checked={selection.tagIds.includes(tag.tagId)}
-                                        onChange={() => toggleDirectTag(selection, tag.tagId)}
-                                      />
-                                      <span className="interest-followup-option-name">{tag.name}</span>
-                                      <span className="interest-followup-option-meta">
-                                        {tag.courseCount} 門課，例如：{(tag.sampleCourses ?? []).join('、')}
-                                      </span>
-                                    </label>
-                                  ))}
-                                </div>
-                              );
-                            }
-                            return (
-                              <p key={`answered-${option.id}`} className="interest-topic-answered">
-                                「{option.name}」{reviewedSelectionKeys.has(followupKey(selection.group, selection.categoryId))
-                                  ? '已選 ' + selection.tagIds.length + ' 個具體主題'
-                                  : '可再選擇具體主題'}
-                                <button type="button" disabled={!canAskAboutTopics} onClick={() => openFollowupEditor(selection)} id={`interest-edit-${option.id}`}>
-                                  {reviewedSelectionKeys.has(followupKey(selection.group, selection.categoryId)) ? '調整' : '選擇細項'}
-                                </button>
-                              </p>
-                            );
-                          })}
-                        </div>
-                      ))
-                    ) : (
-                      <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                        {className ? '目前候選課程沒有可用的主題標籤。' : '選好班別後會顯示目前候選課程的主題。'}
-                      </p>
-                    )}
-
-                    {orphanSelections.length > 0 && (
-                      <p className="interest-topic-answered" id="interest-orphans">
-                        另有 {orphanSelections.length} 個先前保存的主題選擇，目前不在選單內（候選課程已更新），仍然有效。
-                        <button
-                          type="button"
-                          onClick={() => setTopicSelections(prev => prev.filter(item => !orphanSelections.includes(item)))}
-                        >
-                          移除
-                        </button>
-                      </p>
-                    )}
-
+                    {/* 課程主題問答 v1（ADR-027）：取代原本三組分類按鈕與追問對話框。 */}
+                    <InterestQuestionnaire
+                      scope={{ department, gradeLevel: Number(gradeLevel), className }}
+                      savedSelections={topicSelections}
+                      confirmLabel={editing ? '確認並儲存' : '確認並繼續'}
+                      onConfirm={confirmTopics}
+                    />
                   </div>
 
                   <details className="setup-other-interests" id="interest-keywords">
@@ -625,7 +420,6 @@ export default function SetupPage() {
                       setSelectedInterests(new Set());
                       setCustomInterests('');
                       setTopicSelections([]);
-                      setReviewedSelectionKeys(new Set());
                     }}
                     style={{ marginTop: '8px', padding: 0, border: 'none', background: 'none', color: '#3b82f6', cursor: 'pointer' }}
                   >
@@ -708,16 +502,6 @@ export default function SetupPage() {
           </footer>
         )}
       </div>
-      {followupDialog && (
-        <InterestFollowupDialog
-          request={followupDialog.request}
-          mode={followupDialog.mode}
-          initialTagIds={followupDialog.initialTagIds}
-          onConfirm={applyFollowupAnswers}
-          onSkip={skipFollowup}
-          onCancel={() => setFollowupDialog(null)}
-        />
-      )}
       {saveNotice && (
         <div className="history-feedback-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="save-notice-title" id="interest-save-notice">
           <div className="history-feedback-dialog" style={{ width: '480px' }}>

@@ -82,6 +82,16 @@ export function validateProfileUpdate(updates = {}) {
     return 'remainingSemesters 必須是 1～8 的整數或 null';
   }
 
+  // 這三個欄位會原樣寫進 `User_Profiles` 的整數欄位。先前沒有檢查，送 `gradeLevel: "abc"`
+  // 會讓 MySQL 拒絕寫入、回 500，錯誤訊息還帶出資料表欄位名稱（2026-11-08 黑箱測試發現）。
+  // 字串 '2' 同樣擋下：前端一律送數字，型別轉換「救回來」只會讓不合法的呼叫端看似成功。
+  for (const field of ['gradeLevel', 'targetCreditsMax', 'schemaVersion']) {
+    const value = updates[field];
+    if (value !== undefined && value !== null && (!Number.isInteger(value) || value < 1)) {
+      return `${field} 必須是正整數或 null`;
+    }
+  }
+
   // `preferences_json` 由專屬欄位（`interests`／`preferredTrack`／`preferredKeywords`／
   // `useLearnedPreference`）各自更新，**公開 API 不接受整包覆寫**。
   //

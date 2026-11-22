@@ -7,6 +7,9 @@
 // mode="initial"：排課主頁自動跳出，只處理還沒回答過的課。「儲存」與「稍後再說」都會把
 //   這批課記下來（稍後再說＝全部普通），同一批課不再自動跳出。
 // mode="edit"：從個人設定打開，列出全部課，送出有改變的回答與從沒回答過的課。
+//
+// 2026-11-22：所有學期一律直接列出。原本超過 15 門只先顯示最近 2 個學期、要按「顯示更早的課」，
+// 使用者要求拿掉收合；內容區本身可以捲動。
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { interactionsAPI } from '../../services/api';
@@ -17,8 +20,6 @@ const OPTIONS = [
   { value: 'neutral', label: '普通' },
   { value: 'disliked', label: '不喜歡' },
 ];
-const COLLAPSE_THRESHOLD = 15;
-const VISIBLE_GROUPS_WHEN_COLLAPSED = 2;
 const MAX_EVENTS_PER_REQUEST = 50;
 
 function semesterLabel(group) {
@@ -37,13 +38,10 @@ export default function HistoryFeedbackModal({ data, mode = 'initial', onClose, 
   const [choices, setChoices] = useState(() => Object.fromEntries(
     allCourses.map(course => [course.courseCode, course.response ?? 'neutral'])
   ));
-  const [showAll, setShowAll] = useState(allCourses.length <= COLLAPSE_THRESHOLD);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   if (!data || allCourses.length === 0) return null;
-  const visibleGroups = showAll ? groups : groups.slice(0, VISIBLE_GROUPS_WHEN_COLLAPSED);
-  const hiddenCount = groups.slice(VISIBLE_GROUPS_WHEN_COLLAPSED).reduce((sum, group) => sum + group.courses.length, 0);
 
   const submit = async (useNeutralForAll) => {
     // 編輯模式送出有改變的回答，以及從沒回答過的課（維持「普通」也要記下，否則排課主頁會再問一次）。
@@ -97,7 +95,7 @@ export default function HistoryFeedbackModal({ data, mode = 'initial', onClose, 
         </div>
 
         <div className="history-feedback-body">
-          {visibleGroups.map(group => (
+          {groups.map(group => (
             <section key={`${group.academicYear}-${group.semester}`} className="history-feedback-group">
               <h4>{semesterLabel(group)}</h4>
               {group.courses.map(course => (
@@ -122,11 +120,6 @@ export default function HistoryFeedbackModal({ data, mode = 'initial', onClose, 
               ))}
             </section>
           ))}
-          {!showAll && hiddenCount > 0 && (
-            <button type="button" className="history-feedback-more" onClick={() => setShowAll(true)}>
-              顯示更早的課（{hiddenCount} 門）
-            </button>
-          )}
           {error && <div className="search-action-notice error">{error}</div>}
         </div>
 

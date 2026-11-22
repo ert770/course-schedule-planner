@@ -27,6 +27,21 @@ describe('#10 任務 3A POST /api/profile 的輸入驗證', () => {
     }
   });
 
+  test('gradeLevel、targetCreditsMax、schemaVersion 只接受正整數或 null', () => {
+    for (const field of ['gradeLevel', 'targetCreditsMax', 'schemaVersion']) {
+      assert.equal(validateProfileUpdate({ [field]: 1 }), null);
+      assert.equal(validateProfileUpdate({ [field]: 4 }), null);
+      assert.equal(validateProfileUpdate({ [field]: null }), null);
+      for (const value of ['abc', '2', 0, -1, 1.5, Number.NaN, {}, [], true]) {
+        assert.match(
+          validateProfileUpdate({ [field]: value }) ?? '',
+          new RegExp(`${field} 必須是正整數或 null`, 'u'),
+          `${field}=${JSON.stringify(value)} 應該被擋下`
+        );
+      }
+    }
+  });
+
   test('useLearnedPreference 只接受布林值', () => {
     for (const value of ['false', 'true', 0, 1, null, {}, []]) {
       assert.match(

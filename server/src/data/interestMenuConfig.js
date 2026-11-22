@@ -30,6 +30,21 @@ export const FOLLOWUP_REQUESTS_PER_MINUTE = 6;
 // GPT 寫的問題超過這個長度（或含網址）就視為不可用，改用固定問句。
 export const FOLLOWUP_QUESTION_MAX_LENGTH = 80;
 
+// ── 課程主題問答 v1（ADR-027）─────────────────────────────────────────────────
+// 每題一次顯示幾個方向（A／B／C），細項追問也一樣。
+export const QUESTIONNAIRE_BATCH_SIZE = 3;
+// 送給語言模型描述一個方向時，附幾個代表標籤名稱。
+export const QUESTIONNAIRE_TOPIC_LABELS_PER_DIRECTION = 4;
+// 每個方向底下列出幾個代表主題給使用者看（使用者 2026-11-22 要求「分類下列 4～6 個主題」）。只是說明，不會被選進 tagIds。
+export const QUESTIONNAIRE_TOPICS_SHOWN_PER_DIRECTION = 6;
+// 語言模型改寫的短標題、一句說明的長度上限；超過就整批退回固定文案。
+export const QUESTIONNAIRE_TITLE_MAX_LENGTH = 24;
+export const QUESTIONNAIRE_DESCRIPTION_MAX_LENGTH = 60;
+// 每位使用者每分鐘最多幾次出題請求。逐題作答、換一組、上一題都會打一次，比舊追問（一次全部）頻繁。
+export const QUESTIONNAIRE_REQUESTS_PER_MINUTE = 30;
+// 請求裡「已看過的選項」「已選方向」等清單的長度上限（防止過大的請求）。
+export const QUESTIONNAIRE_MAX_LIST_LENGTH = 60;
+
 // 這兩個大類別描述的是「課程怎麼上」而不是「主題」，不當選項。
 export const EXCLUDED_MAIN_CATEGORY_NAMES = Object.freeze([
   '學習階段與課程情境',
@@ -134,6 +149,13 @@ export default {
   FOLLOWUP_CACHE_TTL_MS,
   FOLLOWUP_REQUESTS_PER_MINUTE,
   FOLLOWUP_QUESTION_MAX_LENGTH,
+  QUESTIONNAIRE_BATCH_SIZE,
+  QUESTIONNAIRE_TOPIC_LABELS_PER_DIRECTION,
+  QUESTIONNAIRE_TOPICS_SHOWN_PER_DIRECTION,
+  QUESTIONNAIRE_TITLE_MAX_LENGTH,
+  QUESTIONNAIRE_DESCRIPTION_MAX_LENGTH,
+  QUESTIONNAIRE_REQUESTS_PER_MINUTE,
+  QUESTIONNAIRE_MAX_LIST_LENGTH,
   EXCLUDED_MAIN_CATEGORY_NAMES,
   DIRECT_SUBCATEGORIES,
   DIRECT_MAX_TAGS,

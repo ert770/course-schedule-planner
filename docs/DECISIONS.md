@@ -1036,3 +1036,47 @@ Consequences:
 - Measured over the CS accounts (service-level A/B, 2026-11-20): with the option selected, 人工智慧導論 S_tag rises from 0 to 0.44, 人工智慧自然語言導論 to 0.83, 電腦視覺與擴增實境 to 0.17. Several Persona schedules then include 人工智慧導論 or 人工智慧自然語言導論 where they did not before; others do not change because their elective quota is already filled.
 - Spill-over: every course school-wide carrying 人工智慧 or 機器學習 is boosted for that user, including 系外 courses such as 人工智慧 and 深度學習概論 from STEM units. Accepted for now (系外 explicitly deferred by the user); it is the same menu-only STEM limitation as ADR-025, with a larger reach.
 - New curated options must name every tag explicitly and be reviewed against the actual pool, like the `direct` whitelist.
+
+## ADR-027: Course-Topic Questionnaire v1 Replaces the Category Buttons; Directions Are Never Auto-Expanded
+
+Date: 2026-11-22
+
+Context:
+
+The setup page showed up to 8 category buttons per group (本系／通識／系外) plus a follow-up dialog listing up to 12 tags per category (ADR-025). The user approved a redesign specified by Codex in《課程主題問答 v1：題目與 LLM 規格》 (kept outside the repo): one question per group with at most three directions (A/B/C), at most two picks, "換一組" for unseen directions, at most one detail follow-up, and a confirmation page. Two of these were changed by the user on 2026-11-22: there is no limit on picks (directions or detail topics), and every answered group gets its own detail follow-up right after it (本系 → 追問 → 通識 → 追問 → 系外 → 追問), instead of a single follow-up after all three. Claude Code owns the backend pipeline and the integration with the four interest consumers; the consumers are done in separate, individually reviewed steps.
+
+Decision:
+
+- New endpoint `POST /api/profile/interest-questions` with `stage` = `group` / `detail` / `summary`. Options always come from the student's candidate pool (the same `getInterestTopicGroups()` as the menu and save validation). The language model only rewrites copy for backend-chosen options, keyed by request-local `optionRef`s; refs, order and count are validated and any mismatch falls back to fixed copy (catalog name, representative courses). The 9 default directions in the spec use preset copy and never call the model.
+- **Directions are never expanded into tags.** Only topics the user confirms (detail question or confirmation page) go into `tagIds`. This removes, for the questionnaire, ADR-025's `direct` whitelist expansion (資訊安全與隱私) and ADR-026's automatic inclusion of the 7 curated 人工智慧 tags; the user chose this on 2026-11-22. ADR-026's scoring exemption for explicitly selected too_common tags still applies when the user confirms such a tag.
+- Storage is unchanged: `interestSelections` keyed by `(group, categoryId)`, `tagIds` may be empty, `mode` saved as `followup`. Skip / keep / remove are UI states: an unanswered or skipped group keeps its saved directions; only deselecting after answering removes one; removal on the confirmation page can be undone. Removing one direction keeps the same tag under another kept direction.
+- Each direction shows up to 6 representative topic names from the pool ("包含主題：…", user request 2026-11-22). They are explanatory only and are never written to `tagIds`.
+- The four consumers (S_tag, s_vec, scheduler text matching, exploration cards) are wired separately; until then only S_tag reads `interestSelections`, as before.
+
+Consequences:
+
+- A user who only picks broad directions and skips the follow-up gets no tag prior in S_tag (accepted per spec: "無訊號不加分").
+- Detail options are ordered by course count, not by the old GPT ordering; e.g. 語言、文學與溝通 lists 文學分析／中國文學／文學 first. The spec's preset question for it ("你想先接觸哪些語言？") was therefore dropped on 2026-11-22 (user decision); it uses the generic "「語言、文學與溝通」裡，你想先接觸哪些主題？".
+- More requests per user than the old follow-up (one per question or batch), hence a separate rate limit of 30 per minute.
+- `POST /api/profile/interest-followups` remains documented and tested but the setup page no longer calls it.
+
+## ADR-028: Detail Page Shows Every Selected Direction, With Precomputed LLM Tag Clusters for Large Ones
+
+Date: 2026-11-22
+
+Context:
+
+The user wants a three-level funnel (direction, theme group, concrete tag) so students can narrow thousands of tags with few questions. The catalog's subcategory layer cannot serve as the middle level: within one main category most subcategories carry identical tag sets in the real candidate pool (e.g. 4 of 6 under 語言、文學與溝通). Spike 1 clustered tags by course co-occurrence and failed: tags are too sparse, so clusters either fragment (27% of directions in 2–4 groups) or collapse into one blob. Spike 2 asked a language model to group tag names: 92% of directions passed strict validation, and a findability A/B (simulated student, no hint of the group) showed fewer options viewed (10.5 vs 14.0) and clicks (2.3 vs 4.7) than the old 3-per-page follow-up, with every second direction reachable (old flow: 0 of 36). Hot tags got slightly harder, and 7–12-tag directions were faster as a flat list. See docs/PLANS/2026-11-22-interest-questionnaire-funnel-{design,spike-1,spike-2,ab}.md.
+
+Decision:
+
+- `stage=detail` returns one block per selected direction in the group. Directions with up to 12 tags are listed flat; directions with 13 or more use precomputed clusters (collapsed cards showing the label and 2 representative tags, expanded in place), with the 3 most popular tags pinned above the cards (user decision) and a same-page search box. Without a valid precomputed entry the block falls back to the full flat list.
+- Clusters are generated offline by `scripts/buildInterestTagClusters.js`, validated (every tag exactly once, 2–4 groups, at least 2 tags each), and stored in `src/data/interestTagClusters.json` keyed by direction id and the sorted tag-id list. Students never wait for a model call, and a given version always shows the same grouping. Entries that fail validation are not stored; missing tags are never moved into 其他.
+- Scoring stays as decided by the user (option A): directions and clusters only navigate; only ticked canonical tag ids are saved and scored. The detail page pre-ticks previously saved tags; unticking one there removes it, while "這題先略過" keeps saved tags.
+- The confirm page shows a non-blocking reminder when no concrete topic is selected.
+
+Consequences:
+
+- The cluster file only covers the pools it was built for (currently the four CS Persona classes); other pools fall back to flat lists until the script is rerun for them, and any change in a pool's tags invalidates its entries.
+- The simulated student used the same model as the clusterer, so the A/B is optimistic; human checks of the listed targets are still required.
+- Known mis-groupings (e.g. 演算法) remain until the prompt is revised and the A/B rerun.

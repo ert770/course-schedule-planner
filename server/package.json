@@ -17,6 +17,7 @@
     "migrate:saved-schedules": "node scripts/savedSchedulesMigration.js",
     "migrate:course-neighbors": "node scripts/courseNeighborsMigration.js",
     "cf:build-neighbors": "node scripts/buildCourseNeighbors.js",
+    "interest:build-clusters": "node scripts/buildInterestTagClusters.js",
     "seed:demo-personas": "node scripts/demoPersonasSeed.js",
     "bench:personalization": "node scripts/personalizationBenchmark.js",
     "eval:tag-interest": "node scripts/tagInterestEvaluation.js",

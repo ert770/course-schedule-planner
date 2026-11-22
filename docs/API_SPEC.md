@@ -1597,6 +1597,88 @@ Response：
   `{ "followups": [], "scopeReady": false }`。
 - 錯誤：`400`（欄位缺漏或型別錯誤，例如 `selections 最多 6 筆`）、`429`（限流）。
 
+### `POST /api/profile/interest-questions`
+
+設定頁「想接觸的課程主題」的逐題問答（課程主題問答 v1，ADR-027，2026-11-22 起取代設定頁的三組分類按鈕與上面的追問對話框；
+`/interest-followups` 保留，但設定頁已不再呼叫）。一次出一題，選項由後端從這位學生的候選池選好，語言模型只改寫文案。
+需要登入與服務同意；每位使用者每分鐘最多 30 次（超過回 `429`、`code: "RATE_LIMITED"`）。不讀這位使用者的 Profile。
+
+共通欄位：`department`、`gradeLevel`、`className`（重建候選池，與 `GET /api/courses/interest-options` 相同）與 `stage`。
+
+**`stage: "group"`**：本系、通識、系外各一題，每批最多 3 個方向。
+
+```json
+{ "department": "資訊工程學系", "gradeLevel": 3, "className": "資訊三甲",
+  "stage": "group", "group": "department", "seenOptionIds": [] }
+```
+
+```json
+{
+  "stage": "group", "group": "department", "scopeReady": true,
+  "question": "如果下學期多修一門本系選修，你想深入哪些方向？",
+  "options": [
+    { "categoryId": "curated_ai", "aliasIds": [], "level": "sub", "title": "讓電腦從資料中學習",
+      "description": "了解模型怎麼辨識圖像、理解文字或做預測。", "categoryLabel": "人工智慧",
+      "topics": ["機器學習", "人工智慧", "生成式AI", "自然語言處理", "深度學習", "電腦視覺"], "topicCount": 7, "courseCount": 3 }
+  ],
+  "hasMore": true, "source": "default"
+}
+```
+
+- 方向順序：規格表的 9 個預設方向（`server/src/data/interestQuestionnaireCopy.js`）先出，其餘依選單原本的課程數排序。
+- 「換一組」：把看過的 `categoryId` 放進 `seenOptionIds` 再呼叫；`hasMore` 為 false 時沒有新方向。這組沒有任何方向時回
+  `question: null`、`options: []`，前端跳過這組。
+- 題幹固定用該組的題幹；有預設文案的方向直接用預設文案，其餘交給語言模型改寫短標題與一句說明。
+- `topics` 是這個方向在候選池裡課程數最多的前 6 個主題名稱，`topicCount` 是總數；只用來說明方向包含什麼（前端顯示「包含主題：…」），**不會被當成已選的具體主題**。
+
+**`stage: "detail"`**：每組作答後的細項頁（2026-11-22 起，三層沙漏的中、小層，ADR-028）。一次送這一組**所有**已選方向，
+後端回傳每個方向的區塊；不呼叫語言模型。
+
+```json
+{ "department": "資訊工程學系", "gradeLevel": 3, "className": "資訊三甲", "stage": "detail",
+  "directions": [{ "group": "outside", "categoryId": "main_…" }] }
+```
+
+```json
+{
+  "stage": "detail", "scopeReady": true,
+  "question": "你想先接觸哪些主題？點有興趣的群展開，可複選，也可以略過。",
+  "directions": [
+    {
+      "group": "outside", "categoryId": "main_…", "title": "了解品牌與消費者", "categoryLabel": "商業與管理",
+      "tagCount": 76, "mode": "clusters",
+      "tags": [{ "tagId": "tag_…", "name": "行銷", "courseCount": 6 }],
+      "popular": [{ "tagId": "tag_…", "name": "行銷", "courseCount": 6 }],
+      "clusters": [{ "clusterId": "c1", "label": "行銷市場", "tagIds": ["tag_…"] }]
+    }
+  ]
+}
+```
+
+- `mode`：
+  - `flat`：標籤 12 個以下，或 13 個以上但沒有預先算好的分群（備援）。前端直接列出 `tags`，先 12 個，其餘收在「更多」。
+  - `clusters`：13 個以上，而且 `server/src/data/interestTagClusters.json` 有這個方向、這份標籤清單的分群。另附：
+    - `popular`：最熱門的 3 個標籤，放在區塊最上面；
+    - `clusters`：群卡，`clusterId: "other"` 是「其他」，只帶標籤 ID，名稱與課程數由 `tags` 對照。
+  - `tags` 一律是全部標籤（依課程數），供同頁搜尋。
+- 分群只查表，鍵是「方向 ID＋排序後的標籤 ID」。候選池的標籤有任何差異就查不到，退回 `flat`，不把對不上的標籤塞進「其他」。
+- 不在候選池的方向略過；全部都不在時回 `question: null`、`directions: []`。
+- 分群只是導覽，不保存、不計分；只有學生勾選的標籤 ID 會存進 `interestSelections`。
+
+**`stage: "summary"`**：把已存的方向與標籤 ID 換成顯示名稱（確認頁、重新進入設定頁），不呼叫語言模型。
+`selections` 為 `[{ group, categoryId, tagIds }]`，回 `{ directions: [{ group, categoryId, title, categoryLabel, available }],
+topics: [{ group, categoryId, tagId, name, duplicate }] }`；`available: false` 表示該方向目前不在候選池，同一標籤第二次出現時
+`duplicate: true`。
+
+- （以下只適用 `stage=group`）`source` 為 `default`、`gpt`、`fixed` 或 `mixed`。**固定文案後備**：沒有 `OPENAI_API_KEY`、`INTEREST_FOLLOWUP_MODE=fixed`、
+  逾時（12 秒，不重試）、呼叫失敗，或輸出的參照、順序、數量與輸入不符、文字過長或含網址，整批改用固定文案：方向的短標題用目錄名稱、
+  說明列代表課；細項的短標題用標籤名稱；題幹用固定題幹。頂層 `fallbackReason` 為 `mode_fixed`、`no_api_key`、`gpt_timeout`、
+  `gpt_error` 或 `invalid_gpt_output`。**出題失敗不回錯誤**。
+- 送給 OpenAI 的只有這一題的分類名稱與標籤名稱（見 `docs/PROMPT_DESIGN.md`）。文案依內容快取在伺服器記憶體 24 小時，所有使用者共用；失敗不快取。
+- 班別沒選好時回 `scopeReady: false`、`question: null`。
+- 錯誤：`400`（欄位缺漏或型別錯誤）、`429`（限流）。
+- 問答的結果仍由 `POST /api/profile` 的 `interestSelections` 保存，形狀不變；`tagIds` 只放使用者確認的具體主題（ADR-027）。
+
 ### `POST /api/profile`
 
 只更新 session 使用者的 `User_Profiles` 支援欄位。request 不需也不應傳 `userId`。
@@ -1635,6 +1717,10 @@ Profile 另接受 `remainingSemesters`（1～8 的整數或 `null`）：
 它保存在 `preferences_json.values.remainingSemesters`。`null` 會刪除明確設定，排課回到
 依年級與 active term 推算；字串 `"3"`、小數、0 與 9 一律回 `400`。
 
+`gradeLevel`、`targetCreditsMax`、`schemaVersion` 會寫進 `User_Profiles` 的整數欄位，
+只接受正整數或 `null`；字串（包括 `"2"` 這種數字字串）、小數、0、負數、物件一律回 `400`。
+2026-11-08 以前這三個欄位沒有檢查，送 `"abc"` 會由 MySQL 拒絕寫入並回 `500`，錯誤訊息還帶出資料表欄位名稱。
+
 **`preferencesJson` 本身不可直接更新**（送了回 `400`）：`preferences_json.values` 的每個
 受管理欄位都有專屬 API 欄位。開放整包覆寫會讓上面的型別檢查可以被繞過
 （送 `{ values: { useLearnedPreference: "false" } }` 就能存進不合法的字串，讀取時再靜默
@@ -1663,12 +1749,12 @@ Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」
 **保存前的驗證（2026-11-20）**：送了 `interestSelections` 時，伺服器對照這位學生的候選池（`department`、
 `gradeLevel`、`className` 取自這次請求，沒帶就用已保存的 Profile）：分類必須存在、層級與組別相符（本系用子類別、
 通識與系外用大類別）、在這一組的候選池裡有這個分類；標籤必須是該分類在這一組候選池裡的可選標籤，不在的丟掉。
+`categoryId` 也可以是人工策畫選項（`curated_ai`，只限本系組、只限適用的系所）：標籤對照它的人工清單在候選池裡
+實際命中的部分，清單內的 `too_common` 標籤也接受（ADR-026）。
 **與已保存的某一筆完全相同的選擇不重驗、原樣保留**，新學期候選池對不上舊答案時不會被默默刪掉。回應多兩個欄位：
 
 ```json
 { "success": true, "preferences": {}, "interestSelectionsStatus": "verified", "interestSelectionWarnings": [] }
-`categoryId` 也可以是人工策畫選項（`curated_ai`，只限本系組、只限適用的系所）：標籤對照它的人工清單在候選池裡
-實際命中的部分，清單內的 `too_common` 標籤也接受（ADR-026）。
 ```
 
 `interestSelectionsStatus` 是 `unchanged`（沒有任何變動）、`verified`（已對照候選池）或 `unverified`（候選池載入失敗

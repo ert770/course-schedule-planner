@@ -5,8 +5,9 @@ import { buildCourseSearchScope } from '../skills/courseScope.js';
 import { PREFERENCE_TAG_GROUPS } from '../data/preferenceTags.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
-import { FOLLOWUP_REQUESTS_PER_MINUTE } from '../data/interestMenuConfig.js';
+import { FOLLOWUP_REQUESTS_PER_MINUTE, QUESTIONNAIRE_REQUESTS_PER_MINUTE } from '../data/interestMenuConfig.js';
 import { getInterestFollowups, validateFollowupRequest } from '../services/interestFollowupService.js';
+import { getInterestQuestion, validateQuestionRequest } from '../services/interestQuestionnaireService.js';
 import { sanitizeInterestSelectionsForSave } from '../services/interestSelectionService.js';
 import { checkRateLimit } from '../utils/rateLimiter.js';
 
@@ -65,6 +66,26 @@ export async function handleInterestFollowupsRequest({ identity, body }, {
   };
 }
 
+// 課程主題問答 v1（ADR-027）：逐題出題。選項由後端從候選池選好，語言模型只改寫文案；失敗一律退回固定文案，
+// 不回錯誤。見 `services/interestQuestionnaireService.js`。
+/**
+ * `POST /interest-questions` 的處理邏輯（身分與同意已由 middleware 檢查）。
+ * 不讀這位使用者的 Profile：出題只依候選池與這次請求帶的方向，已存的答案由前端帶來（stage=summary）。
+ * @returns `{ status, body }`
+ */
+export async function handleInterestQuestionRequest({ identity, body }, {
+  checkLimit = checkRateLimit,
+  getQuestion = getInterestQuestion,
+} = {}) {
+  // 限流的 key 只存在記憶體，不寫入任何資料表。
+  if (!checkLimit(`interest-questions:${identity.canonicalId}`, QUESTIONNAIRE_REQUESTS_PER_MINUTE)) {
+    return { status: 429, body: { error: '操作太頻繁，請稍後再試。', code: 'RATE_LIMITED' } };
+  }
+  const parsed = validateQuestionRequest(body);
+  if (parsed.error) return { status: 400, body: { error: parsed.error } };
+  return { status: 200, body: await getQuestion(parsed.value) };
+}
+
 /**
  * 保存偏好前處理課程主題選擇：對照候選池驗證，把 `updates.interestSelections` 換成驗證後的結果。
  * 沒送 `interestSelections` 時回 null（回應不帶狀態欄位）。學生範圍以這次送的欄位優先，沒送才用已保存的。
@@ -107,6 +128,19 @@ router.post('/interest-followups', requireIdentity, requireServiceConsent, async
     res.status(status).json(body);
   } catch (err) {
     if (!err.status) console.error('Interest followups error:', err);
+    res.status(err.status || 500).json({
+      error: err.message,
+      ...(err.code ? { code: err.code } : {}),
+    });
+  }
+});
+
+router.post('/interest-questions', requireIdentity, requireServiceConsent, async (req, res) => {
+  try {
+    const { status, body } = await handleInterestQuestionRequest({ identity: req.identity, body: req.body });
+    res.status(status).json(body);
+  } catch (err) {
+    if (!err.status) console.error('Interest questions error:', err);
     res.status(err.status || 500).json({
       error: err.message,
       ...(err.code ? { code: err.code } : {}),

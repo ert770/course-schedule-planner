@@ -1,0 +1,2941 @@
+{
+ "schemaVersion": 1,
+ "promptVersion": "tag-clusters-v1",
+ "model": "gpt-5.6-luna",
+ "generatedAt": "2026-11-22T07:10:20.576Z",
+ "entries": {
+  "245d4ba7387e0f5538aab6ee810ab2cce91a3a7fe0ff669af600c01274616712": {
+   "categoryId": "curated_ai",
+   "group": "department",
+   "direction": "人工智慧",
+   "tagCount": 7,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "機器學習",
+     "tagIds": [
+      "tag_1ff22a7c0384d5fe7076",
+      "tag_f645d35f9896eb5fa540"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "生成式模型",
+     "tagIds": [
+      "tag_74a283da57c1e5b44698",
+      "tag_662230208a43af40015c"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "智慧感知",
+     "tagIds": [
+      "tag_10cd64d23cdf4946a377",
+      "tag_e96d5e2bb10b88404514"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_5d9fadf6e0fab838a0e6"
+     ]
+    }
+   ]
+  },
+  "1c302e5a30da50e9dcf6d614c72aca47b4a684703637d320d9d236aed50f9f00": {
+   "categoryId": "sub_282d331f78f4437db43a",
+   "group": "department",
+   "direction": "資訊與計算",
+   "tagCount": 20,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "軟體開發",
+     "tagIds": [
+      "tag_8b440d5a77b53ab59573",
+      "tag_d80c479faa624b0ea270",
+      "tag_6c31818d6cfed1a89a97",
+      "tag_eba9e7b8601016f68da0"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "人工智慧與資料",
+     "tagIds": [
+      "tag_5e56ce70502c2ed24c5e",
+      "tag_74a283da57c1e5b44698",
+      "tag_f645d35f9896eb5fa540",
+      "tag_6a56abdad4a58bd6e973",
+      "tag_e8e1293ae61c5db48f61"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "資訊安全",
+     "tagIds": [
+      "tag_0007a8e4ac46ea238076",
+      "tag_94e387d9c81e017ede61",
+      "tag_4615b8e3bbb7d1134c1f"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "計算與數位應用",
+     "tagIds": [
+      "tag_7d8ec786a45b99f1c8d5",
+      "tag_b97e9bed975ac129716e",
+      "tag_4009c17ee931f0d75f8a",
+      "tag_345fc47692ebff42ceef",
+      "tag_7ac5be889bc116693d84",
+      "tag_954dac2621ee5552c9b5",
+      "tag_b943dee575dde6557658"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_e04641de057f2c711968"
+     ]
+    }
+   ]
+  },
+  "2ac1a26bed151d15b0629b3490e84d70b36fff8ec91fe90685acb2afaa0df1ae": {
+   "categoryId": "sub_61673ae4cd6205b7b658",
+   "group": "department",
+   "direction": "資訊科技",
+   "tagCount": 20,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "程式開發",
+     "tagIds": [
+      "tag_299ed16e5f6ea268da63",
+      "tag_57b15800ed78b6b86b25",
+      "tag_5c203d0145acfca949dc"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "網頁技術",
+     "tagIds": [
+      "tag_9484c8e3b1ddcef56d4a",
+      "tag_36e64f19f57a05c8cd5b",
+      "tag_e5e239560bc125a20ff2",
+      "tag_eda71746c01c3f465ffd",
+      "tag_e7bd6cac70a49fdbd829"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "資安網路",
+     "tagIds": [
+      "tag_19a3a4056c34b521403b",
+      "tag_5fb5683145187751603b"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "智慧運算",
+     "tagIds": [
+      "tag_a1c9286740bb4b85afc2",
+      "tag_46fb078d98c2df164f32"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_e04641de057f2c711968",
+      "tag_a11bc21051c16043a2d9",
+      "tag_02862af33fbb91fc9971",
+      "tag_7d1507284a5757cac6b6",
+      "tag_d36d8954eeac9037054c",
+      "tag_ea2ebcbc108269c77d7c",
+      "tag_b2c348e934da29c1ddde",
+      "tag_0265a7c13bbb3afa745d"
+     ]
+    }
+   ]
+  },
+  "35ef5bb3eb0c208723e4c8ed3bb8b400cb91d41099ad2ab616121ce9048f5c26": {
+   "categoryId": "sub_cc99cf36d901f9c6b7e6",
+   "group": "department",
+   "direction": "藝術、設計與媒體",
+   "tagCount": 7,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "系統設計",
+     "tagIds": [
+      "tag_f74b278af8d9d66dcaed",
+      "tag_7095d1115e9f360cd435"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "數位媒體",
+     "tagIds": [
+      "tag_d2119e7432806321a54b",
+      "tag_4cfa5051b8619cd3bed8",
+      "tag_e96d5e2bb10b88404514"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "網頁設計",
+     "tagIds": [
+      "tag_b74ee0b1d3f6ef970ca4",
+      "tag_3f16d332d08acc93ac2a"
+     ]
+    }
+   ]
+  },
+  "da82a5160b9bc5eaf30b81175e686bf888ce96ba70c1bc30b510ffabb02caecd": {
+   "categoryId": "sub_6504f10c66ee7f47cd08",
+   "group": "department",
+   "direction": "程式、系統與資料",
+   "tagCount": 8,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "系統架構與雲端",
+     "tagIds": [
+      "tag_986fa56778173b37ceb9",
+      "tag_5aa80a5ef2407e5318a4",
+      "tag_7ac5be889bc116693d84",
+      "tag_3b79b5693e0d37115c30"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "應用程式開發",
+     "tagIds": [
+      "tag_95247f37dad510796578",
+      "tag_aa35d77cef51e7f82612",
+      "tag_43a98930134bedc77bff"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_a11bc21051c16043a2d9"
+     ]
+    }
+   ]
+  },
+  "75f7e85bd9484120ff2903d03e34b15ac3395be596645b1291ff2440559fb99f": {
+   "categoryId": "sub_b33aab72171d499218c4",
+   "group": "department",
+   "direction": "管理",
+   "tagCount": 8,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "企業資訊",
+     "tagIds": [
+      "tag_2adb8d35eedfc12a62f7",
+      "tag_95247f37dad510796578",
+      "tag_f66be8783fdef81f197c"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "商業經營",
+     "tagIds": [
+      "tag_5a3fc49aad6b96a3f08e",
+      "tag_eab6fb197949053b6441",
+      "tag_b943dee575dde6557658"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "法務資產",
+     "tagIds": [
+      "tag_c7e2e63e449911239f2a",
+      "tag_5c964614ffa82f4d17db"
+     ]
+    }
+   ]
+  },
+  "4a3d04e0e431a7346c38e0bd8681481351256162cd84b5e88d05c913d140e623": {
+   "categoryId": "main_e2cf45d3fd62a05cf679",
+   "group": "generalEducation",
+   "direction": "社會科學與公共事務",
+   "tagCount": 114,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "社會與心理",
+     "tagIds": [
+      "tag_ad0490b92a0ceffb90e8",
+      "tag_20a5727e1f6a4f32c2de",
+      "tag_efbefdbb9e9cfe5ed86b",
+      "tag_0b6c7f490e874bdd02c2",
+      "tag_c40bcb6aa0ddea9886aa",
+      "tag_ec08cc76b91041928c52",
+      "tag_70fe335692704b5a7315",
+      "tag_a27e7cf74029a318dfe0",
+      "tag_9dad1f4a0739244456b9",
+      "tag_af40de745d67625891ee",
+      "tag_1ee96d486b730d98141b",
+      "tag_a81ca688f6eab3111b57",
+      "tag_56372e01d774a5fb2772",
+      "tag_a317c3cae7c6f994564f",
+      "tag_ccc15902038aece5281b",
+      "tag_1a5db2b9d4487958227d",
+      "tag_703fc99b7b348d3f6114",
+      "tag_ca912cf5570fde896259",
+      "tag_b163085fb7784977bf03",
+      "tag_83f44bcd69bc8d39d50c",
+      "tag_fcf8c6b2593696e798d1",
+      "tag_40fedb209d62301ff88d",
+      "tag_49ec8d215ff44b212f5b",
+      "tag_3460633b91508d7e4173",
+      "tag_b3e069556d29d14a2f58",
+      "tag_aec0b71d08f90a0549aa",
+      "tag_bb7d1b1bb9c4f7c1f8cc",
+      "tag_6fd9c376c014fcf98ea1",
+      "tag_927c60757bf1e12b9dbf",
+      "tag_2b0ea6b4a70db7be7c55",
+      "tag_4d2d9ec68828f7a9da3b"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "公共政治法律",
+     "tagIds": [
+      "tag_f777dc50c5eca2f52846",
+      "tag_3771c6ee3ff6f19e6fda",
+      "tag_026f532c21e1f341d732",
+      "tag_7ee9c0e4028f818a35d4",
+      "tag_ec866b703b4b1c657342",
+      "tag_b9d54d045a3d8cee0f97",
+      "tag_d217b7a5323b7833e4d5",
+      "tag_907c5e76d7ec23fe70ba",
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_81112d50b1d433c148a6",
+      "tag_16bb004375101bd4440d",
+      "tag_6993adeb805bd378f14f",
+      "tag_fa264622290729fb67c7",
+      "tag_3c5ec3383b2b59a09896",
+      "tag_0a0e8a0e792f60d83f35",
+      "tag_e486ee62698a9173ad5d",
+      "tag_a9ac9e48b5b28627c33d",
+      "tag_1053926d862fce030c02",
+      "tag_6334741a951fc6755460",
+      "tag_be9b1babd736ca546e10",
+      "tag_222ac4fd965817c4f3ff",
+      "tag_ac17f3d4cd7522d1be20",
+      "tag_02b330a6dcd0fed7affc",
+      "tag_540475b5594965d3b40c",
+      "tag_3c5663d3498d196f62e8",
+      "tag_1c3ae71d30f981cc773a",
+      "tag_f54b26ba15d05059aed5",
+      "tag_1e65bc2b2c5c06a48d13",
+      "tag_a773bde6bdd6bc64dde5",
+      "tag_365186e14df8d079e0a9",
+      "tag_5c751575a1f29a0a2419",
+      "tag_386e0b31e8c30f5cecc7",
+      "tag_32d81ef03cfd86a39d0a",
+      "tag_298a9a82bd7e90148580",
+      "tag_13006c76719dfdce362e"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "文化歷史地理",
+     "tagIds": [
+      "tag_0578852263c995491f94",
+      "tag_4be720748ccae7aba0eb",
+      "tag_5141ed59d64f1b0ba82c",
+      "tag_abdc502eb5ffef7102ce",
+      "tag_0248a362381c3f9caf6c",
+      "tag_c2d99a232f87eed57782",
+      "tag_b80644ed5e0f8a99107e",
+      "tag_f17e8c101855da41667f",
+      "tag_cf585662b771031f7750",
+      "tag_278b3ccc7566c3a6b9e6",
+      "tag_1fb4b255d754b57704bb",
+      "tag_45d3414d3eef118d4cce",
+      "tag_fd87b72c631062fef16c",
+      "tag_58d4f9294b5e014d141b",
+      "tag_05f77197390a4ce963a7",
+      "tag_ca3fcaae1b1bba146d3a",
+      "tag_3f04a64055b69e1ea434",
+      "tag_eff6218a6df8f2f121aa",
+      "tag_1363ec422812bb26bc94",
+      "tag_f17f0626a034f2ebeb86",
+      "tag_38f78fcb2956baac6864",
+      "tag_9cbeebd67d4964f0e57b",
+      "tag_18f0b12dc159cefc497e",
+      "tag_525b6ecadabc89552659",
+      "tag_3130dd88f28fd4386732",
+      "tag_3966a66613171a8881c4",
+      "tag_88ac1b0d6131d48084c4",
+      "tag_1b22b46c0ac509e4ebd3",
+      "tag_e1434b4dd1139e43bec9",
+      "tag_8fba5c0a4b83d903269e",
+      "tag_1695ffa99835cd3de690",
+      "tag_66b8a408e23bfedd38f6",
+      "tag_2382adcec97712ed41c7",
+      "tag_d1e21b634cf0c1b94d86"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "生活與自我",
+     "tagIds": [
+      "tag_64f299236c2d3a3b46ce",
+      "tag_20d69ec22eb8446092ee",
+      "tag_c308f8b0478c246b59bc",
+      "tag_ba1844dc01d86aeabe67",
+      "tag_1d086dbb9170e4e9915f",
+      "tag_dbb132b80114074713dc"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_5a94b096cd49d67eac8d",
+      "tag_7964ead97aa0be656c75",
+      "tag_abb62464590adabf1e15",
+      "tag_c8b9728cfee615e1fb55",
+      "tag_25fb722ef596dd29378a",
+      "tag_fd17c22aa1b67d24e239",
+      "tag_81abed8584576e7b9e67",
+      "tag_6583618dfda5dd24e0db"
+     ]
+    }
+   ]
+  },
+  "cdfd17e4aa51910bd6b75153197b394ae01d262579152b1423a75d89ca1acc7d": {
+   "categoryId": "main_c56775d41e3feaf5eefe",
+   "group": "generalEducation",
+   "direction": "人文、歷史與哲學",
+   "tagCount": 45,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "歷史文化",
+     "tagIds": [
+      "tag_510c3becb81e70858334",
+      "tag_81ad0d32a45109007373",
+      "tag_1e95cacca4f86c66f9b2",
+      "tag_18836ca9e6bb1b6a4f38",
+      "tag_74fac1d08c66277b29ba",
+      "tag_45d3414d3eef118d4cce",
+      "tag_ef4b3cde787be895b902",
+      "tag_6a613c59c56b63ea26ad",
+      "tag_75e69392284016e9dd77",
+      "tag_b12e914c1f82d6ed3a04",
+      "tag_cbfdaf56394971f00242",
+      "tag_9b1de1408d4158b836b5",
+      "tag_cb01252765b1bb1f56cd",
+      "tag_1481cf96d0dbe732870c",
+      "tag_7769eb6e8951bc19cc5d",
+      "tag_2365927199945dd644fb",
+      "tag_6eb3b1f99a2e68180806",
+      "tag_78b40ac5886ac7fa78d7"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "哲學倫理",
+     "tagIds": [
+      "tag_b0f241d8796a5b4b5271",
+      "tag_a66ca7394d83a155ce2b",
+      "tag_9b16702dbc1e921f1e5d",
+      "tag_928cc7367471d47b3666",
+      "tag_f1726e14f41dd2378e94",
+      "tag_613506e52f6d788aacf1",
+      "tag_aedbfe8ca53073344c55",
+      "tag_2d3dbbcaaf86a3085e4f",
+      "tag_88ac1b0d6131d48084c4",
+      "tag_1ca2a94db861ea8585e1",
+      "tag_c829c42f768ce5b1284f",
+      "tag_f0c1a790a8236e3c1558",
+      "tag_63af9e4923be07125487"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "文學藝術",
+     "tagIds": [
+      "tag_922c633fe25fafe77e98",
+      "tag_174b94007c34349aa43e",
+      "tag_1f0d8e708cf0b6e86f72",
+      "tag_e4e095c3717b6159b3c7",
+      "tag_11d130c60dd6d01e6907",
+      "tag_dd5ae544e38892332d41"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_566f86545bf9edb38fad",
+      "tag_1c1018b6a04a3ebcf681",
+      "tag_d6631c3402cbd33e9e14",
+      "tag_5e3bca81a038582b95c2",
+      "tag_e62ebbf3576c5f5e8c8a",
+      "tag_49fc8b73642cdc61fe39",
+      "tag_494a8946e3d35399d5d1",
+      "tag_6583618dfda5dd24e0db"
+     ]
+    }
+   ]
+  },
+  "3e6d3f2a015c7189f14dcb4928e6261c543669eddce59f3a4ab25f9a39c772a6": {
+   "categoryId": "main_be06989fd1c37e9825ce",
+   "group": "generalEducation",
+   "direction": "藝術、設計與媒體",
+   "tagCount": 42,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "藝術創作與鑑賞",
+     "tagIds": [
+      "tag_ae2648a62ede79b1884e",
+      "tag_922c633fe25fafe77e98",
+      "tag_92f6a3f8d673baae5c91",
+      "tag_20831de3d7908ef1be6b",
+      "tag_1400b496f4d7d4d1d37e",
+      "tag_931ac85c4526eb025d29",
+      "tag_a57ce74713fc4a21e518",
+      "tag_9d04c97e3ba2ba8d2b52",
+      "tag_b086dca685616809375c"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "音樂與表演",
+     "tagIds": [
+      "tag_3cfe34e84c9ac4e74b60",
+      "tag_78998a594b50647db74f",
+      "tag_3049170ee750145e88b7",
+      "tag_18836ca9e6bb1b6a4f38",
+      "tag_c1c90eb44e676939a760",
+      "tag_50f8d7438c8f9acd4d7d",
+      "tag_7cabbc7fdfd58ddc1785"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "影像與數位媒體",
+     "tagIds": [
+      "tag_8ef344e22395862a866b",
+      "tag_a352d821db4c3300fb61",
+      "tag_675149676c2272f475e9",
+      "tag_0e0c558d38772628cf8a",
+      "tag_8dfeabab8f6eedc4d623",
+      "tag_d2119e7432806321a54b"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "設計與建築",
+     "tagIds": [
+      "tag_8b7863eb69798ebc229a",
+      "tag_3771c6ee3ff6f19e6fda",
+      "tag_87292173b1634db7e0e4",
+      "tag_56717677eb8276719a47",
+      "tag_bce9849f3ebf314c4758",
+      "tag_ec0914a9297e4b2ee505",
+      "tag_d50172026ebd18fbb227",
+      "tag_f74b278af8d9d66dcaed",
+      "tag_ac1ba9baa75dcc8d84c8",
+      "tag_a4e2f560ff204cf95ebe",
+      "tag_e6f05271b5a92285c207",
+      "tag_beba8d9549153af1d39d",
+      "tag_ded1ba51aced740846eb",
+      "tag_d240672d3d9a1160f939",
+      "tag_711516ab10967f9c4bee",
+      "tag_8086845eb2dc57dbb771",
+      "tag_ec342a4f9800d32a4726",
+      "tag_dacfa676daef59105952",
+      "tag_ef84d7dc1a420bc5ef79",
+      "tag_cc6ce12af71aa79e587f"
+     ]
+    }
+   ]
+  },
+  "4dbe8b3fd2026d6de50d66d0922e8100d3c1398be1074a411094108dd920ee2a": {
+   "categoryId": "main_614f5866e5cf4b434c93",
+   "group": "generalEducation",
+   "direction": "商業與管理",
+   "tagCount": 42,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "創新創業",
+     "tagIds": [
+      "tag_083c6845f6bd5f576ca9",
+      "tag_a3787f68b3a50eeae4c4",
+      "tag_3c09768069aec06b1204",
+      "tag_5a3fc49aad6b96a3f08e",
+      "tag_e231e4d1111fabb66a0a",
+      "tag_40e8fa73591e7956c67b",
+      "tag_47dc623055e0114dac83",
+      "tag_df307a8ad09b9ea097e6"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "行銷市場",
+     "tagIds": [
+      "tag_0ed1021c03cbed00f1af",
+      "tag_84303cef78a6726b966b",
+      "tag_72c835d88d87595649b6",
+      "tag_2f779f109872f9faca62",
+      "tag_e6dab81351c3dedcdeb0",
+      "tag_2bfb5a4b064dc5e56cd6",
+      "tag_b1ce4d02e80d462e571d",
+      "tag_3dcbadc7754a7d31e3df",
+      "tag_64d3c6b15c60711cf503",
+      "tag_0d676ed982b41120d43b"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "管理營運",
+     "tagIds": [
+      "tag_ad8dccbedf210f235b2e",
+      "tag_2b9334b7aa7e1b974876",
+      "tag_ebdfb49eab788f39ff5d",
+      "tag_9025a287c8f94ac7edb5",
+      "tag_6f2531f5d662a182c080",
+      "tag_570628e81eee6bbcf16a",
+      "tag_3b71e7c5c1b9397925ce",
+      "tag_eaba999737dd9ac16198",
+      "tag_eab6da0895ef90399c29",
+      "tag_55b6e1b6390f1b4859e1",
+      "tag_6775077e1caf3f5ff3ba",
+      "tag_c47e7b8c0065a618d29f",
+      "tag_340455fbac2578217261"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "職涯產業",
+     "tagIds": [
+      "tag_b80644ed5e0f8a99107e",
+      "tag_0d9e8f0a28620eae390d",
+      "tag_5cfa5351fd27534c2ba5",
+      "tag_ebef81a65430ecefa19e",
+      "tag_4bb664831cfbc7d2ad8f",
+      "tag_e582f8992d3794f41959",
+      "tag_28aabb5f81bdc0b8a55c",
+      "tag_f00039eda99e973b9081"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_750fda7b74e35f2168cc",
+      "tag_28313ca8bde3662fe3a1",
+      "tag_60965168ce762e949600"
+     ]
+    }
+   ]
+  },
+  "8f4bc30f785b8452866d9f5008a17083a7e8681613e61b550c62669e8ef73878": {
+   "categoryId": "main_9368fdecfaf9487c2a91",
+   "group": "generalEducation",
+   "direction": "環境與永續",
+   "tagCount": 31,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "永續治理目標",
+     "tagIds": [
+      "tag_9af408c54bd252ac9639",
+      "tag_01fa129139bd5bfcbe3c",
+      "tag_43029a964b518f9c8281",
+      "tag_a43c64178463a63a84ad",
+      "tag_c1cfc7f1cd7d764bd2a5",
+      "tag_4a36b651669e1588bf56",
+      "tag_d7bb597cc8e76cba827a"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "氣候能源轉型",
+     "tagIds": [
+      "tag_6d69fee71e65dbd4b97c",
+      "tag_a9960c915199801512c2",
+      "tag_2177c33cb934ec304da3",
+      "tag_6e552085a1963f8e2c99",
+      "tag_a90c06ea2854bc140645",
+      "tag_bc5ed4230d160114b212",
+      "tag_059a062e34795eb05cb3"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "環境資源保育",
+     "tagIds": [
+      "tag_eca5d7fa4f83aeb99934",
+      "tag_9b657e53500234160c09",
+      "tag_00396afc4a3ce1a3feee",
+      "tag_a31e1b75d6d9e261b65e",
+      "tag_4b983de1249ab619e98e",
+      "tag_18e238e8f5a1adba7fe4",
+      "tag_8cb0696202f7b08c0fe9"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "永續社會設計",
+     "tagIds": [
+      "tag_970cb822229040e999c0",
+      "tag_927976f3c36b742e8d85",
+      "tag_9faea2831933dfb90266",
+      "tag_4a350efae4e0d403dd3e",
+      "tag_dacfa676daef59105952",
+      "tag_a95bf6c8a59c7dd57a8a",
+      "tag_92137c6261f03c1f45da",
+      "tag_50105cbfe0e27011c110",
+      "tag_d7c0114c9936d438cafa"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_750fda7b74e35f2168cc"
+     ]
+    }
+   ]
+  },
+  "bc859f48f8075861eb316e1c8822bab53098b240662383c6e65597791b6cc97c": {
+   "categoryId": "main_aa3c5e78f9a2b33887a9",
+   "group": "generalEducation",
+   "direction": "語言、文學與溝通",
+   "tagCount": 33,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "文學閱讀研究",
+     "tagIds": [
+      "tag_bd1395192f8d408e2f94",
+      "tag_3ffbfedba3f6b4d1b7b9",
+      "tag_9fad9307254e0f997b60",
+      "tag_eacdc3f51f86036c4bbd",
+      "tag_9737314948f039dd4aea",
+      "tag_16b603974e0cc4e18b31",
+      "tag_8684e04764dc993991ba",
+      "tag_112f8ebd222d2356de37",
+      "tag_ac8f8d8803cd655d87a5"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "寫作創意表達",
+     "tagIds": [
+      "tag_669e4a5c87a6e1e18bfd",
+      "tag_5cc63b5bf5d5e739974b",
+      "tag_fdd315b48028487e362d",
+      "tag_ad54411a0d0465ad3ba6",
+      "tag_2e42d86f1dbddfd5a8ab",
+      "tag_df6d4c594273b5998d9e"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "口語溝通表達",
+     "tagIds": [
+      "tag_d7144080c6db7089a95b",
+      "tag_98c559d66e7ccf7606f1",
+      "tag_4b28ed082949389dfa9f",
+      "tag_fdd523ef2724f1606a53",
+      "tag_586681245ce7c7ace4d1",
+      "tag_9b24097798c8f07ae0d0",
+      "tag_08603878b5e09b81b016",
+      "tag_120e3262be1208e5393a"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "語言閱讀交流",
+     "tagIds": [
+      "tag_191ed5889ab707f5681c",
+      "tag_485c3dab9f1882282057",
+      "tag_cc7879e4fbc08fabb33c",
+      "tag_e582f8992d3794f41959",
+      "tag_41f8b76b7ba563df9536",
+      "tag_15b560e9e9cca348d9b0",
+      "tag_c6d297713595d2f5127b",
+      "tag_1cd616fc028a85f1e040"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_c0bbc4224c52fb0a94c4",
+      "tag_890f69c8af027d15b0e4"
+     ]
+    }
+   ]
+  },
+  "a192a024cf9a7a327d9290581b9195bd8410c3510126266b710440e190873706": {
+   "categoryId": "main_7c1331c43e37371f1056",
+   "group": "generalEducation",
+   "direction": "通用能力與職涯",
+   "tagCount": 20,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "思辨決策",
+     "tagIds": [
+      "tag_d6151303ab3e9de4e8ef",
+      "tag_a0d60eea162b02461271",
+      "tag_bd70845b75b68304b55e",
+      "tag_1053926d862fce030c02",
+      "tag_b948f93e331915e5a1a1",
+      "tag_b237172e91b9142f7d53",
+      "tag_66e200682d28964c1003",
+      "tag_26c6388c823501f21606"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "人際領導",
+     "tagIds": [
+      "tag_f50961cabd761a1c8482",
+      "tag_039ef3498f7c02c72efe",
+      "tag_9ca52d66b6eae5535800",
+      "tag_05eafb2bf4683e460fc0"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "職涯自我發展",
+     "tagIds": [
+      "tag_64f299236c2d3a3b46ce",
+      "tag_0d9e8f0a28620eae390d",
+      "tag_d1047eed5dd5db0db2da",
+      "tag_2422ad1130cf13b9f172",
+      "tag_237dcaab78f64aa7ac8d"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "創意跨域",
+     "tagIds": [
+      "tag_01c18492ff9e251cd246",
+      "tag_494a8946e3d35399d5d1",
+      "tag_9f69f5da8e838d1b4736"
+     ]
+    }
+   ]
+  },
+  "c90c47ffbf90826053521f3b68b3efc1f0e9bed007d63e0b74ba7d6c64804c17": {
+   "categoryId": "main_b11192385ff627e06e4d",
+   "group": "generalEducation",
+   "direction": "教育、學習與研究",
+   "tagCount": 12,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "教育議題",
+     "tagIds": [
+      "tag_c883995ff5ab5961b4f6",
+      "tag_6ab05dcbe82adc07ab26",
+      "tag_a272034280f70e4d3a84",
+      "tag_6cdaffd8d053ebf139e5"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "學習方式",
+     "tagIds": [
+      "tag_a6ed18489d5477271a3f",
+      "tag_6f1f6a6a1b17f214d15b",
+      "tag_1bacda5642bf316e783f",
+      "tag_dacb632d071e1fee3c12",
+      "tag_de9a41dfb19fc3eed0e6"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "研究與整理",
+     "tagIds": [
+      "tag_aa7d5bd3ffb8726b4314",
+      "tag_862e718f03f97323c49b",
+      "tag_7033889797faf21d8df3"
+     ]
+    }
+   ]
+  },
+  "4a7bb39c19b5be16ee0ab10c98c5b528c52b301c7fa60db7ab51ddc98b57e93e": {
+   "categoryId": "main_27ee01ecd21eda7eb231",
+   "group": "outside",
+   "direction": "經濟與金融",
+   "tagCount": 22,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "會計與報表",
+     "tagIds": [
+      "tag_87345293af5c187a4930",
+      "tag_e2154f24ba3ca55adade",
+      "tag_901578777aae47ff0ebc",
+      "tag_7425dfe115ac67429a57",
+      "tag_4af22cb33c93bfeebee0",
+      "tag_d8ca3615bb281eaf16df",
+      "tag_820e8aa59f4be68c393f",
+      "tag_156e02d82d9b43f3d6e0"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "投資理財",
+     "tagIds": [
+      "tag_c927da3e98b8a834b81d",
+      "tag_1df37ac5200c17fa395c",
+      "tag_62abe7dd93e2816e54ba"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "租稅規劃",
+     "tagIds": [
+      "tag_f508db91735e9ce5e7f2",
+      "tag_72a5175657fede804f43",
+      "tag_c90bf325aa847f92b17c"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "金融科技",
+     "tagIds": [
+      "tag_af085b1e150496b2f904",
+      "tag_d81fef1c14f18272ffe3",
+      "tag_19a396f22dadadfc866c",
+      "tag_22dbbec63560a6256005",
+      "tag_e90c86df336f534ae3ab",
+      "tag_110599ccb008c6746985"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_aa7d5bd3ffb8726b4314",
+      "tag_d17e9d005d0473080d28"
+     ]
+    }
+   ]
+  },
+  "829378da26283798adab08a0577753dee4a19a663f8f5bd743b0299a975222e6": {
+   "categoryId": "main_064de4333e3b66b5b707",
+   "group": "outside",
+   "direction": "資訊與計算",
+   "tagCount": 9,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "資料分析",
+     "tagIds": [
+      "tag_57711cc5409735587ac0",
+      "tag_5e56ce70502c2ed24c5e",
+      "tag_1a933f3fb5da63d98c59"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "區塊鏈資安",
+     "tagIds": [
+      "tag_6f1732378fc14efb69a6",
+      "tag_0007a8e4ac46ea238076"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "人工智慧應用",
+     "tagIds": [
+      "tag_19bd99e264d3ff9498aa",
+      "tag_892ad44012ee0f1aa031"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_454349e422f05297191e",
+      "tag_59c346041bc3156675fe"
+     ]
+    }
+   ]
+  },
+  "07e85fe3600469d23d3ed3d2b7e322e8a5ba91e9c03626d2c5f6a53dc646c796": {
+   "categoryId": "main_c56775d41e3feaf5eefe",
+   "group": "outside",
+   "direction": "人文、歷史與哲學",
+   "tagCount": 7,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "文藝創作",
+     "tagIds": [
+      "tag_2658493712c7f25c3771",
+      "tag_922c633fe25fafe77e98"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "哲學思想",
+     "tagIds": [
+      "tag_eaa788d61209cea2e86c",
+      "tag_88ac1b0d6131d48084c4"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "倫理思辨",
+     "tagIds": [
+      "tag_9b16702dbc1e921f1e5d",
+      "tag_20aef7cad704726c8947"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_1c1018b6a04a3ebcf681"
+     ]
+    }
+   ]
+  },
+  "62f2309108e41c202af11b3ee6cde968e19a02330fe3469e6b65d995d081dcd7": {
+   "categoryId": "main_e2cf45d3fd62a05cf679",
+   "group": "generalEducation",
+   "direction": "社會科學與公共事務",
+   "tagCount": 60,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "社會文化",
+     "tagIds": [
+      "tag_efbefdbb9e9cfe5ed86b",
+      "tag_ad0490b92a0ceffb90e8",
+      "tag_af40de745d67625891ee",
+      "tag_56372e01d774a5fb2772",
+      "tag_c2d99a232f87eed57782",
+      "tag_9dad1f4a0739244456b9",
+      "tag_1a5db2b9d4487958227d",
+      "tag_1ee96d486b730d98141b",
+      "tag_fcf8c6b2593696e798d1",
+      "tag_0578852263c995491f94",
+      "tag_49ec8d215ff44b212f5b",
+      "tag_b80644ed5e0f8a99107e",
+      "tag_8fba5c0a4b83d903269e",
+      "tag_58d4f9294b5e014d141b",
+      "tag_3460633b91508d7e4173",
+      "tag_05f77197390a4ce963a7",
+      "tag_ca3fcaae1b1bba146d3a",
+      "tag_5141ed59d64f1b0ba82c",
+      "tag_ec08cc76b91041928c52",
+      "tag_a317c3cae7c6f994564f",
+      "tag_aec0b71d08f90a0549aa",
+      "tag_ccc15902038aece5281b",
+      "tag_c40bcb6aa0ddea9886aa",
+      "tag_b163085fb7784977bf03",
+      "tag_83f44bcd69bc8d39d50c",
+      "tag_927c60757bf1e12b9dbf",
+      "tag_c8b9728cfee615e1fb55",
+      "tag_3966a66613171a8881c4",
+      "tag_88ac1b0d6131d48084c4",
+      "tag_e1434b4dd1139e43bec9"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "公共治理",
+     "tagIds": [
+      "tag_0b6c7f490e874bdd02c2",
+      "tag_7ee9c0e4028f818a35d4",
+      "tag_ec866b703b4b1c657342",
+      "tag_3771c6ee3ff6f19e6fda",
+      "tag_cf585662b771031f7750",
+      "tag_026f532c21e1f341d732",
+      "tag_6993adeb805bd378f14f",
+      "tag_b9d54d045a3d8cee0f97",
+      "tag_1053926d862fce030c02"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "國際事務",
+     "tagIds": [
+      "tag_f777dc50c5eca2f52846",
+      "tag_d217b7a5323b7833e4d5",
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_0a0e8a0e792f60d83f35",
+      "tag_e486ee62698a9173ad5d",
+      "tag_be9b1babd736ca546e10",
+      "tag_222ac4fd965817c4f3ff",
+      "tag_ac17f3d4cd7522d1be20",
+      "tag_02b330a6dcd0fed7affc",
+      "tag_365186e14df8d079e0a9",
+      "tag_386e0b31e8c30f5cecc7"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "地理區域",
+     "tagIds": [
+      "tag_abdc502eb5ffef7102ce",
+      "tag_f17e8c101855da41667f",
+      "tag_278b3ccc7566c3a6b9e6",
+      "tag_1695ffa99835cd3de690",
+      "tag_66b8a408e23bfedd38f6",
+      "tag_2382adcec97712ed41c7"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_7964ead97aa0be656c75",
+      "tag_6583618dfda5dd24e0db",
+      "tag_5a94b096cd49d67eac8d",
+      "tag_fd17c22aa1b67d24e239"
+     ]
+    }
+   ]
+  },
+  "c51db4d051f2be176dc662a2bd2ea7900d7e49de6345add2e7be60b84dc4e8f0": {
+   "categoryId": "main_9368fdecfaf9487c2a91",
+   "group": "generalEducation",
+   "direction": "環境與永續",
+   "tagCount": 29,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "氣候環境",
+     "tagIds": [
+      "tag_6d69fee71e65dbd4b97c",
+      "tag_eca5d7fa4f83aeb99934",
+      "tag_bc5ed4230d160114b212",
+      "tag_18e238e8f5a1adba7fe4",
+      "tag_059a062e34795eb05cb3",
+      "tag_8cb0696202f7b08c0fe9"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "永續治理",
+     "tagIds": [
+      "tag_9af408c54bd252ac9639",
+      "tag_927976f3c36b742e8d85",
+      "tag_a43c64178463a63a84ad",
+      "tag_4a36b651669e1588bf56",
+      "tag_9faea2831933dfb90266",
+      "tag_a95bf6c8a59c7dd57a8a",
+      "tag_92137c6261f03c1f45da",
+      "tag_d7c0114c9936d438cafa",
+      "tag_d7bb597cc8e76cba827a"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "綠色能源",
+     "tagIds": [
+      "tag_a9960c915199801512c2",
+      "tag_2177c33cb934ec304da3",
+      "tag_6e552085a1963f8e2c99",
+      "tag_a90c06ea2854bc140645",
+      "tag_4a350efae4e0d403dd3e",
+      "tag_dacfa676daef59105952"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "循環設計",
+     "tagIds": [
+      "tag_9b657e53500234160c09",
+      "tag_970cb822229040e999c0",
+      "tag_00396afc4a3ce1a3feee",
+      "tag_a31e1b75d6d9e261b65e",
+      "tag_50105cbfe0e27011c110"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_01fa129139bd5bfcbe3c",
+      "tag_43029a964b518f9c8281",
+      "tag_750fda7b74e35f2168cc"
+     ]
+    }
+   ]
+  },
+  "db03c7ff945607172eebb0c7ba92c14bebdb7ac6a56de3d788aceffb4c7ee886": {
+   "categoryId": "main_c56775d41e3feaf5eefe",
+   "group": "generalEducation",
+   "direction": "人文、歷史與哲學",
+   "tagCount": 23,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "歷史考古",
+     "tagIds": [
+      "tag_510c3becb81e70858334",
+      "tag_81ad0d32a45109007373",
+      "tag_74fac1d08c66277b29ba",
+      "tag_1481cf96d0dbe732870c"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "宗教倫理哲學",
+     "tagIds": [
+      "tag_b0f241d8796a5b4b5271",
+      "tag_9b16702dbc1e921f1e5d",
+      "tag_aedbfe8ca53073344c55",
+      "tag_1ca2a94db861ea8585e1",
+      "tag_c829c42f768ce5b1284f",
+      "tag_f0c1a790a8236e3c1558",
+      "tag_88ac1b0d6131d48084c4"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "文化社會",
+     "tagIds": [
+      "tag_1e95cacca4f86c66f9b2",
+      "tag_6a613c59c56b63ea26ad",
+      "tag_75e69392284016e9dd77",
+      "tag_9b1de1408d4158b836b5",
+      "tag_7769eb6e8951bc19cc5d",
+      "tag_78b40ac5886ac7fa78d7"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_1c1018b6a04a3ebcf681",
+      "tag_d6631c3402cbd33e9e14",
+      "tag_5e3bca81a038582b95c2",
+      "tag_566f86545bf9edb38fad",
+      "tag_494a8946e3d35399d5d1",
+      "tag_6583618dfda5dd24e0db"
+     ]
+    }
+   ]
+  },
+  "c00f371a53c9cbe48ade98d69790028db6b553442da8ff2413e66a9218d80ede": {
+   "categoryId": "main_614f5866e5cf4b434c93",
+   "group": "generalEducation",
+   "direction": "商業與管理",
+   "tagCount": 30,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "創新創業",
+     "tagIds": [
+      "tag_083c6845f6bd5f576ca9",
+      "tag_a3787f68b3a50eeae4c4",
+      "tag_3c09768069aec06b1204",
+      "tag_5a3fc49aad6b96a3f08e",
+      "tag_e231e4d1111fabb66a0a",
+      "tag_40e8fa73591e7956c67b",
+      "tag_47dc623055e0114dac83",
+      "tag_df307a8ad09b9ea097e6"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "行銷策略",
+     "tagIds": [
+      "tag_72c835d88d87595649b6",
+      "tag_2f779f109872f9faca62",
+      "tag_b1ce4d02e80d462e571d",
+      "tag_6775077e1caf3f5ff3ba",
+      "tag_3dcbadc7754a7d31e3df",
+      "tag_0ed1021c03cbed00f1af",
+      "tag_0d676ed982b41120d43b"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "營運管理",
+     "tagIds": [
+      "tag_9025a287c8f94ac7edb5",
+      "tag_6f2531f5d662a182c080",
+      "tag_570628e81eee6bbcf16a",
+      "tag_3b71e7c5c1b9397925ce",
+      "tag_eab6da0895ef90399c29",
+      "tag_55b6e1b6390f1b4859e1",
+      "tag_c47e7b8c0065a618d29f",
+      "tag_340455fbac2578217261"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_b80644ed5e0f8a99107e",
+      "tag_ebdfb49eab788f39ff5d",
+      "tag_e582f8992d3794f41959",
+      "tag_0d9e8f0a28620eae390d",
+      "tag_f00039eda99e973b9081",
+      "tag_60965168ce762e949600",
+      "tag_750fda7b74e35f2168cc"
+     ]
+    }
+   ]
+  },
+  "2d9409cd1c149408a64d61f42e2606d18f4eb98020f415c501fcd22286f65436": {
+   "categoryId": "main_be06989fd1c37e9825ce",
+   "group": "generalEducation",
+   "direction": "藝術、設計與媒體",
+   "tagCount": 14,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "社會創新設計",
+     "tagIds": [
+      "tag_3771c6ee3ff6f19e6fda",
+      "tag_8b7863eb69798ebc229a",
+      "tag_56717677eb8276719a47",
+      "tag_f74b278af8d9d66dcaed",
+      "tag_711516ab10967f9c4bee"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "建築空間設計",
+     "tagIds": [
+      "tag_e6f05271b5a92285c207",
+      "tag_beba8d9549153af1d39d",
+      "tag_dacfa676daef59105952"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "音樂藝術欣賞",
+     "tagIds": [
+      "tag_92f6a3f8d673baae5c91",
+      "tag_78998a594b50647db74f",
+      "tag_50f8d7438c8f9acd4d7d"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "數位媒體創作",
+     "tagIds": [
+      "tag_8dfeabab8f6eedc4d623",
+      "tag_ef84d7dc1a420bc5ef79",
+      "tag_675149676c2272f475e9"
+     ]
+    }
+   ]
+  },
+  "01d3fc26899ad32529f40ec32013e15c9aa697a81d4b27e3ddd731a756a78d22": {
+   "categoryId": "main_27ee01ecd21eda7eb231",
+   "group": "generalEducation",
+   "direction": "經濟與金融",
+   "tagCount": 13,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "總體經濟",
+     "tagIds": [
+      "tag_932d49550a6b683a3009",
+      "tag_72fd24fbcbe495eff772",
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_9e0990da90680baa203e",
+      "tag_d3092fe8955a64b69497",
+      "tag_c3c41afb4e861b336eec"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "市場與金融",
+     "tagIds": [
+      "tag_ae166ded97697c651dcb",
+      "tag_ad5f89ceb75ab5f7ff72",
+      "tag_bb74a8b86515d104ed8b"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_aa7d5bd3ffb8726b4314",
+      "tag_a0d60eea162b02461271",
+      "tag_19201edbd720f5ef2b8d",
+      "tag_cd97a96249835c876d5a"
+     ]
+    }
+   ]
+  },
+  "8eaaa3df6dd6f70a64ce3893a3f5b03d434d1a1b86a65f9b591f99cd54a3c695": {
+   "categoryId": "main_064de4333e3b66b5b707",
+   "group": "generalEducation",
+   "direction": "資訊與計算",
+   "tagCount": 14,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "資料與智慧運算",
+     "tagIds": [
+      "tag_5e56ce70502c2ed24c5e",
+      "tag_74a283da57c1e5b44698",
+      "tag_f645d35f9896eb5fa540",
+      "tag_ef7797e13d3a75526946"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "地理空間分析",
+     "tagIds": [
+      "tag_bd23c2acc382cb94ac35",
+      "tag_d4dd02ccdca430564bb1"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "資訊安全與影響",
+     "tagIds": [
+      "tag_448e7cff9fee979192eb",
+      "tag_0007a8e4ac46ea238076"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_2082429cb24e6b9303bc",
+      "tag_6edb77679bbe71f518b1",
+      "tag_bf6a1ae58b55e0832330",
+      "tag_60965168ce762e949600",
+      "tag_7f7e69d124b386b927f9",
+      "tag_cebea885ef40f295a311"
+     ]
+    }
+   ]
+  },
+  "9925f49fa6ba16c2b52f1b7cba5022d9165c9de60d3b7b3f6cef370b47b9c3d6": {
+   "categoryId": "main_bfb924307147fc4c28f7",
+   "group": "generalEducation",
+   "direction": "工程與製造",
+   "tagCount": 14,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "積層製造",
+     "tagIds": [
+      "tag_2a69cf197a90c9477313",
+      "tag_6ce4d9d2fc5db6033fc5",
+      "tag_7c8809a6b161c7b5fb64"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "奈米科技",
+     "tagIds": [
+      "tag_0e01e08f9661d310742c",
+      "tag_e4cb04fc057b01e1ab2a",
+      "tag_04baa4ff79c4d71a86a4"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "無人與導航",
+     "tagIds": [
+      "tag_5b7904a220ffa3f637ae",
+      "tag_50d80d544b0d6e494151",
+      "tag_843d63bd8c21c63cbfd4",
+      "tag_519f677bee1b869fb92a"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_3771c6ee3ff6f19e6fda",
+      "tag_9faea2831933dfb90266",
+      "tag_653eac173e66849fd184",
+      "tag_122bd557039423251934"
+     ]
+    }
+   ]
+  },
+  "32243389ff43ca2f075ff8f27f0b3465d930826e9b2f2edfbf6bab43925d80ef": {
+   "categoryId": "main_614f5866e5cf4b434c93",
+   "group": "outside",
+   "direction": "商業與管理",
+   "tagCount": 60,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "行銷市場",
+     "tagIds": [
+      "tag_2f779f109872f9faca62",
+      "tag_e6dab81351c3dedcdeb0",
+      "tag_b943dee575dde6557658",
+      "tag_542afd9fc0fab2e8454d",
+      "tag_00d583b71d843be8e782",
+      "tag_98f8e9a85898e55793f5",
+      "tag_0ed1021c03cbed00f1af",
+      "tag_a92d2676892b2f27addc",
+      "tag_02c85ddfd54666c7074e",
+      "tag_009fbc30d548ec6e87ce",
+      "tag_3dcbadc7754a7d31e3df",
+      "tag_9d9a2ec70afb1f5352cc",
+      "tag_84303cef78a6726b966b",
+      "tag_0f4ff75743df73e7303f",
+      "tag_b1ce4d02e80d462e571d",
+      "tag_2881f20f102e6eb4790c",
+      "tag_64d3c6b15c60711cf503",
+      "tag_30f50f7fa4fa466a1386"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "企業管理",
+     "tagIds": [
+      "tag_570628e81eee6bbcf16a",
+      "tag_e39491d00c353d0ba190",
+      "tag_6dfe505294998c2542da",
+      "tag_bb6d995724f49a72e190",
+      "tag_20aef7cad704726c8947",
+      "tag_083c6845f6bd5f576ca9",
+      "tag_d41407ce2227e98ffe9a",
+      "tag_3779dfc3e86211f0ec04",
+      "tag_f038022f5fea662b551f",
+      "tag_4af38f416a45e5889dd8",
+      "tag_25dd4a6a975ecddc01d1",
+      "tag_b2b5040a3d62293204bb",
+      "tag_9ae1edb818c425292a6e",
+      "tag_c89f7d2904eae5663518",
+      "tag_5a3fc49aad6b96a3f08e",
+      "tag_b1f77970d771db776b1c",
+      "tag_c85b850df18723bd5fe0",
+      "tag_b08b84ac3df4a1cccb04",
+      "tag_28f176374fa239af9101"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "營運分析",
+     "tagIds": [
+      "tag_a9d425330b7bbb704096",
+      "tag_5d3c3943df961262d743",
+      "tag_7b467dc2ad6d343bb143",
+      "tag_e866006507320be3798e",
+      "tag_4a33596a45e3c6a00b1c",
+      "tag_3e293851c5b24673f4d8",
+      "tag_2adb8d35eedfc12a62f7",
+      "tag_6f2531f5d662a182c080",
+      "tag_4a37e97fb9b333198b25",
+      "tag_669fd3dfb6cef6f6d99d"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "商務溝通",
+     "tagIds": [
+      "tag_e582f8992d3794f41959",
+      "tag_f43811c9d037307c236e",
+      "tag_617e331db838cfdfb158",
+      "tag_310f5f052db22f5c3e96"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_d4b656629ebb1c65c705",
+      "tag_188160721c9c75672c09",
+      "tag_9ce13fa52f7323bdcf78",
+      "tag_1ff91b13120632a6b279",
+      "tag_f156d520874ab28b03b9",
+      "tag_9eefcab1792a689ebee4",
+      "tag_50f08e64c5a6192c5896",
+      "tag_60965168ce762e949600",
+      "tag_24e6654bfd1ab85bebb1"
+     ]
+    }
+   ]
+  },
+  "5085e67d86ab43194d53e04339a5f96a210d10aed090d70b0bb7f47a34b00910": {
+   "categoryId": "main_27ee01ecd21eda7eb231",
+   "group": "outside",
+   "direction": "經濟與金融",
+   "tagCount": 68,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "國際經貿",
+     "tagIds": [
+      "tag_f0f2b873561feb7e44f7",
+      "tag_b943dee575dde6557658",
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_d93301e525ef448a8601",
+      "tag_cbfd3bfaca23c6068521",
+      "tag_69083901061bcac36a48",
+      "tag_b2f95605e0737052976b",
+      "tag_145f6af1a26ecbb08166",
+      "tag_a54b472a53dc8c4dc0d0"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "金融市場投資",
+     "tagIds": [
+      "tag_bb74a8b86515d104ed8b",
+      "tag_aecb9603457f5d1f9ec7",
+      "tag_7f0c110ffc829c9b49ab",
+      "tag_4a33596a45e3c6a00b1c",
+      "tag_84303cef78a6726b966b",
+      "tag_159ba636f6ab3d66fa17",
+      "tag_94e2924469ad7d547839",
+      "tag_c2338d8d87577f2db3bf",
+      "tag_79feda771386029e0f9c",
+      "tag_4594c5c197d0acefe3e4",
+      "tag_63f6069c4080bec50d84",
+      "tag_ae21bd39c8e2165221a7",
+      "tag_d43aa27ebe300602ad2d",
+      "tag_1ef639be1953569b2619",
+      "tag_669fd3dfb6cef6f6d99d",
+      "tag_456a93b9c603392e7b50",
+      "tag_575d3f35b6cefd89f0f4",
+      "tag_36f04c01e4f168851696",
+      "tag_58c35f0cffaa25109dec"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "保險財務會計",
+     "tagIds": [
+      "tag_91cba55eebc8a9928018",
+      "tag_6a8f35190a25078866ff",
+      "tag_6350258c268c1779232c",
+      "tag_d8ca3615bb281eaf16df",
+      "tag_901578777aae47ff0ebc",
+      "tag_711aa73d589b468ce486",
+      "tag_af085b1e150496b2f904",
+      "tag_ae08a42c423201ec53f5",
+      "tag_fb7c9b1f0ba12528fc89",
+      "tag_d17e9d005d0473080d28",
+      "tag_f22b2ea70297a101adc3",
+      "tag_6fc1e3fd941473568ff4",
+      "tag_89b59d47134930cb1d3c",
+      "tag_851789defc83b3e37712",
+      "tag_a47a36dafb45d0590ba0",
+      "tag_5d6369ccc3e6ec4ba6a4",
+      "tag_156e02d82d9b43f3d6e0",
+      "tag_c876f8f2c3aab4bc657a"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "經濟理論政策",
+     "tagIds": [
+      "tag_aa7d5bd3ffb8726b4314",
+      "tag_15ddf81db7f1222212a5",
+      "tag_9e0990da90680baa203e",
+      "tag_4d290abe1e7195951618",
+      "tag_93ede14f612c08c71fab",
+      "tag_e6d7fa951ecb7f8c5110",
+      "tag_7d5b02de551ac88b0fd6",
+      "tag_e179e03a06764bfc4fc4",
+      "tag_41d28af9d89ae78596ad",
+      "tag_2a710a657636cf0044e3",
+      "tag_d3092fe8955a64b69497",
+      "tag_19201edbd720f5ef2b8d",
+      "tag_cd97a96249835c876d5a",
+      "tag_3d72e6f9a02ecc9af62d",
+      "tag_932d49550a6b683a3009",
+      "tag_b1ec61fa2fce2ee31402",
+      "tag_c3c41afb4e861b336eec",
+      "tag_bb7aa407dde10b9ff9e9",
+      "tag_bcd56da363d0675ad77b",
+      "tag_4dad529db6b5438ff680"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_a0d60eea162b02461271",
+      "tag_6a39cec2fa52f182b8fb"
+     ]
+    }
+   ]
+  },
+  "725e205d0fae6b8e51baf8419d05eee875bab93cdfaaad6305389f58ef756aa9": {
+   "categoryId": "main_e2cf45d3fd62a05cf679",
+   "group": "outside",
+   "direction": "社會科學與公共事務",
+   "tagCount": 27,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "法律與治理",
+     "tagIds": [
+      "tag_f9c44e9c84ac2b13f4f4",
+      "tag_907c5e76d7ec23fe70ba",
+      "tag_b2b5040a3d62293204bb",
+      "tag_e90c453505178e0b77d4",
+      "tag_1c3ae71d30f981cc773a",
+      "tag_f90ab79fd718d788a66a",
+      "tag_f54b26ba15d05059aed5",
+      "tag_9ae9b67848073c781b82",
+      "tag_1d9a84c15b1c8349006d",
+      "tag_a47a36dafb45d0590ba0",
+      "tag_b9d54d045a3d8cee0f97"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "公共政策",
+     "tagIds": [
+      "tag_efbefdbb9e9cfe5ed86b",
+      "tag_3771c6ee3ff6f19e6fda",
+      "tag_026f532c21e1f341d732",
+      "tag_7ee9c0e4028f818a35d4",
+      "tag_c071fa8ae8af9e657b61"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "社會文化",
+     "tagIds": [
+      "tag_20a5727e1f6a4f32c2de",
+      "tag_4be720748ccae7aba0eb",
+      "tag_1363ec422812bb26bc94",
+      "tag_1d086dbb9170e4e9915f",
+      "tag_ad0490b92a0ceffb90e8",
+      "tag_9cbeebd67d4964f0e57b"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "全球事務",
+     "tagIds": [
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_e296e166d55e95d882ee",
+      "tag_964f7931240cbe1030fe",
+      "tag_2b0ea6b4a70db7be7c55",
+      "tag_c87087b8c32bd0306b89"
+     ]
+    }
+   ]
+  },
+  "d1d9c4e2f38f67a7891a5c5c81e1f372532bac4685149d7596de9c016e5b5bef": {
+   "categoryId": "main_aa3c5e78f9a2b33887a9",
+   "group": "outside",
+   "direction": "語言、文學與溝通",
+   "tagCount": 30,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "文學閱讀",
+     "tagIds": [
+      "tag_16b603974e0cc4e18b31",
+      "tag_bd1395192f8d408e2f94",
+      "tag_dc3e32dab34640f3b9b4",
+      "tag_bc2b7d278197dea4be14",
+      "tag_3ffbfedba3f6b4d1b7b9",
+      "tag_ba1a371ce7a88a849f73"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "創意寫作",
+     "tagIds": [
+      "tag_5a7ce84ff0075b13598f",
+      "tag_d632905f0e6a2739fc34",
+      "tag_2e42d86f1dbddfd5a8ab",
+      "tag_669e4a5c87a6e1e18bfd"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "外語學習",
+     "tagIds": [
+      "tag_e582f8992d3794f41959",
+      "tag_2663ce0c238d4ead2598",
+      "tag_c20d34fdc5aec36e4aaf",
+      "tag_53fea243da11314db3cc",
+      "tag_cb25397603c98e43cd8c",
+      "tag_367527e9c6bf0f5291d2",
+      "tag_cc7879e4fbc08fabb33c",
+      "tag_890f69c8af027d15b0e4",
+      "tag_faf1399ccac2e6769201",
+      "tag_07c1b097b4a1c62a45bf",
+      "tag_f79c1136b1e48243da34",
+      "tag_3f95a095ea67c919e3cc",
+      "tag_a9b66fda868cc3e15665"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "溝通應用",
+     "tagIds": [
+      "tag_f32428d8db449a9ac259",
+      "tag_9b24097798c8f07ae0d0",
+      "tag_d7144080c6db7089a95b",
+      "tag_08603878b5e09b81b016",
+      "tag_8ffd62fd1c3cb6c5c01b",
+      "tag_9afe6969e6a3b60f6327",
+      "tag_120e3262be1208e5393a"
+     ]
+    }
+   ]
+  },
+  "1e956f2f87b34f60c3fecf42c992cc3d38360aef2c22bea64c892b9c8857f653": {
+   "categoryId": "main_be06989fd1c37e9825ce",
+   "group": "outside",
+   "direction": "藝術、設計與媒體",
+   "tagCount": 25,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "空間建築設計",
+     "tagIds": [
+      "tag_57e2d7eeac6311e09e6e",
+      "tag_9afbffec68c7c2dbe4d4",
+      "tag_439544e040779057abbc",
+      "tag_a4e2f560ff204cf95ebe",
+      "tag_c8b60103fef507a16103",
+      "tag_3a72dbfa87b5c7e9d9c2",
+      "tag_dacfa676daef59105952"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "設計方法理論",
+     "tagIds": [
+      "tag_ac1ba9baa75dcc8d84c8",
+      "tag_56717677eb8276719a47",
+      "tag_b16d58c129dbcb21ed92",
+      "tag_f594ceb797ba4ca62c78",
+      "tag_d7fec10e11624d59da29",
+      "tag_711516ab10967f9c4bee"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "藝術文化創作",
+     "tagIds": [
+      "tag_c0665473a6e8a2177a34",
+      "tag_7200e9102dda0f68f8a4",
+      "tag_30e01126f05506717a9f",
+      "tag_9d04c97e3ba2ba8d2b52",
+      "tag_b086dca685616809375c"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "數位媒體設計",
+     "tagIds": [
+      "tag_8dfeabab8f6eedc4d623",
+      "tag_b74ee0b1d3f6ef970ca4",
+      "tag_8eecd81feeee01e6d1ba"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_3771c6ee3ff6f19e6fda",
+      "tag_25150532d806c9f0139d",
+      "tag_b7f22419aacf0eae9563",
+      "tag_2d5d6ea604fd79420784"
+     ]
+    }
+   ]
+  },
+  "e5dabbfd359b4015c69e7556852fd31d9ac5bf22797d20f3920f2da62cee9594": {
+   "categoryId": "main_c56775d41e3feaf5eefe",
+   "group": "outside",
+   "direction": "人文、歷史與哲學",
+   "tagCount": 13,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "文學閱讀",
+     "tagIds": [
+      "tag_2658493712c7f25c3771",
+      "tag_5e77d2eaceef331b8354",
+      "tag_dd5ae544e38892332d41",
+      "tag_627b75e6aced839ad6e7"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "歷史文化",
+     "tagIds": [
+      "tag_1e95cacca4f86c66f9b2",
+      "tag_75e69392284016e9dd77",
+      "tag_9b1de1408d4158b836b5",
+      "tag_cb01252765b1bb1f56cd"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "人文思考",
+     "tagIds": [
+      "tag_20aef7cad704726c8947",
+      "tag_494a8946e3d35399d5d1",
+      "tag_5e3bca81a038582b95c2",
+      "tag_49fc8b73642cdc61fe39",
+      "tag_e4e095c3717b6159b3c7"
+     ]
+    }
+   ]
+  },
+  "6d693b3507556b2d1d90cdbdba58e27bac3ed20029eebb449104e4bde36a76fb": {
+   "categoryId": "main_064de4333e3b66b5b707",
+   "group": "outside",
+   "direction": "資訊與計算",
+   "tagCount": 12,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "數位應用",
+     "tagIds": [
+      "tag_b943dee575dde6557658",
+      "tag_2d536d4cb674400a3250"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "人工智慧與資料",
+     "tagIds": [
+      "tag_74a283da57c1e5b44698",
+      "tag_6a56abdad4a58bd6e973"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "程式與演算法",
+     "tagIds": [
+      "tag_0f04e3affe5e074de326",
+      "tag_319e719ce36af6a0acf4",
+      "tag_e8e1293ae61c5db48f61"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_e04641de057f2c711968",
+      "tag_60965168ce762e949600",
+      "tag_7f7e69d124b386b927f9",
+      "tag_38a0963a6364b09ad867",
+      "tag_454349e422f05297191e"
+     ]
+    }
+   ]
+  },
+  "115750598281221fb948a9255e6cbf104f725ec45a58cccb2172547ef790403a": {
+   "categoryId": "main_7c1331c43e37371f1056",
+   "group": "outside",
+   "direction": "通用能力與職涯",
+   "tagCount": 9,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "人際與領導",
+     "tagIds": [
+      "tag_f50961cabd761a1c8482",
+      "tag_039ef3498f7c02c72efe",
+      "tag_05eafb2bf4683e460fc0"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "思考與決策",
+     "tagIds": [
+      "tag_d6151303ab3e9de4e8ef",
+      "tag_494a8946e3d35399d5d1",
+      "tag_a0d60eea162b02461271",
+      "tag_e4430357bc0e0a04cf0e"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "職涯發展",
+     "tagIds": [
+      "tag_237dcaab78f64aa7ac8d",
+      "tag_3359d9f2c983c8daa2c2"
+     ]
+    }
+   ]
+  },
+  "3d7ca171e9a7a4c979d12e9c28324d32023aa8bb1ef25d79d471c144c5506f32": {
+   "categoryId": "main_614f5866e5cf4b434c93",
+   "group": "outside",
+   "direction": "商業與管理",
+   "tagCount": 76,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "行銷市場",
+     "tagIds": [
+      "tag_2f779f109872f9faca62",
+      "tag_a92d2676892b2f27addc",
+      "tag_e6dab81351c3dedcdeb0",
+      "tag_98f8e9a85898e55793f5",
+      "tag_b943dee575dde6557658",
+      "tag_30f50f7fa4fa466a1386",
+      "tag_542afd9fc0fab2e8454d",
+      "tag_4162fed673ff80b9cccf",
+      "tag_1d41cca88c28bf684d65",
+      "tag_2bfb5a4b064dc5e56cd6",
+      "tag_b1ce4d02e80d462e571d",
+      "tag_00d583b71d843be8e782",
+      "tag_d5a1384bec9566e629e2",
+      "tag_0ed1021c03cbed00f1af",
+      "tag_2881f20f102e6eb4790c",
+      "tag_64d3c6b15c60711cf503"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "策略創新",
+     "tagIds": [
+      "tag_421ff3a70f5f5b2c73f8",
+      "tag_5a3fc49aad6b96a3f08e",
+      "tag_083c6845f6bd5f576ca9",
+      "tag_e231e4d1111fabb66a0a",
+      "tag_b1f77970d771db776b1c",
+      "tag_d2d7f335b8461d9bea67",
+      "tag_5c27e2dbe22ca2ed7a8d",
+      "tag_91dc83e8f2c7a52a0050",
+      "tag_df307a8ad09b9ea097e6",
+      "tag_1207eea5b86ada027f0a",
+      "tag_a2f1d2afc82a211caa07",
+      "tag_6259180142325b09580a",
+      "tag_584930d9419a549657d4",
+      "tag_28f176374fa239af9101",
+      "tag_96d3365b1c45f1e55024"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "營運治理",
+     "tagIds": [
+      "tag_7b467dc2ad6d343bb143",
+      "tag_d41407ce2227e98ffe9a",
+      "tag_2adb8d35eedfc12a62f7",
+      "tag_3816462797fd0a723186",
+      "tag_4292975ab8c69d706e61",
+      "tag_cf70b9674f51ba0c228e",
+      "tag_e866006507320be3798e",
+      "tag_74b75e66fb1096e112af",
+      "tag_3e293851c5b24673f4d8",
+      "tag_f038022f5fea662b551f",
+      "tag_4c5b3b8c4467b8d41ef0",
+      "tag_a9d425330b7bbb704096",
+      "tag_01683a2644d25d9f8c4b",
+      "tag_9ae1edb818c425292a6e",
+      "tag_6f2531f5d662a182c080",
+      "tag_ef67417e0c4d8c058d2e",
+      "tag_3b71e7c5c1b9397925ce",
+      "tag_e8bdf416a5238040932a",
+      "tag_9cda02e62c64acdfe3aa",
+      "tag_5556c6757a7d7ce07158",
+      "tag_669fd3dfb6cef6f6d99d",
+      "tag_5c964614ffa82f4d17db",
+      "tag_df75d41799e038d751e6",
+      "tag_8d790a49f1a67f5433c1",
+      "tag_340455fbac2578217261",
+      "tag_4e321f38b2228e73f6b0"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "職涯職場",
+     "tagIds": [
+      "tag_0d9e8f0a28620eae390d",
+      "tag_20aef7cad704726c8947",
+      "tag_ebef81a65430ecefa19e",
+      "tag_00459b863bb97903493a",
+      "tag_19bcad708d5f381f37e8",
+      "tag_e582f8992d3794f41959",
+      "tag_f43811c9d037307c236e",
+      "tag_13a3f73002d996cc5509",
+      "tag_517701cf8b4455acc0d9",
+      "tag_3f8c987e86952f29dd77"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_188160721c9c75672c09",
+      "tag_86555dab0135f741dcf7",
+      "tag_f0439a8490625005cd0e",
+      "tag_25dd4a6a975ecddc01d1",
+      "tag_28313ca8bde3662fe3a1",
+      "tag_7e752a27485f4a5718ca",
+      "tag_570628e81eee6bbcf16a",
+      "tag_b99e0c0a9e462ab33dd5",
+      "tag_312af180f4cf4a859cca"
+     ]
+    }
+   ]
+  },
+  "121154c52b505ec3428bdfe70fa6dc7538a9a59747620aac9957e4f55a8fbede": {
+   "categoryId": "main_27ee01ecd21eda7eb231",
+   "group": "outside",
+   "direction": "經濟與金融",
+   "tagCount": 69,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "投資與市場",
+     "tagIds": [
+      "tag_a42315e416fa25507f24",
+      "tag_bb74a8b86515d104ed8b",
+      "tag_d81fef1c14f18272ffe3",
+      "tag_c2338d8d87577f2db3bf",
+      "tag_4594c5c197d0acefe3e4",
+      "tag_67d9680cd69718163054",
+      "tag_3bdf72cf2fac033151e1",
+      "tag_f6c5077a40a434cb7a3b",
+      "tag_aecb9603457f5d1f9ec7",
+      "tag_159ba636f6ab3d66fa17",
+      "tag_c927da3e98b8a834b81d",
+      "tag_8767773f0d780fc52fe5",
+      "tag_bbb937f922376cb81167",
+      "tag_7f0c110ffc829c9b49ab",
+      "tag_6a8f35190a25078866ff",
+      "tag_63a41b1878d14b20896e",
+      "tag_d43aa27ebe300602ad2d",
+      "tag_20c38cfdf41373639561",
+      "tag_669fd3dfb6cef6f6d99d",
+      "tag_eab762a03fd979a04cc4"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "會計理財",
+     "tagIds": [
+      "tag_1df37ac5200c17fa395c",
+      "tag_d8ca3615bb281eaf16df",
+      "tag_f22b2ea70297a101adc3",
+      "tag_901578777aae47ff0ebc",
+      "tag_6fc1e3fd941473568ff4",
+      "tag_e2154f24ba3ca55adade",
+      "tag_e18346b170f44618c32f",
+      "tag_b813c122d17a87d535d1",
+      "tag_9acad596674e1564988b",
+      "tag_443dd4f032207baa5163",
+      "tag_851789defc83b3e37712",
+      "tag_62abe7dd93e2816e54ba",
+      "tag_32ea1196df8265c3783c",
+      "tag_2adb8b64d15cfefb8427",
+      "tag_581f8692385226d32b44"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "保險風險",
+     "tagIds": [
+      "tag_ae08a42c423201ec53f5",
+      "tag_24c36f58ac082644b466",
+      "tag_ae21bd39c8e2165221a7",
+      "tag_d7e58ad5ee7e8df2787b",
+      "tag_b3b7ed53984f21b6ca6d",
+      "tag_593046426cd387b1581b",
+      "tag_db2ab29e12822f2d1659",
+      "tag_017db19b18036776c021",
+      "tag_7497275c9d51d987813d",
+      "tag_063795627e8f67dac39c",
+      "tag_7d2ef1876b00d0eb6eb9"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "經濟貿易",
+     "tagIds": [
+      "tag_f0f2b873561feb7e44f7",
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_72a5175657fede804f43",
+      "tag_15ddf81db7f1222212a5",
+      "tag_cd97a96249835c876d5a",
+      "tag_a54b472a53dc8c4dc0d0",
+      "tag_b943dee575dde6557658",
+      "tag_ab0cb2176ecbf999c974",
+      "tag_cbfd3bfaca23c6068521",
+      "tag_bc9bd88544bcbee84451",
+      "tag_e6d7fa951ecb7f8c5110",
+      "tag_f033dfc73461c1600c77",
+      "tag_d3092fe8955a64b69497",
+      "tag_c90bf325aa847f92b17c",
+      "tag_e8bdf416a5238040932a",
+      "tag_145f6af1a26ecbb08166",
+      "tag_70c894422d1e7d2f2d59",
+      "tag_4dad529db6b5438ff680"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_aa7d5bd3ffb8726b4314",
+      "tag_f5bc4c2bc688c107b4e9",
+      "tag_a0d60eea162b02461271",
+      "tag_96d3365b1c45f1e55024",
+      "tag_7791596493c62dfdb8cb"
+     ]
+    }
+   ]
+  },
+  "8d3f099c39c74f3fe83c8972d18802baf84534c35985045048b0b64d313e429a": {
+   "categoryId": "main_e2cf45d3fd62a05cf679",
+   "group": "outside",
+   "direction": "社會科學與公共事務",
+   "tagCount": 30,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "社會研究",
+     "tagIds": [
+      "tag_ad0490b92a0ceffb90e8",
+      "tag_a81ca688f6eab3111b57",
+      "tag_c2d99a232f87eed57782",
+      "tag_b3e069556d29d14a2f58",
+      "tag_a317c3cae7c6f994564f",
+      "tag_9dad1f4a0739244456b9",
+      "tag_c40bcb6aa0ddea9886aa"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "公共治理",
+     "tagIds": [
+      "tag_1fe2b1f226b209d36de0",
+      "tag_efbefdbb9e9cfe5ed86b",
+      "tag_703fc99b7b348d3f6114",
+      "tag_1e65bc2b2c5c06a48d13",
+      "tag_8ae6ffcde18528a23b3a",
+      "tag_0b6c7f490e874bdd02c2",
+      "tag_af40de745d67625891ee",
+      "tag_8586040a3ff475eb1217",
+      "tag_1053926d862fce030c02"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "法律制度",
+     "tagIds": [
+      "tag_907c5e76d7ec23fe70ba",
+      "tag_e90c453505178e0b77d4",
+      "tag_d64f2be9cb26a9d86ab1",
+      "tag_1d9a84c15b1c8349006d",
+      "tag_b9d54d045a3d8cee0f97"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "區域與文化",
+     "tagIds": [
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_88ac1b0d6131d48084c4",
+      "tag_be9b1babd736ca546e10",
+      "tag_58d4f9294b5e014d141b",
+      "tag_f17e8c101855da41667f",
+      "tag_f17f0626a034f2ebeb86",
+      "tag_d1e21b634cf0c1b94d86"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_457e2a7a8a47df8e217b",
+      "tag_7791596493c62dfdb8cb"
+     ]
+    }
+   ]
+  },
+  "a725a6326bf7831357703d480cbbca73d260a3178e6b752f63e9511e2e19ce87": {
+   "categoryId": "main_be06989fd1c37e9825ce",
+   "group": "outside",
+   "direction": "藝術、設計與媒體",
+   "tagCount": 21,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "空間建築",
+     "tagIds": [
+      "tag_57e2d7eeac6311e09e6e",
+      "tag_a4e2f560ff204cf95ebe",
+      "tag_beba8d9549153af1d39d",
+      "tag_3a72dbfa87b5c7e9d9c2",
+      "tag_9afbffec68c7c2dbe4d4",
+      "tag_06196792cc39917481d8",
+      "tag_dacfa676daef59105952"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "設計創新",
+     "tagIds": [
+      "tag_56717677eb8276719a47",
+      "tag_ac1ba9baa75dcc8d84c8",
+      "tag_167da480a5f003b185cb",
+      "tag_fd06218149fc68d78058",
+      "tag_ded1ba51aced740846eb"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "視覺媒體",
+     "tagIds": [
+      "tag_31093aeab1fb5c80d59a",
+      "tag_0e0c558d38772628cf8a",
+      "tag_8dfeabab8f6eedc4d623",
+      "tag_931ac85c4526eb025d29"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "藝術文化",
+     "tagIds": [
+      "tag_3cfe34e84c9ac4e74b60",
+      "tag_92f6a3f8d673baae5c91",
+      "tag_7200e9102dda0f68f8a4",
+      "tag_3467c6476dcbc2b26fbe",
+      "tag_922c633fe25fafe77e98"
+     ]
+    }
+   ]
+  },
+  "c4cb3d88df25cdf53ad44247cb06ccde67461b7123a80953c5f92a30a5e03209": {
+   "categoryId": "main_aa3c5e78f9a2b33887a9",
+   "group": "outside",
+   "direction": "語言、文學與溝通",
+   "tagCount": 29,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "文學創作",
+     "tagIds": [
+      "tag_9fad9307254e0f997b60",
+      "tag_16b603974e0cc4e18b31",
+      "tag_bd1395192f8d408e2f94",
+      "tag_ba1a371ce7a88a849f73",
+      "tag_669e4a5c87a6e1e18bfd"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "語言研究",
+     "tagIds": [
+      "tag_3f95a095ea67c919e3cc",
+      "tag_1b8352ebb9c46432b068",
+      "tag_8f30d6425ce00c7c7f28",
+      "tag_c0bbc4224c52fb0a94c4",
+      "tag_a1167b1d4a3c06870bdc"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "語言學習與翻譯",
+     "tagIds": [
+      "tag_72726d8818f693066ceb",
+      "tag_c20d34fdc5aec36e4aaf",
+      "tag_53fea243da11314db3cc",
+      "tag_e15f32e8116fc7190b97",
+      "tag_57b8fc274f106bc64aba",
+      "tag_e582f8992d3794f41959",
+      "tag_af45f50c7f4ab6a2cd4f"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "溝通與文化",
+     "tagIds": [
+      "tag_d7144080c6db7089a95b",
+      "tag_d15c7d06e61be4ecf6fa",
+      "tag_d5a4dce94d9b7cbdb685",
+      "tag_98c559d66e7ccf7606f1",
+      "tag_2663ce0c238d4ead2598",
+      "tag_d4a42d0491c8dfe6c9ac",
+      "tag_a6473eb488c9aa35b487",
+      "tag_41f8b76b7ba563df9536",
+      "tag_ad54411a0d0465ad3ba6",
+      "tag_fdd315b48028487e362d",
+      "tag_13a3f73002d996cc5509",
+      "tag_df6d4c594273b5998d9e"
+     ]
+    }
+   ]
+  },
+  "79e0a381e52d235cb3c2051dc73a215c453373330a2d78206093d207b3a81075": {
+   "categoryId": "main_c56775d41e3feaf5eefe",
+   "group": "outside",
+   "direction": "人文、歷史與哲學",
+   "tagCount": 16,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "哲學思想",
+     "tagIds": [
+      "tag_eaa788d61209cea2e86c",
+      "tag_88ac1b0d6131d48084c4",
+      "tag_20aef7cad704726c8947",
+      "tag_9a2bf65c06577f09ff05",
+      "tag_e4e095c3717b6159b3c7",
+      "tag_a66ca7394d83a155ce2b"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "文學藝術",
+     "tagIds": [
+      "tag_2658493712c7f25c3771",
+      "tag_5e77d2eaceef331b8354",
+      "tag_922c633fe25fafe77e98",
+      "tag_627b75e6aced839ad6e7"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "歷史文化",
+     "tagIds": [
+      "tag_ef4b3cde787be895b902",
+      "tag_7769eb6e8951bc19cc5d",
+      "tag_b530eb6fe0136fad6ff9",
+      "tag_510c3becb81e70858334",
+      "tag_2365927199945dd644fb",
+      "tag_78b40ac5886ac7fa78d7"
+     ]
+    }
+   ]
+  },
+  "abe56b1c1fbc4ba89ab1e5337ee6f4a9578c687824988f90161ea6b9e9c8bb0b": {
+   "categoryId": "main_9368fdecfaf9487c2a91",
+   "group": "outside",
+   "direction": "環境與永續",
+   "tagCount": 15,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "永續治理",
+     "tagIds": [
+      "tag_a43c64178463a63a84ad",
+      "tag_9af408c54bd252ac9639",
+      "tag_6ab61f574e163a68679e",
+      "tag_967b3217a993c023e429"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "綠色設計建築",
+     "tagIds": [
+      "tag_9b85d3b974aa83e7b702",
+      "tag_970cb822229040e999c0",
+      "tag_dacfa676daef59105952",
+      "tag_50105cbfe0e27011c110"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "生態環境議題",
+     "tagIds": [
+      "tag_9b657e53500234160c09",
+      "tag_6d69fee71e65dbd4b97c",
+      "tag_280f4cd6e6356a7eded0",
+      "tag_eca5d7fa4f83aeb99934",
+      "tag_297092d0abd23a408f56"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_92f0973bc30f6bece047",
+      "tag_fba18681418f8f6dd41d"
+     ]
+    }
+   ]
+  },
+  "8cbb39e250426ae94c8c6d3797853d2f02a1b25d9577fb1404c4dae7216e1633": {
+   "categoryId": "main_7c1331c43e37371f1056",
+   "group": "outside",
+   "direction": "通用能力與職涯",
+   "tagCount": 8,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "思辨決策",
+     "tagIds": [
+      "tag_d6151303ab3e9de4e8ef",
+      "tag_2dea10b517c9374e99c3",
+      "tag_b237172e91b9142f7d53",
+      "tag_a0d60eea162b02461271"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "職涯規劃",
+     "tagIds": [
+      "tag_0d9e8f0a28620eae390d",
+      "tag_517701cf8b4455acc0d9"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "創新策略",
+     "tagIds": [
+      "tag_fb9f1afa3b390915f084",
+      "tag_1053926d862fce030c02"
+     ]
+    }
+   ]
+  },
+  "edef5af75ad3824d4c7776e4a2c946abfadd74dfe7352c1de6c7562b95b9e371": {
+   "categoryId": "main_614f5866e5cf4b434c93",
+   "group": "outside",
+   "direction": "商業與管理",
+   "tagCount": 73,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "行銷與市場",
+     "tagIds": [
+      "tag_542afd9fc0fab2e8454d",
+      "tag_98f8e9a85898e55793f5",
+      "tag_a92d2676892b2f27addc",
+      "tag_1228f143f02d59265dcc",
+      "tag_68f7178b41d295e6f80f",
+      "tag_2f779f109872f9faca62",
+      "tag_e6dab81351c3dedcdeb0",
+      "tag_eab6fb197949053b6441",
+      "tag_0ed1021c03cbed00f1af",
+      "tag_72c835d88d87595649b6",
+      "tag_00d583b71d843be8e782",
+      "tag_b943dee575dde6557658",
+      "tag_64d3c6b15c60711cf503"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "企業經營治理",
+     "tagIds": [
+      "tag_570628e81eee6bbcf16a",
+      "tag_5d3c3943df961262d743",
+      "tag_2ddfdfa6ab46f28565dd",
+      "tag_20aef7cad704726c8947",
+      "tag_74b75e66fb1096e112af",
+      "tag_4c5b3b8c4467b8d41ef0",
+      "tag_a9d425330b7bbb704096",
+      "tag_188160721c9c75672c09",
+      "tag_1e1d945cd3a3892de1c9",
+      "tag_5556c6757a7d7ce07158",
+      "tag_4e321f38b2228e73f6b0",
+      "tag_e39491d00c353d0ba190",
+      "tag_4292975ab8c69d706e61",
+      "tag_3aa8e78283278a73197a",
+      "tag_3779dfc3e86211f0ec04",
+      "tag_f038022f5fea662b551f",
+      "tag_ab633555e9a41f25e2f3",
+      "tag_b2b5040a3d62293204bb",
+      "tag_4bb664831cfbc7d2ad8f",
+      "tag_be251bbaf9b9760c30e7",
+      "tag_e893d53bfbbeb1cffbbe",
+      "tag_cb57ca2790d718442126",
+      "tag_ef67417e0c4d8c058d2e",
+      "tag_310f5f052db22f5c3e96",
+      "tag_51d8fd13876aba748f0e",
+      "tag_3ebbbf24d87d350c3ccf",
+      "tag_8d790a49f1a67f5433c1",
+      "tag_28f176374fa239af9101",
+      "tag_f00039eda99e973b9081"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "創業與策略創新",
+     "tagIds": [
+      "tag_083c6845f6bd5f576ca9",
+      "tag_421ff3a70f5f5b2c73f8",
+      "tag_5a3fc49aad6b96a3f08e",
+      "tag_e231e4d1111fabb66a0a",
+      "tag_df307a8ad09b9ea097e6",
+      "tag_d78d33123d886b612553",
+      "tag_0a465d1b027a60a93a49",
+      "tag_cfb43f2d2ddad87ae2f1",
+      "tag_1207eea5b86ada027f0a",
+      "tag_a2f1d2afc82a211caa07",
+      "tag_fe7ed954e3a4cc86c004"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "職涯與職場實務",
+     "tagIds": [
+      "tag_28aabb5f81bdc0b8a55c",
+      "tag_1fe58a011ca69545474a",
+      "tag_8c5b0f0ee52c5240a1a0",
+      "tag_83add8ae58c10922ef4f",
+      "tag_99e2750a1319f2f15678",
+      "tag_86555dab0135f741dcf7",
+      "tag_c89f7d2904eae5663518",
+      "tag_19bcad708d5f381f37e8",
+      "tag_9eec1905d75a531d1292",
+      "tag_e582f8992d3794f41959",
+      "tag_a2181561af84517cef48",
+      "tag_517701cf8b4455acc0d9",
+      "tag_0d9e8f0a28620eae390d",
+      "tag_93fcecec6715e8236512",
+      "tag_019639aae87c185db789",
+      "tag_6259180142325b09580a",
+      "tag_665bd3e75b2b8a9a602a"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_9ce13fa52f7323bdcf78",
+      "tag_88ea7ec8b00cab36381e",
+      "tag_28313ca8bde3662fe3a1"
+     ]
+    }
+   ]
+  },
+  "7a33a7775609ab964df8e73fab37d0cabd3709a0d53000ed88a3a9913c993f24": {
+   "categoryId": "main_27ee01ecd21eda7eb231",
+   "group": "outside",
+   "direction": "經濟與金融",
+   "tagCount": 78,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "投資與金融市場",
+     "tagIds": [
+      "tag_bb74a8b86515d104ed8b",
+      "tag_8767773f0d780fc52fe5",
+      "tag_28668de39bbfe36d5280",
+      "tag_d81fef1c14f18272ffe3",
+      "tag_63f6069c4080bec50d84",
+      "tag_b465b098a20dc6d77c16",
+      "tag_58c35f0cffaa25109dec",
+      "tag_aecb9603457f5d1f9ec7",
+      "tag_9cb96953155c31fe996d",
+      "tag_159ba636f6ab3d66fa17",
+      "tag_94e2924469ad7d547839",
+      "tag_9b2356c9e0a89c528697",
+      "tag_ea18e8ddab5e792636c0",
+      "tag_79feda771386029e0f9c",
+      "tag_4594c5c197d0acefe3e4",
+      "tag_af085b1e150496b2f904",
+      "tag_c0ac586c2e2bfa1ea522",
+      "tag_d43aa27ebe300602ad2d",
+      "tag_9ff5b76e8c60fecb01cc",
+      "tag_c7d457b3c743ed833854",
+      "tag_1ef639be1953569b2619",
+      "tag_040b9948243fe0975060",
+      "tag_f6c5077a40a434cb7a3b",
+      "tag_456a93b9c603392e7b50",
+      "tag_36f04c01e4f168851696",
+      "tag_22dbbec63560a6256005",
+      "tag_283a6dc5e2f32e482118",
+      "tag_a4a2003d31a69c1db516"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "財務會計規劃",
+     "tagIds": [
+      "tag_11b405c76cab4fccb036",
+      "tag_e18346b170f44618c32f",
+      "tag_f22b2ea70297a101adc3",
+      "tag_1df37ac5200c17fa395c",
+      "tag_2beb81fe94ca66e457f4",
+      "tag_89b59d47134930cb1d3c",
+      "tag_901578777aae47ff0ebc",
+      "tag_5e5e80d4e851d79663b6",
+      "tag_b489a390ccf58cdbccd5",
+      "tag_4f87aeb107573e8de41f",
+      "tag_d8ca3615bb281eaf16df",
+      "tag_e2154f24ba3ca55adade",
+      "tag_340d1aaadb5caebe7305",
+      "tag_9acad596674e1564988b",
+      "tag_443dd4f032207baa5163",
+      "tag_820e8aa59f4be68c393f",
+      "tag_62abe7dd93e2816e54ba",
+      "tag_c90bf325aa847f92b17c",
+      "tag_909b6e30917470f3c85c",
+      "tag_2069ae4430819a3887e2",
+      "tag_46e4da91471573c498dc"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "保險管理",
+     "tagIds": [
+      "tag_91cba55eebc8a9928018",
+      "tag_017db19b18036776c021",
+      "tag_24c36f58ac082644b466",
+      "tag_db2ab29e12822f2d1659",
+      "tag_7497275c9d51d987813d",
+      "tag_d7e58ad5ee7e8df2787b",
+      "tag_b3b7ed53984f21b6ca6d",
+      "tag_ae08a42c423201ec53f5",
+      "tag_19a396f22dadadfc866c",
+      "tag_34ac5ceb36fb44f3bbcc",
+      "tag_57da1f7751f7f80f02d5",
+      "tag_063795627e8f67dac39c",
+      "tag_101ad0a30f1312605887"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "經濟與企業",
+     "tagIds": [
+      "tag_a492e90edfad3219cb4f",
+      "tag_f0f2b873561feb7e44f7",
+      "tag_1228f143f02d59265dcc",
+      "tag_69083901061bcac36a48",
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_93d8bfd9d87fe3053f3c",
+      "tag_6794d487606b4ef3d441",
+      "tag_c3b187a654a3f2be0975",
+      "tag_932d49550a6b683a3009",
+      "tag_b943dee575dde6557658"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_a42315e416fa25507f24",
+      "tag_aa7d5bd3ffb8726b4314",
+      "tag_b813c122d17a87d535d1",
+      "tag_77a03115f3dbf7518f69",
+      "tag_19201edbd720f5ef2b8d",
+      "tag_36984836e1a84773045b"
+     ]
+    }
+   ]
+  },
+  "c1dfd814ebf32629ba22b776b6ea5cfb46c07caa3f03fcca1906a4f111df420d": {
+   "categoryId": "main_aa3c5e78f9a2b33887a9",
+   "group": "outside",
+   "direction": "語言、文學與溝通",
+   "tagCount": 22,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "語言學習",
+     "tagIds": [
+      "tag_2e32266c7856ad1a73df",
+      "tag_53fea243da11314db3cc",
+      "tag_57b8fc274f106bc64aba",
+      "tag_e582f8992d3794f41959",
+      "tag_6f7b3a92b0527d190a08",
+      "tag_3f95a095ea67c919e3cc"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "中文寫作",
+     "tagIds": [
+      "tag_3b6436488df5d5e8310c",
+      "tag_72726d8818f693066ceb",
+      "tag_88ea7ec8b00cab36381e",
+      "tag_8c0d84b10503e9d4ba13"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "文學閱讀",
+     "tagIds": [
+      "tag_bd1395192f8d408e2f94",
+      "tag_9fad9307254e0f997b60",
+      "tag_24c4a23a2f831e96e65f",
+      "tag_ac8f8d8803cd655d87a5"
+     ]
+    },
+    {
+     "clusterId": "c4",
+     "label": "溝通翻譯",
+     "tagIds": [
+      "tag_d7144080c6db7089a95b",
+      "tag_c7c6023df95f4f9620c4",
+      "tag_41f8b76b7ba563df9536",
+      "tag_939ccbbcb99073fe1b99",
+      "tag_71bf33aa843a94a8f82d",
+      "tag_2ef7ada233cb9996332d",
+      "tag_9b24097798c8f07ae0d0",
+      "tag_8ffd62fd1c3cb6c5c01b"
+     ]
+    }
+   ]
+  },
+  "3a91e65c0dcff44c19f3fa6e33618c8ca11846e79f0443d00d7dec0d24b73225": {
+   "categoryId": "main_e2cf45d3fd62a05cf679",
+   "group": "outside",
+   "direction": "社會科學與公共事務",
+   "tagCount": 16,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "公共治理法規",
+     "tagIds": [
+      "tag_1fe2b1f226b209d36de0",
+      "tag_b2b5040a3d62293204bb",
+      "tag_705dcd9751fcbdf58fb5",
+      "tag_9ae9b67848073c781b82"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "政策與社會創新",
+     "tagIds": [
+      "tag_efbefdbb9e9cfe5ed86b",
+      "tag_49ec8d215ff44b212f5b",
+      "tag_026f532c21e1f341d732",
+      "tag_0b6c7f490e874bdd02c2",
+      "tag_ad0490b92a0ceffb90e8",
+      "tag_7ee9c0e4028f818a35d4",
+      "tag_c071fa8ae8af9e657b61"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "國際事務合作",
+     "tagIds": [
+      "tag_f777dc50c5eca2f52846",
+      "tag_e5cb8eed45cb15cc1e67",
+      "tag_386e0b31e8c30f5cecc7"
+     ]
+    },
+    {
+     "clusterId": "other",
+     "label": "其他",
+     "tagIds": [
+      "tag_ba1844dc01d86aeabe67",
+      "tag_0248a362381c3f9caf6c"
+     ]
+    }
+   ]
+  },
+  "e6ab8d1c6b8872a5b2ec7a31b2e51ed8d25d084eef1033ef36ec8c0e41b2652a": {
+   "categoryId": "main_be06989fd1c37e9825ce",
+   "group": "outside",
+   "direction": "藝術、設計與媒體",
+   "tagCount": 11,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "空間與都市設計",
+     "tagIds": [
+      "tag_57e2d7eeac6311e09e6e",
+      "tag_beba8d9549153af1d39d",
+      "tag_9afbffec68c7c2dbe4d4",
+      "tag_c8b60103fef507a16103"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "產品與設計方法",
+     "tagIds": [
+      "tag_ded1ba51aced740846eb",
+      "tag_19f4b2729332e14e6582",
+      "tag_56717677eb8276719a47"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "視覺媒體與展示",
+     "tagIds": [
+      "tag_26ad8cf49c89e6c16880",
+      "tag_939ccbbcb99073fe1b99",
+      "tag_31093aeab1fb5c80d59a",
+      "tag_8ef344e22395862a866b"
+     ]
+    }
+   ]
+  },
+  "05b22bc00ed9f3e985f6fd22c1022e998db162d63cdf962b599b579c4f3da6a7": {
+   "categoryId": "main_7c1331c43e37371f1056",
+   "group": "outside",
+   "direction": "通用能力與職涯",
+   "tagCount": 8,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "人際溝通",
+     "tagIds": [
+      "tag_f50961cabd761a1c8482",
+      "tag_05eafb2bf4683e460fc0"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "職涯發展",
+     "tagIds": [
+      "tag_08ce1cb1829da68dcf44",
+      "tag_a64e864c88fc46e04300",
+      "tag_517701cf8b4455acc0d9",
+      "tag_0d9e8f0a28620eae390d"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "思考決策",
+     "tagIds": [
+      "tag_e4430357bc0e0a04cf0e",
+      "tag_494a8946e3d35399d5d1"
+     ]
+    }
+   ]
+  },
+  "8987258e44343f694024d7f546d89ea7ebbaf8250243aaf19fc29da5d21fa1d4": {
+   "categoryId": "main_c56775d41e3feaf5eefe",
+   "group": "outside",
+   "direction": "人文、歷史與哲學",
+   "tagCount": 7,
+   "clusters": [
+    {
+     "clusterId": "c1",
+     "label": "倫理思辨",
+     "tagIds": [
+      "tag_20aef7cad704726c8947",
+      "tag_36a7804c12d71e4adc0e"
+     ]
+    },
+    {
+     "clusterId": "c2",
+     "label": "文學創作",
+     "tagIds": [
+      "tag_2658493712c7f25c3771",
+      "tag_627b75e6aced839ad6e7"
+     ]
+    },
+    {
+     "clusterId": "c3",
+     "label": "人文交流",
+     "tagIds": [
+      "tag_5e3bca81a038582b95c2",
+      "tag_494a8946e3d35399d5d1",
+      "tag_b530eb6fe0136fad6ff9"
+     ]
+    }
+   ]
+  }
+ }
+}
