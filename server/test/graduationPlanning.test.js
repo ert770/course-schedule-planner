@@ -35,22 +35,51 @@ test('大四下預設把目前學期算進去，因此剩餘一學期', () => {
   );
 });
 
-test('明確設定的剩餘學期優先於年級推算', () => {
+test('舊的手填剩餘學期不影響缺口配額所用的推算', () => {
   assert.deepEqual(
     inferRemainingSemesters({ gradeLevel: 4, remainingSemesters: 3 }, { semester: '下學期' }),
-    { value: 3, source: 'profile' }
+    { value: 1, source: 'grade-and-active-term' }
   );
+});
+
+test('入學年度與歷史修課搭配當期學期推算，大四上包含本學期剩兩學期', () => {
+  const profile = {
+    admissionYear: 111,
+    remainingSemesters: 7,
+    courseHistory: [{ academicYear: 113, semester: 2 }],
+  };
+  assert.deepEqual(inferRemainingSemesters(profile, { academicYear: 114, semester: '上學期' }), {
+    value: 2, source: 'course-history-and-active-term',
+  });
+});
+
+test('沒有入學年度時，起始上學期紀錄需與當前年級一致', () => {
+  const term = { academicYear: 114, semester: '下學期' };
+  const profile = { gradeLevel: 3, courseHistory: [{ academicYear: 112, semester: 1 }] };
+  assert.deepEqual(inferRemainingSemesters(profile, term), {
+    value: 3, source: 'course-history-and-active-term',
+  });
+  for (const entry of [null, { academicYear: 112, semester: 2 }, { academicYear: 113, semester: 1 }, { academicYear: 115, semester: 1 }]) {
+    assert.deepEqual(inferRemainingSemesters({ ...profile, courseHistory: [entry] }, term), {
+      value: 3, source: 'grade-and-active-term',
+    });
+  }
+  assert.deepEqual(inferRemainingSemesters({ courseHistory: profile.courseHistory }, term), {
+    value: null, source: 'unknown',
+  });
 });
 
 test('歷史修課產生每學期選修／通識／系外目標', () => {
   const planning = buildGraduationPlanning({
     department: '資訊工程學系',
-    admissionYear: 112,
+    admissionYear: 111,
     gradeLevel: 4,
-    remainingSemesters: 1,
+    remainingSemesters: 8,
     courseHistory: history({ required: 61, elective: 22, general: 24, external: 11 }),
-  });
+  }, { academicYear: 114, semester: '下學期' });
   assert.equal(planning.enabled, true);
+  assert.equal(planning.remainingSemesters, 1);
+  assert.equal(planning.remainingSemestersSource, 'course-history-and-active-term');
   assert.deepEqual(planning.gaps, {
     required: 2, elective: 6, general: 4, external: 0, unspecified: 0,
   });

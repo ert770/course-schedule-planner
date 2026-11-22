@@ -21,6 +21,7 @@ import {
   getInterestQuestion,
   normalizeQuestionOutput,
   resetQuestionnaireCacheForTests,
+  selectDistinctDirectionCards,
   validateQuestionRequest,
 } from '../src/services/interestQuestionnaireService.js';
 import { handleInterestQuestionRequest } from '../src/routes/profile.js';
@@ -78,6 +79,79 @@ const outsideCourses = [
   ...coursesFor(LANG), ...coursesFor(BIZ), ...coursesFor(ART),
   ...coursesFor(ECON, 20), ...coursesFor(HEALTH, 20),
 ];
+
+describe('方向卡與單卡追問', () => {
+  test('同一批優先顯示四個不同方向，延後被廣分類涵蓋的方向', () => {
+    const options = ['broad', 'subset', 'software', 'security', 'hardware', 'later'].map(id => ({ id }));
+    const sets = new Map([
+      ['broad', new Set(['ai', 'ml', 'data', 'stats'])], ['subset', new Set(['ml', 'ai'])],
+      ['software', new Set(['web', 'mobile'])], ['security', new Set(['crypto'])],
+      ['hardware', new Set(['embedded'])], ['later', new Set(['robotics'])],
+    ]);
+    const first = selectDistinctDirectionCards(options, sets);
+    assert.deepEqual(first.map(option => option.id), ['broad', 'software', 'security', 'hardware']);
+    assert.deepEqual(selectDistinctDirectionCards(options.filter(option => !first.includes(option)), sets)
+      .map(option => option.id), ['subset', 'later']);
+  });
+
+  test('只有細項階段會提供方向卡，每批最多四張且只用已選方向', async () => {
+    const getMenu = fakeMenu({ outside: outsideCourses });
+    const directionStage = validateQuestionRequest({ ...FILTERS, stage: 'group', group: 'outside', layout: 'cards' }).value;
+    const first = await getInterestQuestion(directionStage, { getMenu, mode: 'fixed' });
+    assert.equal(first.options.length, QUESTIONNAIRE_BATCH_SIZE);
+    assert.equal(first.cardPages, undefined);
+    const directions = ['語言、文學與溝通', '商業與管理', '藝術、設計與媒體', '經濟與金融', '醫療、健康與運動']
+      .map(name => ({ group: 'outside', categoryId: mainByName.get(name).id }));
+    const client = fakeClient(() => { throw Error('中沙漏總覽不呼叫 LLM'); });
+    const detailStage = validateQuestionRequest({ ...FILTERS, stage: 'detail', layout: 'cards', directions }).value;
+    const detail = await getInterestQuestion(detailStage, { getMenu, mode: 'gpt', getClient: () => client });
+    assert.deepEqual(detail.cardPages.map(page => page.length), [4, 1]);
+    assert.deepEqual(detail.cardPages.flat().map(card => card.categoryId), directions.map(direction => direction.categoryId));
+    assert.ok(detail.cardPages.flat().every(card => card.examples.length === 2));
+    assert.equal(client.calls.length, 0);
+  });
+
+  test('廣分類擋住四個彼此不同的方向時，優先湊出四張不同的卡', () => {
+    const ids = ['umbrella', 'ai', 'security', 'software', 'hardware'];
+    const sets = new Map(ids.slice(1).map(id => [id, new Set([id])]));
+    sets.set('umbrella', new Set(ids.slice(1)));
+    assert.deepEqual(selectDistinctDirectionCards(ids.map(id => ({ id })), sets).map(item => item.id), ids.slice(1));
+  });
+
+  test('標籤寫法不同但同屬軟體主題時，兩個方向不在同一批', () => {
+    const ids = ['software', 'apps', 'security'];
+    const sets = new Map(ids.map(id => [id, new Set([id])]));
+    const themes = new Map([['software', ['software']], ['apps', ['software']], ['security', ['security']]]);
+    assert.deepEqual(selectDistinctDirectionCards(ids.map(id => ({ id })), sets, themes).map(item => item.id),
+      ['software', 'security']);
+  });
+
+  test('點卡後才改寫單卡題，未知參照退回固定文案，第二題不重複標籤', async () => {
+    const direction = { group: 'outside', categoryId: mainByName.get('語言、文學與溝通').id };
+    const getMenu = fakeMenu({ outside: outsideCourses });
+    const body = { ...FILTERS, stage: 'card', direction };
+    const { value: request } = validateQuestionRequest(body);
+    assert.match(validateQuestionRequest({ ...body, seenTagIds: ['a', 'b', 'c', 'd'] }).error, /最多 3/u);
+    const client = fakeClient(({ input }) => reply({ question: '想先接觸什麼？', options: JSON.parse(input).options.map(
+      item => ({ optionRef: item.optionRef, title: item.topicLabels[0], description: '課程主題' }),
+    ) }));
+    const first = await getInterestQuestion(request, { getMenu, mode: 'gpt', getClient: () => client });
+    assert.equal(first.source, 'gpt');
+    assert.equal(first.options.length, 3);
+    assert.ok(first.options.every(option => LANG.some(tag => tag.id === option.tagId)));
+    const modelInput = JSON.parse(client.calls[0].params.input);
+    assert.equal(modelInput.stage, 'card');
+    assert.ok(!JSON.stringify(modelInput).includes(direction.categoryId));
+    const bad = fakeClient(() => reply({ question: '題目', options: [{ optionRef: 'other', title: '錯誤', description: '錯誤' }] }));
+    const next = await getInterestQuestion({ ...request, seenTagIds: first.options.map(option => option.tagId) },
+      { getMenu, mode: 'gpt', getClient: () => bad });
+    assert.equal(next.source, 'fixed');
+    assert.equal(next.fallbackReason, 'invalid_gpt_output');
+    assert.equal(next.options.length, 1);
+    assert.ok(!first.options.some(option => option.tagId === next.options[0].tagId));
+    assert.equal(next.hasMore, false);
+  });
+});
 
 describe('課程主題問答：請求驗證', () => {
   const base = { department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲' };

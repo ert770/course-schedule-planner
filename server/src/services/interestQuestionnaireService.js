@@ -49,7 +49,16 @@ import { getInterestTopicGroups } from './interestMenuService.js';
 import { resolveFollowupMode } from './interestFollowupService.js';
 import { getOpenAIClient, getOpenAIModel } from './openaiClient.js';
 
-export const QUESTIONNAIRE_STAGES = Object.freeze(['group', 'detail', 'summary']);
+export const QUESTIONNAIRE_STAGES = Object.freeze(['group', 'detail', 'card', 'summary']);
+const DIRECTION_CARD_LIMIT = 4;
+const CARD_TOPIC_LIMIT = 3;
+const MAX_DIRECTION_OVERLAP = 0.6;
+const DEPARTMENT_CARD_THEMES = [
+  ['ai', /人工智慧|機器學習|深度學習|資料科學|\bAI\b/iu],
+  ['software', /程式|軟體|網頁開發|應用程式/iu],
+  ['security', /資安|資訊安全|網路安全|隱私/iu],
+  ['hardware', /硬體|嵌入式|物聯網|控制、通訊與訊號/iu],
+];
 const LEVEL_BY_GROUP = Object.freeze({ department: 'sub', generalEducation: 'main', outside: 'main' });
 const ALL_TAGS = 100_000;
 const MAX_SUMMARY_SELECTIONS = 48;
@@ -125,10 +134,22 @@ export function validateQuestionRequest(body = {}) {
     return { value: { stage: 'group', filters, group: body.group, seenOptionIds: seen.value } };
   }
 
+  if (body.stage === 'card') {
+    const direction = directionList([body.direction], 'direction', { max: 1 });
+    if (direction.error) return direction;
+    const seen = stringList(body.seenTagIds, 'seenTagIds');
+    if (seen.error) return seen;
+    if (seen.value.length > CARD_TOPIC_LIMIT) return { error: 'seenTagIds 最多 3 筆' };
+    return { value: { stage: 'card', filters, direction: direction.value[0], seenTagIds: seen.value } };
+  }
+
   if (body.stage === 'detail') {
     const directions = directionList(body.directions, 'directions', { max: QUESTIONNAIRE_MAX_LIST_LENGTH });
     if (directions.error) return directions;
-    return { value: { stage: 'detail', filters, directions: directions.value } };
+    return { value: {
+      stage: 'detail', filters, directions: directions.value,
+      ...(body.layout === 'cards' ? { layout: 'cards' } : {}),
+    } };
   }
 
   const selections = directionList(body.selections, 'selections', { max: MAX_SUMMARY_SELECTIONS, withTags: true });
@@ -186,7 +207,7 @@ function sampleDescription(prefix, sampleCourses = []) {
 export const QUESTIONNAIRE_INSTRUCTIONS = [
   '你是大學排課系統的偏好問答編輯。你的任務是把系統提供的有效課程主題，改寫成大學生容易回答的繁體中文選擇題。',
   '',
-  '每次只產生一個題目。stage=group 時，沿用該組提供的題幹，用日常語言寫出各方向的短標題，加上一句在課堂可能接觸的內容。stage=detail 時，只能問系統指定的已選方向，題幹詢問學生想接觸哪些具體主題。每題最多三個方向。後端提供幾個候選就回傳幾個。',
+  '每次只產生一個題目。stage=group 時沿用題幹，為每個方向寫出好辨認的短標題與一句內容說明。stage=card 時只針對指定方向，問學生對哪些具體主題有興趣。選項要表達不同內容，避免以同樣的泛稱描述不同選項。後端提供幾個候選就回傳幾個。',
   '',
   '使用繁體中文。標題盡量維持一行，描述一個具體的學習內容。題目只問內容興趣，不問難度、教師喜好、時間、學分或畢業需求。不承諾特定課程一定開班或一定推薦。',
   '',
@@ -319,6 +340,34 @@ function sourceOf(sources) {
 
 // ── 主流程 ────────────────────────────────────────────────────────────────────
 
+// 用較小集合當分母，避免一張廣泛的方向卡與其幾乎完全涵蓋的子方向同頁。
+export function selectDistinctDirectionCards(options, tagsById, themesById = new Map()) {
+  const eligible = options.filter(option => tagsById.get(option.id)?.size);
+  const conflicts = eligible.map((option, index) => new Set(eligible.slice(0, index).filter(other => {
+    const tags = tagsById.get(option.id);
+    const otherTags = tagsById.get(other.id);
+    const shared = [...tags].filter(tag => otherTags.has(tag)).length;
+    const otherThemes = themesById.get(other.id) ?? [];
+    return shared / Math.min(tags.size, otherTags.size) >= MAX_DIRECTION_OVERLAP
+      || (themesById.get(option.id) ?? []).some(theme => otherThemes.includes(theme));
+  })));
+  let best = [];
+  const visit = (start, selected) => {
+    if (selected.length > best.length) best = selected;
+    for (let index = start; index < eligible.length && best.length < DIRECTION_CARD_LIMIT; index += 1) {
+      if (selected.length + eligible.length - index <= best.length) break;
+      if (!selected.some(option => conflicts[index].has(option))) visit(index + 1, [...selected, eligible[index]]);
+    }
+  };
+  visit(0, []);
+  return best;
+}
+
+function departmentCardThemes(option) {
+  const labels = [option.name, ...(option.catalogNames ?? [])].join('、');
+  return DEPARTMENT_CARD_THEMES.filter(([, pattern]) => pattern.test(labels)).map(([theme]) => theme);
+}
+
 async function buildGroupQuestion({ group, seenOptionIds }, menu, deps) {
   const options = menu.topicGroups.find(item => item.key === group)?.options ?? [];
   const seen = new Set(seenOptionIds);
@@ -401,7 +450,7 @@ export function buildDetailDirection(menu, direction) {
     tagCount: tags.length,
     tags,
   };
-  const clusters = tags.length > DETAIL_FLAT_MAX ? lookupTagClusters(direction.categoryId, tags) : null;
+  const clusters = tags.length > DETAIL_FLAT_MAX ? lookupTagClusters(option.id, tags) : null;
   if (!clusters) return { ...base, mode: 'flat' };
   return {
     ...base,
@@ -415,13 +464,70 @@ export function buildDetailDirection(menu, direction) {
   };
 }
 
-function buildDetailQuestion({ directions }, menu) {
+function buildDetailCardPages(blocks, menu) {
+  const cards = blocks.map(block => ({ ...block, id: JSON.stringify([block.group, block.categoryId]) }));
+  const tags = new Map(cards.map(card => [card.id, new Set(card.tags.map(tag => tag.tagId))]));
+  const themes = new Map(cards.filter(card => card.group === 'department').map(card => [card.id,
+    departmentCardThemes(findMenuOption(menu, card.group, card.categoryId)),
+  ]));
+  const pages = [];
+  let remaining = cards;
+  while (remaining.length > 0) {
+    const page = selectDistinctDirectionCards(remaining, tags, themes);
+    pages.push(page.map(({ id, group, categoryId, tags: cardTags }) => {
+      const shared = new Set(page.filter(other => other.id !== id).flatMap(other => other.tags.map(tag => tag.tagId)));
+      const examples = [...cardTags.filter(tag => !shared.has(tag.tagId)), ...cardTags];
+      return { group, categoryId, examples: [...new Set(examples.map(tag => tag.name))].slice(0, 2) };
+    }));
+    remaining = remaining.filter(card => !page.includes(card));
+  }
+  return pages;
+}
+
+function buildDetailQuestion({ directions, layout }, menu) {
   const blocks = directions.map(direction => buildDetailDirection(menu, direction)).filter(Boolean);
   return {
     stage: 'detail',
     scopeReady: true,
     question: blocks.length > 0 ? DETAIL_QUESTION : null,
     directions: blocks,
+    ...(layout === 'cards' ? { cardPages: buildDetailCardPages(blocks, menu) } : {}),
+  };
+}
+
+async function buildCardQuestion({ direction, seenTagIds }, menu, deps) {
+  const block = buildDetailDirection(menu, direction);
+  const base = { stage: 'card', scopeReady: true, options: [], hasMore: false };
+  if (!block) return { ...base, question: null };
+
+  const seen = new Set(seenTagIds);
+  const available = block.tags.filter(tag => !seen.has(tag.tagId));
+  const representativeIds = new Set((block.clusters ?? [])
+    .filter(cluster => cluster.clusterId !== 'other')
+    .map(cluster => cluster.tagIds.find(tagId => !seen.has(tagId)))
+    .filter(Boolean));
+  const batch = [
+    ...available.filter(tag => representativeIds.has(tag.tagId)),
+    ...available.filter(tag => !representativeIds.has(tag.tagId)),
+  ].slice(0, CARD_TOPIC_LIMIT);
+  const questionTemplate = `「${block.title}」裡，你想先接觸哪些主題？`;
+  const rewritten = await rewriteCopies({
+    stage: 'card', group: direction.group, parentLabel: block.categoryLabel, questionTemplate,
+    items: batch.map(tag => ({ categoryLabel: block.categoryLabel, topicLabels: [tag.name] })),
+  }, deps);
+
+  return {
+    ...base,
+    question: batch.length ? (rewritten.value?.question ?? questionTemplate) : null,
+    options: batch.map((tag, index) => ({
+      tagId: tag.tagId,
+      name: tag.name,
+      title: rewritten.value?.copies[index].title ?? tag.name,
+      description: rewritten.value?.copies[index].description ?? '',
+    })),
+    hasMore: seen.size === 0 && available.length > batch.length,
+    source: rewritten.value ? 'gpt' : 'fixed',
+    ...(rewritten.fallbackReason ? { fallbackReason: rewritten.fallbackReason } : {}),
   };
 }
 
@@ -468,6 +574,7 @@ export async function getInterestQuestion(request, deps = {}) {
   }
   if (request.stage === 'group') return buildGroupQuestion(request, menu, deps);
   if (request.stage === 'detail') return buildDetailQuestion(request, menu);
+  if (request.stage === 'card') return buildCardQuestion(request, menu, deps);
   return buildSelectionSummary(menu, request.selections);
 }
 

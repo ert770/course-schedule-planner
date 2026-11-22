@@ -5,6 +5,7 @@ import { ACTIVE_TERM } from '../src/data/activeTerm.js';
 import {
   buildInterestCategoryPrompts,
   buildInterestExplorationCards,
+  buildInterestExplorationPairs,
   getInterestExplorationCards,
 } from '../src/services/interestExplorationService.js';
 
@@ -134,6 +135,22 @@ describe('initial rag-tag interest exploration cards', () => {
     assert.deepEqual(result.cards.map(card => card.courseCode), ['TEST1001']);
     assert.deepEqual(result.term, ACTIVE_TERM);
   });
+});
+
+test('雙卡探索最多三組，不重複課號，優先搭配不同標籤的同類課程', () => {
+  const [a, b, c, d, e, f] = learningTags.filter(tag => tag.eligibility.crossCourseMatchEligible === true);
+  const cards = buildInterestExplorationCards([a, a, b, c, d, e, f].map((tag, index) => course({
+    id: 3000 + index, sectionId: 3000 + index, catalogCourseCode: `PAIR${index}`, ragTag: [tag.name],
+  })), {}, { limit: 7 });
+  const pairs = buildInterestExplorationPairs(cards);
+  assert.equal(pairs.length, 3);
+  assert.equal(new Set(pairs.flat().map(card => card.courseCode)).size, 6);
+  assert.ok(pairs.every(pair => pair.length === 2));
+  assert.notEqual(pairs[0][0].representativeTags[0].canonicalTagId, pairs[0][1].representativeTags[0].canonicalTagId);
+  const learningOnly = learningTags.find(tag => !tag.eligibility.crossCourseMatchEligible);
+  const noMatch = buildInterestExplorationCards([course({ ragTag: [learningOnly.name] })]);
+  assert.equal(noMatch[0].representativeTags.length, 0);
+  assert.deepEqual(buildInterestExplorationPairs([noMatch[0], cards[0]]), []);
 });
 
 test('IE-SVEC 主題相關度相同時依 s_vec 排序；沒有分數時維持課號順序', async () => {

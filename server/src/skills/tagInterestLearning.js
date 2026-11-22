@@ -2,6 +2,7 @@ import { normalizeSemesterLabel } from '../data/activeTerm.js';
 import { interestTagCatalog, resolveInterestTag, resolveInterestTags } from '../data/interestTagCatalog.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
 import { resolveInterestSelections } from '../data/interestSelections.js';
+import { PAIRED_EXPLORATION_RESPONSE, PAIRED_EXPLORATION_TAG_LIMIT } from '../data/interactionEventSchema.js';
 import { isRequiredForStudent } from './courseScope.js';
 
 export const TAG_INTEREST_MODEL_VERSION = 'rag-tag-interest-v1';
@@ -54,6 +55,11 @@ function snapshotTag(resolved) {
     })),
     crossCourseMatchEligible: resolved.eligibility?.crossCourseMatchEligible === true,
   };
+}
+
+export function selectPairedExplorationTags(resolvedTags) {
+  return resolvedTags.filter(tag => tag.eligibility?.interestLearningEligible === true
+    && tag.eligibility?.crossCourseMatchEligible === true).slice(0, PAIRED_EXPLORATION_TAG_LIMIT);
 }
 
 function normalizedRawCourseTags(course) {
@@ -131,7 +137,14 @@ export function buildTagInterestSnapshot(event, course, scope) {
   const feedback = event?.interestFeedback;
   if (event?.eventType === 'interest_exploration_feedback') {
     const chosenIds = normalizeTagIds(feedback?.canonicalTagIds);
-    if (feedback?.response === 'interested' && chosenIds.length > 0) {
+    if (feedback?.response === PAIRED_EXPLORATION_RESPONSE) {
+      const representatives = selectPairedExplorationTags(resolved).map(tag => tag.canonicalTagId);
+      if (chosenIds.length === 0 || chosenIds.length !== representatives.length
+        || chosenIds.some(id => !representatives.includes(id))) {
+        throw new TypeError('雙卡探索回饋必須使用這門課顯示的代表標籤');
+      }
+      evidenceTagIds = representatives;
+    } else if (feedback?.response === 'interested' && chosenIds.length > 0) {
       evidenceTagIds = chosenIds;
     } else if (feedback?.response === 'not_interested') {
       if (chosenIds.length === 0) {
@@ -337,7 +350,9 @@ function eventWeight(event) {
     return 0;
   }
   if (event?.eventType === 'interest_exploration_feedback') {
-    if (feedback === 'interested') return TAG_INTEREST_EVENT_WEIGHTS.explorationInterested;
+    if (feedback === 'interested' || feedback === PAIRED_EXPLORATION_RESPONSE) {
+      return TAG_INTEREST_EVENT_WEIGHTS.explorationInterested;
+    }
     if (feedback === 'not_interested') return TAG_INTEREST_EVENT_WEIGHTS.explicitNotInterested;
     return 0;
   }
@@ -451,7 +466,10 @@ export function computeTagInterestProfile(events = [], prefs = {}, options = {})
   const { items, excludedEventCount } = collectWeightedTagInterestEvents(events, options);
 
   for (const { event, snapshot, tagIds, weight: effectiveWeight } of items) {
-    const split = effectiveWeight / tagIds.length;
+    const perTagWeight = event.eventType === 'interest_exploration_feedback'
+      && snapshot.feedbackResponse === PAIRED_EXPLORATION_RESPONSE
+      ? effectiveWeight
+      : effectiveWeight / tagIds.length;
     for (const id of tagIds) {
       const tagSnapshot = snapshot.tags.find(tag => tag.canonicalTagId === id);
       if (!tagSnapshot) continue;
@@ -467,11 +485,11 @@ export function computeTagInterestProfile(events = [], prefs = {}, options = {})
         lastEventAt: null,
         sources: new Set(),
       };
-      if (split > 0) {
-        current.positiveEvidence += split;
+      if (perTagWeight > 0) {
+        current.positiveEvidence += perTagWeight;
         current.positiveEventCount += 1;
       } else {
-        current.negativeEvidence += Math.abs(split);
+        current.negativeEvidence += Math.abs(perTagWeight);
         current.negativeEventCount += 1;
       }
       current.sources.add(event.eventType);

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
-import { profileAPI, historyFeedbackAPI, coursesAPI, scheduleAPI } from '../services/api';
+import { profileAPI, historyFeedbackAPI, scheduleAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
 import PreferenceJourneySteps, { PreferenceBackButton } from '../components/Layout/PreferenceJourneySteps';
@@ -50,16 +50,11 @@ export default function SetupPage() {
   const [avoidInstructors, setAvoidInstructors] = useState('');
   
   // 前端會顯示的選項
-  const [mbti, setMbti] = useState('INTJ');
-  const [remainingSemesters, setRemainingSemesters] = useState('');
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [selectedTags, setSelectedTags] = useState(new Set());
   const [tagGroups, setTagGroups] = useState([]);
-  const [preferredTrack, setPreferredTrack] = useState('');
   const [selectedInterests, setSelectedInterests] = useState(new Set());
-  // 主要修課路徑（PR #27 拿掉後於 2026-10-26 依使用者要求恢復）。課程主題改由問答元件自己向後端取題（ADR-027）。
-  const [interestOptions, setInterestOptions] = useState({ tracks: [] });
   const [customInterests, setCustomInterests] = useState('');
   // 課程主題的選擇結果：[{ group, categoryId, level, mode, tagIds }]，以 (group, categoryId) 為鍵。
   // 通識與系外都有「語言」時各自一筆，取消其中一組不影響另一組。
@@ -99,9 +94,7 @@ export default function SetupPage() {
         if (profile.department) setDepartment(profile.department);
         const savedGrade = profile.gradeLevel;
         if (savedGrade) setGradeLevel(String(savedGrade));
-        setRemainingSemesters(profile.remainingSemesters ? String(profile.remainingSemesters) : '');
         if (profile.className) setClassName(profile.className);
-        if (profile.mbti) setMbti(profile.mbti);
         setProgramType(profile.programType || '');
         setCollege(profile.college || '');
         setEnrolledPrograms((profile.enrolledPrograms || []).join('、'));
@@ -110,7 +103,6 @@ export default function SetupPage() {
         if (Array.isArray(profile.selectedTags)) {
           setSelectedTags(new Set(profile.selectedTags));
         }
-        setPreferredTrack(profile.preferredTrack || '');
         const savedSelections = Array.isArray(profile.interestSelections) ? profile.interestSelections : [];
         setTopicSelections(savedSelections);
         setSelectedInterests(new Set([
@@ -125,14 +117,6 @@ export default function SetupPage() {
 
     return () => { cancelled = true; };
   }, [userIdentity]);
-
-  useEffect(() => {
-    let cancelled = false;
-    coursesAPI.getInterestOptions(department, gradeLevel, className)
-      .then(data => { if (!cancelled) setInterestOptions({ tracks: data.tracks || [] }); })
-      .catch(() => { if (!cancelled) setInterestOptions({ tracks: [] }); });
-    return () => { cancelled = true; };
-  }, [department, gradeLevel, className]);
 
   const toggleInterest = (interest) => {
     setSelectedInterests(prev => {
@@ -191,15 +175,12 @@ export default function SetupPage() {
       const prefData = {
         department,
         gradeLevel: Number(gradeLevel),
-        remainingSemesters: remainingSemesters ? Number(remainingSemesters) : null,
         className,
-        mbti,
         programType: programType || null,
         college: college || null,
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
-        preferredTrack: preferredTrack || null,
         interests: [...new Set([
           ...selectedInterests,
           ...customInterests
@@ -289,44 +270,15 @@ export default function SetupPage() {
               ))}
             </nav>
             {setupStep === 0 && (
-              <div className="setup-section-box" style={{ background: 'var(--bg-secondary, #f9fafb)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color, #e5e7eb)' }}>
-                <h3 className="setup-section-title" style={{ marginBottom: '16px', fontSize: '1.05rem', fontWeight: '600' }}>確認基本資料</h3>
-                <p className="setup-student-scope" role="status">{profileLoaded
-                  ? [department, gradeLevel ? gradeLevel + ' 年級' : '', className].filter(Boolean).join(' · ') || '尚無基本資料'
-                  : '正在讀取基本資料…'}</p>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label htmlFor="setup-mbti" style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)', margin: 0 }}>MBTI 人格特質：</label>
-                    <select id="setup-mbti" value={mbti} onChange={e => setMbti(e.target.value)} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #ccc', width: '100px', fontSize: '0.9rem' }}>
-                      {['INTJ', 'INTP', 'ENTJ', 'ENTP', 'INFJ', 'INFP', 'ENFJ', 'ENFP', 'ISTJ', 'ISFJ', 'ESTJ', 'ESFJ', 'ISTP', 'ISFP', 'ESTP', 'ESFP'].map(type => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label htmlFor="setup-remaining-semesters" style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary)', margin: 0 }}>剩餘學期數（包含當學期）：</label>
-                    <select
-                      id="setup-remaining-semesters"
-                      value={remainingSemesters}
-                      onChange={e => setRemainingSemesters(e.target.value)}
-                      style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem' }}
-                    >
-                      <option value="">依年級自動推算</option>
-                      {Array.from({ length: 8 }, (_, index) => index + 1).map(value => (
-                        <option key={value} value={value}>剩餘 {value} 學期</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: '12px 0 0 0' }}>系所、年級與班級由登入資料帶入。{profileLoaded && !className && '目前沒有班別資料，課程主題選項可能無法顯示。'}</p>
-              </div>
-
-            )}
-
-            {setupStep === 1 && (
               <div className="setup-topic-section">
+                <div className="setup-section-box" style={{ background: 'var(--bg-secondary, #f9fafb)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color, #e5e7eb)' }}>
+                  <h3 className="setup-section-title" style={{ marginBottom: '16px', fontSize: '1.05rem', fontWeight: '600' }}>確認基本資料</h3>
+                  <p className="setup-student-scope" role="status">{profileLoaded
+                    ? [department, gradeLevel ? gradeLevel + ' 年級' : '', className].filter(Boolean).join(' · ') || '尚無基本資料'
+                    : '正在讀取基本資料…'}</p>
+
+                  <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: '12px 0 0 0' }}>系所、年級與班級由登入資料帶入。{profileLoaded && !className && '目前沒有班別資料，課程主題選項可能無法顯示。'}</p>
+                </div>
                 <div className="setup-section-box history-feedback-setup" id="history-feedback">
                   <div>
                     <h3 className="setup-section-title">我修過的課</h3>
@@ -338,38 +290,12 @@ export default function SetupPage() {
                     {historyLoading ? '載入中…' : '調整喜好'}
                   </button>
                 </div>
+              </div>
+            )}
 
+            {setupStep === 1 && (
+              <div className="setup-topic-section">
                 <div className="setup-pref-group" id="interest-preferences" style={{ marginBottom: '20px' }}>
-                  <h4 className="setup-pref-category" style={{ fontSize: '0.95rem', marginBottom: '6px', color: 'var(--text-primary, #1f2937)' }}>
-                    感興趣的課程方向
-                  </h4>
-                  <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: '0 0 12px' }}>
-                    選擇想深入的方向，系統會參考課程主題調整推薦排序；這是偏好，不會排除其他必修課。
-                  </p>
-
-                  {interestOptions.tracks.length > 0 && (
-                    <div style={{ marginBottom: '14px' }}>
-                      <h5 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '8px' }}>
-                        主要修課路徑（單選）
-                      </h5>
-                      <div className="setup-pref-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {interestOptions.tracks.map(track => (
-                          <button
-                            type="button"
-                            key={track}
-                            className={`setup-tag ${preferredTrack === track ? 'selected' : ''}`}
-                            onClick={() => setPreferredTrack(prev => prev === track ? '' : track)}
-                            aria-pressed={preferredTrack === track}
-                            id={`interest-track-${track}`}
-                            style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px' }}
-                          >
-                            {track}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   <div style={{ marginBottom: '12px' }} id="interest-topic-groups">
                     <h5 className="setup-pref-category" style={{ fontSize: '0.85rem', marginBottom: '8px' }}>
                       想接觸的課程主題
@@ -416,7 +342,6 @@ export default function SetupPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setPreferredTrack('');
                       setSelectedInterests(new Set());
                       setCustomInterests('');
                       setTopicSelections([]);
@@ -435,7 +360,6 @@ export default function SetupPage() {
                 <h2 id="setup-scheduling-title" className="setup-section-title">設定排課條件</h2>
                 <p className="setup-journey-summary">選擇你希望課表符合的時段、集中程度與其他安排。</p>
                 <div className="setup-journey-review">
-                  <span>修課路徑：{preferredTrack || '尚未指定'}</span>
                   <span>主題分類：{topicSelections.length} 組</span>
                   <span>已確認細項：{new Set(topicSelections.flatMap(item => item.tagIds ?? [])).size} 個</span>
                   <span>排課偏好：{selectedTags.size} 項</span>

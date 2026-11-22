@@ -2,8 +2,7 @@
 //
 // 一次一題：本系、通識、系外各一題（A／B／C，可複選、不限數量，可換一組、上一題、這題先略過）。
 // 每組作答後緊接著是該組的細項頁（有選方向才有；2026-11-22 使用者要求三組都要追問，規格原本只有一題）。
-// 細項頁列出這組**每個**已選方向（三層沙漏的中、小層）：12 個以下直接列，13 個以上用預算好的群卡＋熱門＋搜尋，
-// 設計稿 docs/PLANS/2026-11-22-interest-questionnaire-funnel-design.md。
+// 選完方向後進入中沙漏的卡片頁；點卡才顯示小沙漏的具體標籤問答。
 // 最後在確認頁逐項移除或撤回，按確認才把結果交給設定頁。
 // 選項與文案都由後端提供（`POST /api/profile/interest-questions`）；這裡只記使用者選了哪些 ID。
 // 作答邏輯在 `utils/interestQuestionnaireDraft.js`（有單元測試）。
@@ -28,124 +27,6 @@ import {
 
 const GROUP_LABELS = { department: '本系', generalEducation: '通識', outside: '系外' };
 const LETTERS = ['A', 'B', 'C'];
-// 一組選了很多方向時，第 4 個以後的區塊預設收合，只顯示標題與已選數量。
-const OPEN_DIRECTIONS = 3;
-
-// 細項頁的一個方向區塊（三層沙漏的中、小層）。展開、搜尋、「更多」只是畫面狀態，不影響作答。
-// 群卡先收合，只顯示群名與 2 個代表標籤；點了才在原地展開。展開不會自動勾選任何標籤（A：只有勾選的標籤算分）。
-const CLUSTER_REPS = 2;
-const CLUSTER_SHOW = 6;
-const FLAT_SHOW = 12;
-const SEARCH_MIN_TAGS = 13;
-
-function TagChip({ tag, selected, onToggle }) {
-  return (
-    <button
-      type="button"
-      className={`interest-quiz-tag${selected ? ' selected' : ''}`}
-      aria-pressed={selected}
-      data-tag={tag.tagId}
-      onClick={() => onToggle(tag.tagId)}
-    >
-      {tag.name}
-    </button>
-  );
-}
-
-function DetailDirection({ block, selected, onToggle, defaultOpen }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [expanded, setExpanded] = useState(new Set());
-  const [showAll, setShowAll] = useState(new Set());
-  const [query, setQuery] = useState('');
-  const byId = useMemo(() => new Map(block.tags.map(tag => [tag.tagId, tag])), [block.tags]);
-  const isSelected = tagId => selected.includes(tagId);
-  const toggleSet = (setter, key) => setter(prev => {
-    const next = new Set(prev);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    return next;
-  });
-  const keyword = query.trim().toLowerCase();
-  const matches = keyword ? block.tags.filter(tag => tag.name.toLowerCase().includes(keyword)) : [];
-
-  return (
-    <section className="interest-quiz-direction" data-direction={block.categoryId} data-mode={block.mode}>
-      <button type="button" className="interest-quiz-direction-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="interest-quiz-direction-title">{block.title}</span>
-        <span className="interest-quiz-direction-meta">已選 {selected.length}・共 {block.tagCount} 個主題</span>
-      </button>
-      {open && (
-        <div className="interest-quiz-direction-body">
-          {block.tagCount >= SEARCH_MIN_TAGS && (
-            <input
-              type="search"
-              className="interest-quiz-search"
-              placeholder="搜尋這個方向的主題"
-              aria-label={`搜尋「${block.title}」的主題`}
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-            />
-          )}
-          {keyword ? (
-            <div className="interest-quiz-tags" data-role="search-results">
-              {matches.length === 0
-                ? <span className="interest-quiz-note">找不到符合的主題。</span>
-                : matches.map(tag => <TagChip key={tag.tagId} tag={tag} selected={isSelected(tag.tagId)} onToggle={onToggle} />)}
-            </div>
-          ) : block.mode === 'clusters' ? (
-            <>
-              <div className="interest-quiz-popular">
-                <span className="interest-quiz-popular-label">熱門</span>
-                {block.popular.map(tag => <TagChip key={tag.tagId} tag={tag} selected={isSelected(tag.tagId)} onToggle={onToggle} />)}
-              </div>
-              <div className="interest-quiz-clusters">
-                {block.clusters.map(cluster => {
-                  const key = cluster.clusterId;
-                  const isOpen = expanded.has(key);
-                  const tags = cluster.tagIds.map(tagId => byId.get(tagId)).filter(Boolean);
-                  const reps = tags.slice(0, CLUSTER_REPS).map(tag => tag.name).join('、');
-                  const pickedHere = tags.filter(tag => isSelected(tag.tagId)).length;
-                  const visible = showAll.has(key) ? tags : tags.slice(0, CLUSTER_SHOW);
-                  return (
-                    <div key={key} className={`interest-quiz-cluster${isOpen ? ' open' : ''}`} data-cluster={key}>
-                      <button type="button" className="interest-quiz-cluster-head" aria-expanded={isOpen} onClick={() => toggleSet(setExpanded, key)}>
-                        <span className="interest-quiz-cluster-label">{cluster.label}</span>
-                        <span className="interest-quiz-cluster-reps">（{reps}{tags.length > CLUSTER_REPS ? ' 等' : ''}）</span>
-                        {pickedHere > 0 && <span className="interest-quiz-cluster-count">已選 {pickedHere}</span>}
-                      </button>
-                      {isOpen && (
-                        <div className="interest-quiz-tags">
-                          {visible.map(tag => <TagChip key={tag.tagId} tag={tag} selected={isSelected(tag.tagId)} onToggle={onToggle} />)}
-                          {tags.length > CLUSTER_SHOW && !showAll.has(key) && (
-                            <button type="button" className="interest-quiz-more" onClick={() => toggleSet(setShowAll, key)}>
-                              更多 {tags.length - CLUSTER_SHOW} 個
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div className="interest-quiz-tags">
-              {(showAll.has('flat') ? block.tags : block.tags.slice(0, FLAT_SHOW))
-                .map(tag => <TagChip key={tag.tagId} tag={tag} selected={isSelected(tag.tagId)} onToggle={onToggle} />)}
-              {block.tags.length > FLAT_SHOW && !showAll.has('flat') && (
-                <button type="button" className="interest-quiz-more" onClick={() => toggleSet(setShowAll, 'flat')}>
-                  更多 {block.tags.length - FLAT_SHOW} 個
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-
 export default function InterestQuestionnaire({ scope, savedSelections = [], confirmLabel, onConfirm }) {
   const scopeReady = Boolean(scope.department && scope.gradeLevel > 0 && scope.className);
   // phase：intro → group／detail（交錯）→ confirm。step 是目前畫面：{ type: 'group', index } 或 { type: 'detail', group }。
@@ -159,6 +40,8 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
   const [questions, setQuestions] = useState({});
   // 每組各一題追問（2026-11-22 使用者要求三個大題都要追問）：題目、目前勾選、答案、只有一個細項的方向。
   const [details, setDetails] = useState({});
+  const [cardPage, setCardPage] = useState(0);
+  const [card, setCard] = useState(null);
   const [detailSelected, setDetailSelected] = useState({});
   const [detailAnswers, setDetailAnswers] = useState({});
   const [checkables, setCheckables] = useState({});
@@ -252,12 +135,14 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
     setLoading(true);
     setError('');
     try {
-      const data = await request({ stage: 'detail', directions: detailDirections(directions) });
+      const data = await request({ stage: 'detail', layout: 'cards', directions: detailDirections(directions) });
       if (!data.question || data.directions.length === 0) {
         await afterGroup(index, state);
         return;
       }
       setDetails(prev => ({ ...prev, [group]: data }));
+      setCardPage(0);
+      setCard(null);
       // 回到同一組的細項頁時，仍在的方向保留剛才的勾選。
       const previous = state.detailAnswers[group] ?? [];
       setDetailSelected(prev => ({
@@ -279,6 +164,81 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
       setLoading(false);
     }
   };
+
+  const loadCardQuestion = async (opened, seenTagIds = []) => {
+    setCard(opened);
+    setLoading(true);
+    setError('');
+    try {
+      const { group: cardGroup, categoryId } = opened.direction;
+      const data = await request({ stage: 'card', direction: { group: cardGroup, categoryId }, seenTagIds });
+      setCard({ ...opened, data, second: seenTagIds.length > 0 });
+    } catch (err) {
+      setError(err.message || '細項載入失敗，請稍後再試。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const finishCard = () => {
+    const { group, categoryId } = card.direction;
+    setDetailSelected(prev => ({ ...prev, [group]: { ...prev[group], [categoryId]: card.selected } }));
+    setCard(null);
+    setError('');
+  };
+
+  const renderCardQuestion = () => (
+          <>
+            <p className="interest-quiz-hint">{card.direction.title}</p>
+            <h4 className="interest-quiz-question">{card.data?.question ?? '你想先接觸哪些主題？'}</h4>
+            {loading && <p className="interest-followup-loading" role="status"><Loader2 size={18} className="spin-animation" /> 正在準備細項…</p>}
+            {error && <p className="interest-quiz-error" role="alert">{error}</p>}
+            {!loading && !error && !card.data?.options.length && <p className="interest-quiz-note">目前沒有可選的具體主題。</p>}
+            <div className="interest-quiz-options">
+              {!loading && card.data?.options.map((option, index) => (
+                <button type="button" key={option.tagId} data-tag={option.tagId}
+                  className={`interest-quiz-option${card.selected.includes(option.tagId) ? ' selected' : ''}`}
+                  aria-pressed={card.selected.includes(option.tagId)}
+                  onClick={() => setCard(prev => ({ ...prev, selected: toggleTopic(prev.selected, option.tagId) }))}>
+                  <span className="interest-quiz-letter">{LETTERS[index]}</span>
+                  <span className="interest-quiz-option-body">
+                    <span className="interest-quiz-option-title">{option.title}</span>
+                    {option.description && <span className="interest-quiz-option-desc">{option.description}</span>}
+                    {option.title !== option.name && <span className="interest-quiz-option-label">課程主題：{option.name}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {card.selected.length > 0 && (
+              <div className="interest-quiz-selected">
+                已選：
+                {card.selected.map(tagId => {
+                  const topic = card.data?.options.find(option => option.tagId === tagId)
+                    ?? card.shown.find(item => item.tagId === tagId);
+                  return <span key={tagId} className="interest-quiz-chip">{topic?.name ?? tagId}
+                    <button type="button" aria-label={`移除 ${topic?.name ?? tagId}`}
+                      onClick={() => setCard(prev => ({ ...prev, selected: prev.selected.filter(id => id !== tagId) }))}>×</button>
+                  </span>;
+                })}
+              </div>
+            )}
+            <div className="interest-quiz-actions">
+              <button type="button" className="course-card-action" disabled={loading}
+                onClick={() => { setCard(null); setError(''); }}>返回方向</button>
+              {error && !card.data && <button type="button" className="course-card-action"
+                onClick={() => loadCardQuestion(card)}>重試</button>}
+              {card.data?.hasMore && !card.second && card.selected.length === 0 && (
+                <button type="button" className="course-card-action" disabled={loading}
+                  onClick={() => loadCardQuestion({
+                    ...card, shown: [...card.shown, ...card.data.options],
+                  }, card.data.options.map(option => option.tagId))}>想看其他主題</button>
+              )}
+              <button type="button" className="course-card-action primary" onClick={finishCard} disabled={loading || !card.data}>
+                {card.selected.length ? '完成' : '先保留方向'}
+              </button>
+            </div>
+          </>
+  );
 
   const changeBatch = async () => {
     const group = QUESTION_GROUPS[step.index];
@@ -343,6 +303,8 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
     if (previous.type === 'group') {
       showGroup(previous.index, currentState());
     } else {
+      setCard(null);
+      setCardPage(0);
       setPhase('detail');
       setStep(previous);
     }
@@ -352,6 +314,8 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
     setAnswers({});
     setHistory([]);
     setDetails({});
+    setCardPage(0);
+    setCard(null);
     setDetailSelected({});
     setDetailAnswers({});
     setCheckables({});
@@ -477,49 +441,47 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
     );
   }
 
-  // ── 細項頁 ──
+  // 中沙漏只顯示這一組在大沙漏選過的方向。點卡才請求小沙漏題目。
   if (phase === 'detail') {
     const detailGroup = step.group;
     const detail = details[detailGroup];
     const picks = detailSelected[detailGroup] ?? {};
     const total = Object.values(picks).reduce((sum, ids) => sum + ids.length, 0);
-    const toggleFor = categoryId => tagId => setDetailSelected(prev => ({
-      ...prev,
-      [detailGroup]: { ...prev[detailGroup], [categoryId]: toggleTopic(prev[detailGroup]?.[categoryId] ?? [], tagId) },
-    }));
+    const pages = detail.cardPages ?? [];
+    const cards = pages[cardPage] ?? [];
     return (
-      <div className="interest-quiz" id="interest-questionnaire" data-phase="detail" data-group={detailGroup}>
+      <div className="interest-quiz" id="interest-questionnaire" data-phase={card ? 'card' : 'detail'} data-group={detailGroup}>
         {header(`第 ${QUESTION_GROUPS.indexOf(detailGroup) + 1}／${QUESTION_GROUPS.length} 題・${GROUP_LABELS[detailGroup]}・細項`)}
-        {loading && !detail ? (
-          <p className="interest-followup-loading"><Loader2 size={18} className="spin-animation" /> 正在準備題目…</p>
-        ) : error && !detail ? (
-          <p className="interest-quiz-error" role="alert">{error}</p>
-        ) : detail ? (
+        {card ? renderCardQuestion() : (
           <>
-            <h4 className="interest-quiz-question" id="interest-quiz-question">{detail.question}</h4>
-            <div className="interest-quiz-directions">
-              {detail.directions.map((block, index) => (
-                <DetailDirection
-                  key={block.categoryId}
-                  block={block}
-                  selected={picks[block.categoryId] ?? []}
-                  onToggle={toggleFor(block.categoryId)}
-                  defaultOpen={index < OPEN_DIRECTIONS}
-                />
-              ))}
+            <h4 className="interest-quiz-question" id="interest-quiz-question">從已選方向挑一張，再選具體主題</h4>
+            <div className="interest-quiz-card-grid">
+              {cards.map(({ categoryId, examples }) => {
+                const block = detail.directions.find(direction => direction.categoryId === categoryId);
+                const selected = picks[categoryId] ?? [];
+                const names = block.tags.filter(tag => selected.includes(tag.tagId)).map(tag => tag.name);
+                return (
+                  <button type="button" key={categoryId} className={`interest-quiz-direction-card${selected.length ? ' selected' : ''}`}
+                    disabled={loading} onClick={() => loadCardQuestion({ direction: block, shown: block.tags, selected, data: null })}>
+                    <strong>{block.title}</strong>
+                    {examples.length > 0 && <span>{examples.join('、')}</span>}
+                    {names.length > 0 && <small>已選：{names.slice(0, 2).join('、')}{names.length > 2 ? ` 等 ${names.length} 項` : ''}</small>}
+                  </button>
+                );
+              })}
             </div>
             {total > 0 && <p className="interest-quiz-hint" id="interest-quiz-picked">已選 {total} 個主題。</p>}
             {error && <p className="interest-quiz-error" role="alert">{error}</p>}
             <div className="interest-quiz-actions">
               <button type="button" className="course-card-action" onClick={goBack} disabled={loading}>上一題</button>
+              {cardPage > 0 && <button type="button" className="course-card-action" onClick={() => setCardPage(cardPage - 1)}>上一批方向</button>}
+              {cardPage + 1 < pages.length && <button type="button" className="course-card-action" onClick={() => setCardPage(cardPage + 1)}>更多已選方向</button>}
               <button type="button" className="course-card-action" id="interest-quiz-skip" onClick={() => answerDetail(true)} disabled={loading}>這題先略過</button>
               <button type="button" className="course-card-action primary" id="interest-quiz-next"
-                onClick={() => answerDetail(false)} disabled={loading || total === 0}>
-                下一步
-              </button>
+                onClick={() => answerDetail(false)} disabled={loading || total === 0}>下一步</button>
             </div>
           </>
-        ) : null}
+        )}
       </div>
     );
   }

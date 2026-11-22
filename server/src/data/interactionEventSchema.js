@@ -105,7 +105,9 @@ const SOURCE_REQUIRED_EVENTS = new Set([
   INTERACTION_EVENT_TYPES.RECOMMENDATION_ACCEPTED,
 ]);
 
-const EXPLORATION_RESPONSES = new Set(['interested', 'not_interested', 'learn_more']);
+export const PAIRED_EXPLORATION_RESPONSE = 'paired_interested';
+export const PAIRED_EXPLORATION_TAG_LIMIT = 2;
+const EXPLORATION_RESPONSES = new Set(['interested', 'not_interested', 'learn_more', PAIRED_EXPLORATION_RESPONSE]);
 export const HISTORY_FEEDBACK_RESPONSES = Object.freeze(['liked', 'neutral', 'disliked']);
 const HISTORY_RESPONSE_SET = new Set(HISTORY_FEEDBACK_RESPONSES);
 const CANONICAL_TAG_ID_PATTERN = /^tag_[0-9a-f]{20}$/iu;
@@ -512,6 +514,10 @@ export function validateInteractionEvent(input) {
         }
         if (feedback.response === 'not_interested' && feedback.canonicalTagIds.length === 0) {
           errors.push('明確表示不感興趣時必須指定至少一個標籤');
+        }
+        if (feedback.response === PAIRED_EXPLORATION_RESPONSE && (feedback.canonicalTagIds.length === 0
+          || feedback.canonicalTagIds.length > PAIRED_EXPLORATION_TAG_LIMIT)) {
+          errors.push('雙卡探索回饋必須提供 1～2 個代表標籤');
         }
         if (feedback.response === 'learn_more' && feedback.canonicalTagIds.length > 0) {
           errors.push('想先了解不應同時指定正向或負向標籤');

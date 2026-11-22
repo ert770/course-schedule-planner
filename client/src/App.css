@@ -1248,29 +1248,19 @@
 .interest-quiz-confirm-list li { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
 .interest-quiz-confirm-list li.removed span { text-decoration: line-through; color: var(--text-muted); }
 .interest-quiz-confirm-list button { margin-left: auto; padding: 0; border: none; background: none; color: var(--accent-blue); cursor: pointer; font-size: 0.78rem; }
-/* 細項頁（三層沙漏的中、小層，2026-11-22）：方向區塊、熱門、群卡、搜尋。 */
-.interest-quiz-directions { display: flex; flex-direction: column; gap: 10px; }
-.interest-quiz-direction { border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-primary); }
-.interest-quiz-direction-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; width: 100%; padding: 10px 12px; border: none; background: none; color: var(--text-primary); cursor: pointer; text-align: left; }
-.interest-quiz-direction-title { flex: 1 1 10em; min-width: 0; font-size: 0.92rem; font-weight: 600; }
-.interest-quiz-direction-meta { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
-.interest-quiz-direction-body { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
-.interest-quiz-search { width: 100%; padding: 6px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text-primary); font-size: 0.82rem; }
-.interest-quiz-popular { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.interest-quiz-popular-label { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
-.interest-quiz-clusters { display: flex; flex-direction: column; gap: 6px; }
-.interest-quiz-cluster { border: 1px dashed var(--border-color); border-radius: var(--radius-sm); }
-.interest-quiz-cluster.open { border-style: solid; }
-.interest-quiz-cluster-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; width: 100%; padding: 7px 10px; border: none; background: none; color: var(--text-primary); cursor: pointer; text-align: left; }
-.interest-quiz-cluster-head::before { content: '▸'; color: var(--text-muted); margin-right: 2px; }
-.interest-quiz-cluster.open .interest-quiz-cluster-head::before { content: '▾'; }
-.interest-quiz-cluster-label { font-size: 0.85rem; font-weight: 600; }
-.interest-quiz-cluster-reps { font-size: 0.78rem; color: var(--text-secondary); }
-.interest-quiz-cluster-count { margin-left: auto; font-size: 0.72rem; color: var(--accent-blue); }
-.interest-quiz-cluster .interest-quiz-tags { padding: 0 10px 8px; }
-.interest-quiz-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.interest-quiz-tag { padding: 3px 10px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-card); color: var(--text-primary); cursor: pointer; font-size: 0.78rem; }
-.interest-quiz-tag.selected { border-color: var(--accent-blue); background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-card)); color: var(--accent-blue); font-weight: 600; }
-.interest-quiz-more { padding: 3px 6px; border: none; background: none; color: var(--accent-blue); cursor: pointer; font-size: 0.78rem; }
+/* 方向卡只呈現簡短主題線索，點選後在同一區塊出題。 */
+.interest-quiz-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 12px; width: 100%; }
+.interest-quiz-direction-card { display: flex; flex-direction: column; justify-content: center; gap: 7px; min-width: 0; min-height: 112px; padding: 14px clamp(12px, 2vw, 20px); border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); background: var(--bg-primary); color: var(--text-primary); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.interest-quiz-direction-card strong { font-size: 0.95rem; line-height: 1.35; }
+.interest-quiz-direction-card span, .interest-quiz-direction-card small { font-size: 0.78rem; line-height: 1.4; }
+.interest-quiz-direction-card span { color: var(--text-secondary); }
+.interest-quiz-direction-card small { color: var(--accent-blue); }
+.interest-quiz-direction-card:is(:hover, :focus-visible, .selected) { border-color: var(--accent-blue); }
+.interest-quiz-direction-card.selected { background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-primary)); }
+.interest-quiz-direction-card:disabled { cursor: wait; }
+@media (max-width: 640px) {
+  .interest-quiz-card-grid { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; gap: 8px; }
+  .interest-quiz-direction-card { min-height: 84px; padding: 12px 14px; }
+}
 .interest-quiz-reminder { margin: 4px 0 0; padding: 8px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent-blue) 8%, transparent); font-size: 0.8rem; color: var(--text-primary); }
 .interest-quiz-reminder button { margin-left: 8px; padding: 0; border: none; background: none; color: var(--accent-blue); cursor: pointer; font-size: 0.8rem; }

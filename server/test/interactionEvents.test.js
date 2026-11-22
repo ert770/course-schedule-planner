@@ -223,6 +223,39 @@ describe('#2 consent boundary', () => {
     assert.equal(rating.tagInterestSnapshot.tags[0].canonicalTagId, tag.id);
   });
 
+  test('雙卡的同一題可記兩門課，重送同題不再加分，未同意時不保存', async () => {
+    const tags = interestTagCatalog.canonicalTags.filter(item => item.eligibility?.interestLearningEligible
+      && item.eligibility?.crossCourseMatchEligible).slice(0, 2);
+    const requestId = randomUUID();
+    const drafts = tags.map((tag, index) => baseDraft({
+      requestId,
+      actionId: randomUUID(),
+      eventType: 'interest_exploration_feedback',
+      course: { sectionId: 101 + index, catalogCourseCode: `PAIR${index}` },
+      source: 'exploration',
+      feedbackReason: null,
+      interestFeedback: { response: 'paired_interested', canonicalTagIds: [tag.id] },
+    }));
+
+    await grantPersonalization(identityA, false);
+    const blocked = await recordInteractionEvents(identityA, drafts);
+    assert.equal(blocked.recorded, false);
+    await grantPersonalization(identityA);
+    assert.equal((await recordInteractionEvents(identityA, [{ ...drafts[0],
+      interestFeedback: { response: 'paired_interested', canonicalTagIds: [] },
+    }])).results[0].status, 'rejected');
+    for (const [index, draft] of drafts.entries()) {
+      const result = await recordInteractionEvents(identityA, [draft], {
+        tagInterestContext: { course: { ...draft.course, category: '選修', ragTag: [tags[index].name] } },
+      });
+      assert.equal(result.recorded, 1);
+    }
+    const retry = await recordInteractionEvents(identityA, drafts);
+    assert.equal(retry.recorded, 0);
+    assert.deepEqual(retry.results.map(event => event.status), ['duplicate', 'duplicate']);
+    assert.equal((await getInteractionEventsForExport(identityA)).length, 2);
+  });
+
   test('IL-2b 曝光事件的資料一樣完全不含學號（伺服器寫入路徑）', async () => {
     await grantPersonalization(identityA);
     await recordExposure();

@@ -13,9 +13,11 @@ import { filterCategorizedCourses } from '../skills/courseQuery.js';
 import { CATEGORY_REQUIRED } from '../skills/courseCategory.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 import { scoreCoursesForUser } from '../skills/userTagVector.js';
+import { selectPairedExplorationTags } from '../skills/tagInterestLearning.js';
 import { loadUserTagVectorContext } from './userTagVectorService.js';
 
 export const INTEREST_EXPLORATION_CARD_LIMIT = 8;
+export const INTEREST_EXPLORATION_PAIR_LIMIT = 3;
 
 function normalizeCode(value) {
   return String(value ?? '').trim().toUpperCase();
@@ -40,6 +42,7 @@ function categoryPathKey(path) {
 
 function publicCard(course, tags) {
   const semester = normalizeSemesterLabel(course.semester);
+  const description = typeof course.description === 'string' ? course.description.trim().replace(/\s+/gu, ' ') : '';
   return {
     courseCode: normalizeCode(course.catalogCourseCode),
     sectionId: Number(course.sectionId ?? course.id),
@@ -54,6 +57,11 @@ function publicCard(course, tags) {
     },
     category: course.category,
     track: course.track ?? null,
+    description: description.length > 150 ? `${description.slice(0, 150)}…` : description,
+    representativeTags: selectPairedExplorationTags(tags).map(tag => ({
+      canonicalTagId: tag.canonicalTagId,
+      canonicalName: tag.canonicalName,
+    })),
     tags: tags.map(tag => ({
       canonicalTagId: tag.canonicalTagId,
       canonicalName: tag.canonicalName,
@@ -145,6 +153,22 @@ export function buildInterestExplorationCards(courseSections, profile = {}, opti
   return selected.map(candidate => candidate.card);
 }
 
+/** Retain the ranked order for the first course and prefer a distinct topic for the second. */
+export function buildInterestExplorationPairs(cards) {
+  const remaining = cards.filter(card => card.representativeTags.length > 0);
+  const pairs = [];
+  while (remaining.length >= 2 && pairs.length < INTEREST_EXPLORATION_PAIR_LIMIT) {
+    const first = remaining.shift();
+    const firstTags = new Set(first.representativeTags.map(tag => tag.canonicalTagId));
+    const distinct = candidate => candidate.representativeTags.every(tag => !firstTags.has(tag.canonicalTagId));
+    const sameCategory = remaining.findIndex(card => card.category === first.category && distinct(card));
+    const other = sameCategory < 0 ? remaining.findIndex(distinct) : sameCategory;
+    const [second] = remaining.splice(Math.max(other, 0), 1);
+    pairs.push([first, second]);
+  }
+  return pairs;
+}
+
 /** Ask which available subcategories the learner means when only a broad category was chosen. */
 export function buildInterestCategoryPrompts(cards, profile = {}) {
   const preferences = readInterestPreferences(profile);
@@ -189,6 +213,7 @@ export async function getInterestExplorationCards(identity, deps = {}) {
     return {
       term: ACTIVE_TERM,
       cards: [],
+      pairs: [],
       categoryPrompts: [],
       emptyReason: 'student_scope_unavailable',
     };
@@ -207,10 +232,12 @@ export async function getInterestExplorationCards(identity, deps = {}) {
       if (entry.raw !== null) vectorScores.set(code, entry.raw);
     }
   }
-  const cards = buildInterestExplorationCards(eligibleSections, profile, { ...deps, vectorScores });
+  const deck = buildInterestExplorationCards(eligibleSections, profile, { ...deps, limit: eligibleSections.length, vectorScores });
+  const cards = deck.slice(0, deps.limit ?? INTEREST_EXPLORATION_CARD_LIMIT);
   return {
     term: ACTIVE_TERM,
     cards,
+    pairs: buildInterestExplorationPairs(deck),
     categoryPrompts: buildInterestCategoryPrompts(cards, profile),
     emptyReason: cards.length === 0 ? 'no_eligible_courses' : null,
   };

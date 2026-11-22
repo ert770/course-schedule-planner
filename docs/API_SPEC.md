@@ -400,9 +400,10 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 
 ### `GET /api/interest-exploration/cards`（Roadmap #43 階段 4）
 
-需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳最多 8 張
-真實課程卡片；排除必修、已通過課程、資格未知／不符、沒有時段或沒有符合
-`interest_learning_eligible=true` 的標籤的課程。首輪先依使用者已選主題排序，並盡量分散主／子分類。
+需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳 `pairs`，最多三組且每組兩門不同課號。
+排除必修、已通過課程、資格未知／不符及沒有時段的課程。雙卡還要求每門課至少一個可學習且可跨課配對的 `representativeTags`。
+課程先依主題與既有向量訊號排序，配對優先找同類但代表標籤不同的另一門，候選不足時提供較少組。
+`cards` 保留最多八張的舊版平面清單，`categoryPrompts` 保留給舊版消費端。
 `GET /api/exploration` 是系外／通識相似度清單，與此初始興趣探索流程不同。
 
 ```json
@@ -431,6 +432,8 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
       "term": { "academicYear": 115, "semester": "first" },
       "category": "一般選修",
       "track": "技術應用類",
+      "description": "課程內容摘要",
+      "representativeTags": [{ "canonicalTagId": "tag_ac8bb4d19b34088425b1", "canonicalName": "0365 Copilot" }],
       "tags": [
         {
           "canonicalTagId": "tag_ac8bb4d19b34088425b1",
@@ -445,9 +448,9 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 }
 ```
 
-若使用者只選廣泛主分類，`categoryPrompts` 會列出目前探索卡片中可用的子分類；已經明確選過子分類時不重複追問。選定的子分類作為明確 Profile 主題先驗保存，不會展開成其下所有細標籤。
+`pairs` 是陣列，每一項都是上述格式的兩張卡。新版頁面直接顯示雙卡，不在探索頁加入額外的分類題。
 `emptyReason` 為 `student_scope_unavailable` 時代表 Profile 缺少可確認的系所／年級／班級；
-`no_eligible_courses` 代表目前沒有符合條件的卡片。兩種情況都可略過探索並繼續排課。
+`no_eligible_courses` 代表舊版平面清單沒有合格卡片。新版沒有完整雙卡時 `pairs` 為空，使用者可直接排課。
 課程主題回饋使用既有 `POST /api/interactions` 的
 `interest_exploration_feedback`；未同意選擇性的 `personalization_learning` 時，前端不送出回饋，
 不會阻止使用者繼續操作。
@@ -1631,8 +1634,17 @@ Response：
 - 題幹固定用該組的題幹；有預設文案的方向直接用預設文案，其餘交給語言模型改寫短標題與一句說明。
 - `topics` 是這個方向在候選池裡課程數最多的前 6 個主題名稱，`topicCount` 是總數；只用來說明方向包含什麼（前端顯示「包含主題：…」），**不會被當成已選的具體主題**。
 
-**`stage: "detail"`**：每組作答後的細項頁（2026-11-22 起，三層沙漏的中、小層，ADR-028）。一次送這一組**所有**已選方向，
-後端回傳每個方向的區塊；不呼叫語言模型。
+**`stage: "card"`**：點方向卡時呼叫。傳同樣的班級範圍，另帶
+`direction: { group, categoryId }` 與可省略的 `seenTagIds`（最多 3 個，只用於第二題）。
+回 `question` 與至多三個 `options: [{ tagId, name, title, description }]`，其中 `tagId` 和 `name` 來自候選池。
+有預算分群時優先從各群取代表標籤；找不到分群時依既有標籤順序。`hasMore` 只在第一題還有其他標籤時回 `true`。
+語言模型改寫題幹及文案，遇到逾時、固定模式或回應不符時用原題幹及標籤名。前端確認後沿用 `interestSelections` 保存格式。
+
+**`stage: "detail"`**：中沙漏的方向總覽。一次送這一組**所有**已選方向。
+設定頁另外傳 `layout: "cards"` 以取得 `cardPages`，每頁最多四張 `{ group, categoryId, examples }`，
+候選標籤交集達較小集合的 60% 或同屬軟體、AI、資安、硬體的本系方向分開顯示。
+所有已選且有可用標籤的方向都會出現在其中一頁。方向總覽不呼叫語言模型，點方向才請求 `stage: "card"`。
+回應仍包含原有 `directions` 資料供相容。
 
 ```json
 { "department": "資訊工程學系", "gradeLevel": 3, "className": "資訊三甲", "stage": "detail",
@@ -1708,14 +1720,16 @@ topics: [{ group, categoryId, tagId, name, duplicate }] }`；`available: false` 
 
 更新興趣不會洗掉這個開關，更新開關也不會洗掉興趣。
 
-Profile 另接受 `remainingSemesters`（1～8 的整數或 `null`）：
+為相容既有呼叫端，Profile 仍接受舊欄位 `remainingSemesters`（1～8 的整數或 `null`）：
 
 ```json
 { "remainingSemesters": 3 }
 ```
 
-它保存在 `preferences_json.values.remainingSemesters`。`null` 會刪除明確設定，排課回到
-依年級與 active term 推算；字串 `"3"`、小數、0 與 9 一律回 `400`。
+它保存在 `preferences_json.values.remainingSemesters`。`null` 會刪除該欄位，字串 `"3"`、小數、0 與 9 一律回 `400`。
+設定頁已移除這個輸入。排課結果的 `graduationPlanning.remainingSemesters` 是後端推算值，包含當學期。
+`remainingSemestersSource` 為 `course-history-and-active-term`（歷史修課與入學起點可核對）、
+`grade-and-active-term`（依年級與當期學期回退）或 `unknown`（推算值為 `null`）。舊 Profile 欄位不參與推算。
 
 `gradeLevel`、`targetCreditsMax`、`schemaVersion` 會寫進 `User_Profiles` 的整數欄位，
 只接受正整數或 `null`；字串（包括 `"2"` 這種數字字串）、小數、0、負數、物件一律回 `400`。
@@ -1850,7 +1864,10 @@ Request：
 
 `interested` with an empty tag list means all learning-eligible tags on the displayed course; a
 negative response must list at least one tag the user identified as unwanted. `learn_more` records no
-positive or negative evidence. The server resolves the course's current `rag_tag`, validates the
+positive or negative evidence. 新版雙卡用 `paired_interested`，每門勾選的課程一筆，附上實際顯示的 1～2 個代表標籤。
+同題的事件共用 `requestId`，每門課有自己的 `actionId`；重試時沿用這兩種 ID。每個代表標籤的名義正向證據各為 `+1`，
+沿用現有時間衰減。沒勾選或略過不送事件，舊 `interested` 規則仍按標籤數分攤。
+The server resolves the course's current `rag_tag`, validates the
 selected canonical IDs, checks the user's required-course scope, and stores the versioned tag snapshot
 in `Interaction_Events.tag_interest_snapshot_json`. Clients must not supply that server-owned snapshot.
 Events without a tag snapshot (including pre-feature history) are not used in the rag-tag profile.

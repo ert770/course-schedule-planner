@@ -58,7 +58,7 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 - `rating` 只用於 `course_rated`（1～5）；`interest_feedback_json` 只用於 `interest_exploration_feedback` 與 `history_course_feedback`，保存回應類型與使用者明確選取的 canonical tag IDs（後者恆為空陣列）。兩者與 server 產生的標籤快照一起保留，讓匯出、冪等比較與重算可重現。
 - 舊事件沒有標籤快照時不回頭依今天的目錄猜測；它們仍是 v2 等既有用途的事件，但不會進入 rag-tag 興趣重算。
 - 歷史修課回饋（2026-10-14 起）使用 `history_course_feedback`，`source` 為 `history_review`，回應為 `liked`／`neutral`／`disliked`，針對使用者本人已通過的選修／通識／系外選修（伺服器依修課歷史核對）。不需改表：`event_type`、`source` 皆為 `VARCHAR(32)`，回應存在 `interest_feedback_json`。
-- 初始探索事件使用 `interest_exploration_feedback`，回應為 `interested`／`not_interested`／`learn_more`。明確不感興趣必須列出使用者指定的 `canonicalTagIds`；「想先了解」不產生正負證據。`course_rated` 只把 4～5 分視為正向訊號，低分本身不推定為主題反感。
+- 初始探索事件使用 `interest_exploration_feedback`。新版 `paired_interested` 每門勾選課程一筆，`canonicalTagIds` 放 1～2 個伺服器驗證的代表標籤，快照保留 `feedbackResponse`，讓 S_tag 重算時對每個代表標籤各加 `+1` 後再套衰減。同題的兩門課各自保存。舊 `interested`／`not_interested`／`learn_more` 沿用原持久化與計分方式。`course_rated` 只把 4～5 分視為正向訊號，低分本身不推定為主題反感。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
 - **Roadmap #31**：`academic_year`／`semester` 從這輪起不再只是來源標記，也是
   `preferenceLearning.js` 時間衰減的**實質輸入**——`learnPreferenceWeights()` 用它們
@@ -371,7 +371,7 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 | --- | --- | --- |
 | `must_take_courses` | JSON NULL | `profile.mustTakeCourses`；Profile API 已接讀寫 |
 | `avoid_instructors` | JSON NULL | `profile.avoidInstructors`；持久化並接入排課限制 |
-| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。**Roadmap #23** 另加 `values.remainingSemesters`（1～8 的整數）：使用者明確設定的剩餘學期數；缺少時依年級與 active term 推算。各欄位只接受正式型別，更新時各自只動自己的鍵，互不覆蓋。**課程主題選擇（2026-11-20）** 另加 `values.interestSelections`：陣列，每筆 `{ group, categoryId, level, mode, tagIds }`，`group` 為 `department`／`generalEducation`／`outside`，以 `(group, categoryId)` 為鍵（同名分類在不同組別各自保存，取消一組不影響另一組）；`tagIds` 是使用者確認的標準標籤 ID，之後會合併去重成標籤興趣的先驗。形狀由 `interestPreferences.js` 正規化，是否存在於目錄與是否屬於所選組別由後續的保存驗證處理。**2026-11-22 起（ADR-027）** `tagIds` 只放使用者在課程主題問答中確認的具體主題，方向本身不展開（`tagIds` 可為空，代表只有方向）；新存的 `mode` 一律為 `followup`，舊資料的 `direct` 照舊有效。略過、保留、移除是作答當下的介面狀態，不另存欄位。**3A 的開關只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
+| `preferences_json` | JSON NULL | `profile.preferencesJson`；格式為 `{ schemaVersion: 1, values: {} }`。`values.preferredTrack`、`values.interests`、`values.preferredKeywords` 保存顯式興趣，讀取後映射為同名 profile 頂層欄位。**Roadmap #10 任務 3A** 另加 `values.useLearnedPreference`（布林，預設 `true`）：使用者的「只用我勾的偏好」開關。**Roadmap #23** 另加 `values.remainingSemesters`（1～8 的整數）：舊版使用者手填偏好，保留供舊呼叫端存取。設定頁已移除這個欄位；排課的剩餘學期由歷史修課、入學起點與當期推算，缺少可核對的起點時依年級及當期學期回退。各欄位只接受正式型別，更新時各自只動自己的鍵，互不覆蓋。**課程主題選擇（2026-11-20）** 另加 `values.interestSelections`：陣列，每筆 `{ group, categoryId, level, mode, tagIds }`，`group` 為 `department`／`generalEducation`／`outside`，以 `(group, categoryId)` 為鍵（同名分類在不同組別各自保存，取消一組不影響另一組）；`tagIds` 是使用者確認的標準標籤 ID，之後會合併去重成標籤興趣的先驗。形狀由 `interestPreferences.js` 正規化，是否存在於目錄與是否屬於所選組別由後續的保存驗證處理。**2026-11-22 起（ADR-027）** `tagIds` 只放使用者在課程主題問答中確認的具體主題，方向本身不展開（`tagIds` 可為空，代表只有方向）；新存的 `mode` 一律為 `followup`，舊資料的 `direct` 照舊有效。略過、保留、移除是作答當下的介面狀態，不另存欄位。**3A 的開關只做持久化，尚未被 `getSchedulingPreferenceWeights()` 消費**，接上是 3B 的事 |
 | `password_hash` | varchar(255) NULL | 刻意不搬 `users.json.password` 明碼；雜湊方案另案處理 |
 | `watchlist` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
 | `skill_tree` | JSON NULL | 只建 schema；JSON 資料尚未遷移 |
