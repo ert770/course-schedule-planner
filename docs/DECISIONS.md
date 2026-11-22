@@ -1080,3 +1080,25 @@ Consequences:
 - The cluster file only covers the pools it was built for (currently the four CS Persona classes); other pools fall back to flat lists until the script is rerun for them, and any change in a pool's tags invalidates its entries.
 - The simulated student used the same model as the clusterer, so the A/B is optimistic; human checks of the listed targets are still required.
 - Known mis-groupings (e.g. 演算法) remain until the prompt is revised and the A/B rerun.
+
+
+## ADR-029: Exploration Cards Rank by Questionnaire Selections Only
+
+Date: 2026-11-22
+
+Context:
+
+The paired-card exploration (`GET /api/interest-exploration/cards`) ranked candidate courses by topic relevance computed from the legacy free-text fields `interests` and `preferredKeywords`, resolved by name. After the course-topic questionnaire (ADR-027, ADR-028) students record their interests as `interestSelections` (direction ids plus ticked canonical tag ids), which the exploration ranking never read, so a student who only answered the questionnaire got the same cards as a student who answered nothing.
+
+Decision:
+
+- Topic relevance reads only `interestSelections`, matched by id: +2 for each course tag the student ticked, +1 for each course category path inside a selected direction (main category or subcategory, including the curated AI option's subcategory), +1 for the preferred track. Terms stack.
+- The user decided (2026-11-22) that the legacy keyword fields no longer influence exploration relevance. They stay stored and are still read by S_tag and the scheduler.
+- Directions only order the exploration cards; they never become scores (scoring stays option A: only ticked tags score).
+- Ties are still broken by s_vec, then course code; the pairing step is unchanged.
+
+Consequences:
+
+- Accounts with only legacy keywords and no questionnaire answers get exploration cards in s_vec / course-code order.
+- s_vec itself still reads the legacy keywords, so they can still affect tie-breaking until the s_vec pipeline step is done.
+- `buildInterestCategoryPrompts` still reads legacy keywords; the client stopped reading `categoryPrompts`, so it is left as is pending a separate decision.

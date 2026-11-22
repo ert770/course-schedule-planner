@@ -4,6 +4,8 @@
 
 ## 2026-11-22
 
+- [課程主題問答接管線：S_tag 段（服務層測試與排課實測）](./2026-11-22-interest-pipeline-s-tag.md)
+- [課程主題問答接管線第 1 段：探索卡依問答結果挑課](./2026-11-22-interest-pipeline-exploration-cards.md)
 - [課程主題問答：三層沙漏細項頁（預算分群、熱門、搜尋）](./2026-11-22-interest-questionnaire-funnel-detail-page.md)
 - [課程主題問答 v1 第一階段：出題服務、取消自動展開、設定頁問答；歷史修課視窗全部展開](./2026-11-22-interest-questionnaire-v1-stage1.md)
 

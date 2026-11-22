@@ -8,6 +8,7 @@ import {
 import { getPassedCourseCodes } from '../data/courseHistory.js';
 import { isSeriesLevelReachable, passedSeriesLevels } from '../data/courseSeries.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
+import { resolveInterestSelections } from '../data/interestSelections.js';
 import { getUserPreferences } from './memoryService.js';
 import { filterCategorizedCourses } from '../skills/courseQuery.js';
 import { CATEGORY_REQUIRED } from '../skills/courseCategory.js';
@@ -28,12 +29,28 @@ function hasSchedule(course) {
     || Boolean(course.dayOfWeek);
 }
 
+// 探索卡挑課的主題意圖只讀課程主題問答的結果（`interestSelections`，依 ID）。
+// 2026-11-22 使用者決定：舊的文字欄位（interests／preferredKeywords）不再影響探索卡（ADR-029）；
+// 它們仍由 S_tag 與排課讀取。
+//   - topicIds：學生勾選的具體標籤。
+//   - mainCategoryIds／subcategoryIds：學生選的方向。只用來排探索卡順序，不寫進任何分數。
 function topicIntent(profile = {}) {
   const preferences = readInterestPreferences(profile);
-  const terms = [...new Set([...preferences.interests, ...preferences.preferredKeywords])];
-  const topicIds = new Set(resolveInterestTags(terms).tags.map(tag => tag.canonicalTagId));
-  const categoryNames = new Set(terms.map(value => String(value).trim().toLocaleLowerCase()));
-  return { topicIds, categoryNames, preferredTrack: preferences.preferredTrack };
+  const selected = resolveInterestSelections(preferences.interestSelections);
+  const topicIds = new Set(selected.tags.map(({ tag }) => tag.id));
+  const mainCategoryIds = new Set(selected.categories
+    .filter(category => category.type === 'main')
+    .map(category => category.mainCategoryId));
+  const subcategoryIds = new Set(selected.categories
+    .filter(category => category.type === 'subcategory')
+    .map(category => category.subcategoryId));
+  return { topicIds, mainCategoryIds, subcategoryIds, preferredTrack: preferences.preferredTrack };
+}
+
+// 一條分類路徑落在學生選的方向（大類或子類）就算命中一次。
+function matchesSelectedDirection(path, intent) {
+  return intent.mainCategoryIds.has(path.mainCategoryId)
+    || (Boolean(path.subcategoryId) && intent.subcategoryIds.has(path.subcategoryId));
 }
 
 function categoryPathKey(path) {
@@ -107,9 +124,7 @@ export function buildInterestExplorationCards(courseSections, profile = {}, opti
       const categoryPaths = [...new Map(tags.flatMap(tag => tag.categoryPaths)
         .map(path => [categoryPathKey(path), path])).values()];
       const directMatches = tags.filter(tag => intent.topicIds.has(tag.canonicalTagId)).length;
-      const categoryMatches = categoryPaths.filter(path => (
-        intent.categoryNames.has(String(path.mainCategory ?? '').trim().toLocaleLowerCase())
-      )).length;
+      const categoryMatches = categoryPaths.filter(path => matchesSelectedDirection(path, intent)).length;
       byCourse.set(courseCode, {
         card: publicCard(course, tags),
         tags,
