@@ -1189,3 +1189,26 @@ Consequences:
 - Persona trial: "start from a course" went from 1478 to 311 listed items across 11 accounts, and many starting courses now show no result (e.g. D0009004 from 3 to 18 of 23). Profile mode changed one item for 3 of 11 accounts.
 - Remaining borderline pairs (e.g. 電子商務安全 → 社會創業力或利 via 社會問題 at 0.453) are accepted; the thresholds were tuned by hand on this trial and have no user study behind them.
 - The TF-IDF functions in `skills/courseExploration.js` (tokenizer, index, cosine, shared phrases) were deleted with their tests (user decision 2026-11-23); only the per-unit selection `rankSerendipitous` remains and now requires a caller-supplied similarity.
+
+## ADR-034: Integrate Student Registration and MyFCU History Import from the Teammate's Branch
+
+Date: 2026-11-23
+
+Context:
+
+A teammate delivered `feature/myfcu-session-import` (commit 1d9db09) as a bundle with no shared git history: student registration with argon2id passwords, a Windows-local MyFCU capture, a session-bound snapshot, a read-only preview and a transactional history import. A read-only check showed migrations 010–015 were already applied to the shared MySQL. Three conflicts with the team code were found: the source login only verified MySQL password hashes, so demo and Persona accounts (student id but no hash) could no longer log in; imported rows have NULL requirement and graduation categories, which the team's history reader rejected (the whole history failed to load) and the source reader silently dropped; and the de-duplication merged same-name, same-score rows across semesters.
+
+Decision (user decisions on 2026-11-23):
+
+- Port feature by feature onto a branch from the latest main; never overwrite team files with the older source snapshot. Migrations 010–015 are copied for the record only and not re-run.
+- A(1): when a MySQL account has no password hash, outside production the login falls back to `users.json`. Legacy JSON auth is on by default outside production and can be disabled with `ALLOW_LEGACY_JSON_AUTH=false`; it is always off in production.
+- B(a): when reading history, skip rows without a catalogue code or a determinable pass state, and fill NULL categories from the course code and curriculum (`classifyHistoryEntryByCurriculum`), defaulting to 未確認／unspecified. Nothing is written back.
+- C: merge same-name rows only within the same academic year and semester.
+- Playwright is not added to `package.json`; it is lazily required only for real MyFCU capture and is installed separately when that is run.
+
+Consequences:
+
+- The teammate's imported account loads 39 usable rows (16 rows without a catalogue code are excluded) instead of failing.
+- Registration writes new accounts to the shared database; it was verified only up to client-side validation, not by creating an account.
+- The 10 `1804…` accounts still have no student id, password or history and cannot log in; the participant-study plan is unchanged for now (user decision D: leave it).
+- Real MyFCU capture, the mock capture page and Playwright-based tests were not run in this integration.

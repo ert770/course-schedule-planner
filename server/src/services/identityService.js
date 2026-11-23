@@ -31,6 +31,13 @@
 // 對不到就回傳 `found: false` 讓呼叫端回 404，不得退回 `default` 使用者。
 
 import { getAll } from '../db/database.js';
+import { isMysqlConfigured, queryRows } from '../db/mysql.js';
+// users.json 的舊帳號（demo D1249697、Persona D0009001～D0009010）只在非 production 使用。
+// 整合 MyFCU 註冊時（2026-11-23）決定：非 production 預設開啟，設 ALLOW_LEGACY_JSON_AUTH=false 可關閉；
+// 這些帳號在 MySQL 有學號但沒有密碼雜湊，登入時退回 users.json 核對（見 routes/auth.js）。
+export function legacyAuthEnabled() {
+  return process.env.NODE_ENV !== 'production' && process.env.ALLOW_LEGACY_JSON_AUTH !== 'false';
+}
 
 function sameId(left, right) {
   return String(left) === String(right);
@@ -48,7 +55,8 @@ export function isNumericId(value) {
 export function identityMatchesUser(user, identity) {
   if (!user || !identity?.found) return false;
   const studentId = normalizedStudentId(user.studentId);
-  if (studentId !== null && sameId(studentId, identity.canonicalId)) return true;
+  if (studentId !== null) return sameId(studentId, identity.canonicalId);
+  if (identity.source === 'mysql') return false;
   return user.id !== undefined
     && identity.numericId !== null
     && sameId(user.id, identity.numericId);
@@ -105,7 +113,20 @@ export function resolveIdentityFrom(users = [], rawId) {
 
 // 所有 route 都應在邊界呼叫這一支，之後只傳 canonical identity。
 export async function resolveIdentity(rawId) {
-  return resolveIdentityFrom(await getAll('users'), rawId);
+  const key = String(rawId ?? '').trim();
+  if (!key || key === 'default') return { found: false, reason: 'missing' };
+  if (isMysqlConfigured()) {
+    const rows = await queryRows('SELECT user_id, student_id FROM User_Profiles WHERE student_id = ? LIMIT 1', [key]);
+    if (rows.length) { const row = rows[0]; return { found: true, canonicalId: row.student_id, studentId: row.student_id, numericId: String(row.user_id), canWriteMysqlProfile: true, source: 'mysql' }; }
+  }
+  if (!legacyAuthEnabled()) return { found: false, reason: 'unknown-user' };
+  const identity = resolveIdentityFrom(await getAll('users'), key);
+  if (!identity.found) return identity;
+  if (isMysqlConfigured() && identity.numericId) {
+    const rows = await queryRows('SELECT student_id FROM User_Profiles WHERE user_id = ? LIMIT 1', [identity.numericId]);
+    if (rows[0]?.student_id && rows[0].student_id !== identity.studentId) return { found: false, reason: 'identity-conflict' };
+  }
+  return { ...identity, source: 'legacy' };
 }
 
 // route 共用的錯誤回應。把「沒帶身分」與「帶了但查無此人」分開，

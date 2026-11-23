@@ -2192,3 +2192,64 @@ Response:
   "error": "錯誤訊息"
 }
 ```
+
+# 學生註冊與 MyFCU 歷史修課匯入（2026-11-23 移植）
+
+> 以下各節自 `feature/myfcu-session-import`（commit 1d9db09）移植，整合決定見 ADR-034。團隊整合時的調整：
+>
+> - `POST /auth/login`：MySQL 有帳號且有 argon2id 雜湊時只驗雜湊；**沒有雜湊**（demo D1249697、Persona D0009001～D0009010）時，非 production 退回 `users.json` 核對。`ALLOW_LEGACY_JSON_AUTH=false` 可關閉退回；production 一律關閉。
+> - `GET /api/course-history`：列出目前 Session 帳號的全部歷史修課（含未匹配課號的列）。
+> - 推薦、排課與畢業計算讀取歷史修課時，略過沒有課號或成績無法判讀的列；修別與畢業分類為 NULL 時依課號與科目表補分類，對不上為「未確認／unspecified」，不寫回資料庫。
+> - 同課名同成績只在**同一學年、同一學期**合併；不同學期（重修）各留一筆。
+> - `GET /api/controlled-browser/*` 在本機 MyFCU 模式未開啟時一律 404；首頁視為未開放，不顯示錯誤。
+
+## 學生註冊（本機實作）
+
+- `GET /auth/register-options`：回傳系所及其既有班級簡稱；行政班別依年級固定選擇。
+- `POST /auth/register`：接收 `studentId`、`name`、`department`、`gradeLevel`、`className`、`password`、`confirmPassword`。密碼須為 8 至 1024 位英文字母或數字；成功回 201，不回傳密碼或雜湊。失敗可能為 400、409、429 或 503。
+- 生產環境只接受 MySQL Argon2id；舊 JSON 登入僅在非 production 且明確設定 `ALLOW_LEGACY_JSON_AUTH=true` 時啟用。舊帳號需受控核對學號與 Profile 對照，再以安全流程設定 Hash，否則不能在 production 登入；本次不執行回填或資料庫寫入。
+- Argon2id 使用 Node.js 內建 `crypto.argon2`；已在 Node 26 驗證，部署前須確認執行環境支援此 API。註冊限流為單程序記憶體計數，多程序部署需要外部共用限流機制。
+
+## 本機受控瀏覽器模擬（開發模式）
+
+僅於 `CONTROLLED_BROWSER_MOCK=true` 且非 production 開啟，後端限定 loopback，且伺服器綁定 `127.0.0.1`。除虛構 mock 頁外，工作階段 API 均要求現有 Session 及服務同意，並以帳號及 Session cookie 綁定工作階段。`POST /api/controlled-browser/sessions` 接受 `{consent:true}`；`GET /sessions/:id` 讀狀態、`GET /sessions/:id/frame` 讀畫面、`POST /sessions/:id/input` 送受限的點擊或按鍵、`DELETE /sessions/:id` 關閉。沒有任意網址、資料庫匯入或真實 MyFCU 支援。
+
+工作階段五分鐘逾時；取消、登出、逾時與擷取結束會關閉 context。只供單機測試，不適合部署。受控瀏覽器伺服器能接觸輸入內容，禁止輸入真實帳密。實體手機與電腦是不同裝置時無法跨 loopback 連線。
+
+## 受控瀏覽器輸入與真實模式準備
+
+Mock 畫面支援點擊後鍵盤橋接及輸入法組字；輸入僅用於本次受控操作，不應記錄。預覽依課號、學年、學期去重並保留衝突與重修。登出會銷毀 Session 對應的 context。
+
+`CONTROLLED_BROWSER_REAL_TEST` 僅用於離線網址與模式隔離檢查，沒有真實登入 API、瀏覽入口或外連。此開關與 `CONTROLLED_BROWSER_MOCK` 不可同時啟用；真實 MyFCU 使用前仍需安全審查與獨立的網路、身分和憑證處理設計。
+
+### 本機受控瀏覽器公開頁測試
+
+`POST /api/controlled-browser/sessions` 的回應新增 `mode`（`mock` 或 `real`）；由伺服器啟動設定決定，不接受請求指定。`real` 僅在 `CONTROLLED_BROWSER_REAL_TEST=true`、Mock 關閉、非正式環境且無 MySQL 設定時啟用。既有 Session、同意與 loopback 限制仍適用；真實公開頁僅供截圖檢視，任何輸入及受保護頁面均禁止。
+
+`GET /api/controlled-browser/config` 回傳伺服器目前模式 `{mode:"mock"|"real"}`，受既有本機、Session 及隱私同意保護；前端不指定模式。工作階段建立失敗時可能回傳安全分類 `code`，包含 `NAVIGATION_BLOCKED`、`DNS_ERROR`、`TLS_ERROR`、`TIMEOUT`、`PLAYWRIGHT_MISSING`、`SECURITY_FEATURE_UNAVAILABLE`、`BROWSER_LAUNCH_FAILED`、`BROWSER_SETUP_FAILED`、`NAVIGATION_FAILED` 及 `HTTP_ERROR`，不回傳原始例外或網址。
+
+公開頁工作階段新增隨機短效 `grant`：建立回應交給前端記憶體，後續 state、frame、input、cancel 請求以 `X-Controlled-Grant` 傳遞；後端只保留雜湊，並同時驗證登入身分及原始 Session。取消、登出或到期移除授權；有效期限不超過系統 Session。Mock 模式保持原契約。此機制不能撤銷外洩的系統 Session Cookie。
+
+### 修課紀錄 JSON 確認匯入
+
+`POST /api/course-history-import/preview` 與 `/commit` 的正式路徑目前一律關閉：前端聲明不能證明 MyFCU 身分，尚未有伺服器端核對機制。僅隔離 fixture 可測試預覽與寫入。匯入核心拒絕前端指定 user_id、要求本人聲明通過狀態與分類，未知成績可為 null；交易內鎖定並核對 Profile、重新比對，衝突拒絕、重複跳過。原始學分記錄需經核准套用 migration 011 後才可保存。
+
+僅在測試環境、Mock、loopback、無 MySQL、指定 fixture 帳號且 `COURSE_HISTORY_IMPORT_FIXTURE=true` 時提供隔離記憶體替身，重啟後清空；不得與正式匯入或真實公開頁測試混用。
+
+### 隔離 MySQL E2E（僅測試）
+
+`ISOLATED_HISTORY_MYSQL_E2E=true` 只有在 `NODE_ENV=test`、Mock 開啟、真實模式關閉、MySQL 為 loopback 的 `33160` 或測試腳本明確指定的臨時埠、專用 `history_test` 帳號、隨機 `codex_history_` 測試資料庫且無 CA 設定時可啟動；後端綁定 loopback，且不載入專案環境檔。虛構登入身分必須與伺服器 Session 的兩個 fixture 身分之一一致，匯入資料來源須與該工作階段的擷取結果相符。這不是正式 MyFCU 身分驗證，正式匯入與真人入口仍關閉。
+
+### Windows 本機 MyFCU 預覽（非正式匯入）
+
+非 production 的 Windows 開發模式可明確設定 `LOCAL_MYFCU_PREVIEW=true`，不得與 Mock、公開頁、本人受控或隔離 MySQL E2E 模式同時啟用；後端綁定 loopback。沿用 `/api/controlled-browser/config` 與 sessions，模式為 `local`，同意後由本機非持久化 Chrome 視窗讓本人操作；Session、短效 grant 和 cookie 均由後端核對，取消、登出或逾時會終止。受攔截的頁面請求僅允許官方 HTTPS 同源、確認的主框架路徑及固定 banner iframe；WebSocket、WebRTC、WebTransport 與 service worker 關閉。取得的修課資料僅在記憶體供預覽，MyFCU 身分仍未驗證，正式匯入維持封鎖。此模式尚未通過真實網站及完整安全驗收。
+
+Chrome 背景網路行為及異常退出時作業系統暫存尚未完整驗證；不得將頁面層攔截視為系統層防火牆。
+# 本機自行聲明修課來源（隔離測試）
+
+本機預覽設定啟用 `localSelfAttested` 時，可由同一個登入 Session 的使用者確認擷取來源及修課結果後呼叫既有匯入 API。此為學生聲明，並非校方身分驗證。後端僅接受該 Session 尚未逾時的完整擷取結果，使用 Session 的 numericId，禁止前端指定使用者。此模式僅限 Windows 非 production、loopback 及專用的 127.0.0.1:33160 隔離測試庫；正式匯入身分驗證阻擋不變。
+# 本機修課資料自動匯入
+
+`POST /api/course-history-import/auto` 僅限受限制的本機自行聲明模式，使用目前 Session 並從伺服器端已完成的擷取工作階段取得資料，不接受使用者或課程資料。以來源課號及課名精確對照 `Courses.subid3` 與 `Courses.name`，不以班級或學期匹配；同一課號、課名的不同班次視為同一代碼。缺課號、目錄缺課或課名不符時，完整來源紀錄保存於歷史表且 catalog 為 NULL，不覆蓋既有紀錄。回傳新增、重複跳過、未匹配及其中衝突筆數；此聲明不是官方身分驗證。
+
+使用 migration 015 後，新匯入的未匹配紀錄改為保存在歷史表，`catalog_course_code` 為 NULL，原始課號保存在 `source_course_code`。明確數字成績依 `score > 60` 計算通過，其餘未知為 NULL；原有待查表資料保留。正式身分驗證限制不變。

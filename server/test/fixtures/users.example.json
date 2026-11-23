@@ -1,0 +1,156 @@
+[
+  {
+    "id": 1,
+    "studentId": "D8800005",
+    "password": "SyntheticPass1",
+    "name": "虛構使用者1",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 2,
+    "studentId": "D8900001",
+    "password": "SyntheticPass2",
+    "name": "虛構使用者2",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 3,
+    "studentId": "D8900002",
+    "password": "SyntheticPass3",
+    "name": "虛構使用者3",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 4,
+    "studentId": "D8800004",
+    "password": "SyntheticPass4",
+    "name": "虛構使用者4",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9001,
+    "studentId": "D8800006",
+    "password": "SyntheticPass5",
+    "name": "虛構使用者5",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9002,
+    "studentId": "D8900005",
+    "password": "SyntheticPass6",
+    "name": "虛構使用者6",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9003,
+    "studentId": "D8900006",
+    "password": "SyntheticPass7",
+    "name": "虛構使用者7",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9004,
+    "studentId": "D8900007",
+    "password": "SyntheticPass8",
+    "name": "虛構使用者8",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9005,
+    "studentId": "D8900008",
+    "password": "SyntheticPass9",
+    "name": "虛構使用者9",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9006,
+    "studentId": "D8900009",
+    "password": "SyntheticPass10",
+    "name": "虛構使用者10",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9007,
+    "studentId": "D8900010",
+    "password": "SyntheticPass11",
+    "name": "虛構使用者11",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9008,
+    "studentId": "D8900011",
+    "password": "SyntheticPass12",
+    "name": "虛構使用者12",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9009,
+    "studentId": "D8900012",
+    "password": "SyntheticPass13",
+    "name": "虛構使用者13",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 9010,
+    "studentId": "D8900013",
+    "password": "SyntheticPass14",
+    "name": "虛構使用者14",
+    "className": "資訊二甲",
+    "watchlist": [],
+    "skillTree": {},
+    "overallScore": 0,
+    "overallScoreMax": 100
+  }
+]

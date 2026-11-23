@@ -9,6 +9,7 @@ import { tagsToFlags, extractTags } from '../data/preferenceTags.js';
 import { logger } from '../utils/logger.js';
 import { createTtlCache } from '../utils/ttlCache.js';
 import { validateCourseHistoryEntry } from '../data/courseHistory.js';
+import { classifyHistoryEntryByCurriculum } from '../data/courseHistoryClassification.js';
 import { normalizeAdmissionYear } from '../data/graduationRuleVersions.js';
 import { resolveMinCredits } from '../data/creditPolicy.js';
 import { normalizeCourseGradeLevel } from '../data/courseGradeLevel.js';
@@ -373,6 +374,32 @@ export function mapCourseHistoryRow(row) {
   return entry;
 }
 
+// MyFCU 匯入的修課紀錄（migration 013 起欄位可為 NULL）：
+//   - 沒有對到課號（`catalog_course_code` NULL）或成績無法判讀（`passed` NULL）的列不進推薦與畢業計算；
+//     它們仍留在資料庫，歷史修課列表（courseHistoryListService）看得到。
+//   - 修別與畢業分類為 NULL 的列，讀取時依課號與科目表補分類（classifyHistoryEntryByCurriculum），
+//     對不上就是「未確認／unspecified」，與 Markdown 匯入的未分類相同；不寫回資料庫。
+export function isUsableHistoryRow(row) {
+  return row?.catalog_course_code !== null && row?.catalog_course_code !== undefined
+    && row?.passed !== null && row?.passed !== undefined;
+}
+
+export function fillMissingHistoryCategories(row) {
+  const missingRequirement = row.requirement_type === null || row.requirement_type === undefined;
+  const missingGraduation = row.graduation_category === null || row.graduation_category === undefined;
+  if (!missingRequirement && !missingGraduation) return row;
+  const classified = classifyHistoryEntryByCurriculum({
+    courseCode: row.catalog_course_code,
+    courseName: row.course_name,
+    generalEducationCategory: row.general_education_category ?? null,
+  });
+  return {
+    ...row,
+    requirement_type: missingRequirement ? (classified?.requirementType ?? '未確認') : row.requirement_type,
+    graduation_category: missingGraduation ? (classified?.graduationCategory ?? 'unspecified') : row.graduation_category,
+  };
+}
+
 export async function getUserCourseHistory(identity) {
   if (!isMysqlConfigured()) {
     throw new CourseHistoryUnavailableError('歷史修課只能來自 MySQL，但目前未設定資料庫連線。');
@@ -392,7 +419,7 @@ export async function getUserCourseHistory(identity) {
       WHERE \`user_id\` = ?
       ORDER BY \`academic_year\`, \`semester\`, \`history_id\`
     `, [numericId]);
-    return rows.map(mapCourseHistoryRow);
+    return rows.filter(isUsableHistoryRow).map(row => mapCourseHistoryRow(fillMissingHistoryCategories(row)));
   } catch (err) {
     if (err instanceof CourseHistoryUnavailableError) throw err;
     throw new CourseHistoryUnavailableError('歷史修課資料暫時無法載入，請稍後再試。', { cause: err });

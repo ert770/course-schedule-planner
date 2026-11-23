@@ -1,0 +1,1 @@
+{"records":[{"courseCode":"TEST1001","courseName":"虛構課程甲","academicYear":112,"semester":1,"credits":3,"score":55,"passed":false,"requirementType":"必修","graduationCategory":"required"},{"courseCode":"TEST1001","courseName":"虛構課程甲","academicYear":112,"semester":2,"credits":3,"score":80,"passed":true,"requirementType":"必修","graduationCategory":"required"}]}

@@ -4,6 +4,7 @@
 
 ## 2026-11-23
 
+- [整合隊友的學生註冊與 MyFCU 歷史修課匯入（ADR-034）](./2026-11-23-integrate-myfcu-history.md)
 - [探索頁主題門檻：停用「共同用詞」、要求相同主題與最低分數（ADR-033）](./2026-11-23-explore-topic-gate.md)
 - [探索頁逐課檢查：D1249697 從一門課出發與修課輪廓](./2026-11-23-explore-page-audit-D1249697.md)
 - [移除舊的文字興趣欄位 interests／preferredKeywords（先轉移再刪除）](./2026-11-23-remove-legacy-interest-fields.md)

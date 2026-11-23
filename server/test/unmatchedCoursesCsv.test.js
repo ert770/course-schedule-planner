@@ -1,0 +1,4 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,readFile,rm} from 'node:fs/promises';import os from 'node:os';import path from 'node:path';import {formatUnmatchedCsv,writeUnmatchedCsv} from '../scripts/unmatchedCoursesCsv.mjs';
+test('exports requested fields as safe UTF-8 CSV without overwriting an existing report',async()=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'unmatched-csv-'));try{const rows=[{catalog_course_code:null,academic_year:112,semester:1,reason:'not_found',source_payload:{courseName:'虛構,課程',sourceClassName:'虛構班',sourceCourseCode:'=X'}}];const csv=formatUnmatchedCsv(rows);assert.match(csv,/虛構,課程/);assert.match(csv,/'=X/);const first=await writeUnmatchedCsv(dir,rows),second=await writeUnmatchedCsv(dir,[]);assert.notEqual(first,second);assert.equal(await readFile(first,'utf8'),csv);assert.match(await readFile(second,'utf8'),/課程名稱/);}finally{await rm(dir,{recursive:true,force:true});}
+});
