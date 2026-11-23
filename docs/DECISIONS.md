@@ -1166,3 +1166,26 @@ Consequences:
 - 11 of the 21 accounts were migrated. The other 10 (`1804…`, no `student_id`, not in `users.json`) cannot be written through the profile path, which looks rows up by student id; the user decided (2026-11-23) to leave them untouched because they are reserved for real-user testing. Their legacy keys remain in MySQL but the code no longer reads them, so those accounts have no explicit interest until the testers answer the questionnaire.
 - The answer-faithfulness audit treated quoted feature and topic names (「課程主題問答」, 「資訊安全」 after 勾選 or before 帶入) as fabricated course names and replaced the Agent's questionnaire guidance with a fallback; those quotes are now exempt, and fabricated course names in quotes are still flagged (test F30d).
 
+
+## ADR-033: Explore Page Requires a Shared Topic Tag and a Minimum Score; Drop the Lexical Mode
+
+Date: 2026-11-23
+
+Context:
+
+A per-course audit of the explore page for D1249697 (`docs/CHANGE_REPORTS/2026-11-23-explore-page-audit-D1249697.md`) found that "start from a course" recommended unrelated courses in both representations. The lexical mode (character-bigram TF-IDF, shown as「共同用詞」) has no lower bound and fills all five slots from fragments such as「網站」「理學」(median similarity 0.048). The semantic mode (0.7 × text-embedding cosine + 0.3 × tag soft cosine, gated on one identical tag) let 70% of its items in on a single generic or tool tag (Python, 系統設計, 互動設計, Microsoft Teams). The profile mode occasionally listed a course matched only through the tag-neighbour table.
+
+Decision (user decisions on 2026-11-23, after a Persona trial on 11 accounts):
+
+- Remove the lexical mode. `representation` accepts only `embedding`; `tfidf` returns 400. The front-end toggle is removed.
+- A candidate qualifies only if it shares at least one topic tag with the starting course. Not topics: named software (catalogue subcategory「具名軟體」plus Microsoft Teams), course format (main categories「課程活動與評量」「學習階段與課程情境」plus a hand-listed set such as 實作, 小組討論, 教育), and too_common tags (`crossCourseMatchEligible=false`).
+- The combined score must be at least 0.40; when every shared topic tag is generic (present in 13 or more departments, about the top 10% of cross-eligible tags) it must be at least 0.45 (user chose this over listing generic tags as non-topics).
+- Fewer than five, or zero, results are shown as such with an explanation; slots are not filled with weaker courses.
+- Zero-credit courses (班級活動, calculus recitations) and courses without a text vector or tags cannot be a starting course.
+- Profile mode requires at least one tag identical to the user vector (too_common allowed, tool and format tags not); reasons always show an identical tag.
+
+Consequences:
+
+- Persona trial: "start from a course" went from 1478 to 311 listed items across 11 accounts, and many starting courses now show no result (e.g. D0009004 from 3 to 18 of 23). Profile mode changed one item for 3 of 11 accounts.
+- Remaining borderline pairs (e.g. 電子商務安全 → 社會創業力或利 via 社會問題 at 0.453) are accepted; the thresholds were tuned by hand on this trial and have no user study behind them.
+- The TF-IDF functions in `skills/courseExploration.js` (tokenizer, index, cosine, shared phrases) were deleted with their tests (user decision 2026-11-23); only the per-unit selection `rankSerendipitous` remains and now requires a caller-supplied similarity.

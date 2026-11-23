@@ -682,8 +682,9 @@ persona），K=1 的方案集合與推薦方案必須完全相同——候選之
 
 | 檔案 | 覆蓋內容 |
 | --- | --- |
-| `courseExploration.test.js` | EX1 斷詞：中文 bigram、英數 term、標點不跨接、去套語、含虛詞的 bigram 不計。EX2 tf-idf：`tf × ln(N/df)` 與 cosine 的手算對照；高 df term 排除；同課號多班次只算一份文件；無說明或無課號不進索引。EX3 式 (4)：每個 unit 只出一門且是 cosine 最大者；cosine 為 0 不列入；k 截斷；`unitOf` 回 `null` 時不分散；**打亂輸入 30 次結果相同**；平手依課號。EX4 共同字詞：只回傳兩份原文都真的出現過的片語；通用句型不列出 |
-| `explorationService.test.js` | 課程與 profile 皆注入，不連 MySQL。XS1 起點與候選分開：本學期沒開的已修課仍可當起點；非當學期班次即使最相似也不推薦；任何學期都查不到說明 → `no-description`；非已通過的課不能當起點。XS2 預設起點取成績最高的本系課並標 `system-default`；無修課紀錄與無可用起點的空狀態。XS3 已通過、無上課時間、機械條件不認列、本系課都不出現。XS4 認列狀態：`needs-office-confirmation`、`unchecked`（不支援的系所）、通識帶領域與規則版本。XS5 同課號多班次合成一筆、班次物件欄位完整、**原樣送進 `validateScheduleAgainstConstraints()` 不因缺欄位被誤判**。XS6 通識有領域時每領域至多一門；沒有領域時不分散。XS7 TTL 快取。XS8 回應不含內部向量 |
+| `courseExploration.test.js` | EX3 式 (4)：每個 unit 只出一門且是相似度最大者；相似度 ≤ 0 不列入；k 截斷；`unitOf` 回 `null` 時不分散；**打亂輸入 30 次結果相同**；平手依課號；呼叫端的門檻回 0 時不列；沒給 `similarityOf` 直接報錯。（EX1 斷詞、EX2 tf-idf、EX4 共同字詞已隨「共同用詞」於 2026-11-23 移除，ADR-033） |
+| `explorationService.test.js` | 課程、profile 與文字向量皆注入，不連 MySQL。XS1 起點與候選分開：本學期沒開的已修課仍可當起點；非當學期班次即使最相似也不推薦；沒有文字向量 → `no-text-embedding`、沒有主題標籤 → `no-course-tags`、0 學分課 → `zero-credit-course`（指定時回空狀態 `favorite-*`）；非已通過的課不能當起點。XS2 預設起點取成績最高的本系課並標 `system-default`；無修課紀錄、無可用起點、文字向量不可用的空狀態；`representation=tfidf` 回 400。XS3 已通過、無上課時間、機械條件不認列、本系課都不出現。XS4 認列狀態：`needs-office-confirmation`、`unchecked`（不支援的系所）、通識帶領域與規則版本。XS5 同課號多班次合成一筆、班次物件欄位完整、**原樣送進 `validateScheduleAgainstConstraints()` 不因缺欄位被誤判**。XS6 通識有領域時每領域至多一門；沒有領域時不分散。XS7 TTL 快取。XS8 回應帶門檻方法說明、不含內部向量、`commonTags` 只列入選依據。XS9 修課輪廓模式：至少一個完全相同的標籤，只靠相近、工具或上課方式標籤的課不列，理由列出完全相同的標籤。XS10（ADR-033）文字向量排序；只有工具或上課方式標籤相同的課不列；分數 0.37 不列、0.44 列，只靠籠統標籤時 0.44 不列、0.51 列 |
+| `explorationTagGate.test.js` | EG1 標籤四類：具名軟體與 Microsoft Teams 為工具（Python 先算工具）、課程活動與評量／學習階段主類與手列標籤為上課方式、太常見、主題。EG2 只有主題類算相同主題；出現在 ≥ 13 個系所的標籤門檻 0.45。EG3 修課輪廓的完全相同標籤：太常見可以，工具與上課方式不行 |
 | `interactionEventSchema.test.js` EXP1 | `course_selected` 帶 `source: exploration` 可通過驗證並被保留 |
 | `client/src/services/selectionSource.test.js` | 加入課表的事件來源：只接受 `exploration` 覆寫；其他覆寫值一律忽略；本人必修不被改標 |
 

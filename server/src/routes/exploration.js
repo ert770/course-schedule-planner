@@ -16,7 +16,8 @@ router.get('/', requireIdentity, requireServiceConsent, async (req, res) => {
     const favoriteCourseCode = typeof req.query.favoriteCourseCode === 'string'
       ? req.query.favoriteCourseCode
       : undefined;
-    const representation = req.query.representation ?? 'tfidf';
+    // 只剩語意相似（embedding）一種比較方式；省略即可，舊值 tfidf 會回 400（ADR-033）。
+    const representation = typeof req.query.representation === 'string' ? req.query.representation : undefined;
     res.json(await exploreForUser(req.identity, { favoriteCourseCode, representation }));
   } catch (err) {
     if (!err.status) console.error('Exploration error:', err);

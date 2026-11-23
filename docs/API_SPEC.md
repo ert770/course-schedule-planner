@@ -1950,44 +1950,64 @@ Response：
 
 ### `GET /api/exploration`（Roadmap #10 任務 4）
 
-系外與通識探索清單。從一門已修過的課出發，依課程說明的文字相似度列出系外選修與通識，
+系外與通識探索清單。從一門已修過的課出發，列出內容相近、且和它有相同主題的系外選修與通識，
 每個系所／通識領域只出一門（Pardos & Jiang 2020，規則見 `docs/SCHEDULING_LOGIC.md`）。
 **唯讀**：不寫互動事件，也不影響 `POST /api/schedule/generate` 的結果。需登入與 service consent。
 
-Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `available: true` 的課號。
-省略時由系統取成績最高、有說明的本系課。
+Query：
+
+- `favoriteCourseCode`（選填）。必須是使用者已通過的課號。省略時由系統取成績最高、可用的本系課。
+- `representation`（選填）。只接受 `embedding`；省略即可。2026-11-23 起「共同用詞」（`tfidf`）已停用
+  （ADR-033），傳 `tfidf` 或其他值回 `400 INVALID_EXPLORATION_REPRESENTATION`。
 
 ```json
 {
-  "favorite": { "courseCode": "IECS3059", "name": "人工智慧導論", "source": "user" },
+  "mode": "favorite",
+  "favorite": { "courseCode": "IEE1005", "name": "線性代數", "source": "user" },
   "favorites": [
-    { "courseCode": "IECS3059", "name": "人工智慧導論", "score": 80, "available": true },
-    { "courseCode": "CHIN1065", "name": "中文思辨與表達(一)", "score": 79,
-      "available": false, "reason": "no-description" }
+    { "courseCode": "IEE1005", "name": "線性代數", "score": 80, "available": true },
+    { "courseCode": "GEID0010", "name": "班級活動", "score": 90,
+      "available": false, "reason": "zero-credit-course" }
   ],
+  "emptyReason": null,
   "outside": {
     "diversification": "department",
     "items": [{
-      "courseCode": "COME3046", "name": "機器學習", "credits": 3,
-      "unit": "通訊工程學系", "similarity": 0.3637,
-      "sharedTerms": ["機器學習", "醫療", "python"],
+      "courseCode": "HY2002", "name": "工程數學(二)", "credits": 3,
+      "unit": "水利工程與資源保育學系", "similarity": 0.545,
+      "semanticMatch": { "sourceCourseCode": "IEE1005", "commonTags": ["特徵值"] },
       "recognition": { "status": "needs-office-confirmation", "checked": true,
         "needsOfficeConfirmation": true, "warnings": [] },
-      "sections": [{ "id": 2031, "catalogCourseCode": "COME3046", "timeBlocks": [] }]
+      "sections": [{ "id": 2031, "catalogCourseCode": "HY2002", "timeBlocks": [] }]
     }]
   },
   "general": { "diversification": "domain", "items": [] },
-  "method": { "representation": "tfidf-char-bigram", "selection": "one-per-unit-cosine", "k": 5 },
+  "method": {
+    "representation": "course-text-embedding-v1", "selection": "one-per-unit-cosine", "k": 5,
+    "embeddingModel": "text-embedding-3-large", "dimension": 3072, "catalogVersion": "…", "generatedAt": "…",
+    "denseWeight": 0.7, "tagGate": "shared-topic-tag",
+    "minSimilarity": 0.4, "genericMinSimilarity": 0.45, "genericTagDepartmentSpread": 13
+  },
   "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
 }
 ```
 
-- `favorite.source`：`user`（使用者指定）或 `system-default`（系統代選）。沒有可用起點時
-  `favorite` 為 `null`，並帶 `emptyReason`：`no-course-history` 或 `no-available-favorite`。
-- `favorites[].available`：這門已修課能不能當起點。`false` 時 `reason` 只有一種：
-  `no-description`——課程資料中任何學期都查不到這個課號的說明。**本學期沒開不是不可用的原因**，
-  只要資料裡有說明就能當起點。
-- `outside`／`general` 各最多 5 門，以**課號**為單位排序。
+- `favorite.source`：`user`（使用者指定）或 `system-default`（系統代選）。
+- `favorites[].available`：這門已修課能不能當起點。`false` 時 `reason`：
+  - `zero-credit-course`：0 學分的課（班級活動、微積分實習課），沒有可比的主題內容；
+  - `no-text-embedding`：課程資料中沒有這門課可用的文字向量（或內容已更新）；
+  - `no-course-tags`：這門課沒有主題標籤，無法要求「至少一個相同主題」。
+
+  **本學期沒開不是不可用的原因**，資料齊全就能當起點。
+- `emptyReason`（`favorite` 為 `null`、清單為空，回 `200`）：
+  `no-course-history`、`no-available-favorite`、`favorite-zero-credit-course`、`favorite-no-text-embedding`、
+  `favorite-no-course-tags`（指定的起點不可用）、`text-embeddings-unavailable`、`text-embeddings-invalid`、
+  `syllabus-source-unavailable`（比較資料不可用；不改用其他方法）。
+- **入選條件**（ADR-033）：分數＝文字向量 cosine × 0.7 ＋ 標籤 soft cosine × 0.3。至少一個兩門課都有的
+  **主題標籤**（工具軟體、上課方式、太常見的標籤不算）；分數 ≥ 0.40，相同的主題標籤全是籠統標籤
+  （出現在 ≥ 13 個系所）時 ≥ 0.45。`outside`／`general` 各**最多** 5 門，可能少於 5 門或為空。
+- `similarity`：上述混合分數，不可解讀為喜歡機率。
+- `semanticMatch.commonTags`：入選依據的主題標籤（最多 5 個），不是向量分數的完整解釋。不再回傳 `sharedTerms`。
 - `sections`：該課號在當學期、使用者可修的班次，是**完整的標準班次物件**（與
   `GET /api/courses` 回傳的相同），可原樣交給 `POST /api/schedule/validate`。加入課表的單位是班次。
 - `recognition.status`：
@@ -1999,40 +2019,18 @@ Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `av
   機械條件判定**不認列**的系外選修不會出現在清單裡。
 - `general.diversification`：`domain` 表示每個通識領域至多一門；`none` 表示通識沒有領域
   （115 學年度起），直接取最相似的幾門不同課號。
-- `similarity` 是課程說明 tf-idf 向量的 cosine（0～1）。`sharedTerms` 是兩份說明裡都出現的
-  **字面片段**，不是語意解釋。
 - 候選只含當學期、資格確定（`eligibility` 不是 `unknown`／`ineligible`）、有上課時間、
-  使用者尚未通過的課。
+  使用者尚未通過、且有文字向量的課。
 
-錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課）、`400 FAVORITE_UNAVAILABLE`
-（查不到說明）、`400 CLASS_NAME_REQUIRED`（profile 缺班級）。
+錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課）、`400 INVALID_EXPLORATION_REPRESENTATION`、
+`400 CLASS_NAME_REQUIRED`（profile 缺班級）。
 
-回應另帶 `mode: "favorite"`。同一課號的講課與實習課（課號多一個 `P`，例：`ACCT2031` 與
-`ACCT2031P`）合併成一個項目，以講課課號為準，兩者的班次都在 `sections`。
+同一課號的講課與實習課（課號多一個 `P`，例：`ACCT2031` 與 `ACCT2031P`）合併成一個項目，
+以講課課號為準，兩者的班次都在 `sections`。
 
-#### `GET /api/exploration?representation=embedding`（階段 4 本機文字向量原型）
+文字向量讀取本機離線產物（課名＋正規標籤名稱＋課程簡介，v2 另含課程大綱），請求當下不呼叫外部 API、
+不寫入 MySQL。產物路徑與重算方式見 `docs/DATA_SCHEMA.md` 的「課程文字向量本機產物」。
 
-「從一門課出發」另可選 `representation=tfidf|embedding`（省略為 `tfidf`）。`mode=profile`
-仍使用使用者標籤向量，不使用此參數。未知的 representation 回 `400 INVALID_EXPLORATION_REPRESENTATION`。
-前端「共同用詞／語意相似」切換會保留同一個 `favoriteCourseCode`，兩種方法共用候選與單位分散規則。
-
-`embedding` 讀取本機離線產物，以「課名＋正規標籤名稱＋課程簡介」的文字向量算餘弦相似度。
-請求當下不呼叫外部 API，不寫入 MySQL。起點仍須為使用者已通過的課；候選仍須當學期、資格確定、
-有上課時間、尚未通過。只列正相似的候選，每組最多 5 門，講課與實習課沿用合併規則。
-
-- `method.representation="course-text-embedding-v1"`，有產物時另帶 `embeddingModel`、`dimension`、
-  `catalogVersion`、`generatedAt`，數值為產物實際版本。沒有產物時不填不存在的模型資料。
-- `items[].similarity` 是文字 embedding 餘弦值；與 TF-IDF 值尺度不同，不可解讀為喜歡機率或直接比較高低。
-- `items[].semanticMatch={sourceCourseCode,commonTags}`：`commonTags` 只列兩門課 canonical 標籤的實際交集，
-  最多 5 個。它是附加內容事實，不宣稱為向量分數的因果解釋；此模式不產生 `sharedTerms` 或內部向量。
-- `favorites[].reason="no-text-embedding"`：該課沒有可用且文件雜湊一致的向量；本學期未開不會單獨使起點失效。
-- `emptyReason="text-embeddings-unavailable"`：本機產物不存在。
-- `emptyReason="text-embeddings-invalid"`：產物格式、目錄版本或讀取狀態不相容。
-- `emptyReason="no-text-embedding-favorite"`：指定起點或所有起點的向量缺少／內容已更新。
-  上述狀態回 `200`、`favorite=null`、清單為空；前端提供「改用共同用詞」。不偷偷改用 TF-IDF。
-
-產物路徑與重算方式見 `docs/DATA_SCHEMA.md` 的「課程文字向量本機產物」。這是本機原型，沒有建立
-`Course_Text_Embeddings` MySQL 表。只驗證探索流程與輸出差異，不代表已驗證推薦成效。
 
 #### `GET /api/exploration?mode=profile`（協同過濾與 User Embedding 構想階段 4）
 
@@ -2064,7 +2062,7 @@ Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `av
     }]
   },
   "general": { "diversification": "domain", "items": [] },
-  "method": { "representation": "user-tag-vector-v1", "selection": "one-per-unit-svec", "k": 5 },
+  "method": { "representation": "user-tag-vector-v1", "selection": "one-per-unit-svec", "k": 5, "requireExactTag": true },
   "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
 }
 ```
@@ -2072,7 +2070,10 @@ Query：`favoriteCourseCode`（選填）。必須是使用者已通過、且 `av
 - `emptyReason`：`no-personalization-consent`（未同意個人化學習，不計算）或 `no-profile-signal`
   （沒有任何非必修修課、互動或可對應的明確興趣）。這兩種情況 `items` 皆為空陣列；前者 `signals` 為 `null`。
 - `score`：−1～1，以候選池內正向相似度第 95 百分位為 1；只列正向相似大於 0 的課。
-- `reasons.tags`：貢獻最大的標籤配對；`viaNeighbor: true` 表示經標籤相近表連結（使用者的標籤與課程的標籤
+- **入選條件**（ADR-033，2026-11-23）：課程至少有一個和使用者向量**完全相同**的標籤（太常見的可以，工具軟體與
+  上課方式不行）；只靠相近標籤配到的課不列，由下一門補上。`poolSize` 只計符合此條件的候選。
+- `reasons.tags`：貢獻最大的標籤配對（使用者本來就有的課程標籤一律標 `viaNeighbor: false`，且至少列出一個
+  完全相同的標籤）；`viaNeighbor: true` 表示經標籤相近表連結（使用者的標籤與課程的標籤
   意思相近但不同）。`closestEvidence`：使用者證據中與這門課最接近的**另一門**課，`source` 為
   `history`（修過）或互動事件類型（例：`course_favorited`、`interest_exploration_feedback`、`course_viewed`）。
 - 其餘欄位（`recognition`、`sections`、`poolSize`、候選條件）與預設模式相同。
