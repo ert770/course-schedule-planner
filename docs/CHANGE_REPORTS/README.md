@@ -4,6 +4,8 @@
 
 ## 2026-11-23
 
+- [探索頁主題門檻：停用「共同用詞」、要求相同主題與最低分數（ADR-033）](./2026-11-23-explore-topic-gate.md)
+- [探索頁逐課檢查：D1249697 從一門課出發與修課輪廓](./2026-11-23-explore-page-audit-D1249697.md)
 - [移除舊的文字興趣欄位 interests／preferredKeywords（先轉移再刪除）](./2026-11-23-remove-legacy-interest-fields.md)
 - [修法 A：AI 聊天這次有給關鍵字時，興趣軸只用這次的關鍵字](./2026-11-23-interest-pipeline-fix-a.md)
 - [課程主題問答接管線第 4 段：排課興趣軸納入勾選的標籤](./2026-11-23-interest-pipeline-scoring-policy.md)
