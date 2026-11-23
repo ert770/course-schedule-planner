@@ -1080,4 +1080,10 @@ migration 檔自 `feature/myfcu-session-import` 移植到 `server/migrations/`�
 
 **讀取規則**（`getUserCourseHistory()`，2026-11-23 團隊決定）：
 - `catalog_course_code` 或 `passed` 為 NULL 的列不進推薦、排課與畢業計算（仍可在歷史修課列表看到）。
-- 修別或畢業分類為 NULL 時，依課號與科目表補分類（`classifyHistoryEntryByCurriculum()`），對不上為 `未確認`／`unspecified`。只在讀取時補，不寫回資料庫。
+- 修別或畢業分類為 NULL 時，只在讀取時依序補分類，不寫回資料庫（2026-11-24 擴充）：
+  1. 課名是體育、國防科技、班級活動 → `nonGraduation`（修別「必修」）；
+  2. 資工必選修、通識基礎必修 → `classifyHistoryEntryByCurriculum()`；
+  3. 課程表裡是通識課 → `general`（修別「通識」）；
+  4. 課程表查得到、且不是本系開的課 → `external`（修別「選修」）。依使用者決定「都先算系外」：別系必修、語言中心等非系所單位、只有進修部班次的課都先算系外，不套用系外選修的機械認列條件；是否計入畢業仍須向系辦確認；
+  5. 其餘（課程表查不到、本系課號但不在科目表）→ `未確認`／`unspecified`。
+  課程表與學生系所只為分類空白的列查一次；查詢失敗時只用 1、2 步，不讓整份修課紀錄載入失敗。

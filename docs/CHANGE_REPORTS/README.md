@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-11-24
+
+- [MyFCU 匯入的修課紀錄：讀取時補分類擴充為五步](./2026-11-24-imported-history-classification.md)
+
 ## 2026-11-23
 
 - [整合隊友的學生註冊與 MyFCU 歷史修課匯入（ADR-034）](./2026-11-23-integrate-myfcu-history.md)

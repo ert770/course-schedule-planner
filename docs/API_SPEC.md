@@ -2199,7 +2199,7 @@ Response:
 >
 > - `POST /auth/login`：MySQL 有帳號且有 argon2id 雜湊時只驗雜湊；**沒有雜湊**（demo D1249697、Persona D0009001～D0009010）時，非 production 退回 `users.json` 核對。`ALLOW_LEGACY_JSON_AUTH=false` 可關閉退回；production 一律關閉。
 > - `GET /api/course-history`：列出目前 Session 帳號的全部歷史修課（含未匹配課號的列）。
-> - 推薦、排課與畢業計算讀取歷史修課時，略過沒有課號或成績無法判讀的列；修別與畢業分類為 NULL 時依課號與科目表補分類，對不上為「未確認／unspecified」，不寫回資料庫。
+> - 推薦、排課與畢業計算讀取歷史修課時，略過沒有課號或成績無法判讀的列；修別與畢業分類為 NULL 時依序以課名（體育／國防／班級活動→不計畢業）、科目表、課程表的通識身分、非本系開課（先算系外）補分類，對不上為「未確認／unspecified」，不寫回資料庫（規則見 DATA_SCHEMA）。
 > - 同課名同成績只在**同一學年、同一學期**合併；不同學期（重修）各留一筆。
 > - `GET /api/controlled-browser/*` 在本機 MyFCU 模式未開啟時一律 404；首頁視為未開放，不顯示錯誤。
 
