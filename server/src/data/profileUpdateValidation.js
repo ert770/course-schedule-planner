@@ -8,13 +8,13 @@
 // 純資料判斷，抽出來就能用一般單元測試釘住；路由確實有接上這些規則，則以真實帳號的
 // 瀏覽器實測作為證據（見 2026-09-20 的任務 3A 變更報告）。
 import { isDepartmentInput } from '../utils/text.js';
-import { INTEREST_SELECTION_GROUPS } from './interestPreferences.js';
+import { INTEREST_SELECTION_GROUPS, REMOVED_INTEREST_FIELDS } from './interestPreferences.js';
 
 // 三組選單、每組每次最多 8 個類別，另留餘裕給之後調整；超過一定是異常請求。
 const MAX_INTEREST_SELECTIONS = 48;
 
 const ARRAY_FIELDS = Object.freeze([
-  'enrolledPrograms', 'mustTakeCourses', 'avoidInstructors', 'interests', 'preferredKeywords',
+  'enrolledPrograms', 'mustTakeCourses', 'avoidInstructors',
 ]);
 
 /**
@@ -92,7 +92,7 @@ export function validateProfileUpdate(updates = {}) {
     }
   }
 
-  // `preferences_json` 由專屬欄位（`interests`／`preferredTrack`／`preferredKeywords`／
+  // `preferences_json` 由專屬欄位（`preferredTrack`／`interestSelections`／
   // `useLearnedPreference`）各自更新，**公開 API 不接受整包覆寫**。
   //
   // 原因是具體的：頂層 `useLearnedPreference` 有布林檢查，但先前整包 `preferencesJson`
@@ -100,8 +100,13 @@ export function validateProfileUpdate(updates = {}) {
   // 讀取時再靜默退回 `true`——型別檢查等於白做，而且與文件寫的「字串回 400」不符。
   // 整包覆寫也會順手洗掉 `values` 裡的其他鍵，那不是任何一個呼叫端真正想要的。
   if (updates.preferencesJson !== undefined) {
-    return 'preferencesJson 不可直接更新，請使用 interests／preferredTrack／'
-      + 'preferredKeywords／interestSelections／useLearnedPreference／remainingSemesters 等專屬欄位';
+    return 'preferencesJson 不可直接更新，請使用 preferredTrack／'
+      + 'interestSelections／useLearnedPreference／remainingSemesters 等專屬欄位';
+  }
+  // 舊的文字興趣欄位已移除（ADR-032）：長期興趣改由課程主題問答（interestSelections）設定。
+  const removed = REMOVED_INTEREST_FIELDS.find(field => updates[field] !== undefined);
+  if (removed) {
+    return `${removed} 已停用，請改用設定頁的課程主題問答（interestSelections）`;
   }
 
   return null;

@@ -383,15 +383,20 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 使用 `{ schemaVersion, term, courses }`；`total_credits` 由後端依 courses 重算，不信任前端總數。
 未設定 DB 的測試環境才保留 JSON fallback。
 
-興趣偏好沿用 `preferences_json`，沒有新增 `preferred_track` 等平行欄位。範例：
+興趣偏好沿用 `preferences_json`，沒有新增 `preferred_track` 等平行欄位。
+
+**2026-11-23 起（ADR-032）**：舊的文字興趣鍵 `values.interests`／`values.preferredKeywords` 已移除。21 個帳號的舊值先由 `server/scripts/legacyInterestMigration.js` 轉成 `interestSelections`，備份在 `server/backups/`（不進版控）後刪除；之後任何一次寫入都會刪掉殘留的這兩個鍵，讀取也不再回傳。
+
+範例：
 
 ```json
 {
   "schemaVersion": 1,
   "values": {
     "preferredTrack": "技術應用類",
-    "interests": ["人工智慧", "資料科學"],
-    "preferredKeywords": ["深度學習"],
+    "interestSelections": [
+      { "group": "outside", "categoryId": "main_…", "level": "main", "mode": "followup", "tagIds": ["tag_…"] }
+    ],
     "remainingSemesters": 3
   }
 }

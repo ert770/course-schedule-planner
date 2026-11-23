@@ -936,12 +936,13 @@ REST 路徑沒有 preflight（該檔第 (13) 項的註解已說明這道防線�
   Roadmap #5B）——兩者方向相反，同時為 `true` 時排課引擎視為未表態並在
   `warnings` 說明矛盾。見「涼度評分與評價覆蓋率」與下方「Per-user 加權方向」。
 - 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`），以及課程主題問答勾選的標籤（`interestTagIds`，2026-11-22 起，見下方「課程主題問答勾選的標籤」）。
+  2026-11-23 起（ADR-032）`preferredKeywords`／`interests` 只來自這次請求（AI 聊天單次排課），不再有已存的文字興趣欄位；長期興趣只剩 `interestTagIds`。
 - 8 個內容偏好——免期中考（`noMidterm`）、免分組報告（`noGroupReport`）、討論課
   （`discussion`）、重視平時成績（`weightDaily`）、實作評量（`practicalExam`）、
   期末報告（`finalReport`）、英文授課（`englishTaught`）、學到較多內容（`learnMore`），
   見下方「內容偏好評分與訊號可靠度警告」。
 
-興趣可以由設定頁明確詢問，不需等待互動學習。資訊工程學系先讓使用者單選正式課程地圖的
+興趣可以由設定頁明確詢問，不需等待互動學習（2026-11-23 起只透過課程主題問答；下面描述的單選路徑與自訂關鍵字是早期設計，已不存在）。資訊工程學系先讓使用者單選正式課程地圖的
 `嵌入式系統類`、`技術應用類`、`網路與安全類`，再從目前排課候選課程的
 `Course_Sections.rag_tag` 顯示可複選的細部主題；使用者也可輸入自訂關鍵字或選擇
 「沒有特定方向」。這些值保存於 `User_Profiles.preferences_json.values`，經 Profile
@@ -1196,6 +1197,10 @@ Hebrard 等（AAAI 2005）；內層由 HiGHS（npm `highs` 1.15.3，第三方 hi
 5. 沒有訊號時不建模（`no-signal`）。依序檢查下列條件，第一個不成立的記在 `detail`：
    - 興趣：沒有興趣關鍵字（`no-interest-keywords`）、興趣分數全部相同（`flat-scores`）、
      門檻落在可達範圍外（`threshold-unreachable`）。
+     興趣主軸若是因第 4 點的 `axis-threshold-infeasible` 而沒產生，且綜合方案本身已有興趣命中，
+     `detail` 記為 `base-already-best-interest`：其他條件都滿足的課表裡，沒有比綜合方案興趣程度高出門檻的，
+     綜合方案就是最符合興趣的組合（2026-11-23；D0009002、D0009008 關掉 S_tag／s_vec 後興趣導向方案就回來，
+     證實是綜合方案已吃滿興趣，而不是興趣沒被考慮）。
    - 輕鬆／挑戰：S₀ 沒有難度基準（`no-easiness-baseline`）、有評價的課不足 `minRated`
      （`insufficient-rating`）、難度分數全部相同（`flat-scores`）、門檻落在可達範圍外
      （`threshold-unreachable`）。

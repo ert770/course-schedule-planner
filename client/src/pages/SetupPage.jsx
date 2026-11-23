@@ -54,8 +54,6 @@ export default function SetupPage() {
 
   const [selectedTags, setSelectedTags] = useState(new Set());
   const [tagGroups, setTagGroups] = useState([]);
-  const [selectedInterests, setSelectedInterests] = useState(new Set());
-  const [customInterests, setCustomInterests] = useState('');
   // 課程主題的選擇結果：[{ group, categoryId, level, mode, tagIds }]，以 (group, categoryId) 為鍵。
   // 通識與系外都有「語言」時各自一筆，取消其中一組不影響另一組。
   const [topicSelections, setTopicSelections] = useState([]);
@@ -105,10 +103,6 @@ export default function SetupPage() {
         }
         const savedSelections = Array.isArray(profile.interestSelections) ? profile.interestSelections : [];
         setTopicSelections(savedSelections);
-        setSelectedInterests(new Set([
-          ...(Array.isArray(profile.interests) ? profile.interests : []),
-          ...(Array.isArray(profile.preferredKeywords) ? profile.preferredKeywords : []),
-        ]));
       })
       .catch(() => {})
       .finally(() => {
@@ -117,15 +111,6 @@ export default function SetupPage() {
 
     return () => { cancelled = true; };
   }, [userIdentity]);
-
-  const toggleInterest = (interest) => {
-    setSelectedInterests(prev => {
-      const next = new Set(prev);
-      if (next.has(interest)) next.delete(interest);
-      else next.add(interest);
-      return next;
-    });
-  };
 
   const toggleTag = (tag) => {
     setSelectedTags(prev => {
@@ -181,13 +166,7 @@ export default function SetupPage() {
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
-        interests: [...new Set([
-          ...selectedInterests,
-          ...customInterests
-            .split(/[、,，]/)
-            .map(value => value.trim())
-            .filter(Boolean),
-        ])],
+        // 長期興趣只由課程主題問答保存（ADR-032）；舊的文字興趣欄位已移除。
         interestSelections: selections.map(({ group, categoryId, level, mode, tagIds }) => ({
           group, categoryId, level, mode, tagIds,
         })),
@@ -309,41 +288,9 @@ export default function SetupPage() {
                     />
                   </div>
 
-                  <details className="setup-other-interests" id="interest-keywords">
-                    <summary>
-                      其他興趣{selectedInterests.size > 0 && <span>（{selectedInterests.size} 個已保存關鍵字）</span>}
-                    </summary>
-                    <p>可以補充上方沒列到的興趣。點選已保存的關鍵字即可移除。</p>
-                    {selectedInterests.size > 0 && (
-                      <div className="setup-pref-tags">
-                          {[...selectedInterests].map(topic => (
-                            <button
-                              type="button"
-                              key={topic}
-                              className="setup-tag selected"
-                              onClick={() => toggleInterest(topic)}
-                              aria-pressed="true"
-                              id={`interest-keyword-${topic}`}
-                              style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px' }}
-                            >
-                              {topic}
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                    <label htmlFor="setup-custom-interests">補充興趣關鍵字</label>
-                    <input
-                      id="setup-custom-interests"
-                      value={customInterests}
-                      onChange={event => setCustomInterests(event.target.value)}
-                      placeholder="例如：生成式 AI、雲端；多筆以頓號分隔"
-                    />
-                  </details>
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedInterests(new Set());
-                      setCustomInterests('');
                       setTopicSelections([]);
                     }}
                     style={{ marginTop: '8px', padding: 0, border: 'none', background: 'none', color: '#3b82f6', cursor: 'pointer' }}

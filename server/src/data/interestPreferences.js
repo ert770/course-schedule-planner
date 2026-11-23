@@ -62,19 +62,19 @@ export function normalizePreferencesJson(value) {
   };
 }
 
+// 已移除的舊文字興趣欄位（ADR-032，2026-11-23）。2026-11-23 以一次性轉移
+// （scripts/legacyInterestMigration.js）轉成 interestSelections 後刪除；之後任何寫入都會把殘留的鍵刪掉，
+// 讀取也不再回傳。AI 聊天單次排課的 interests／preferredKeywords 是請求參數，不經過這裡。
+export const REMOVED_INTEREST_FIELDS = Object.freeze(['interests', 'preferredKeywords']);
+
 // 興趣偏好使用既有 preferences_json 保存，不另增一組 MySQL 欄位。這個 helper
-// 同時接受 profile 頂層欄位與 JSON 內的正式儲存值，讓單次排課參數與長期偏好
-// 可以共用同一組 canonical shape。
+// 同時接受 profile 頂層欄位與 JSON 內的正式儲存值。長期興趣只剩課程主題問答的勾選。
 export function readInterestPreferences(source = {}) {
   const preferencesJson = normalizePreferencesJson(source.preferencesJson);
   const values = preferencesJson.values;
 
   return {
     preferredTrack: normalizeString(source.preferredTrack ?? values.preferredTrack) || null,
-    interests: normalizeInterestList(source.interests ?? values.interests),
-    preferredKeywords: normalizeInterestList(
-      source.preferredKeywords ?? values.preferredKeywords
-    ),
     interestSelections: normalizeInterestSelections(
       source.interestSelections ?? values.interestSelections
     ),
@@ -88,12 +88,8 @@ export function mergeInterestPreferences(preferencesJson, updates = {}) {
   if (Object.hasOwn(updates, 'preferredTrack')) {
     values.preferredTrack = normalizeString(updates.preferredTrack) || null;
   }
-  if (Object.hasOwn(updates, 'interests')) {
-    values.interests = normalizeInterestList(updates.interests);
-  }
-  if (Object.hasOwn(updates, 'preferredKeywords')) {
-    values.preferredKeywords = normalizeInterestList(updates.preferredKeywords);
-  }
+  // 舊欄位一律不寫，殘留的鍵在任何一次寫入時刪除（ADR-032）。
+  for (const field of REMOVED_INTEREST_FIELDS) delete values[field];
   if (Object.hasOwn(updates, 'interestSelections')) {
     values.interestSelections = normalizeInterestSelections(updates.interestSelections);
   }
@@ -103,6 +99,7 @@ export function mergeInterestPreferences(preferencesJson, updates = {}) {
 
 export default {
   INTEREST_SELECTION_GROUPS,
+  REMOVED_INTEREST_FIELDS,
   INTEREST_SELECTION_MODES,
   normalizeInterestList,
   normalizeInterestSelections,

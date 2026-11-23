@@ -1,7 +1,6 @@
 import { getAll } from '../db/database.js';
 import { ACTIVE_TERM, normalizeSemesterLabel } from '../data/activeTerm.js';
 import {
-  interestTagCatalog,
   resolveInterestTags,
   isEligibleForInterestLearning,
 } from '../data/interestTagCatalog.js';
@@ -184,38 +183,12 @@ export function buildInterestExplorationPairs(cards) {
   return pairs;
 }
 
-/** Ask which available subcategories the learner means when only a broad category was chosen. */
-export function buildInterestCategoryPrompts(cards, profile = {}) {
-  const preferences = readInterestPreferences(profile);
-  const terms = new Set([...preferences.interests, ...preferences.preferredKeywords]
-    .map(value => String(value).trim().toLocaleLowerCase()));
-  const selectedMain = interestTagCatalog.mainCategories.filter(category => (
-    terms.has(category.name.trim().toLocaleLowerCase())
-  ));
-  const selectedSubcategoryIds = new Set(interestTagCatalog.subcategories
-    .filter(category => terms.has(category.name.trim().toLocaleLowerCase()))
-    .map(category => category.id));
-  const availableSubcategories = new Map(interestTagCatalog.subcategories
-    .map(category => [category.id, category]));
-
-  return selectedMain.flatMap(main => {
-    const alreadySpecific = interestTagCatalog.subcategories.some(category => (
-      category.mainCategoryId === main.id && selectedSubcategoryIds.has(category.id)
-    ));
-    if (alreadySpecific) return [];
-    const subcategoryIds = new Set((cards ?? []).flatMap(card => card.tags ?? [])
-      .flatMap(tag => tag.categoryPaths ?? [])
-      .filter(path => path.mainCategoryId === main.id && path.subcategoryId)
-      .map(path => path.subcategoryId));
-    const subcategories = [...subcategoryIds]
-      .map(id => availableSubcategories.get(id))
-      .filter(Boolean)
-      .sort((left, right) => left.name.localeCompare(right.name, 'zh-Hant'))
-      .map(category => ({ id: category.id, name: category.name }));
-    return subcategories.length > 0
-      ? [{ mainCategoryId: main.id, mainCategory: main.name, subcategories }]
-      : [];
-  });
+/**
+ * 舊版「只選了廣泛大類時追問子分類」。它只讀已移除的文字興趣欄位（ADR-032，2026-11-23），
+ * 前端自 d32f8fa 起也不再顯示；保留函式與回應欄位 `categoryPrompts`（固定空陣列）維持 API 相容。
+ */
+export function buildInterestCategoryPrompts() {
+  return [];
 }
 
 /** Build real, active-term exploration cards for the authenticated student's scope. */

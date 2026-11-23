@@ -1144,3 +1144,25 @@ Consequences:
 - Known and accepted by the user (2026-11-23): with simulated selections, 5 of 12 accounts show a lower average S_tag in the recommended plan, mainly because the interest-oriented plan is now recommended or changed; ticked-tag hits went up.
 - Fix A (2026-11-23, user decision): when a request carries its own non-empty `interests` or `preferredKeywords` (AI Agent single run), `interestTagIds` is empty for that request, so the interest axis uses only this run's keywords — the same rule by which request keywords already override saved keywords. S_tag, s_vec and exploration still read the saved selections; nothing is written. Compared with the previous commit run at the same time, all 42 Agent keyword scenarios on the two accounts with ticked tags produced identical plans.
 - Measurement note: a keyword hit-rate drop first attributed to dilution (D1249697 0.131 to 0.095) also appeared when the previous commit was rerun hours later, so it was data drift (tag-interest cache, events, time decay), not code. Before/after comparisons must run both versions at the same time.
+
+## ADR-032: Remove the Legacy Free-Text Interest Fields After Migrating Them to Questionnaire Selections
+
+Date: 2026-11-23
+
+Context:
+
+With the course-topic questionnaire wired into all four consumers (ADR-029 to ADR-031), the user decided on 2026-11-22 to remove the legacy free-text fields `interests` and `preferredKeywords` together with their data. 21 of 27 profiles in the shared MySQL still held legacy terms (all in `interests`), and only 2 had answered the questionnaire, so deleting outright would erase the explicit interest of 19 accounts.
+
+Decision:
+
+- Migrate first (user decision 2026-11-23). `server/scripts/legacyInterestMigration.js` maps each term to the student's own questionnaire candidate pool: exact catalog match; otherwise a tag whose name starts with the term (the old keyword rule); otherwise the most similar in-pool tag from the tag-neighbour table with similarity at least 0.70 (user's choice), at most two. Mapped tags are merged into existing selections and validated with `sanitizeInterestSelectionsForSave`. Unmappable terms are dropped and listed. The original `preferencesJson` of every migrated account is backed up to `server/backups/` (git-ignored) before the legacy keys are deleted.
+- Remove the fields from the code: reading no longer returns them, any write deletes leftover keys, `POST /api/profile` rejects them with 400, the setup page's "other interests" block is removed (user decision), the S_tag name path is removed, saved keywords no longer back-fill scheduler constraints, `categoryPrompts` is always empty, and the Agent's `update_preferences` no longer accepts them (the Agent sends users to the questionnaire instead).
+- Keep the AI Agent's single-run `interests`/`preferredKeywords` on `run_csp_scheduler`; they affect only that request's interest axis and are never stored.
+
+Consequences:
+
+- About 40% of legacy terms could not be mapped, mostly `Python` (too_common, offered by no questionnaire direction) and topics outside the student's candidate pool. The user decided (2026-11-23) not to open `Python` or any other too_common tag in the questionnaire: students ask the AI Agent for them per run, where they act as single-run keywords matched by tag prefix. The questionnaire detail page and the Agent prompt both say so, so students do not assume such topics were saved.
+- Restoring requires the backup file; the migration refuses to overwrite an existing backup.
+- 11 of the 21 accounts were migrated. The other 10 (`1804…`, no `student_id`, not in `users.json`) cannot be written through the profile path, which looks rows up by student id; the user decided (2026-11-23) to leave them untouched because they are reserved for real-user testing. Their legacy keys remain in MySQL but the code no longer reads them, so those accounts have no explicit interest until the testers answer the questionnaire.
+- The answer-faithfulness audit treated quoted feature and topic names (「課程主題問答」, 「資訊安全」 after 勾選 or before 帶入) as fabricated course names and replaced the Agent's questionnaire guidance with a fallback; those quotes are now exempt, and fabricated course names in quotes are still flagged (test F30d).
+

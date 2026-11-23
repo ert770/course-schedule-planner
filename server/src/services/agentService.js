@@ -595,12 +595,24 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
       case 'get_easy_courses':
         return await easyCourses(args.limit || 10);
 
-      case 'update_preferences':
+      case 'update_preferences': {
+        // ADR-032：長期興趣只能透過設定頁的課程主題問答設定。schema 已不含 interests／
+        // preferredKeywords，但模型仍可能送來（非 strict 模式），這裡一律丟掉，不寫入。
+        const { interests: _interests, preferredKeywords: _keywords, ...preferenceArgs } = args;
+        const droppedInterest = _interests !== undefined || _keywords !== undefined;
+        const { confirmationToken: _token, ...changes } = preferenceArgs;
+        if (droppedInterest && Object.keys(changes).length === 0 && !preferenceArgs.confirmationToken) {
+          return {
+            noChange: true,
+            message: '長期想學的主題不能用聊天保存，請引導使用者到設定頁的「課程主題問答」勾選；'
+              + '這次排課想排的主題可以直接帶進 run_csp_scheduler 的 interests。',
+          };
+        }
         // Roadmap #24：先前這裡直接寫進 MySQL，沒有任何確認步驟——唯一的保護是
         // system prompt 裡一句模型可以無視的叮嚀，違反 #24 自己的「使用者確認前
         // 不得永久更新偏好」。現在改成兩段式。
         return await runConfirmedWrite({
-          identity, args, changeType: getConfirmationChangeType(name), stageChange, consumeChange, turnId: ctx.turnId,
+          identity, args: preferenceArgs, changeType: getConfirmationChangeType(name), stageChange, consumeChange, turnId: ctx.turnId,
           write: async staged => {
             const mergedTags = mergePreferenceTags(prefs ?? {}, staged);
             const payload = mergedTags ? { ...staged, preferenceTags: mergedTags } : staged;
@@ -610,6 +622,7 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
             return { success: true, updatedFields: staged };
           },
         });
+      }
 
       case 'update_student_profile': {
         // 系所／年級／班別決定「哪些課是你的必修、你能修哪些課」，答錯會讓整份

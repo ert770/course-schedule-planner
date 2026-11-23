@@ -80,14 +80,48 @@ const rows = [];
 const skipped = [];
 
 const onlyAccounts = process.argv.find(item => item.startsWith('--accounts='))?.slice('--accounts='.length).split(',');
+// --targets=<json>：{ userId: [tagId…] }，例如舊關鍵字轉移清單（legacyInterestMigration.js --plan-out）。
+// 改動前後用同一份目標標籤算命中率，才能比較。
+const targetsArg = process.argv.find(item => item.startsWith('--targets='))?.slice('--targets='.length);
+const targetsByUser = targetsArg ? JSON.parse(fs.readFileSync(targetsArg, 'utf8')) : null;
+// --profile-identity：不在 users.json 的帳號（例如 1804… Persona）直接用 Profile 列的 MySQL user_id。
+const profileIdentity = process.argv.includes('--profile-identity');
+// --prefs-override=<backup.json>：[{ userId, preferencesJson }]，只在記憶體裡換回備份的偏好（不寫資料庫）。
+// 用於轉移後重建「轉移前」的基準線（ADR-032）。
+const overrideArg = process.argv.find(item => item.startsWith('--prefs-override='))?.slice('--prefs-override='.length);
+const overrides = overrideArg
+  ? new Map(JSON.parse(fs.readFileSync(overrideArg, 'utf8')).map(item => [String(item.userId), item.preferencesJson]))
+  : new Map();
 for (const row of prefRows) {
   if (onlyAccounts && !onlyAccounts.includes(String(row.userId))) continue;
-  const identity = resolveIdentityFrom(users, row.userId);
+  let identity = resolveIdentityFrom(users, row.userId);
+  if ((!identity?.canonicalId || identity.reason) && profileIdentity && row.mysqlUserId != null) {
+    identity = { found: true, canonicalId: String(row.userId), studentId: row.studentId ?? String(row.userId),
+      numericId: String(row.mysqlUserId) };
+  }
   if (!identity?.canonicalId || identity.reason) {
     skipped.push({ userId: row.userId, reason: identity?.reason ?? 'unresolved' });
     continue;
   }
-  let prefs = await getUserPreferences(identity);
+  let prefs;
+  try {
+    prefs = await getUserPreferences(identity);
+  } catch (error) {
+    // 單一帳號讀不到（例如沒有修課紀錄對照）就略過，不中斷整批。
+    skipped.push({ userId: row.userId, reason: error.code ?? error.message });
+    continue;
+  }
+  if (overrides.has(String(row.userId))) {
+    const preferencesJson = overrides.get(String(row.userId));
+    const values = preferencesJson?.values ?? {};
+    prefs = {
+      ...prefs,
+      preferencesJson,
+      interestSelections: values.interestSelections ?? [],
+      interests: values.interests ?? [],
+      preferredKeywords: values.preferredKeywords ?? [],
+    };
+  }
   if (simulate) {
     const own = readInterestPreferences(prefs).interestSelections;
     const extra = (await simulatedSelections(prefs))
@@ -111,7 +145,8 @@ for (const row of prefRows) {
   rows.push({
     account: identity.canonicalId,
     selectedTags: selectedIds.size,
-    legacyKeywords: interest.interests.length + interest.preferredKeywords.length,
+    // 舊文字興趣欄位（ADR-032 後新版讀取不再回傳，記為 0）。
+    legacyKeywords: (interest.interests?.length ?? 0) + (interest.preferredKeywords?.length ?? 0),
     success: result.success === true,
     ms: Date.now() - started,
     preferenceInterest: round(result.preferenceProfile?.interest ?? 0),
@@ -120,6 +155,11 @@ for (const row of prefRows) {
     totalCredits: result.totalCredits ?? null,
     unmetRequirements: Array.isArray(result.unmetRequirements) ? result.unmetRequirements.length : null,
     primaryHit: hitRate(primary.schedule ?? [], selectedIds),
+    ...(targetsByUser ? (() => {
+      const targets = new Set(targetsByUser[String(row.userId)] ?? []);
+      return { targetTags: targets.size, primaryTargetHit: hitRate(primary.schedule ?? [], targets),
+        allPlansTargetHit: hitRate(allCourses, targets) };
+    })() : {}),
     allPlansHit: hitRate(allCourses, selectedIds),
     primaryAvgTagInterest: round(primaryElectives.length
       ? primaryElectives.reduce((sum, course) => sum + componentOf(course, 'tagInterest'), 0) / primaryElectives.length

@@ -137,3 +137,19 @@ describe('SC constraintService 產生 interestTagIds', () => {
     }
   });
 });
+
+describe('CD 興趣導向方案未產生時的說明（2026-11-23）', () => {
+  test('CD1 達不到興趣門檻且綜合方案已有興趣命中 → 「綜合方案已經是最符合你興趣的組合」', async () => {
+    const { collapseDetailFor } = await import('../src/skills/scheduler.js');
+    const item = { archetype: 'interest', reason: 'axis-threshold-infeasible' };
+    assert.equal(collapseDetailFor(item, 0.143), 'base-already-best-interest');
+  });
+
+  test('CD2 綜合方案沒有興趣命中、其他主軸、其他原因、已有 detail 時都不改', async () => {
+    const { collapseDetailFor } = await import('../src/skills/scheduler.js');
+    assert.equal(collapseDetailFor({ archetype: 'interest', reason: 'axis-threshold-infeasible' }, 0), null);
+    assert.equal(collapseDetailFor({ archetype: 'easy', reason: 'axis-threshold-infeasible' }, 0.5), null);
+    assert.equal(collapseDetailFor({ archetype: 'interest', reason: 'combined-constraints' }, 0.5), null);
+    assert.equal(collapseDetailFor({ archetype: 'interest', reason: 'no-signal', detail: 'flat-scores' }, 0.5), 'flat-scores');
+  });
+});

@@ -34,9 +34,6 @@ function normalizeTagIds(values) {
     .filter(Boolean))];
 }
 
-function normalizeTopic(value) {
-  return String(value ?? '').trim().normalize('NFKC').toLocaleLowerCase('zh-Hant');
-}
 
 function categoryPathsFor(tag) {
   return (tag?.categoryAssignments ?? []).map(assignment => ({
@@ -171,63 +168,16 @@ export function buildTagInterestSnapshot(event, course, scope) {
   };
 }
 
-function explicitInputs(prefs = {}) {
-  const interestPrefs = readInterestPreferences(prefs);
-  return [...new Set([...interestPrefs.interests, ...interestPrefs.preferredKeywords])];
-}
-
 /**
- * Convert explicit, user-selected terms to priors without expanding a broad
- * category over all of its descendant tags.
+ * 明確興趣的先驗：只來自課程主題問答的勾選（`interestSelections`）。
+ * 舊的文字興趣欄位（interests／preferredKeywords）的名稱比對已於 2026-11-23 移除（ADR-032），
+ * `explicitTopics`／`unmappedTopics` 保留為空陣列，維持回傳形狀與 priorSignature 相容。
  */
 export function buildExplicitTagInterest(prefs = {}) {
-  const terms = explicitInputs(prefs);
-  const categoryNames = new Map();
-  for (const category of interestTagCatalog.mainCategories) {
-    categoryNames.set(normalizeTopic(category.name), { type: 'main', category });
-  }
-  for (const category of interestTagCatalog.subcategories) {
-    categoryNames.set(normalizeTopic(category.name), { type: 'sub', category });
-  }
-
-  const tagNames = new Map(
-    interestTagCatalog.canonicalTags
-      .filter(tag => tag.eligibility?.interestLearningEligible === true)
-      .map(tag => [normalizeTopic(tag.name), tag])
-  );
+  const terms = [];
   const categories = new Map();
   const tagPriors = new Map();
   const unmappedTopics = [];
-
-  for (const term of terms) {
-    const key = normalizeTopic(term);
-    const categoryMatch = categoryNames.get(key);
-    if (categoryMatch?.type === 'main') {
-      const item = categoryMatch.category;
-      categories.set(`main:${item.id}`, {
-        type: 'main', mainCategoryId: item.id, subcategoryId: null, name: item.name,
-      });
-      continue;
-    }
-    if (categoryMatch?.type === 'sub') {
-      const item = categoryMatch.category;
-      categories.set(`sub:${item.id}`, {
-        type: 'subcategory', mainCategoryId: item.mainCategoryId,
-        subcategoryId: item.id, name: item.name,
-      });
-      continue;
-    }
-    const tag = tagNames.get(key);
-    if (tag) {
-      tagPriors.set(tag.id, {
-        canonicalTagId: tag.id, canonicalName: tag.name, prior: 1,
-        categoryPaths: categoryPathsFor(tag),
-        crossCourseMatchEligible: tag.eligibility?.crossCourseMatchEligible === true,
-      });
-    } else {
-      unmappedTopics.push(term);
-    }
-  }
 
   // 設定頁「想接觸的課程主題」的選擇結果（`interestSelections`，依 ID 而非名稱，避開 39 個
   // 子類別與標籤同名的歧義）。
@@ -236,7 +186,6 @@ export function buildExplicitTagInterest(prefs = {}) {
   //     才得到先驗 p0 = 1。同一個標籤從多組多筆選到，只算一次。
   //   - 只接受可選標籤（可學習且可跨課配對）：排課只計可跨課配對的標籤，其他的存進先驗
   //     也不會改變任何別的課的分數。
-  // 名稱路徑（上面的迴圈）行為完全不變；兩條路徑選到同一個標籤時，以先建立的那筆為準。
   const selected = resolveInterestSelections(readInterestPreferences(prefs).interestSelections);
   for (const category of selected.categories) {
     const key = category.type === 'main'

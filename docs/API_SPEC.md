@@ -412,7 +412,7 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 - 以上各項可疊加。
 
 `interests`、`preferredKeywords` 不再影響相關度，s_vec 也從 2026-11-22 起不再讀這兩個欄位（ADR-030）。方向只用來排探索卡，不寫進任何分數。
-`cards` 保留最多八張的舊版平面清單，`categoryPrompts` 保留給舊版消費端。
+`cards` 保留最多八張的舊版平面清單。`categoryPrompts` 自 2026-11-23 起固定為空陣列（它只讀已移除的文字興趣欄位，ADR-032），欄位保留以維持相容。
 `GET /api/exploration` 是系外／通識相似度清單，與此初始興趣探索流程不同。
 
 ```json
@@ -810,7 +810,8 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 「Active Term」一節。
 
 `preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses`、
-`preferChallengingCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供
+`preferChallengingCourses` 為軟性偏好（`preferredKeywords`／`interests` 只代表**這次請求**的興趣關鍵字，
+不從已存偏好回填，ADR-032；長期興趣是 Profile 的 `interestSelections`，經 `interestTagIds` 進入排課），用於計算各方案的偏好符合度並決定主推方案。未提供
 任何一項時，主推方案改以總學分決定。**`preferEasyCourses` 與 `preferChallengingCourses`
 方向相反，不得同時為 `true`**——兩者同時設定時（Roadmap #5B）排課引擎會把難度偏好視為
 未表態並在 `warnings` 說明，不會猜測使用者真正的意思。
@@ -881,7 +882,8 @@ Roadmap #22 的 bounded backtracking repair 會在主推 greedy baseline 未通�
 
 request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
 
-- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`avoidInstructors`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **陣列型參數**（`blockedPeriods`、`mustTakeCourseIds`、`avoidInstructors`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。
+- **`preferredKeywords`、`interests`**（2026-11-23 起，ADR-032）：只取這次請求的值，不從已儲存偏好回填；空陣列或沒送就是沒有關鍵字。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
 - **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 MySQL `User_Course_History` 載入的 `prefs.courseHistory`。查詢成功但 0 筆是合法空歷史；查詢失敗時 Profile、Schedule、Chat 與 Graduation 回 `503 COURSE_HISTORY_UNAVAILABLE`，不得以空陣列繼續。REST 與 AI Agent 都不能提交或覆蓋歷史修課。
 - **`courseReviews`**（Roadmap #4）：與 `courseHistory` 同理，**純伺服器端注入、不接受 request 覆蓋**。`scheduleService.js` 從 `getAll('reviews')` 取得 `Course_Reviews` 全表後放進 `context`，request body 與 AI Agent 的 tool 參數都不含這個欄位——沒有任何管道能讓客戶端塞入捏造的評價分數。
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
@@ -1288,6 +1290,7 @@ combinedPlanScore = preferenceScore × planTagMultiplier
 `no-interest-keywords`、`no-easiness-baseline`、`insufficient-rating`、`flat-scores`、
 `threshold-unreachable`（主軸門檻超出「固定課 ∪ 競爭課」的可達範圍，做不到比 S₀ 更好）、
 `single-day`、`fixed-days-blocked`。**前端在 `detail` 有更精確說法時優先依 `detail` 顯示**：`threshold-unreachable` 顯示「綜合方案已達目前課程資料可改善的界線，無法再產生有意義的主軸改善」，其餘 `no-signal` 才顯示「候選課缺少可區分的資料」（`client/src/components/Schedule/PlanSwitcher.jsx`）。
+**2026-11-23 起**：興趣導向方案的 `reason` 為 `axis-threshold-infeasible`、且綜合方案本身已有興趣命中時，`detail` 為 `base-already-best-interest`，前後端顯示「綜合方案已經是最符合你興趣的組合，再排一份只會是重複的課表」（判斷式 `scheduler.js` 的 `collapseDetailFor()`）。
 
 MILP 方案另帶：
 
@@ -1707,15 +1710,14 @@ topics: [{ group, categoryId, tagId, name, duplicate }] }`；`available: false` 
 興趣方向可用下列欄位更新：
 
 ```json
-{
-  "preferredTrack": "網路與安全類",
-  "interests": ["資訊安全", "網路"],
-  "preferredKeywords": ["密碼學"]
-}
+{ "preferredTrack": "網路與安全類" }
 ```
 
-`preferredTrack` 必須是字串或 `null`；`interests` 與 `preferredKeywords` 必須是陣列。
-這三個 API 欄位持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
+`preferredTrack` 必須是字串或 `null`，持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
+想學的主題改由下方的 `interestSelections`（課程主題問答）保存。
+
+**2026-11-23 起（ADR-032）不再接受 `interests`、`preferredKeywords`**：帶了任一個（含空陣列）都回 `400`，
+訊息為「`interests` 已停用，請改用設定頁的課程主題問答（interestSelections）」。Profile 回應也不再有這兩個欄位。
 更新時會保留 `values` 中其他個人化資料。
 
 **Roadmap #10 任務 3A** 另接受 `useLearnedPreference`（布林，預設 `true`）：
@@ -1767,7 +1769,7 @@ Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」
 `categoryId` 必須是非空字串；`tagIds` 省略或空陣列代表只選了類別、尚未追問；最多 48 筆。
 不是陣列、項目不是物件、未知 `group`、空的 `categoryId`、非字串的 `tagIds` 一律回 `400`。
 送空陣列代表清空所有選擇。它保存在 `preferences_json.values.interestSelections`，更新時不會
-洗掉 `interests` 與其他鍵。
+洗掉其他鍵（已移除的 `interests`／`preferredKeywords` 殘留時會一併刪除）。
 
 **保存前的驗證（2026-11-20）**：送了 `interestSelections` 時，伺服器對照這位學生的候選池（`department`、
 `gradeLevel`、`className` 取自這次請求，沒帶就用已保存的 Profile）：分類必須存在、層級與組別相符（本系用子類別、

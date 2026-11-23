@@ -188,17 +188,24 @@ Agent 完全不需要、也不能夠自己提供評價分數。
 ### 個人化偏好的必要性
 
 `preferredKeywords`、`interests`、`preferCompact`、`preferEasyCourses`、
-`preferChallengingCourses` 同時影響單門課挑選與多方案主推排序。
+`preferChallengingCourses` 同時影響單門課挑選與多方案主推排序。`preferredKeywords`／`interests` 只影響**這一次**排課，
+不會保存（ADR-032）。
 
 使用者表達興趣、想集中排課或想修涼課／挑戰難課時，Agent **必須**把對應參數帶進
 `run_csp_scheduler`。未帶入時系統只產生不假設偏好方向的綜合與較多學分策略，推薦會失去
 個人化，且回應的 `hasExpressedPreference` 會是 `false`。
 
-當使用者要求個人化推薦，而已儲存 Profile 與本輪訊息都沒有興趣方向時，Agent 先問一個
+當使用者要求個人化推薦，而已儲存 Profile（課程主題問答勾選、修課路徑）與本輪訊息都沒有興趣方向時，Agent 先問一個
 簡短問題，可列舉「技術應用、網路與安全、嵌入式系統」讓使用者選擇。使用者只要求一般
 排課或明確表示沒有特定方向時直接排課，不得強迫回答。這次使用的興趣直接帶進
-`run_csp_scheduler`；只有使用者明確要求「以後都照這個方向」時，才以兩段式
-`update_preferences` 保存 `preferredTrack`、`interests` 或 `preferredKeywords`。
+`run_csp_scheduler`。使用者要長期保存想學的主題（「以後都想排資安」）時，Agent 請他到設定頁的
+「課程主題問答」勾選；`update_preferences` 自 2026-11-23 起不再有 `interests`／`preferredKeywords`
+參數（ADR-032），只能保存 `preferredTrack` 等其他偏好。模型若仍送這兩個欄位，伺服器丟掉不寫入，
+只送這兩個時回 `noChange` 並附引導訊息。
+
+System prompt 的「目前使用者偏好」以「課程主題（課程主題問答勾選）」列出勾選的主題名稱，取代原本的「興趣關鍵字」。
+
+「Python」這類太常見的標籤（too_common）不在問答選項裡，也不能長期保存（2026-11-23 使用者決定）。使用者想排時，Agent 把它帶進這一次 `run_csp_scheduler` 的 `interests`；想長期保存時，Agent 說明問答沒有這類選項，請使用者每次排課時直接說。問答細項頁也有同一句說明（`#interest-quiz-common-topics`）。
 
 `preferEasyCourses` 與 `preferChallengingCourses` 方向相反，**不得同時帶入 `true`**。
 使用者若話裡同時提到兩者（例如「我想要涼一點但也想挑戰自己」），Agent 應先向使用者

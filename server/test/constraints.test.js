@@ -21,7 +21,8 @@ describe('S11-S12 陣列型偏好的合併語意', () => {
       mustTakeCourseIds: [],
     }, saved);
 
-    assert.deepEqual(merged.preferredKeywords, ['網路', '資安']);
+    // 興趣關鍵字不再從已存偏好回填（ADR-032：舊的文字興趣欄位已移除，只剩請求本身的關鍵字）。
+    assert.deepEqual(merged.preferredKeywords, []);
     assert.equal(merged.blockedPeriods.length, 1);
     assert.deepEqual(merged.mustTakeCourseIds, [7]);
   });

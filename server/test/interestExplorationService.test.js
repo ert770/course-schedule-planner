@@ -96,22 +96,9 @@ describe('initial rag-tag interest exploration cards', () => {
     );
   });
 
-  test('只選廣泛主分類時追問目前卡片中可用的子分類，已選子分類則不重複追問', () => {
-    const tag = learningTags.find(item => item.categoryAssignments.some(path => path.subcategoryId));
-    const assignment = tag.categoryAssignments.find(path => path.subcategoryId);
-    const main = interestTagCatalog.mainCategories.find(item => item.id === assignment.mainCategoryId);
-    const subcategory = interestTagCatalog.subcategories.find(item => item.id === assignment.subcategoryId);
-    const cards = buildInterestExplorationCards([
-      course({ ragTag: [tag.name] }),
-    ]);
-
-    const prompts = buildInterestCategoryPrompts(cards, { interests: [main.name] });
-    assert.equal(prompts.length, 1);
-    assert.equal(prompts[0].mainCategoryId, main.id);
-    assert.ok(prompts[0].subcategories.some(item => item.id === subcategory.id));
-    assert.deepEqual(buildInterestCategoryPrompts(cards, {
-      interests: [main.name, subcategory.name],
-    }), []);
+  test('categoryPrompts 固定為空陣列（舊文字興趣欄位已移除，ADR-032）', () => {
+    const cards = buildInterestExplorationCards([course()]);
+    assert.deepEqual(buildInterestCategoryPrompts(cards, { interests: ['資訊與計算'] }), []);
   });
 
   test('候選服務套用登入者班級範圍與目前學期', async () => {

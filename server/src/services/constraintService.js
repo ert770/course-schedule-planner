@@ -165,7 +165,9 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
       prefs.preferChallengingCourses
     ),
     preferredTrack: input.preferredTrack || prefs.preferredTrack || null,
-    preferredKeywords: pickList(input.preferredKeywords, prefs.preferredKeywords),
+    // 興趣關鍵字只來自這次請求（AI 聊天單次排課「這次想排資安」）。
+    // 已存的文字興趣欄位已移除（ADR-032，2026-11-23），長期興趣改由下方的 interestTagIds 表達。
+    preferredKeywords: pickRequestList(input.preferredKeywords),
     // **不從 `preferenceTags` 回填**（roadmap #10）。
     //
     // 這裡原本是 `prefs.interests ?? prefs.preferenceTags`，而 `prefs.interests`
@@ -177,7 +179,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     //
     // 移除 fallback 後沒有興趣關鍵字時 `interests` 為空陣列，
     // `hasExpressedPreference` 會據實回報，而不是靠比不中的標籤假裝有偏好。
-    interests: pickList(input.interests, prefs.interests),
+    interests: pickRequestList(input.interests),
     // 課程主題問答勾選的標籤，與上面的關鍵字一起構成排課的「興趣」軸（ADR-031）。
     // 關鍵字仍保留：AI 聊天的單次排課（「這次想排資安」）靠它。
     interestTagIds: pickInterestTagIds(input.interestTagIds, prefs, input),

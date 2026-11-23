@@ -12,7 +12,15 @@
 // 現在改用 OpenAI 原生 tool calling，參數由下面的 JSON Schema 約束，
 // enum 與必填欄位在 API 層就被擋下，不再是 prompt 裡的一句叮嚀。
 
-// 把已儲存的興趣偏好攤平成一行，讓模型知道有哪些值可以帶進 run_csp_scheduler。
+import { resolveInterestSelections } from '../data/interestSelections.js';
+import { readInterestPreferences } from '../data/interestPreferences.js';
+
+// 課程主題問答勾選的標籤名稱（長期興趣的唯一來源，ADR-032）。
+function selectedTopicNames(prefs = {}) {
+  return resolveInterestSelections(readInterestPreferences(prefs).interestSelections).tags.map(({ tag }) => tag.name);
+}
+
+// 把已儲存的偏好攤平成一行。
 function formatList(...sources) {
   const values = sources
     .filter(Array.isArray)
@@ -140,12 +148,12 @@ const SCHEDULER_PARAMETERS = {
   preferredKeywords: {
     type: 'array',
     items: { type: 'string' },
-    description: '使用者的興趣關鍵字，例如 ["網路","資安"]。',
+    description: '這次排課想排的主題關鍵字，例如 ["網路","資安"]。只影響這一次排課，不會保存。',
   },
   interests: {
     type: 'array',
     items: { type: 'string' },
-    description: '使用者的興趣領域，用途同 preferredKeywords。',
+    description: '這次排課想排的興趣領域，用途同 preferredKeywords。只影響這一次排課，不會保存。',
   },
   preferEasyCourses: { type: 'boolean', description: '使用者想要涼課或好拿高分的課時設為 true。' },
   // roadmap #5B：難度方向的另一半。與 preferEasyCourses 語意相反，
@@ -361,6 +369,8 @@ export function getAgentTools() {
       description:
         '更新使用者長期偏好。只在使用者明確表達要「以後都這樣」時呼叫，'
         + '單次排課條件請直接帶進 run_csp_scheduler。'
+        + '**想學的主題（例如「以後都想排資安」）不能用這個工具保存**：請直接回覆使用者，'
+        + '到設定頁的「課程主題問答」勾選想學的主題；這次想排的主題可以直接帶進 run_csp_scheduler 的 interests。'
         + '**兩段式**：不帶 confirmationToken 呼叫時只會提出變更、不會寫入，'
         + '你必須把回傳的 proposedChanges 講給使用者確認；'
         + '取得明確同意後，帶著回傳的 confirmationToken 再呼叫一次才會真的生效。',
@@ -374,8 +384,7 @@ export function getAgentTools() {
           targetCreditsMax: { type: 'integer' },
           blockedPeriods: SCHEDULER_PARAMETERS.blockedPeriods,
           preferredTrack: SCHEDULER_PARAMETERS.preferredTrack,
-          interests: SCHEDULER_PARAMETERS.interests,
-          preferredKeywords: SCHEDULER_PARAMETERS.preferredKeywords,
+          // 長期興趣只能透過設定頁的課程主題問答設定（ADR-032），這裡不再接受 interests／preferredKeywords。
           confirmationToken: {
             type: 'string',
             description: '上一次呼叫回傳的 token。使用者確認後才帶，不可自行編造。',
@@ -638,8 +647,10 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 
 排課偏好使用說明：
 - preferredKeywords、interests、preferCompact、preferEasyCourses、preferChallengingCourses 會影響單門課挑選及多個方案的主推排序。
-- 使用者要求個人化推薦，但目前使用者偏好中的「興趣關鍵字」與「修課路徑」都未設定，且這一輪也沒有說明興趣時，先用一個簡短問題詢問方向；可舉「技術應用、網路與安全、嵌入式系統」或目前課程主題為例，不要替使用者選。若使用者只要一般排課或明確表示沒有特定方向，直接排課，不得強迫回答。
-- 使用者說「這次想排資安相關」時，把方向放進單次 run_csp_scheduler；只有使用者明確表示要長期保存，才使用 update_preferences 的 preferredTrack／interests／preferredKeywords。
+- 使用者要求個人化推薦，但目前使用者偏好中的「課程主題」與「修課路徑」都未設定，且這一輪也沒有說明興趣時，先用一個簡短問題詢問方向；可舉「技術應用、網路與安全、嵌入式系統」或目前課程主題為例，不要替使用者選。若使用者只要一般排課或明確表示沒有特定方向，直接排課，不得強迫回答。
+- 使用者說「這次想排資安相關」時，把方向放進單次 run_csp_scheduler 的 interests 或 preferredKeywords；它們只影響這一次排課。
+- 使用者要長期保存想學的主題（例如「以後都想排資安」）時，不要用 update_preferences 存關鍵字，請他到設定頁的「課程主題問答」勾選；修課路徑仍可用 update_preferences 的 preferredTrack 保存。
+- 「Python」這類很常見的工具或技能不在課程主題問答的選項裡，也不能長期保存。使用者想排這類主題時，把它放進這一次 run_csp_scheduler 的 interests；使用者想長期保存時，說明問答沒有這類選項，請他之後每次排課時直接告訴你。
 - 使用者明確說要避開某位教師時，把教師完整姓名放進 avoidInstructors；不得自行猜測、補姓氏或改寫姓名。
 - preferEasyCourses 與 preferChallengingCourses 方向相反，不得同時設為 true；使用者若兩者都提到，要先確認實際想要哪一個。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
@@ -751,6 +762,6 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 偏好集中排課：${userPrefs.preferCompact ? '是' : '否'}
 - 偏好涼課：${(userPrefs.preferEasyCourses ?? userPrefs.preferEasy) ? '是' : '否'}
 - 偏好挑戰難課：${userPrefs.preferChallengingCourses ? '是' : '否'}
-- 興趣關鍵字：${formatList(userPrefs.preferredKeywords, userPrefs.interests, userPrefs.preferenceTags)}
+- 課程主題（課程主題問答勾選）：${formatList(selectedTopicNames(userPrefs))}
 - 修課路徑：${userPrefs.preferredTrack || '未設定'}${planningBlock}${latestRecommendation}${pendingBlock}`;
 }

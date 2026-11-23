@@ -2875,10 +2875,11 @@ describe('P10-6 interests 不再從偏好標籤回填（Roadmap #10）', () => {
     assert.deepEqual(merged.interests, []);
   });
 
-  test('P10-6 真正的興趣關鍵字仍然照常帶入', () => {
+  test('P10-6 已存的舊 interests 不再帶入（ADR-032）；只有這次請求的關鍵字有效', () => {
     const merged = buildScheduleConstraints({}, { interests: ['資訊安全', '網路'] });
 
-    assert.deepEqual(merged.interests, ['資訊安全', '網路']);
+    assert.deepEqual(merged.interests, []);
+    assert.deepEqual(buildScheduleConstraints({ interests: ['資訊安全'] }, {}).interests, ['資訊安全']);
   });
 
   test('P10-6 request 帶的 interests 優先於已儲存偏好', () => {

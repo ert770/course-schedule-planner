@@ -38,14 +38,6 @@
 .setup-journey-sections button:disabled { opacity: .55; cursor: default; }
 .setup-student-scope { margin: 0 0 18px; color: var(--text-primary); font-weight: 650; }
 .setup-topic-section { display: grid; gap: 14px; }
-.setup-other-interests { border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; }
-.setup-other-interests summary { cursor: pointer; color: var(--text-primary); font-size: .88rem; font-weight: 650; }
-.setup-other-interests summary span, .setup-other-interests p { color: var(--text-secondary); font-size: .82rem; font-weight: 400; }
-.setup-other-interests p { margin: 8px 0; }
-.setup-other-interests .setup-pref-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
-.setup-other-interests label { display: block; margin-top: 8px; font-size: .84rem; }
-.setup-other-interests input { box-sizing: border-box; width: 100%; margin-top: 5px; padding: 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); }
-.setup-other-interests :is(summary, input):focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 3px; }
 .setup-journey-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .setup-journey-actions > :last-child { margin-left: auto; }
 .setup-journey-review { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0; padding: 12px; border-radius: 8px; background: var(--bg-secondary); color: var(--text-secondary); font-size: .85rem; }

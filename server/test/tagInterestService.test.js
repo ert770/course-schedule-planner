@@ -69,8 +69,13 @@ beforeEach(() => {
 describe('rag-tag-interest-v1 profile service', () => {
   test('未同意時保留明確先驗，但不讀取事件或寫入行為快取', async () => {
     await recordExplorationInterest();
+    // 明確先驗只來自課程主題問答的勾選（ADR-032）。
+    const ticked = interestTagCatalog.canonicalTags.find(item => item.eligibility?.interestLearningEligible === true
+      && item.eligibility?.crossCourseMatchEligible === true);
     const result = await getTagInterestProfile(identity, {
-      prefs: { interests: [tag.name] },
+      prefs: { interestSelections: [{
+        group: 'outside', categoryId: ticked.categoryAssignments[0].mainCategoryId, tagIds: [ticked.id],
+      }] },
     });
 
     assert.equal(result.consented, false);

@@ -51,8 +51,9 @@ describe('P3 versioned Profile schema', () => {
     });
 
     assert.equal(profile.preferredTrack, '網路與安全類');
-    assert.deepEqual(profile.interests, ['資安', '網路']);
-    assert.deepEqual(profile.preferredKeywords, []);
+    // 舊文字興趣欄位已移除（ADR-032）：即使資料殘留，也不出現在 Profile 上。
+    assert.equal('interests' in profile, false);
+    assert.equal('preferredKeywords' in profile, false);
     assert.equal(validateProfile(profile).valid, true);
   });
 

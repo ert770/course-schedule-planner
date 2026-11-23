@@ -3015,7 +3015,7 @@ roadmap 狀態／相依總表已整體核對：階段 3／4 驗收不改變其�
   - **s_vec**：明確興趣只讀問答勾選的標籤（ADR-030，見[報告](./2026-11-22-interest-pipeline-s-vec.md)）。
   - **排課興趣軸（`scoringPolicy`）**：勾選標籤併入興趣軸（ADR-031，見[報告](./2026-11-23-interest-pipeline-scoring-policy.md)）。
     AI 聊天這次有給關鍵字時，興趣軸只用這次的關鍵字（修法 A，2026-11-23）。
-- 四段完成後，依使用者決定移除舊的 `interests`／`preferredKeywords` 欄位與資料。
+- 舊的 `interests`／`preferredKeywords` 欄位已移除（ADR-032，見[報告](./2026-11-23-remove-legacy-interest-fields.md)）：11 個帳號先轉成問答勾選再刪除；10 個 `1804…` 測試帳號依使用者決定不動。
 
 #43 狀態不變；沒有排課器改動；總表其他任務的狀態與相依已核對，不受影響。
 

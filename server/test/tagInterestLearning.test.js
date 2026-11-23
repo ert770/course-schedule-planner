@@ -45,8 +45,11 @@ function snapshot(event, course = courseFor()) {
 
 describe('rag-tag-interest-v1 pure model', () => {
   test('explicit broad category is retained as category intent without expanding descendant tags', () => {
+    // 方向只選不勾（課程主題問答，ADR-032 後唯一的明確興趣來源）。
     const category = interestTagCatalog.mainCategories[0];
-    const profile = computeTagInterestProfile([], { interests: [category.name] });
+    const profile = computeTagInterestProfile([], {
+      interestSelections: [{ group: 'outside', categoryId: category.id, tagIds: [] }],
+    });
     assert.deepEqual(profile.categoryInterests.map(item => item.mainCategoryId), [category.id]);
     assert.deepEqual(profile.tagInterests, []);
   });

@@ -111,13 +111,13 @@ function deriveExplicitProfile(prefs) {
   };
 }
 
-// 使用者有沒有自己設定過任何偏好（偏好標籤、興趣、關鍵字、避開時段）。
+// 使用者有沒有自己設定過任何偏好（偏好標籤、課程主題問答勾選、避開時段、修課路徑）。
+// 舊的文字興趣欄位已移除（ADR-032）。
 // `explicitProfile` 只是學習權重的基準（目前只有「集中排課」會落到權重軸上），不能拿來判斷
 // 「使用者有沒有表達偏好」——先前設了「不排早八、涼課優先」仍顯示「尚未表達偏好」（2026-10-15 Persona 實測）。
 export function hasExplicitPreferences(prefs = {}) {
   const nonEmpty = value => Array.isArray(value) && value.length > 0;
-  return nonEmpty(prefs?.preferenceTags) || nonEmpty(prefs?.interests)
-    || nonEmpty(prefs?.preferredKeywords) || nonEmpty(prefs?.blockedPeriods)
+  return nonEmpty(prefs?.preferenceTags) || nonEmpty(prefs?.blockedPeriods)
     || nonEmpty(prefs?.interestSelections)
     || Boolean(prefs?.preferredTrack);
 }

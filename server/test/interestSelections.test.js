@@ -185,10 +185,10 @@ describe('Step B：buildExplicitTagInterest 讀 interestSelections', () => {
     assert.ok(subTagMap.size >= 2 && priors.tagPriors.length === 1);
   });
 
-  test('SP11 名稱路徑不變；名稱與 ID 選到同一個標籤時只有一筆先驗', () => {
+  test('SP11 名稱路徑已移除（ADR-032）：舊 interests 不產生先驗，只有勾選才有', () => {
     const byNameOnly = buildExplicitTagInterest({ interests: [tagA.name] });
-    assert.deepEqual(byNameOnly.tagPriors.map(tag => tag.canonicalTagId), [tagA.id]);
-    assert.equal(byNameOnly.tagPriors[0].source, undefined, '名稱路徑沒有 source 欄位（維持原樣）');
+    assert.deepEqual(byNameOnly.tagPriors, []);
+    assert.deepEqual(byNameOnly.explicitTopics, []);
 
     const both = buildExplicitTagInterest({
       interests: [tagA.name],

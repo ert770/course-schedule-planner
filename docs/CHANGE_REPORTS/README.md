@@ -4,6 +4,7 @@
 
 ## 2026-11-23
 
+- [移除舊的文字興趣欄位 interests／preferredKeywords（先轉移再刪除）](./2026-11-23-remove-legacy-interest-fields.md)
 - [修法 A：AI 聊天這次有給關鍵字時，興趣軸只用這次的關鍵字](./2026-11-23-interest-pipeline-fix-a.md)
 - [課程主題問答接管線第 4 段：排課興趣軸納入勾選的標籤](./2026-11-23-interest-pipeline-scoring-policy.md)
 

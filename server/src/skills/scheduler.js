@@ -3554,7 +3554,20 @@ function buildReviewCoverage(plan) {
 // `warnings` 陣列裡的一則。前端要照驗收標準「誠實顯示實際方案數與重複原因」，
 // 就只能去 parse 中文字串——那是必然會壞的作法。改成先算出結構，句子再從結構
 // 產生：兩個出口，一份資料。
-function buildPlanDiversity(allPlans, dedupedPlans, prepared, milpGeneration = null) {
+// 興趣導向方案「達不到主軸改善門檻」而綜合方案本身已經有興趣命中：其他條件（換課、品質、學分）
+// 都滿足的課表裡，沒有比綜合方案興趣程度高出門檻的，綜合方案就是最符合興趣的組合。說明要讓使用者
+// 知道興趣有被考慮（2026-11-23 使用者要求；4 個帳號關掉 S_tag／s_vec 後興趣導向方案就回來，
+// 見 docs/CHANGE_REPORTS/2026-11-23-remove-legacy-interest-fields.md）。綜合方案沒有任何興趣命中時
+// 不用這句——那不是「已經最好」，是沒排進任何感興趣的課。
+export function collapseDetailFor(item, baseInterestCoverage = 0) {
+  if (item?.detail) return item.detail;
+  if (item?.archetype === 'interest' && item.reason === 'axis-threshold-infeasible' && baseInterestCoverage > 0) {
+    return 'base-already-best-interest';
+  }
+  return null;
+}
+
+function buildPlanDiversity(allPlans, dedupedPlans, prepared, milpGeneration = null, { baseInterestCoverage = 0 } = {}) {
   const survivingIds = new Set(dedupedPlans.map(plan => plan.id));
   if (milpGeneration) {
     const labels = {
@@ -3565,11 +3578,12 @@ function buildPlanDiversity(allPlans, dedupedPlans, prepared, milpGeneration = n
     };
     const collapsed = (milpGeneration.collapseReasons || []).map(item => {
       const definition = labels[item.archetype];
+      const detail = collapseDetailFor(item, baseInterestCoverage);
       return {
         variantId: definition?.id ?? item.archetype,
         title: definition?.title ?? item.archetype,
         reason: item.reason,
-        ...(item.detail ? { detail: item.detail } : {}),
+        ...(detail ? { detail } : {}),
         // 只有「與已選方案太像」才帶這個 key。這裡就把 archetype 解析成方案 id 與顯示名稱，
         // 前端不必自己維護一份對照。
         ...(Array.isArray(item.conflictsWith) && item.conflictsWith.length > 0 ? {
@@ -3786,6 +3800,7 @@ const COLLAPSE_REASON_TEXT = {
 // no-signal 太籠統時改用 detail 的說法——「已經做不到更好」和「資料分不出差別」是兩件事。
 const COLLAPSE_DETAIL_TEXT = {
   'threshold-unreachable': '綜合方案已達目前課程資料可改善的界線，無法再產生有意義的主軸改善',
+  'base-already-best-interest': '綜合方案已經是最符合你興趣的組合，再排一份只會是重複的課表',
 };
 
 // 這條主軸其實排得出合法方案，只是與已選的方案太像。文案要帶對方的名稱，所以是函式不是字串。
@@ -4470,7 +4485,8 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     allVariantPlans,
     plans,
     prepared,
-    runtimeOptions.planSet === 'primary-only' ? null : milpGeneration
+    runtimeOptions.planSet === 'primary-only' ? null : milpGeneration,
+    { baseInterestCoverage: basePlan ? getInterestCoverage(basePlan, constraints) : 0 }
   );
   const generationDiagnostics = includePlanDiagnostics
     ? buildGenerationDiagnostics(allVariantPlans, prepared, candidateCourses)

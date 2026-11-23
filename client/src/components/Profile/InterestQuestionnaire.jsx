@@ -471,6 +471,11 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
               })}
             </div>
             {total > 0 && <p className="interest-quiz-hint" id="interest-quiz-picked">已選 {total} 個主題。</p>}
+            {/* 太常見的標籤（Python 等，too_common）不開放勾選（2026-11-23 使用者決定，ADR-032）：
+                想排的話在 AI 聊天說，當作這一次排課的關鍵字。 */}
+            <p className="interest-quiz-note" id="interest-quiz-common-topics">
+              Python 這類很常見的工具或技能不在主題選項裡。想排的話，排課時直接跟 AI 助理說，例如「這次想排 Python 的課」。
+            </p>
             {error && <p className="interest-quiz-error" role="alert">{error}</p>}
             <div className="interest-quiz-actions">
               <button type="button" className="course-card-action" onClick={goBack} disabled={loading}>上一題</button>
