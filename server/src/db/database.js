@@ -10,6 +10,10 @@ import { logger } from '../utils/logger.js';
 import { createTtlCache } from '../utils/ttlCache.js';
 import { validateCourseHistoryEntry } from '../data/courseHistory.js';
 import { classifyHistoryEntryByCurriculum } from '../data/courseHistoryClassification.js';
+import { getNonGraduationCategory } from '../data/generalEducation.js';
+import { classifyGeneralEducationCourse } from '../data/generalEducationCatalog.js';
+import { buildStudentScope, isOwnDepartmentClass } from '../skills/courseScope.js';
+import { isCsCourse } from '../data/csCurriculum.js';
 import { normalizeAdmissionYear } from '../data/graduationRuleVersions.js';
 import { resolveMinCredits } from '../data/creditPolicy.js';
 import { normalizeCourseGradeLevel } from '../data/courseGradeLevel.js';
@@ -377,27 +381,93 @@ export function mapCourseHistoryRow(row) {
 // MyFCU 匯入的修課紀錄（migration 013 起欄位可為 NULL）：
 //   - 沒有對到課號（`catalog_course_code` NULL）或成績無法判讀（`passed` NULL）的列不進推薦與畢業計算；
 //     它們仍留在資料庫，歷史修課列表（courseHistoryListService）看得到。
-//   - 修別與畢業分類為 NULL 的列，讀取時依課號與科目表補分類（classifyHistoryEntryByCurriculum），
-//     對不上就是「未確認／unspecified」，與 Markdown 匯入的未分類相同；不寫回資料庫。
+//   - 修別與畢業分類為 NULL 的列，讀取時補分類，不寫回資料庫。依序（2026-11-23 團隊決定）：
+//       1. 體育、國防科技、班級活動 → nonGraduation（getNonGraduationCategory，與排課的校規相同）
+//       2. 資工必選修、通識基礎必修 → classifyHistoryEntryByCurriculum
+//       3. 課程表裡是通識課（classifyGeneralEducationCourse）→ general
+//       4. 課程表查得到、且不是本系開的課 → external（2026-11-24 使用者決定「都先算系外」：
+//          非系所單位開的課（語言中心等）與只有進修部班次的課也先算系外；是否認列仍須向系辦確認）
+//       5. 都對不上（課程表查不到、或是本系課號但不在科目表）→ 「未確認／unspecified」
+//     修別值沿用既有資料的慣例：不計畢業「必修」、通識領域「通識」、系外「選修」。
 export function isUsableHistoryRow(row) {
   return row?.catalog_course_code !== null && row?.catalog_course_code !== undefined
     && row?.passed !== null && row?.passed !== undefined;
 }
 
-export function fillMissingHistoryCategories(row) {
+function classifyFromCatalog(row, { catalogByCode, scope }) {
+  const sections = catalogByCode?.get(String(row.catalog_course_code).trim().toUpperCase()) ?? [];
+  if (sections.some(section => classifyGeneralEducationCourse(section))) {
+    return { requirementType: '通識', graduationCategory: 'general' };
+  }
+  // 不是本系開的課一律先算系外（含別系的必修、語言中心等非系所單位、只有進修部班次的課）。
+  // 系外選修的機械認列條件不在這裡擋：是否計入畢業仍須向系辦確認，與排課端的系外選修相同。
+  // 本系課號（資工的 IECS 等）不在科目表時維持未分類，不當成系外。
+  if (scope?.resolved && sections.length > 0
+    && !sections.some(section => isOwnDepartmentClass(section, scope)
+      || (scope.department === '資訊工程學系' && isCsCourse(section)))) {
+    return { requirementType: '選修', graduationCategory: 'external' };
+  }
+  return null;
+}
+
+/**
+ * @param row     User_Course_History 的一列
+ * @param context `{ catalogByCode: Map<課號, 課程物件[]>, scope: buildStudentScope() }`；缺少時只用 1、2 兩步
+ */
+export function fillMissingHistoryCategories(row, context = {}) {
   const missingRequirement = row.requirement_type === null || row.requirement_type === undefined;
   const missingGraduation = row.graduation_category === null || row.graduation_category === undefined;
   if (!missingRequirement && !missingGraduation) return row;
-  const classified = classifyHistoryEntryByCurriculum({
-    courseCode: row.catalog_course_code,
-    courseName: row.course_name,
-    generalEducationCategory: row.general_education_category ?? null,
-  });
+  const classified = getNonGraduationCategory({ name: row.course_name })
+    ? { requirementType: '必修', graduationCategory: 'nonGraduation' }
+    : (classifyHistoryEntryByCurriculum({
+      courseCode: row.catalog_course_code,
+      courseName: row.course_name,
+      generalEducationCategory: row.general_education_category ?? null,
+    }) ?? classifyFromCatalog(row, context));
   return {
     ...row,
     requirement_type: missingRequirement ? (classified?.requirementType ?? '未確認') : row.requirement_type,
     graduation_category: missingGraduation ? (classified?.graduationCategory ?? 'unspecified') : row.graduation_category,
   };
+}
+
+// 只為「分類空白」的列查課程表與學生系所。查詢失敗時退回只用 1、2 兩步，不讓整份修課紀錄載入失敗。
+async function loadHistoryClassificationContext(numericId, rows) {
+  const codes = [...new Set(rows.map(row => String(row.catalog_course_code).trim().toUpperCase()))];
+  if (codes.length === 0) return {};
+  try {
+    const [profileRows, courseRows] = await Promise.all([
+      queryRows('SELECT `department`, `class_name`, `grade_level`, `program_type` FROM `User_Profiles` WHERE `user_id` = ? LIMIT 1', [numericId]),
+      queryRows(`
+        SELECT c.\`name\`, c.\`type\`, c.\`dept\`, c.\`subid3\`, c.\`target_grade\`, cs.\`year\`, cs.\`semester\`
+        FROM \`Courses\` c
+        LEFT JOIN \`Course_Sections\` cs ON BINARY c.\`course_id\` = BINARY cs.\`course_id\`
+        WHERE c.\`subid3\` IN (${codes.map(() => '?').join(', ')})
+      `, codes),
+    ]);
+    const profile = profileRows[0] ?? {};
+    const scope = buildStudentScope({
+      department: profile.department, className: profile.class_name,
+      gradeLevel: profile.grade_level, programType: profile.program_type,
+    });
+    const catalogByCode = new Map();
+    for (const course of courseRows) {
+      const code = String(course.subid3 ?? '').trim().toUpperCase();
+      if (!code) continue;
+      const list = catalogByCode.get(code) ?? [];
+      list.push({
+        name: course.name, type: course.type, category: course.type, department: course.dept,
+        catalogCourseCode: course.subid3, gradeLevel: normalizeCourseGradeLevel(course.target_grade),
+        year: normalizeNumber(course.year), semester: course.semester,
+      });
+      catalogByCode.set(code, list);
+    }
+    return { catalogByCode, scope };
+  } catch (err) {
+    logger.warn(`修課紀錄補分類時無法讀取課程表，只依科目表判定：${err.message}`, { label: 'CourseHistory' });
+    return {};
+  }
 }
 
 export async function getUserCourseHistory(identity) {
@@ -419,7 +489,10 @@ export async function getUserCourseHistory(identity) {
       WHERE \`user_id\` = ?
       ORDER BY \`academic_year\`, \`semester\`, \`history_id\`
     `, [numericId]);
-    return rows.filter(isUsableHistoryRow).map(row => mapCourseHistoryRow(fillMissingHistoryCategories(row)));
+    const usable = rows.filter(isUsableHistoryRow);
+    const missing = usable.filter(row => row.requirement_type === null || row.graduation_category === null);
+    const context = missing.length > 0 ? await loadHistoryClassificationContext(numericId, missing) : {};
+    return usable.map(row => mapCourseHistoryRow(fillMissingHistoryCategories(row, context)));
   } catch (err) {
     if (err instanceof CourseHistoryUnavailableError) throw err;
     throw new CourseHistoryUnavailableError('歷史修課資料暫時無法載入，請稍後再試。', { cause: err });
