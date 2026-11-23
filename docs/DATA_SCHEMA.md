@@ -1060,3 +1060,24 @@ v2 向量尚未產生：需在另行確認大綱文字的 API 傳送與費用後
 使用完整課程目錄與同意有效的本人歷史／事件建立向量，再對本次候選算 `s_vec`；未同意或失敗為空 Map。
 回應只保留 `graduationPlanning.externalInterestReservation` 的來源、上限 5 與可用前五門 `{courseCode,score}`；
 不傳出本人原始事件、歷史證據或向量。清單不代表實際入選，需看 `selected`；替代方案可能選別的系外課。
+
+## 學生註冊與 MyFCU 歷史修課匯入（migration 010～015，2026-11-23 移植）
+
+migration 檔自 `feature/myfcu-session-import` 移植到 `server/migrations/`，**共用 MySQL 已全部套用**（2026-11-23 唯讀查證：欄位、表與索引皆存在）；檔案只作紀錄，不可再對共用 DB 執行。013～015 只有 up，MySQL DDL 會隱含 commit，無法整批回滾。
+
+| migration | 內容 |
+| --- | --- |
+| 010 | `User_Profiles.student_id` VARCHAR(32) UNIQUE；`User_Id_Allocator`（註冊配發 user_id，範圍 5～8999） |
+| 011 | `User_Course_History.source_credit_record`：MyFCU 原始「取得學分記錄」，不是成績或通過證明 |
+| 012 | `Local_History_Attestations`：本人聲明（信任等級、聲明版本、確認時間） |
+| 013 | 歷史表新增 `course_id`、`source_payload` JSON；`passed`、`requirement_type`、`graduation_category` 可為 NULL；新增 `Unmatched_Course_History` |
+| 014 | `Unmatched_Course_History.source_identity` 與 `(user_id, source_identity, academic_year, semester)` 唯一鍵 |
+| 015 | 歷史表 `catalog_course_code` 可為 NULL（utf8mb4_bin）、新增 `source_course_code`、`source_attempt_key` 與唯一鍵 |
+
+**帳號**：註冊流程建立的帳號在 `User_Profiles.password_hash` 存 argon2id 雜湊（Node 內建 `crypto.argon2`，需 Node ≥ 24.7）。demo 與 Persona 帳號有 `student_id` 但沒有雜湊，非 production 登入時退回 `users.json`（見 API_SPEC）。
+
+**匯入的列**：MyFCU 自動匯入寫入 `source`=`myfcu_session` 或 `myfcu_self_attested`，修別與畢業分類為 NULL；對不到目錄課號時 `catalog_course_code` 為 NULL、原始課號在 `source_course_code`。
+
+**讀取規則**（`getUserCourseHistory()`，2026-11-23 團隊決定）：
+- `catalog_course_code` 或 `passed` 為 NULL 的列不進推薦、排課與畢業計算（仍可在歷史修課列表看到）。
+- 修別或畢業分類為 NULL 時，依課號與科目表補分類（`classifyHistoryEntryByCurriculum()`），對不上為 `未確認`／`unspecified`。只在讀取時補，不寫回資料庫。

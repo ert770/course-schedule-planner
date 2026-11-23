@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/useAuth';
 import { useSchedule } from '../contexts/useSchedule';
-import { scheduleAPI, chatAPI, profileAPI, historyFeedbackAPI } from '../services/api';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { scheduleAPI, chatAPI, profileAPI, historyFeedbackAPI, controlledBrowserAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
@@ -28,6 +29,12 @@ import TopNav from '../components/Layout/TopNav';
 export default function DashboardPage() {
   const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
+  const location = useLocation();
+  const navigate = useNavigate();
+  // MyFCU 本機同步入口（只在開發模式查詢）。本機模式沒開時後端回 404，視為未開放，不顯示錯誤。
+  const [localMyFcuPreview, setLocalMyFcuPreview] = useState(false);
+  const [localMyFcuError, setLocalMyFcuError] = useState('');
+  useEffect(() => { if (!import.meta.env.DEV || !userIdentity) return; let active=true; controlledBrowserAPI.config().then(x=>{if(active){setLocalMyFcuPreview(x.mode==='local');setLocalMyFcuError('');}}).catch(error=>{if(active){setLocalMyFcuPreview(false);setLocalMyFcuError(error.status === 404 ? '' : (error.message || '無法確認本機同步設定'));}}); return ()=>{active=false;}; }, [userIdentity]);
   const {
     schedule,
     loading: scheduleLoading,
@@ -165,6 +172,13 @@ export default function DashboardPage() {
   
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;
+    // 剛匯入修課紀錄回到首頁時，依新的修課紀錄重新排一次。
+    if (Number.isInteger(location.state?.courseHistoryImported) && location.state.courseHistoryImported > 0) {
+      initialGenerationUserRef.current = userIdentity;
+      navigate(location.pathname + location.search + location.hash, { replace: true, state: null });
+      generateInitialSchedule();
+      return;
+    }
     if (schedule.length > 0) {
       initialGenerationUserRef.current = userIdentity;
       return;
@@ -172,7 +186,7 @@ export default function DashboardPage() {
     if (initialGenerationUserRef.current === userIdentity) return;
     initialGenerationUserRef.current = userIdentity;
     generateInitialSchedule();
-  }, [generateInitialSchedule, schedule.length, scheduleLoading, userIdentity]);
+  }, [generateInitialSchedule, schedule.length, scheduleLoading, userIdentity, location, navigate]);
 
   // 階段 5：歷史修課回饋。只在同意個人化學習時查；查不到不影響排課。
   useEffect(() => {
@@ -357,6 +371,11 @@ export default function DashboardPage() {
     <div className="layout-container" id="dashboard-page">
       {/* Top Navbar */}
       <TopNav active="home" />
+      {location.state?.historySyncSummary && <section className="history-dashboard-summary" role="status">
+        <div><strong>修課紀錄同步完成</strong><span>已更新本次同步結果</span></div>
+        <div className="history-dashboard-counts"><span>新增 <b>{location.state.historySyncSummary.inserted}</b> 筆</span><span>未匹配 <b>{location.state.historySyncSummary.unmatched}</b> 筆</span><span>重複跳過 <b>{location.state.historySyncSummary.skipped}</b> 筆</span><span>衝突 <b>{location.state.historySyncSummary.conflicts ?? 0}</b> 筆</span></div>
+        {location.state.historySyncSummary.legacyUnusable > 0 && <small>另有 {location.state.historySyncSummary.legacyUnusable} 筆舊待查資料缺少必要欄位，仍保留待查。</small>}
+      </section>}
 
       <div className="dashboard-content">
         {/* Left Sidebar: Preferences and Skill Tree */}
@@ -447,6 +466,10 @@ export default function DashboardPage() {
                 flexShrink: 0,
               }}
             >
+              {/* MyFCU 歷史修課：列表入口與本機同步（開發模式）。 */}
+              <Link className="action-btn secondary history-entry" to="/course-history">歷史修課紀錄</Link>
+              {import.meta.env.DEV && (user?.controlledBrowserMock === true || localMyFcuPreview) ? <Link className="action-btn secondary" to="/history-import-mock">{localMyFcuPreview ? 'MyFCU 本機預覽' : '同步 MyFCU 修課紀錄（本機測試）'}</Link> : <button className="action-btn secondary" type="button" disabled title="MyFCU 同步尚未開放">同步 MyFCU 修課紀錄（尚未開放）</button>}
+              {import.meta.env.DEV && localMyFcuError && <span role="status">本機同步設定查詢失敗：{localMyFcuError}</span>}
               {/* 固定不壓縮、不換行 */}
               <div style={{ flexShrink: 0, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>
                 <ExportDropdown schedule={schedule} gridElementId="schedule-grid-container" />

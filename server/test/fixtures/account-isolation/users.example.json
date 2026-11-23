@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "studentId": "AC-FIXTURE-A",
+    "password": "fixture-a-pass",
+    "name": "AC 測試帳號 A",
+    "className": "資訊三甲",
+    "watchlist": [],
+    "skillTree": [],
+    "overallScore": 0,
+    "overallScoreMax": 100
+  },
+  {
+    "id": 2,
+    "studentId": "AC-FIXTURE-B",
+    "password": "fixture-b-pass",
+    "name": "AC 測試帳號 B",
+    "className": "企管一甲",
+    "watchlist": [],
+    "skillTree": [],
+    "overallScore": 0,
+    "overallScoreMax": 100
+  }
+]
