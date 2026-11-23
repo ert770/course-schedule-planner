@@ -1214,3 +1214,25 @@ Consequences:
 - Real MyFCU capture, the mock capture page and Playwright-based tests were not run in this integration.
 
 Update 2026-11-24 (user decision): the read-time classification of imported rows was extended, because the curriculum classifier alone left PE/military, general-education domain courses and outside-department courses unclassified (for the imported account, 23 of 39 rows' credits fell into `unspecified`). Blank categories are now filled in order: course name PE/military/class activity → `nonGraduation`; CS curriculum and basic general education; the course catalogue's general-education identity → `general`; any catalogue course not offered by the student's own department → `external` (user decision "count them as outside for now": another department's required course, non-department units such as the language center, and continuing-education-only courses included; the mechanical outside-elective conditions are not applied here and office confirmation is still required); otherwise (not in the catalogue, or an own-department code outside the curriculum) `unspecified`. The catalogue and the student's department are queried once, only for blank-category rows; a query failure falls back to the first two steps. Rows with existing categories are never changed.
+
+## ADR-035: Explore "Start From a Course" Uses Three Precomputed Similarities (Name, Description, Topic)
+
+Date: 2026-11-24
+
+Context:
+
+After ADR-033 the explore page found nothing for most starting courses: for D1249697, 18 starts had shared topics but scored below 0.40, 6 had no candidate with a shared topic tag, and 15 could not be a start because the course is not in this term's catalogue (no description or tags). PE and military courses were never candidates because the page only offers outside electives and general education.
+
+Decision (user decisions on 2026-11-24):
+
+- Compute three OpenAI text embeddings per course offline (text-embedding-3-large, 512 dimensions): course name, course description, and course topic (topic-kind tags only; tool and format tags excluded). Courses only present in course history get a name vector from the history course name. The artifact is git-ignored and loaded once per server process; requests compute dot products only.
+- Score = mean of the cosines of the fields both courses have (equivalent to ranking by the sum when all three exist); list a course only when the score is at least 0.55. The threshold was chosen from an 11-account trial sweeping 0.30 upward with per-band samples.
+- Courses that do not count toward graduation (PE, national defence, class activity) and practice courses are neither starts nor candidates; a lab section attached to a lecture (code + P) still merges into the lecture card.
+- The start list is sorted by name (Latin A–Z first, Chinese by stroke order) and the default start is its first entry; the last chosen mode and start are remembered per user in the browser.
+
+Consequences:
+
+- Across 11 accounts and 263 starts: 484 listed items and 90 starts with no result (34%), versus 311 items with most starts empty under ADR-033. Name-only starts produce weaker matches.
+- The ADR-033 topic-tag gate no longer applies to this mode; the profile mode keeps its exact-tag rule.
+- Regenerating the artifact costs about 0.6M tokens (about USD 0.08 on 2026-11-24); the threshold has no user-study support.
+

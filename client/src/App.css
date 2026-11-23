@@ -1172,6 +1172,7 @@
 .explore-card:hover { transform: none; }
 .explore-shared-terms { margin: 10px 0 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6; }
 .explore-sections { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.explore-sections-title { margin: 0; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
 .explore-section-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); }
 .explore-section-info { display: flex; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--text-secondary); min-width: 0; }
 .explore-section-time { color: var(--text-muted); }

@@ -1950,87 +1950,69 @@ Response：
 
 ### `GET /api/exploration`（Roadmap #10 任務 4）
 
-系外與通識探索清單。從一門已修過的課出發，列出內容相近、且和它有相同主題的系外選修與通識，
-每個系所／通識領域只出一門（Pardos & Jiang 2020，規則見 `docs/SCHEDULING_LOGIC.md`）。
-**唯讀**：不寫互動事件，也不影響 `POST /api/schedule/generate` 的結果。需登入與 service consent。
+系外與通識探索清單。從一門已修過的課出發，列出相近的系外選修與通識，每個系所／通識領域只出一門
+（Pardos & Jiang 2020，規則見 `docs/SCHEDULING_LOGIC.md`）。**唯讀**：不寫互動事件，也不影響
+`POST /api/schedule/generate` 的結果。需登入與 service consent。
 
 Query：
 
-- `favoriteCourseCode`（選填）。必須是使用者已通過的課號。省略時由系統取成績最高、可用的本系課。
-- `representation`（選填）。只接受 `embedding`；省略即可。2026-11-23 起「共同用詞」（`tfidf`）已停用
-  （ADR-033），傳 `tfidf` 或其他值回 `400 INVALID_EXPLORATION_REPRESENTATION`。
+- `favoriteCourseCode`（選填）。必須是使用者已通過、且在起點選單中的課號。省略時取選單第一門。
+- `representation`（選填）。只接受 `embedding`；傳 `tfidf` 或其他值回 `400 INVALID_EXPLORATION_REPRESENTATION`。
 
 ```json
 {
   "mode": "favorite",
-  "favorite": { "courseCode": "IEE1005", "name": "線性代數", "source": "user" },
+  "favorite": { "courseCode": "IECS1001", "name": "Python程式設計", "source": "system-default" },
   "favorites": [
-    { "courseCode": "IEE1005", "name": "線性代數", "score": 80, "available": true },
-    { "courseCode": "GEID0010", "name": "班級活動", "score": 90,
-      "available": false, "reason": "zero-credit-course" }
+    { "courseCode": "IECS1001", "name": "Python程式設計", "score": 92, "available": true },
+    { "courseCode": "IECS2007", "name": "離散數學", "score": 80, "available": true },
+    { "courseCode": "XXXX1000", "name": "某課", "score": 70, "available": false, "reason": "no-course-vector" }
   ],
   "emptyReason": null,
   "outside": {
     "diversification": "department",
     "items": [{
-      "courseCode": "HY2002", "name": "工程數學(二)", "credits": 3,
-      "unit": "水利工程與資源保育學系", "similarity": 0.545,
-      "semanticMatch": { "sourceCourseCode": "IEE1005", "commonTags": ["特徵值"] },
-      "recognition": { "status": "needs-office-confirmation", "checked": true,
-        "needsOfficeConfirmation": true, "warnings": [] },
-      "sections": [{ "id": 2031, "catalogCourseCode": "HY2002", "timeBlocks": [] }]
+      "courseCode": "MATH4085", "name": "數學與金融企業實務", "credits": 3, "unit": "應用數學系",
+      "similarity": 0.62,
+      "semanticMatch": {
+        "sourceCourseCode": "IECS1001",
+        "parts": { "name": 0.49, "description": 0.67, "topic": 0.69 },
+        "commonTags": ["資料分析"]
+      },
+      "recognition": { "status": "needs-office-confirmation", "checked": true, "needsOfficeConfirmation": true, "warnings": [] },
+      "sections": [{ "id": 2031, "catalogCourseCode": "MATH4085", "timeBlocks": [] }]
     }]
   },
   "general": { "diversification": "domain", "items": [] },
   "method": {
-    "representation": "course-text-embedding-v1", "selection": "one-per-unit-cosine", "k": 5,
-    "embeddingModel": "text-embedding-3-large", "dimension": 3072, "catalogVersion": "…", "generatedAt": "…",
-    "denseWeight": 0.7, "tagGate": "shared-topic-tag",
-    "minSimilarity": 0.4, "genericMinSimilarity": 0.45, "genericTagDepartmentSpread": 13
+    "representation": "course-exploration-vectors-v1", "fields": ["name", "description", "topic"],
+    "combine": "mean-of-available-fields", "selection": "one-per-unit-cosine", "k": 5, "minSimilarity": 0.55,
+    "embeddingModel": "text-embedding-3-large", "dimension": 512, "generatedAt": "…"
   },
   "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
 }
 ```
 
-- `favorite.source`：`user`（使用者指定）或 `system-default`（系統代選）。
-- `favorites[].available`：這門已修課能不能當起點。`false` 時 `reason`：
-  - `zero-credit-course`：0 學分的課（班級活動、微積分實習課），沒有可比的主題內容；
-  - `no-text-embedding`：課程資料中沒有這門課可用的文字向量（或內容已更新）；
-  - `no-course-tags`：這門課沒有主題標籤，無法要求「至少一個相同主題」。
+- **分數**（ADR-035）：課名、課程說明、課程主題三個向量各算 cosine，取**兩邊都有的欄位**的平均；
+  ≥ 0.55 才列出。本學期課程表沒有的已修課（例：離散數學）只有課名向量，只比課名。
+  `outside`／`general` 各**最多** 5 門，可能少於 5 門或為空。
+- `semanticMatch.parts`：三種相近程度（無法比較時為 `null`）。`commonTags` 是兩門課都有的主題標籤
+  （工具軟體、上課方式不列），只是附加說明。
+- `favorites`：已通過的課，**不含**不計入畢業學分的課（體育、國防科技、班級活動）與實習課；
+  依課名排序（英文 A～Z 在前、中文依筆畫），可用的排前面。`available: false` 的唯一原因是
+  `no-course-vector`（沒有探索向量）。省略起點時 `favorite.source` 為 `system-default`。
+- 候選：當學期、資格確定（`eligibility` 不是 `unknown`／`ineligible`）、有上課時間、尚未通過、
+  有探索向量的系外選修與通識；不含不計入畢業學分的課；整門都是實習的課不列（講課底下的實習班仍併入講課）。
+- `emptyReason`（`favorite` 為 `null`、清單為空，回 `200`）：`no-course-history`、`no-available-favorite`、
+  `favorite-no-course-vector`、`exploration-vectors-unavailable`（產物不存在）、`exploration-vectors-invalid`
+  （產物格式或版本不符；不改用其他方法）。
+- `sections`、`recognition`、`general.diversification`、講課與實習課合併：同前（班次是完整的標準班次物件）。
 
-  **本學期沒開不是不可用的原因**，資料齊全就能當起點。
-- `emptyReason`（`favorite` 為 `null`、清單為空，回 `200`）：
-  `no-course-history`、`no-available-favorite`、`favorite-zero-credit-course`、`favorite-no-text-embedding`、
-  `favorite-no-course-tags`（指定的起點不可用）、`text-embeddings-unavailable`、`text-embeddings-invalid`、
-  `syllabus-source-unavailable`（比較資料不可用；不改用其他方法）。
-- **入選條件**（ADR-033）：分數＝文字向量 cosine × 0.7 ＋ 標籤 soft cosine × 0.3。至少一個兩門課都有的
-  **主題標籤**（工具軟體、上課方式、太常見的標籤不算）；分數 ≥ 0.40，相同的主題標籤全是籠統標籤
-  （出現在 ≥ 13 個系所）時 ≥ 0.45。`outside`／`general` 各**最多** 5 門，可能少於 5 門或為空。
-- `similarity`：上述混合分數，不可解讀為喜歡機率。
-- `semanticMatch.commonTags`：入選依據的主題標籤（最多 5 個），不是向量分數的完整解釋。不再回傳 `sharedTerms`。
-- `sections`：該課號在當學期、使用者可修的班次，是**完整的標準班次物件**（與
-  `GET /api/courses` 回傳的相同），可原樣交給 `POST /api/schedule/validate`。加入課表的單位是班次。
-- `recognition.status`：
-  - `needs-office-confirmation`：通過系外選修的機械條件，**仍須向系辦確認是否認列**。
-    這不代表已確認可抵畢業學分。
-  - `unchecked`：使用者的系所不在支援清單，機械條件沒有跑過，無法判定是否認列。
-  - `general-education`：通識；另帶 `ruleVersion` 與 `domain`（115 學年度起 `domain` 為 `null`）。
+錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課，或是被排除的課）、`400 INVALID_EXPLORATION_REPRESENTATION`、
+`400 CLASS_NAME_REQUIRED`。
 
-  機械條件判定**不認列**的系外選修不會出現在清單裡。
-- `general.diversification`：`domain` 表示每個通識領域至多一門；`none` 表示通識沒有領域
-  （115 學年度起），直接取最相似的幾門不同課號。
-- 候選只含當學期、資格確定（`eligibility` 不是 `unknown`／`ineligible`）、有上課時間、
-  使用者尚未通過、且有文字向量的課。
-
-錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課）、`400 INVALID_EXPLORATION_REPRESENTATION`、
-`400 CLASS_NAME_REQUIRED`（profile 缺班級）。
-
-同一課號的講課與實習課（課號多一個 `P`，例：`ACCT2031` 與 `ACCT2031P`）合併成一個項目，
-以講課課號為準，兩者的班次都在 `sections`。
-
-文字向量讀取本機離線產物（課名＋正規標籤名稱＋課程簡介，v2 另含課程大綱），請求當下不呼叫外部 API、
-不寫入 MySQL。產物路徑與重算方式見 `docs/DATA_SCHEMA.md` 的「課程文字向量本機產物」。
-
+向量為離線產物 `server/simulation-runs/course-exploration-embeddings/index.json`（git-ignored），由
+`node server/scripts/courseExplorationEmbeddings.js --apply` 產生；請求當下不呼叫外部 API、不寫入 MySQL。
 
 #### `GET /api/exploration?mode=profile`（協同過濾與 User Embedding 構想階段 4）
 
