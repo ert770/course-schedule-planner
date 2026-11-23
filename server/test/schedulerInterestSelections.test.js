@@ -121,9 +121,19 @@ describe('SC constraintService 產生 interestTagIds', () => {
     assert.deepEqual(merged.interestTagIds, []);
   });
 
-  test('SC3 聊天單次關鍵字不影響勾選標籤；兩者都保留', () => {
-    const merged = buildScheduleConstraints({ interests: ['資訊安全'] }, { interestSelections: [tick(tagX)] });
-    assert.deepEqual(merged.interests, ['資訊安全']);
-    assert.deepEqual(merged.interestTagIds.map(tag => tag.id), [tagX.id]);
+  test('SC3 修法 A：這次請求帶了 interests 或 preferredKeywords 時，興趣軸只用這次的關鍵字', () => {
+    const saved = { interestSelections: [tick(tagX)] };
+    const viaInterests = buildScheduleConstraints({ interests: ['資訊安全'] }, saved);
+    assert.deepEqual(viaInterests.interests, ['資訊安全']);
+    assert.deepEqual(viaInterests.interestTagIds, []);
+    assert.deepEqual(buildScheduleConstraints({ preferredKeywords: ['雲端'] }, saved).interestTagIds, []);
+  });
+
+  test('SC4 這次沒帶關鍵字（空陣列、只給修課路徑或其他條件）時，照常使用已存的勾選', () => {
+    const saved = { interestSelections: [tick(tagX)], interests: ['舊關鍵字'] };
+    for (const input of [{}, { interests: [] }, { preferredTrack: '網路安全類' }, { noMorningClasses: true }]) {
+      assert.deepEqual(buildScheduleConstraints(input, saved).interestTagIds.map(tag => tag.id), [tagX.id],
+        JSON.stringify(input));
+    }
   });
 });

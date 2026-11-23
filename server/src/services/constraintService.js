@@ -7,13 +7,21 @@ import { resolveInterestSelections } from '../data/interestSelections.js';
 
 const MONDAY = 1;
 
+const hasItems = value => Array.isArray(value) && value.length > 0;
+
 // 課程主題問答勾選的標籤（ADR-031）：`[{ id, name }]`，依 ID 去重。只選方向、沒勾標籤時是空陣列
 // （方向不計分）。呼叫端直接給 `input.interestTagIds`（測試用）時以它為準。
-function pickInterestTagIds(requestValue, prefs) {
+//
+// 這次請求自己帶了興趣關鍵字（AI 聊天「這次想排資安」）時回空陣列：興趣軸只看這次的關鍵字，
+// 與「這次的 interests 蓋掉已存的 interests」同一條規則（ADR-031 修法 A，2026-11-23）。
+// 只影響這一次的興趣軸；S_tag、s_vec 仍讀已存的勾選，也不寫入任何資料。
+// 實測（2026-11-23，與同一時間點的舊版比）：有勾選的帳號 42 個聊天關鍵字情境，課表與舊版完全相同。
+function pickInterestTagIds(requestValue, prefs, input) {
   if (Array.isArray(requestValue)) {
     return requestValue.filter(item => item && typeof item.id === 'string')
       .map(item => ({ id: item.id, name: String(item.name ?? item.id) }));
   }
+  if (hasItems(input.interests) || hasItems(input.preferredKeywords)) return [];
   return resolveInterestSelections(readInterestPreferences(prefs).interestSelections).tags
     .map(({ tag }) => ({ id: tag.id, name: tag.name }));
 }
@@ -172,7 +180,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     interests: pickList(input.interests, prefs.interests),
     // 課程主題問答勾選的標籤，與上面的關鍵字一起構成排課的「興趣」軸（ADR-031）。
     // 關鍵字仍保留：AI 聊天的單次排課（「這次想排資安」）靠它。
-    interestTagIds: pickInterestTagIds(input.interestTagIds, prefs),
+    interestTagIds: pickInterestTagIds(input.interestTagIds, prefs, input),
 
     digitalCreditsNeeded: pickFlag(input.digitalCreditsNeeded, prefs.digitalCreditsNeeded),
 

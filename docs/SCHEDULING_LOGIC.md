@@ -992,9 +992,11 @@ REST 路徑沒有 preflight（該檔第 (13) 項的註解已說明這道防線�
 - **推薦理由**：`matchedPreferences` 的 `preferenceId` 是 `interestSelections`，`label` 是標籤名稱。
 - **關鍵字比對保留**：AI 聊天的單次排課（「這次想排資安」）靠它。
 
-**已知問題（2026-11-23，未修）**：AI 聊天這次給了關鍵字時，已存的勾選標籤仍在興趣軸上和聊天關鍵字競爭。實測有勾選的帳號，聊天關鍵字的主方案命中率平均下降：D1249697 由 0.131 降到 0.095，D0009003 由 0.143 降到 0.131；沒勾選的帳號不受影響。
+**這次請求帶了關鍵字時（修法 A，2026-11-23）**：AI 聊天這次給了非空的 `interests` 或 `preferredKeywords` 時，`interestTagIds` 為空陣列，興趣軸只看這次的關鍵字。這和「這次的 `interests` 蓋掉已存的 `interests`」是同一條規則。
 
-候選修法：聊天這次有給 `interests`／`preferredKeywords` 時，興趣軸只用這次的關鍵字，S_tag 與 s_vec 照常讀勾選。
+- 只影響這一次的興趣軸。S_tag、s_vec、探索卡仍讀已存的勾選，也不寫入任何資料。
+- 只給 `preferredTrack`、空陣列或其他條件時，照常使用勾選。
+- 首頁與設定頁的排課請求不帶關鍵字，不會觸發。
 
 ## Hard/Soft Constraint Schema（Roadmap #21）
 
