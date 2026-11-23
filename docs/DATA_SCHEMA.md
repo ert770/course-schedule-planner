@@ -1010,6 +1010,23 @@ conflict，不靜默覆寫。`resolveIdempotentAppend()` 目前只對傳入陣�
 文字向量服務只讀 `course_code`、`academic_year`、`semester`、`syllabus_text`、`source_key`：
 每個穩定課號取最新且有內容的學期，再從該學期同課號班次挑最長的大綱文字。
 
+## 探索三種相近程度向量產物（2026-11-24，ADR-035）
+
+`server/simulation-runs/course-exploration-embeddings/index.json`（git-ignored）。由
+`node server/scripts/courseExplorationEmbeddings.js --apply` 產生；預設 dry-run，加 `--apply` 才呼叫 OpenAI。
+同目錄的 `text-embedding-3-large-512-cache.json` 以「模型＋維度＋文字」雜湊快取，重跑只送變動的文字。
+
+```json
+{ "schemaVersion": 1, "version": "course-exploration-vectors-v1", "model": "text-embedding-3-large",
+  "dimension": 512, "generatedAt": "…", "actualTokens": 620957,
+  "courses": [{ "courseCode": "IECS1001", "source": "catalog", "name": "資料結構",
+    "vectors": { "name": "<base64 Float32>", "description": "<base64>|null", "topic": "<base64>|null" } }] }
+```
+
+- `source: "catalog"`：課程表的課號（2026-11-24 共 2,004 個），三欄依課名、最長的課程說明（最多 1,800 字）、主題類標籤名稱。
+- `source: "history"`：只出現在 `User_Course_History` 的課號（24 個），只有課名向量；只取課號與課名，不含使用者或成績。
+- 向量已正規化；請求時只讀檔與做內積。檔案約 17MB。
+
 ## 課程文字向量本機產物（2026-10-14，階段 4 原型；大綱來源為選配 v2）
 
 本階段沒有建立 `Course_Text_Embeddings` MySQL 表。衍生資料預設放在

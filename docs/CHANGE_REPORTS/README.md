@@ -4,6 +4,7 @@
 
 ## 2026-11-24
 
+- [探索頁「從一門課出發」改用課名、說明、主題三種相近程度（ADR-035）](./2026-11-24-explore-three-similarities.md)
 - [MyFCU 匯入的修課紀錄：讀取時補分類擴充為五步](./2026-11-24-imported-history-classification.md)
 
 ## 2026-11-23
