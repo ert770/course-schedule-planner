@@ -67,9 +67,12 @@ describe('探索與查詢的其他修正', () => {
     assert.deepEqual(filterCatalogCourses(courses, { keyword: 'Python' }).map(c => c.id), [1, 2]);
   });
 
-  test('PERS-1 有偏好標籤、興趣或避開時段就算已表達偏好', () => {
+  test('PERS-1 有偏好標籤、課程主題勾選或避開時段就算已表達偏好；舊 interests 不算（ADR-032）', () => {
     assert.equal(hasExplicitPreferences({ preferenceTags: ['#不排早八'] }), true);
-    assert.equal(hasExplicitPreferences({ interests: ['AI'] }), true);
+    assert.equal(hasExplicitPreferences({ interests: ['AI'] }), false);
+    assert.equal(hasExplicitPreferences({
+      interestSelections: [{ group: 'outside', categoryId: 'main_x', tagIds: ['t'] }],
+    }), true);
     assert.equal(hasExplicitPreferences({ blockedPeriods: [{ day: 1, period: 1 }] }), true);
     assert.equal(hasExplicitPreferences({ preferenceTags: [], interests: [] }), false);
     assert.equal(hasExplicitPreferences({}), false);

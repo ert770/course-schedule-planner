@@ -109,7 +109,7 @@ export async function updateUserPreferences(identity, updates) {
   // 興趣是 preferences_json 裡的可擴充偏好。寫入前先與既有 values 合併，
   // 避免 Setup 只改興趣時把其他個人化資料整包覆蓋。
   const jsonFields = [
-    'preferredTrack', 'interests', 'preferredKeywords', 'interestSelections',
+    'preferredTrack', 'interestSelections',
     ...PERSONALIZATION_PREFERENCE_FIELDS,
     ...SEMESTER_PLANNING_PREFERENCE_FIELDS,
   ];

@@ -1,21 +1,23 @@
 import { getAll } from '../db/database.js';
 import { ACTIVE_TERM, normalizeSemesterLabel } from '../data/activeTerm.js';
 import {
-  interestTagCatalog,
   resolveInterestTags,
   isEligibleForInterestLearning,
 } from '../data/interestTagCatalog.js';
 import { getPassedCourseCodes } from '../data/courseHistory.js';
 import { isSeriesLevelReachable, passedSeriesLevels } from '../data/courseSeries.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
+import { resolveInterestSelections } from '../data/interestSelections.js';
 import { getUserPreferences } from './memoryService.js';
 import { filterCategorizedCourses } from '../skills/courseQuery.js';
 import { CATEGORY_REQUIRED } from '../skills/courseCategory.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 import { scoreCoursesForUser } from '../skills/userTagVector.js';
+import { selectPairedExplorationTags } from '../skills/tagInterestLearning.js';
 import { loadUserTagVectorContext } from './userTagVectorService.js';
 
 export const INTEREST_EXPLORATION_CARD_LIMIT = 8;
+export const INTEREST_EXPLORATION_PAIR_LIMIT = 3;
 
 function normalizeCode(value) {
   return String(value ?? '').trim().toUpperCase();
@@ -26,12 +28,28 @@ function hasSchedule(course) {
     || Boolean(course.dayOfWeek);
 }
 
+// 探索卡挑課的主題意圖只讀課程主題問答的結果（`interestSelections`，依 ID）。
+// 2026-11-22 使用者決定：舊的文字欄位（interests／preferredKeywords）不再影響探索卡（ADR-029）；
+// 它們仍由 S_tag 與排課讀取。
+//   - topicIds：學生勾選的具體標籤。
+//   - mainCategoryIds／subcategoryIds：學生選的方向。只用來排探索卡順序，不寫進任何分數。
 function topicIntent(profile = {}) {
   const preferences = readInterestPreferences(profile);
-  const terms = [...new Set([...preferences.interests, ...preferences.preferredKeywords])];
-  const topicIds = new Set(resolveInterestTags(terms).tags.map(tag => tag.canonicalTagId));
-  const categoryNames = new Set(terms.map(value => String(value).trim().toLocaleLowerCase()));
-  return { topicIds, categoryNames, preferredTrack: preferences.preferredTrack };
+  const selected = resolveInterestSelections(preferences.interestSelections);
+  const topicIds = new Set(selected.tags.map(({ tag }) => tag.id));
+  const mainCategoryIds = new Set(selected.categories
+    .filter(category => category.type === 'main')
+    .map(category => category.mainCategoryId));
+  const subcategoryIds = new Set(selected.categories
+    .filter(category => category.type === 'subcategory')
+    .map(category => category.subcategoryId));
+  return { topicIds, mainCategoryIds, subcategoryIds, preferredTrack: preferences.preferredTrack };
+}
+
+// 一條分類路徑落在學生選的方向（大類或子類）就算命中一次。
+function matchesSelectedDirection(path, intent) {
+  return intent.mainCategoryIds.has(path.mainCategoryId)
+    || (Boolean(path.subcategoryId) && intent.subcategoryIds.has(path.subcategoryId));
 }
 
 function categoryPathKey(path) {
@@ -40,6 +58,7 @@ function categoryPathKey(path) {
 
 function publicCard(course, tags) {
   const semester = normalizeSemesterLabel(course.semester);
+  const description = typeof course.description === 'string' ? course.description.trim().replace(/\s+/gu, ' ') : '';
   return {
     courseCode: normalizeCode(course.catalogCourseCode),
     sectionId: Number(course.sectionId ?? course.id),
@@ -54,6 +73,11 @@ function publicCard(course, tags) {
     },
     category: course.category,
     track: course.track ?? null,
+    description: description.length > 150 ? `${description.slice(0, 150)}…` : description,
+    representativeTags: selectPairedExplorationTags(tags).map(tag => ({
+      canonicalTagId: tag.canonicalTagId,
+      canonicalName: tag.canonicalName,
+    })),
     tags: tags.map(tag => ({
       canonicalTagId: tag.canonicalTagId,
       canonicalName: tag.canonicalName,
@@ -99,9 +123,7 @@ export function buildInterestExplorationCards(courseSections, profile = {}, opti
       const categoryPaths = [...new Map(tags.flatMap(tag => tag.categoryPaths)
         .map(path => [categoryPathKey(path), path])).values()];
       const directMatches = tags.filter(tag => intent.topicIds.has(tag.canonicalTagId)).length;
-      const categoryMatches = categoryPaths.filter(path => (
-        intent.categoryNames.has(String(path.mainCategory ?? '').trim().toLocaleLowerCase())
-      )).length;
+      const categoryMatches = categoryPaths.filter(path => matchesSelectedDirection(path, intent)).length;
       byCourse.set(courseCode, {
         card: publicCard(course, tags),
         tags,
@@ -145,38 +167,28 @@ export function buildInterestExplorationCards(courseSections, profile = {}, opti
   return selected.map(candidate => candidate.card);
 }
 
-/** Ask which available subcategories the learner means when only a broad category was chosen. */
-export function buildInterestCategoryPrompts(cards, profile = {}) {
-  const preferences = readInterestPreferences(profile);
-  const terms = new Set([...preferences.interests, ...preferences.preferredKeywords]
-    .map(value => String(value).trim().toLocaleLowerCase()));
-  const selectedMain = interestTagCatalog.mainCategories.filter(category => (
-    terms.has(category.name.trim().toLocaleLowerCase())
-  ));
-  const selectedSubcategoryIds = new Set(interestTagCatalog.subcategories
-    .filter(category => terms.has(category.name.trim().toLocaleLowerCase()))
-    .map(category => category.id));
-  const availableSubcategories = new Map(interestTagCatalog.subcategories
-    .map(category => [category.id, category]));
+/** Retain the ranked order for the first course and prefer a distinct topic for the second. */
+export function buildInterestExplorationPairs(cards) {
+  const remaining = cards.filter(card => card.representativeTags.length > 0);
+  const pairs = [];
+  while (remaining.length >= 2 && pairs.length < INTEREST_EXPLORATION_PAIR_LIMIT) {
+    const first = remaining.shift();
+    const firstTags = new Set(first.representativeTags.map(tag => tag.canonicalTagId));
+    const distinct = candidate => candidate.representativeTags.every(tag => !firstTags.has(tag.canonicalTagId));
+    const sameCategory = remaining.findIndex(card => card.category === first.category && distinct(card));
+    const other = sameCategory < 0 ? remaining.findIndex(distinct) : sameCategory;
+    const [second] = remaining.splice(Math.max(other, 0), 1);
+    pairs.push([first, second]);
+  }
+  return pairs;
+}
 
-  return selectedMain.flatMap(main => {
-    const alreadySpecific = interestTagCatalog.subcategories.some(category => (
-      category.mainCategoryId === main.id && selectedSubcategoryIds.has(category.id)
-    ));
-    if (alreadySpecific) return [];
-    const subcategoryIds = new Set((cards ?? []).flatMap(card => card.tags ?? [])
-      .flatMap(tag => tag.categoryPaths ?? [])
-      .filter(path => path.mainCategoryId === main.id && path.subcategoryId)
-      .map(path => path.subcategoryId));
-    const subcategories = [...subcategoryIds]
-      .map(id => availableSubcategories.get(id))
-      .filter(Boolean)
-      .sort((left, right) => left.name.localeCompare(right.name, 'zh-Hant'))
-      .map(category => ({ id: category.id, name: category.name }));
-    return subcategories.length > 0
-      ? [{ mainCategoryId: main.id, mainCategory: main.name, subcategories }]
-      : [];
-  });
+/**
+ * 舊版「只選了廣泛大類時追問子分類」。它只讀已移除的文字興趣欄位（ADR-032，2026-11-23），
+ * 前端自 d32f8fa 起也不再顯示；保留函式與回應欄位 `categoryPrompts`（固定空陣列）維持 API 相容。
+ */
+export function buildInterestCategoryPrompts() {
+  return [];
 }
 
 /** Build real, active-term exploration cards for the authenticated student's scope. */
@@ -189,6 +201,7 @@ export async function getInterestExplorationCards(identity, deps = {}) {
     return {
       term: ACTIVE_TERM,
       cards: [],
+      pairs: [],
       categoryPrompts: [],
       emptyReason: 'student_scope_unavailable',
     };
@@ -207,10 +220,12 @@ export async function getInterestExplorationCards(identity, deps = {}) {
       if (entry.raw !== null) vectorScores.set(code, entry.raw);
     }
   }
-  const cards = buildInterestExplorationCards(eligibleSections, profile, { ...deps, vectorScores });
+  const deck = buildInterestExplorationCards(eligibleSections, profile, { ...deps, limit: eligibleSections.length, vectorScores });
+  const cards = deck.slice(0, deps.limit ?? INTEREST_EXPLORATION_CARD_LIMIT);
   return {
     term: ACTIVE_TERM,
     cards,
+    pairs: buildInterestExplorationPairs(deck),
     categoryPrompts: buildInterestCategoryPrompts(cards, profile),
     emptyReason: cards.length === 0 ? 'no_eligible_courses' : null,
   };

@@ -52,13 +52,66 @@ test('UV1 history counts only passed non-required courses and older terms weigh 
   assert.equal(user.positive.has(eId), false, 'required course tags never enter the vector');
 });
 
-test('UV2 explicit interests map common topics into the vector; unmapped topics are reported', () => {
-  const user = buildUserTagVector({ prefs: { interests: [tooCommon.name, '不存在的主題XYZ'] }, index, activeTerm });
+// ADR-030：明確興趣只讀課程主題問答勾選的標籤（interestSelections，依 ID）。
+const tick = (tag, group = 'outside') => ({
+  group, categoryId: tag.categoryAssignments[0].mainCategoryId, level: 'main', mode: 'followup', tagIds: [tag.id],
+});
+
+test('UV2 questionnaire-ticked tags enter the vector; courses without them score zero', () => {
+  const user = buildUserTagVector({ prefs: { interestSelections: [tick(e)] }, index, activeTerm });
   assert.equal(user.sources.explicitTags, 1);
-  assert.deepEqual(user.sources.unmappedTopics, ['不存在的主題XYZ']);
-  const scored = scoreCoursesForUser(user, index, ['X4', 'X1']);
-  assert.ok(scored.get('X4').raw > 0);
-  assert.equal(scored.get('X1').raw, 0);
+  const scored = scoreCoursesForUser(user, index, ['X3', 'X2']);
+  assert.ok(scored.get('X3').raw > 0, 'the course with the ticked tag gets similarity');
+  assert.equal(scored.get('X2').raw, 0);
+});
+
+test('UV-SEL1 legacy interests/preferredKeywords no longer reach the vector', () => {
+  const user = buildUserTagVector({
+    prefs: { interests: [e.name, tooCommon.name], preferredKeywords: [e.name] }, index, activeTerm,
+  });
+  assert.equal(user.sources.explicitTags, 0);
+  assert.equal(user.positive.size, 0);
+});
+
+test('UV-SEL2 a direction without ticked tags adds nothing', () => {
+  const user = buildUserTagVector({
+    prefs: { interestSelections: [{ ...tick(e), tagIds: [] }] }, index, activeTerm,
+  });
+  assert.equal(user.sources.explicitTags, 0);
+  assert.equal(user.positive.size, 0);
+});
+
+test('UV-SEL3 too_common tags ticked under the curated AI option are usable in the vector', async () => {
+  const { getCuratedInterestOption } = await import('../src/data/curatedInterestOptions.js');
+  const option = getCuratedInterestOption('curated_ai');
+  const byId = new Map(interestTagCatalog.canonicalTags.map(tag => [tag.id, tag]));
+  const common = option.tagIds.map(id => byId.get(id)).find(tag => tag?.eligibility?.exclusionReason === 'too_common');
+  assert.ok(common, 'curated AI option should contain a too_common tag');
+  const aiIndex = buildCourseTagVectors([
+    { catalogCourseCode: 'AI1', name: 'AI course', ragTag: [common.name, f.name] },
+    { catalogCourseCode: 'N1', name: 'Other course', ragTag: [c.name, d.name] },
+  ]);
+  const user = buildUserTagVector({
+    prefs: { interestSelections: [{ group: 'department', categoryId: 'curated_ai', level: 'sub', tagIds: [common.id] }] },
+    index: aiIndex, activeTerm,
+  });
+  assert.equal(user.sources.explicitTags, 1);
+  const scored = scoreCoursesForUser(user, aiIndex, ['AI1', 'N1']);
+  assert.ok(scored.get('AI1').raw > 0);
+  assert.equal(scored.get('N1').raw, 0);
+});
+
+test('UV-SEL4 unknown categories or tags are ignored without throwing', () => {
+  const user = buildUserTagVector({
+    prefs: {
+      interestSelections: [
+        { group: 'outside', categoryId: 'main_does_not_exist', tagIds: [e.id] },
+        { ...tick(e), tagIds: ['tag_does_not_exist', e.id] },
+      ],
+    },
+    index, activeTerm,
+  });
+  assert.equal(user.sources.explicitTags, 1, 'only the valid tag under an existing category counts');
 });
 
 test('UV3 no similarity means no score rather than a penalty; the pool reference scales to 1', () => {

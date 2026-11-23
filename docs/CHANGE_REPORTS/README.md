@@ -2,6 +2,20 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-11-23
+
+- [移除舊的文字興趣欄位 interests／preferredKeywords（先轉移再刪除）](./2026-11-23-remove-legacy-interest-fields.md)
+- [修法 A：AI 聊天這次有給關鍵字時，興趣軸只用這次的關鍵字](./2026-11-23-interest-pipeline-fix-a.md)
+- [課程主題問答接管線第 4 段：排課興趣軸納入勾選的標籤](./2026-11-23-interest-pipeline-scoring-policy.md)
+
+## 2026-11-22
+
+- [課程主題問答接管線：s_vec 段](./2026-11-22-interest-pipeline-s-vec.md)
+- [課程主題問答接管線：S_tag 段（服務層測試與排課實測）](./2026-11-22-interest-pipeline-s-tag.md)
+- [課程主題問答接管線第 1 段：探索卡依問答結果挑課](./2026-11-22-interest-pipeline-exploration-cards.md)
+- [課程主題問答：三層沙漏細項頁（預算分群、熱門、搜尋）](./2026-11-22-interest-questionnaire-funnel-detail-page.md)
+- [課程主題問答 v1 第一階段：出題服務、取消自動展開、設定頁問答；歷史修課視窗全部展開](./2026-11-22-interest-questionnaire-v1-stage1.md)
+
 ## 2026-11-20
 
 - [課程主題選單新增「人工智慧」選項、明確選擇的太常見標籤計分，並補路由測試](./2026-11-20-curated-ai-topic-and-route-tests.md)

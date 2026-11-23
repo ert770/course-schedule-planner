@@ -1036,3 +1036,133 @@ Consequences:
 - Measured over the CS accounts (service-level A/B, 2026-11-20): with the option selected, 人工智慧導論 S_tag rises from 0 to 0.44, 人工智慧自然語言導論 to 0.83, 電腦視覺與擴增實境 to 0.17. Several Persona schedules then include 人工智慧導論 or 人工智慧自然語言導論 where they did not before; others do not change because their elective quota is already filled.
 - Spill-over: every course school-wide carrying 人工智慧 or 機器學習 is boosted for that user, including 系外 courses such as 人工智慧 and 深度學習概論 from STEM units. Accepted for now (系外 explicitly deferred by the user); it is the same menu-only STEM limitation as ADR-025, with a larger reach.
 - New curated options must name every tag explicitly and be reviewed against the actual pool, like the `direct` whitelist.
+
+## ADR-027: Course-Topic Questionnaire v1 Replaces the Category Buttons; Directions Are Never Auto-Expanded
+
+Date: 2026-11-22
+
+Context:
+
+The setup page showed up to 8 category buttons per group (本系／通識／系外) plus a follow-up dialog listing up to 12 tags per category (ADR-025). The user approved a redesign specified by Codex in《課程主題問答 v1：題目與 LLM 規格》 (kept outside the repo): one question per group with at most three directions (A/B/C), at most two picks, "換一組" for unseen directions, at most one detail follow-up, and a confirmation page. Two of these were changed by the user on 2026-11-22: there is no limit on picks (directions or detail topics), and every answered group gets its own detail follow-up right after it (本系 → 追問 → 通識 → 追問 → 系外 → 追問), instead of a single follow-up after all three. Claude Code owns the backend pipeline and the integration with the four interest consumers; the consumers are done in separate, individually reviewed steps.
+
+Decision:
+
+- New endpoint `POST /api/profile/interest-questions` with `stage` = `group` / `detail` / `summary`. Options always come from the student's candidate pool (the same `getInterestTopicGroups()` as the menu and save validation). The language model only rewrites copy for backend-chosen options, keyed by request-local `optionRef`s; refs, order and count are validated and any mismatch falls back to fixed copy (catalog name, representative courses). The 9 default directions in the spec use preset copy and never call the model.
+- **Directions are never expanded into tags.** Only topics the user confirms (detail question or confirmation page) go into `tagIds`. This removes, for the questionnaire, ADR-025's `direct` whitelist expansion (資訊安全與隱私) and ADR-026's automatic inclusion of the 7 curated 人工智慧 tags; the user chose this on 2026-11-22. ADR-026's scoring exemption for explicitly selected too_common tags still applies when the user confirms such a tag.
+- Storage is unchanged: `interestSelections` keyed by `(group, categoryId)`, `tagIds` may be empty, `mode` saved as `followup`. Skip / keep / remove are UI states: an unanswered or skipped group keeps its saved directions; only deselecting after answering removes one; removal on the confirmation page can be undone. Removing one direction keeps the same tag under another kept direction.
+- Each direction shows up to 6 representative topic names from the pool ("包含主題：…", user request 2026-11-22). They are explanatory only and are never written to `tagIds`.
+- The four consumers (S_tag, s_vec, scheduler text matching, exploration cards) are wired separately; until then only S_tag reads `interestSelections`, as before.
+
+Consequences:
+
+- A user who only picks broad directions and skips the follow-up gets no tag prior in S_tag (accepted per spec: "無訊號不加分").
+- Detail options are ordered by course count, not by the old GPT ordering; e.g. 語言、文學與溝通 lists 文學分析／中國文學／文學 first. The spec's preset question for it ("你想先接觸哪些語言？") was therefore dropped on 2026-11-22 (user decision); it uses the generic "「語言、文學與溝通」裡，你想先接觸哪些主題？".
+- More requests per user than the old follow-up (one per question or batch), hence a separate rate limit of 30 per minute.
+- `POST /api/profile/interest-followups` remains documented and tested but the setup page no longer calls it.
+
+## ADR-028: Detail Page Shows Every Selected Direction, With Precomputed LLM Tag Clusters for Large Ones
+
+Date: 2026-11-22
+
+Context:
+
+The user wants a three-level funnel (direction, theme group, concrete tag) so students can narrow thousands of tags with few questions. The catalog's subcategory layer cannot serve as the middle level: within one main category most subcategories carry identical tag sets in the real candidate pool (e.g. 4 of 6 under 語言、文學與溝通). Spike 1 clustered tags by course co-occurrence and failed: tags are too sparse, so clusters either fragment (27% of directions in 2–4 groups) or collapse into one blob. Spike 2 asked a language model to group tag names: 92% of directions passed strict validation, and a findability A/B (simulated student, no hint of the group) showed fewer options viewed (10.5 vs 14.0) and clicks (2.3 vs 4.7) than the old 3-per-page follow-up, with every second direction reachable (old flow: 0 of 36). Hot tags got slightly harder, and 7–12-tag directions were faster as a flat list. See docs/PLANS/2026-11-22-interest-questionnaire-funnel-{design,spike-1,spike-2,ab}.md.
+
+Decision:
+
+- `stage=detail` returns one block per selected direction in the group. Directions with up to 12 tags are listed flat; directions with 13 or more use precomputed clusters (collapsed cards showing the label and 2 representative tags, expanded in place), with the 3 most popular tags pinned above the cards (user decision) and a same-page search box. Without a valid precomputed entry the block falls back to the full flat list.
+- Clusters are generated offline by `scripts/buildInterestTagClusters.js`, validated (every tag exactly once, 2–4 groups, at least 2 tags each), and stored in `src/data/interestTagClusters.json` keyed by direction id and the sorted tag-id list. Students never wait for a model call, and a given version always shows the same grouping. Entries that fail validation are not stored; missing tags are never moved into 其他.
+- Scoring stays as decided by the user (option A): directions and clusters only navigate; only ticked canonical tag ids are saved and scored. The detail page pre-ticks previously saved tags; unticking one there removes it, while "這題先略過" keeps saved tags.
+- The confirm page shows a non-blocking reminder when no concrete topic is selected.
+
+Consequences:
+
+- The cluster file only covers the pools it was built for (currently the four CS Persona classes); other pools fall back to flat lists until the script is rerun for them, and any change in a pool's tags invalidates its entries.
+- The simulated student used the same model as the clusterer, so the A/B is optimistic; human checks of the listed targets are still required.
+- Known mis-groupings (e.g. 演算法) remain until the prompt is revised and the A/B rerun.
+
+
+## ADR-029: Exploration Cards Rank by Questionnaire Selections Only
+
+Date: 2026-11-22
+
+Context:
+
+The paired-card exploration (`GET /api/interest-exploration/cards`) ranked candidate courses by topic relevance computed from the legacy free-text fields `interests` and `preferredKeywords`, resolved by name. After the course-topic questionnaire (ADR-027, ADR-028) students record their interests as `interestSelections` (direction ids plus ticked canonical tag ids), which the exploration ranking never read, so a student who only answered the questionnaire got the same cards as a student who answered nothing.
+
+Decision:
+
+- Topic relevance reads only `interestSelections`, matched by id: +2 for each course tag the student ticked, +1 for each course category path inside a selected direction (main category or subcategory, including the curated AI option's subcategory), +1 for the preferred track. Terms stack.
+- The user decided (2026-11-22) that the legacy keyword fields no longer influence exploration relevance. They stay stored and are still read by S_tag and the scheduler.
+- Directions only order the exploration cards; they never become scores (scoring stays option A: only ticked tags score).
+- Ties are still broken by s_vec, then course code; the pairing step is unchanged.
+
+Consequences:
+
+- Accounts with only legacy keywords and no questionnaire answers get exploration cards in s_vec / course-code order.
+- s_vec itself still reads the legacy keywords, so they can still affect tie-breaking until the s_vec pipeline step is done.
+- `buildInterestCategoryPrompts` still reads legacy keywords; the client stopped reading `categoryPrompts`, so it is left as is pending a separate decision.
+
+## ADR-030: s_vec Explicit Interest Reads Questionnaire-Ticked Tags Only
+
+Date: 2026-11-22
+
+Context:
+
+The tag-space user vector behind s_vec (`skills/userTagVector.js`) built its explicit-interest part from the legacy free-text fields `interests` and `preferredKeywords`, resolved by name. Questionnaire answers (`interestSelections`) never reached it, while legacy keywords still pushed courses up through s_vec even after ADR-029 removed them from exploration relevance. s_vec feeds exploration-card tie-breaking, the outside-elective reservation (top positive s_vec courses), the scheduler's `vectorInterest` term and the profile-based explore page.
+
+Decision:
+
+- The explicit-interest vector is built from the tags the student ticked in the questionnaire, resolved by id with `resolveInterestSelections()`, filtered by `isVectorEligibleTag` (too_common tags ticked under the curated AI option stay usable), unit-normalised and weighted by `priorMass` as before.
+- Directions without ticked tags add nothing (scoring option A).
+- The legacy name path and `sources.unmappedTopics` are removed. History courses, events and scoring are unchanged.
+
+Consequences:
+
+- Accounts with only legacy keywords get no explicit-interest component in s_vec; history and events still apply.
+- The legacy fields remain stored and are still read by S_tag and the scheduler's keyword matching until the last pipeline step; the user decided to delete the fields and their data after all four steps.
+
+## ADR-031: Questionnaire-Ticked Tags Join the Scheduler Interest Axis
+
+Date: 2026-11-23
+
+Context:
+
+The scheduler's interest axis (scoring-policy direction, per-course interest feature, plan interest coverage, the MILP interest archetype, recommendation `matchedPreferences`) was driven only by keywords: the legacy profile fields `interests`/`preferredKeywords`/`preferredTrack` and keywords the AI Agent passes for a single run. A student who only answered the course-topic questionnaire had interest weight 0 and no interest-oriented plan.
+
+Decision:
+
+- `constraintService` turns the profile's `interestSelections` into `constraints.interestTagIds` (`{ id, name }`, de-duplicated). Directions without ticked tags yield an empty list (directions do not score).
+- Ticked tags set the interest direction to 1, like keywords.
+- A course hits a ticked tag when its `ragTag` resolves to that canonical id. The per-course interest feature is `max(keywordHits / keywordCount, tagHits / tagCount)`. A first version used one shared denominator (keywords + tags); the all-account run showed it diluted keyword courses (188 to 17 for an account with 2 keywords and 9 ticked tags), so the two sources are normalised separately. With keywords only the feature equals the previous `hits / count`.
+- Recommendation reasons list tag hits with `preferenceId: 'interestSelections'`; keyword hits keep `'interests'`.
+- Keyword matching stays, because the AI Agent's single-run keywords depend on it.
+
+Consequences:
+
+- Verified with `scripts/personalizationAccountsReport.js` (12 accounts, real and simulated selections, 3 runs per version, because a single scheduler run is not deterministic) and `scripts/agentSchedulerScenarioReport.js` (3 accounts × 53 Agent scenarios, 2 runs per version). See docs/CHANGE_REPORTS/2026-11-23-interest-pipeline-scoring-policy.md.
+- Known and accepted by the user (2026-11-23): with simulated selections, 5 of 12 accounts show a lower average S_tag in the recommended plan, mainly because the interest-oriented plan is now recommended or changed; ticked-tag hits went up.
+- Fix A (2026-11-23, user decision): when a request carries its own non-empty `interests` or `preferredKeywords` (AI Agent single run), `interestTagIds` is empty for that request, so the interest axis uses only this run's keywords — the same rule by which request keywords already override saved keywords. S_tag, s_vec and exploration still read the saved selections; nothing is written. Compared with the previous commit run at the same time, all 42 Agent keyword scenarios on the two accounts with ticked tags produced identical plans.
+- Measurement note: a keyword hit-rate drop first attributed to dilution (D1249697 0.131 to 0.095) also appeared when the previous commit was rerun hours later, so it was data drift (tag-interest cache, events, time decay), not code. Before/after comparisons must run both versions at the same time.
+
+## ADR-032: Remove the Legacy Free-Text Interest Fields After Migrating Them to Questionnaire Selections
+
+Date: 2026-11-23
+
+Context:
+
+With the course-topic questionnaire wired into all four consumers (ADR-029 to ADR-031), the user decided on 2026-11-22 to remove the legacy free-text fields `interests` and `preferredKeywords` together with their data. 21 of 27 profiles in the shared MySQL still held legacy terms (all in `interests`), and only 2 had answered the questionnaire, so deleting outright would erase the explicit interest of 19 accounts.
+
+Decision:
+
+- Migrate first (user decision 2026-11-23). `server/scripts/legacyInterestMigration.js` maps each term to the student's own questionnaire candidate pool: exact catalog match; otherwise a tag whose name starts with the term (the old keyword rule); otherwise the most similar in-pool tag from the tag-neighbour table with similarity at least 0.70 (user's choice), at most two. Mapped tags are merged into existing selections and validated with `sanitizeInterestSelectionsForSave`. Unmappable terms are dropped and listed. The original `preferencesJson` of every migrated account is backed up to `server/backups/` (git-ignored) before the legacy keys are deleted.
+- Remove the fields from the code: reading no longer returns them, any write deletes leftover keys, `POST /api/profile` rejects them with 400, the setup page's "other interests" block is removed (user decision), the S_tag name path is removed, saved keywords no longer back-fill scheduler constraints, `categoryPrompts` is always empty, and the Agent's `update_preferences` no longer accepts them (the Agent sends users to the questionnaire instead).
+- Keep the AI Agent's single-run `interests`/`preferredKeywords` on `run_csp_scheduler`; they affect only that request's interest axis and are never stored.
+
+Consequences:
+
+- About 40% of legacy terms could not be mapped, mostly `Python` (too_common, offered by no questionnaire direction) and topics outside the student's candidate pool. The user decided (2026-11-23) not to open `Python` or any other too_common tag in the questionnaire: students ask the AI Agent for them per run, where they act as single-run keywords matched by tag prefix. The questionnaire detail page and the Agent prompt both say so, so students do not assume such topics were saved.
+- Restoring requires the backup file; the migration refuses to overwrite an existing backup.
+- 11 of the 21 accounts were migrated. The other 10 (`1804…`, no `student_id`, not in `users.json`) cannot be written through the profile path, which looks rows up by student id; the user decided (2026-11-23) to leave them untouched because they are reserved for real-user testing. Their legacy keys remain in MySQL but the code no longer reads them, so those accounts have no explicit interest until the testers answer the questionnaire.
+- The answer-faithfulness audit treated quoted feature and topic names (「課程主題問答」, 「資訊安全」 after 勾選 or before 帶入) as fabricated course names and replaced the Agent's questionnaire guidance with a fallback; those quotes are now exempt, and fabricated course names in quotes are still flagged (test F30d).
+

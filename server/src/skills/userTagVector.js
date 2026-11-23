@@ -4,7 +4,9 @@
 // 使用者向量 = 明確興趣（先驗）＋ 非必修歷史修課 ＋ 互動事件，三者都換成 tagVectorSpace.js 的
 // 課程標籤向量（單位長度）再加權相加。正向與負向分開存，不相減。
 //
-//   - 明確興趣：使用者填的興趣與關鍵字對應到向量標籤（含常見主題），單位向量 × priorMass。
+//   - 明確興趣：課程主題問答勾選的標籤（`interestSelections`，依 ID），篩出向量可用標籤
+//     （含常見主題），單位向量 × priorMass。只選方向、沒勾標籤不加任何東西（方向不計分）。
+//     2026-11-22 起不再讀舊的 interests／preferredKeywords（ADR-030）。
 //   - 歷史修課：最新一次已通過、畢業分類為選修／通識／系外；必修與不計學分課不算。
 //     權重 historyWeight × historyTermDecay^(距今學期數)。歷史修課不用 120 天半衰期，
 //     否則大一修的課到大四幾乎歸零。
@@ -18,8 +20,9 @@
 
 import { normalizeSemesterLabel } from '../data/activeTerm.js';
 import { getPassedNonRequiredAttempts } from '../data/courseHistory.js';
-import { resolveInterestTags } from '../data/interestTagCatalog.js';
-import { buildExplicitTagInterest, collectWeightedTagInterestEvents } from './tagInterestLearning.js';
+import { readInterestPreferences } from '../data/interestPreferences.js';
+import { resolveInterestSelections } from '../data/interestSelections.js';
+import { collectWeightedTagInterestEvents } from './tagInterestLearning.js';
 import { isVectorEligibleTag, softCosine } from './tagVectorSpace.js';
 
 export const USER_TAG_VECTOR_MODEL_VERSION = 'user-tag-vector-v1';
@@ -68,7 +71,7 @@ function termOrdinal(year, semester) {
 /**
  * @param input.courseHistory   使用者的 courseHistory（`User_Course_History` 映射）
  * @param input.events          已同意、未到期的互動事件（含標籤快照）
- * @param input.prefs           使用者偏好（讀興趣與關鍵字）
+ * @param input.prefs           使用者偏好（只讀課程主題問答的 interestSelections）
  * @param input.index           buildCourseTagVectors() 的結果
  * @param input.activeTerm      { academicYear, semester }
  * @param input.excludeCourseCodes  評估用：把這些課號的歷史與事件排除（留一法）
@@ -86,18 +89,17 @@ export function buildUserTagVector({
   // 探索卡的沒興趣只把選到的標籤放進負向向量，課的其他標籤仍可能讓它排在前面（2026-10-15 Persona 實測）。
   const rejectedCourseCodes = new Set();
   const sources = {
-    explicitTags: 0, unmappedTopics: [], historyCourses: 0, historyWithoutVector: 0, historyDisliked: 0,
+    explicitTags: 0, historyCourses: 0, historyWithoutVector: 0, historyDisliked: 0,
     positiveEvents: 0, negativeEvents: 0,
   };
 
-  // 明確興趣：與標籤興趣檔不同，常見主題（機器學習等）在向量裡可以用。
-  const explicit = buildExplicitTagInterest(prefs);
-  const explicitIds = new Set();
-  for (const topic of explicit.explicitTopics) {
-    const tags = resolveInterestTags([topic]).tags.filter(isVectorEligibleTag);
-    if (tags.length === 0) sources.unmappedTopics.push(topic);
-    tags.forEach(tag => explicitIds.add(tag.canonicalTagId));
-  }
+  // 明確興趣：課程主題問答勾選的標籤（依 ID）。與標籤興趣檔不同，常見主題（機器學習等）在向量裡可以用。
+  // 目錄不存在或不屬於所選分類的項目由 resolveInterestSelections 忽略，不丟例外。
+  const selected = resolveInterestSelections(readInterestPreferences(prefs).interestSelections);
+  const explicitIds = new Set(selected.tags
+    .map(({ tag }) => tag)
+    .filter(isVectorEligibleTag)
+    .map(tag => tag.id));
   const explicitVector = unit(vectorFromTagIds(explicitIds, index));
   if (explicitVector) {
     addScaled(positive, explicitVector, settings.priorMass);

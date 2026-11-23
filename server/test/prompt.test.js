@@ -122,13 +122,21 @@ describe('P1 tool schema 含所有排課參數', () => {
 });
 
 describe('P2 偏好摘要反映已儲存偏好', () => {
-  test('列出已儲存的興趣關鍵字', () => {
+  test('列出課程主題問答勾選的主題；舊文字興趣欄位不再列出（ADR-032）', async () => {
+    const { interestTagCatalog } = await import('../src/data/interestTagCatalog.js');
+    const { isSelectableInterestTag } = await import('../src/data/interestTagEligibility.js');
+    const tag = interestTagCatalog.canonicalTags.find(isSelectableInterestTag);
     const prompt = buildSystemPrompt({
-      preferredKeywords: ['網路'],
-      preferenceTags: ['資安'],
+      preferredKeywords: ['舊關鍵字甲'],
+      interests: ['舊關鍵字乙'],
+      interestSelections: [{
+        group: 'outside', categoryId: tag.categoryAssignments[0].mainCategoryId, tagIds: [tag.id],
+      }],
     });
 
-    assert.match(prompt, /網路、資安/);
+    assert.ok(prompt.includes(`課程主題（課程主題問答勾選）：${tag.name}`));
+    assert.ok(!prompt.includes('舊關鍵字甲') && !prompt.includes('舊關鍵字乙'));
+    assert.ok(buildSystemPrompt({}).includes('課程主題（課程主題問答勾選）：未設定'));
   });
 
   test('列出修課路徑與涼課偏好', () => {
@@ -207,12 +215,19 @@ describe('P4 Roadmap #24：永久寫入的兩段式確認', () => {
     }
   });
 
-  test('update_preferences 可保存興趣方向', () => {
+  test('update_preferences 只能保存修課路徑，不再接受 interests／preferredKeywords（ADR-032）', () => {
     const props = toolByName.get('update_preferences').parameters.properties;
-
-    for (const field of ['preferredTrack', 'interests', 'preferredKeywords']) {
-      assert.ok(Object.hasOwn(props, field), `缺少興趣偏好欄位 ${field}`);
+    assert.ok(Object.hasOwn(props, 'preferredTrack'));
+    for (const field of ['interests', 'preferredKeywords']) {
+      assert.equal(Object.hasOwn(props, field), false, `不應再有 ${field}`);
     }
+    // run_csp_scheduler 的單次關鍵字保留，並說明只影響這次排課。
+    const scheduler = toolByName.get('run_csp_scheduler').parameters.properties;
+    assert.match(scheduler.interests.description, /只影響這一次排課/u);
+    assert.match(scheduler.preferredKeywords.description, /只影響這一次排課/u);
+    assert.ok(buildSystemPrompt({}).includes('課程主題問答'));
+    // 太常見的主題（Python 等）不在問答選項：只能單次帶進 run_csp_scheduler（2026-11-23 使用者決定）。
+    assert.match(buildSystemPrompt({}), /「Python」這類很常見的工具或技能不在課程主題問答的選項裡/u);
   });
 
   test('沒有興趣資料時先詢問方向，但使用者可選擇一般排課', () => {

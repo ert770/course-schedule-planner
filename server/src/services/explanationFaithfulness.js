@@ -164,11 +164,17 @@ const PREFERENCE_TAG_NAMES = new Set(ALL_TAGS.map(tag => tag.replace(/^#/, '')))
 
 // 建議使用者改用的搜尋關鍵字或擴大的範圍（「例如「網路安全」「密碼學」」「擴大到「系外選修」」）也不是課名主張；
 // 同一個子句裡連續的引號共用前面的提示詞。
-const CLAUSE_CUE = /例如|比如|像是|改為|改查|改用|擴大到|關鍵字|條件|搜尋|篩選/u;
+const CLAUSE_CUE = /例如|比如|像是|改為|改查|改用|擴大到|關鍵字|條件|搜尋|篩選|勾選|主題|興趣/u;
+// 引號後面緊接「帶入／作為／加入…條件」：是在講要帶進排課的主題，不是課名（2026-11-23，ADR-032 後
+// Agent 引導使用者「到課程主題問答勾選「資訊安全」」「把「資訊安全」帶入本次排課條件」整則被換成備援文字）。
+const CRITERIA_CUE_AFTER_QUOTE = /^[」』"”》】]?\s*(?:帶入|帶進|作為|加入|放進|當作)/u;
+// 系統自己的功能名稱不是課名。
+const SYSTEM_FEATURE_NAMES = new Set(['課程主題問答', '課程主題', '設定頁', '探索頁', '課程探索']);
 const COURSE_CATEGORY_NAMES = new Set(['必修', '選修', '核心選修', '一般選修', '系外選修', '通識', '通識課', '通識課程']);
 
-function isCriteriaQuote(value, sentence, index, userMessage) {
-  if (PREFERENCE_TAG_NAMES.has(value) || COURSE_CATEGORY_NAMES.has(value)) return true;
+function isCriteriaQuote(value, sentence, index, userMessage, end = index) {
+  if (PREFERENCE_TAG_NAMES.has(value) || COURSE_CATEGORY_NAMES.has(value) || SYSTEM_FEATURE_NAMES.has(value)) return true;
+  if (CRITERIA_CUE_AFTER_QUOTE.test(sentence.slice(end))) return true;
   if (userMessage && userMessage.includes(value)) return true;
   if (CRITERIA_SEPARATORS.test(value) || CRITERIA_WORDS.test(value)) return true;
   const before = sentence.slice(0, index);
@@ -181,14 +187,14 @@ function extractCourseShapedSpans(sentence, { userMessage = '' } = {}) {
   const spans = new Set();
   for (const match of sentence.matchAll(QUOTED_SPAN)) {
     const value = (match.groups.q1 ?? match.groups.q2 ?? match.groups.q3 ?? match.groups.q4 ?? match.groups.q5 ?? '').trim();
-    if (value && !isCriteriaQuote(value, sentence, match.index, userMessage)) spans.add(value);
+    if (value && !isCriteriaQuote(value, sentence, match.index, userMessage, match.index + match[0].length)) spans.add(value);
   }
   for (const match of sentence.matchAll(SUFFIX_SPAN)) {
     const value = match[1]?.trim();
     if (!value) continue;
     // 「課程描述」「課程地圖」裡的「課程」是複合詞的一部分，不是課名結尾（「仍需以課程描述」→「仍需以課程」）。
     const following = sentence.slice(match.index + match[0].length);
-    if (value.endsWith('課程') && /^(?:描述|地圖|內容|資料|名稱|大綱|類別|代碼|說明|架構|規劃|資訊|簡介)/u.test(following)) continue;
+    if (value.endsWith('課程') && /^(?:描述|地圖|內容|資料|名稱|大綱|類別|代碼|說明|架構|規劃|資訊|簡介|主題|問答)/u.test(following)) continue;
     // 「概論性課程」「實驗類課程」：後綴後面接「性／類／型」是在形容一類課，不是課名結尾。
     if (/^[性類型]/u.test(following)) continue;
     spans.add(value);

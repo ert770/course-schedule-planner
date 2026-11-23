@@ -3007,6 +3007,18 @@ roadmap 狀態／相依總表已整體核對：階段 3／4 驗收不改變其�
 
 **2026-11-20 延伸改版（設定頁課程主題選擇）**：設定頁「想接觸的課程主題」改成類別選單加追問，使用者選的具體標籤成為 S_tag 先驗（Step A–G 已完成，驗收結果見 [Step G 報告](./2026-11-20-interest-selections-step-g.md)：24 個帳號中 22 個的主方案因選擇而改變；`unverified` 與警告兩種保存提示已補驗）。另新增資工本系「人工智慧」策畫選項：明確選擇的「人工智慧」「機器學習」（too_common）對選了的使用者計分（ADR-026，見[報告](./2026-11-20-curated-ai-topic-and-route-tests.md)）。#43 狀態不變；沒有排課器改動；總表其他任務的狀態與相依已核對，不受影響。
 
+**2026-11-22 延伸（課程主題問答接管線）**：課程主題問答的結果 `interestSelections` 分四段接進推薦管線。
+
+- 四段都已完成：
+  - **探索卡**：挑課相關度只讀問答結果，依 ID 比對（ADR-029，見[報告](./2026-11-22-interest-pipeline-exploration-cards.md)）。
+  - **S_tag**：程式早已接好，這次補服務層測試與排課 A/B（見[報告](./2026-11-22-interest-pipeline-s-tag.md)）。
+  - **s_vec**：明確興趣只讀問答勾選的標籤（ADR-030，見[報告](./2026-11-22-interest-pipeline-s-vec.md)）。
+  - **排課興趣軸（`scoringPolicy`）**：勾選標籤併入興趣軸（ADR-031，見[報告](./2026-11-23-interest-pipeline-scoring-policy.md)）。
+    AI 聊天這次有給關鍵字時，興趣軸只用這次的關鍵字（修法 A，2026-11-23）。
+- 舊的 `interests`／`preferredKeywords` 欄位已移除（ADR-032，見[報告](./2026-11-23-remove-legacy-interest-fields.md)）：11 個帳號先轉成問答勾選再刪除；10 個 `1804…` 測試帳號依使用者決定不動。
+
+#43 狀態不變；沒有排課器改動；總表其他任務的狀態與相依已核對，不受影響。
+
 **最新狀態（2026-10-11）**：#43 目前約定範圍及階段 6 已完成，專案預設 `TAG_INTEREST_RANKING_MODE=active`；設定 `off` 可回復既有排序。正式驗收採使用者指定的 Persona UX 代表使用者標準：10 位 Persona 各跑 `off`／`active`，由 Chrome 經真實 HTTP API 至 MySQL；`Learned_Tag_Interests` 10 列、探索回饋 58 筆、`plan_chosen` 10 筆、`recommendation_accepted` 10 筆、曝光與重排各 21 筆（P08 額外重排一次）。同帳號依序執行，off 階段事件會進入後續 active profile，因此驗證功能與資料流，不作乾淨因果估計。`CI=true npm run verify` 1,480 passed、0 failed、1 skipped；隔離 MySQL 整合 1/1，Persona 標籤評估 9/9，預設模式單元測試 15/15。CI 略過 live model；本次 full verify 的 `defaultdb` 資料契約檢查為唯讀，寫入型標籤 DB 整合只指向 `rag_tag_interest_test`。重啟後本機前後端 health/login 回應正常，Chrome 登入頁 console error／warning 為 0；直接從 CUA 導覽 API 被 `ERR_BLOCKED_BY_CLIENT` 擋下，故這次預設 fallback 的排課畫面未重跑，另由 resolver 單元測試確認。Persona 的行為資料是模擬資料，但依使用者決定作為後續 UX 驗收標準；真人時間切分保留為未來場域成效研究。roadmap 狀態／相依欄已整體核對：#43 前置均完成，沒有其他總表任務以 #43 為前置，其他任務狀態與相依不變。完整結果見[階段 6 驗收報告](./2026-10-11-rag-tag-interest-stage6-browser-ab.md)及[本次 active 預設變更報告](./2026-10-11-rag-tag-interest-active-default.md)。
 ---
 

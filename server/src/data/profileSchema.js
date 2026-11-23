@@ -2,7 +2,7 @@ import { normalizeBlockedPeriods } from '../utils/periods.js';
 import { normalizeDepartment } from '../utils/text.js';
 import { extractTags, tagsToFlags } from './preferenceTags.js';
 import { normalizeAdmissionYear } from './graduationRuleVersions.js';
-import { readInterestPreferences, normalizePreferencesJson } from './interestPreferences.js';
+import { readInterestPreferences, normalizePreferencesJson, REMOVED_INTEREST_FIELDS } from './interestPreferences.js';
 import { readPersonalizationPreferences } from './personalizationPreferences.js';
 import { readSemesterPlanningPreferences } from './semesterPlanningPreferences.js';
 
@@ -70,6 +70,8 @@ export function normalizeProfile(profile = {}) {
     ...semesterPlanningPreferences,
     ...tagsToFlags(tags),
   };
+  // 已移除的舊文字興趣欄位（ADR-032）：即使來源資料殘留，也不再出現在 Profile 上。
+  for (const field of REMOVED_INTEREST_FIELDS) delete normalized[field];
 
   return normalized;
 }
@@ -113,8 +115,6 @@ export function validateProfile(profile) {
       || profile.remainingSemesters > 8)) {
     errors.push('remainingSemesters 必須是 1～8 的整數或 null');
   }
-  if (!Array.isArray(profile.interests)) errors.push('interests 必須是陣列');
-  if (!Array.isArray(profile.preferredKeywords)) errors.push('preferredKeywords 必須是陣列');
   if (!Array.isArray(profile.interestSelections)) errors.push('interestSelections 必須是陣列');
   if (!profile.preferencesJson || typeof profile.preferencesJson !== 'object' || Array.isArray(profile.preferencesJson)) {
     errors.push('preferencesJson 必須是物件');

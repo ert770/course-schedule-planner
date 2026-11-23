@@ -713,6 +713,22 @@ describe('F30 忠實度檢查的誤判修正（Persona 實測）', () => {
     }
   });
 
+  test('F30d 引導到課程主題問答、把主題帶入排課條件的引號不是課名（ADR-032，2026-11-23 實測）', () => {
+    const userMessage = '以後我都想排資安相關的課，幫我把這個興趣存起來';
+    const cases = [
+      '可以。長期課程主題不能由我直接寫入偏好，請到設定頁的「課程主題問答」勾選「資訊安全」，之後排課系統就會把它作為長期興趣。',
+      '如果你這次也要立即排資安相關課程，我可以把「資訊安全」帶入本次排課條件。',
+      '想學的主題請在「課程主題」裡勾選「密碼學」。',
+    ];
+    for (const sentence of cases) {
+      const audit = validateFaithfulnessReply(sentence, ledger(), { userMessage });
+      assert.ok(!audit.violations.some(item => item.code === 'UNSUPPORTED_COURSE'), `${sentence}\n${JSON.stringify(audit.violations)}`);
+    }
+    // 捏造課名照樣攔下，即使同一段在講課程主題問答。
+    const fabricated = validateFaithfulnessReply('請到「課程主題問答」勾選。另外推薦「量子魔法課程」。', ledger(), { userMessage });
+    assert.ok(fabricated.violations.some(item => item.code === 'UNSUPPORTED_COURSE'));
+  });
+
   test('F30c Markdown 粗體與「X等課程」不影響課名比對', () => {
     const audit = validateFaithfulnessReply(
       '4. **社會企業實作專題**｜陳淑慧。另外搜尋到的 **人生哲學**等課程也很適合討論。', ledger()

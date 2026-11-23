@@ -1,4 +1,4 @@
-const VERSION = 1;
+const VERSION = 2;
 const STATUS_VALUES = new Set(['not_started', 'in_progress', 'completed', 'skipped']);
 
 function storageKey(identity) {
@@ -7,27 +7,18 @@ function storageKey(identity) {
 }
 
 function normalizeState(value) {
-  if (!value || typeof value !== 'object' || value.version !== VERSION) {
-    return {
-      version: VERSION,
-      status: 'not_started',
-      currentIndex: 0,
-      courseCodes: [],
-      clarifiedCategoryIds: [],
-    };
-  }
-  const status = STATUS_VALUES.has(value.status) ? value.status : 'not_started';
+  const status = STATUS_VALUES.has(value?.status) ? value.status : 'not_started';
+  const current = value?.version === VERSION;
   return {
     version: VERSION,
     status,
-    currentIndex: Number.isInteger(value.currentIndex) && value.currentIndex >= 0
+    currentIndex: current && Number.isInteger(value.currentIndex) && value.currentIndex >= 0
       ? value.currentIndex : 0,
-    courseCodes: Array.isArray(value.courseCodes)
-      ? [...new Set(value.courseCodes.map(code => String(code ?? '').trim().toUpperCase()).filter(Boolean))]
-      : [],
-    clarifiedCategoryIds: Array.isArray(value.clarifiedCategoryIds)
-      ? [...new Set(value.clarifiedCategoryIds.map(id => String(id ?? '').trim()).filter(Boolean))]
-      : [],
+    termKey: current && typeof value.termKey === 'string' ? value.termKey : '',
+    pairs: current && Array.isArray(value.pairs) ? value.pairs.filter(pair => Array.isArray(pair)
+      && pair.length === 2 && pair.every(card => card?.courseCode && card.representativeTags?.length)).slice(0, 3) : [],
+    pending: current && value.pending && typeof value.pending.requestId === 'string'
+      && value.pending.actions && typeof value.pending.actions === 'object' ? value.pending : null,
   };
 }
 
@@ -57,8 +48,9 @@ export function startInterestExploration(identity) {
   return saveInterestExplorationState(identity, {
     status: 'in_progress',
     currentIndex: 0,
-    courseCodes: [],
-    clarifiedCategoryIds: [],
+    termKey: '',
+    pairs: [],
+    pending: null,
   });
 }
 

@@ -43,17 +43,20 @@ describe('#10 任務 3A useLearnedPreference 的讀寫與合併', () => {
   });
 
   test('只改興趣不會洗掉開關；只改開關不會洗掉興趣', () => {
-    const withInterest = mergeInterestPreferences({ schemaVersion: 1, values: {} }, { interests: ['AI'] });
+    // 興趣改用課程主題問答的勾選（ADR-032：舊的文字興趣欄位已移除）。
+    const first = [{ group: 'outside', categoryId: 'main_x', level: 'main', mode: 'followup', tagIds: ['t1'] }];
+    const second = [{ ...first[0], tagIds: ['t2'] }];
+    const withInterest = mergeInterestPreferences({ schemaVersion: 1, values: {} }, { interestSelections: first });
     const withSwitch = mergePersonalizationPreferences(withInterest, { useLearnedPreference: false });
-    assert.deepEqual(withSwitch.values.interests, ['AI']);
+    assert.deepEqual(withSwitch.values.interestSelections[0].tagIds, ['t1']);
     assert.equal(withSwitch.values.useLearnedPreference, false);
 
     // 之後只更新興趣（memoryService 會把兩個 merger 串起來）。
     const afterInterestUpdate = mergePersonalizationPreferences(
-      mergeInterestPreferences(withSwitch, { interests: ['資安'] }),
-      { interests: ['資安'] }
+      mergeInterestPreferences(withSwitch, { interestSelections: second }),
+      { interestSelections: second }
     );
-    assert.deepEqual(afterInterestUpdate.values.interests, ['資安']);
+    assert.deepEqual(afterInterestUpdate.values.interestSelections[0].tagIds, ['t2']);
     assert.equal(afterInterestUpdate.values.useLearnedPreference, false);
 
     // 之後只更新開關。
@@ -61,7 +64,7 @@ describe('#10 任務 3A useLearnedPreference 的讀寫與合併', () => {
       mergeInterestPreferences(afterInterestUpdate, {}),
       { useLearnedPreference: true }
     );
-    assert.deepEqual(afterSwitchUpdate.values.interests, ['資安']);
+    assert.deepEqual(afterSwitchUpdate.values.interestSelections[0].tagIds, ['t2']);
     assert.equal(afterSwitchUpdate.values.useLearnedPreference, true);
   });
 

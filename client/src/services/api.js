@@ -208,6 +208,14 @@ export const profileAPI = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  // 課程主題問答 v1（ADR-027，見 server/src/services/interestQuestionnaireService.js）。
+  // payload：{ department, gradeLevel, className, stage: 'group' | 'detail' | 'summary', ... }。
+  // 語言模型失敗時後端改用固定文案，不回錯誤；呼叫端仍要處理網路錯誤。
+  getInterestQuestion: (payload) =>
+    request('/profile/interest-questions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
 
 // Reviews API

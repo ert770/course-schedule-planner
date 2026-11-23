@@ -30,6 +30,8 @@ const REASON_TEXT = {
 // no-signal 的細分原因（後端 axis signal 檢查的 detail），說得出更準的話就優先用。
 const DETAIL_TEXT = {
   'threshold-unreachable': '綜合方案已達目前課程資料可改善的界線',
+  // 興趣導向方案排不出更符合興趣的課表，而綜合方案已有興趣命中（2026-11-23 使用者要求）。
+  'base-already-best-interest': '綜合方案已經是最符合你興趣的組合，再排一份只會是重複的課表',
   'single-day': '綜合方案只用到一天，已經不能更集中',
   'fixed-days-blocked': '必修與固定的課已分布在這些天，無法再減少上課天數',
   'flat-scores': '候選課在這個面向的分數都一樣，分不出差別',

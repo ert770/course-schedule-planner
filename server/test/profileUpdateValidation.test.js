@@ -12,7 +12,6 @@ describe('#10 任務 3A POST /api/profile 的輸入驗證', () => {
     assert.equal(validateProfileUpdate({ useLearnedPreference: true }), null);
     assert.equal(validateProfileUpdate({ useLearnedPreference: false }), null);
     assert.equal(validateProfileUpdate({ preferredTrack: null }), null);
-    assert.equal(validateProfileUpdate({ interests: [] }), null);
     assert.equal(validateProfileUpdate({ remainingSemesters: 1 }), null);
     assert.equal(validateProfileUpdate({ remainingSemesters: 8 }), null);
     assert.equal(validateProfileUpdate({ remainingSemesters: null }), null);
@@ -24,6 +23,21 @@ describe('#10 任務 3A POST /api/profile 的輸入驗證', () => {
         validateProfileUpdate({ remainingSemesters: value }) ?? '',
         /remainingSemesters 必須是 1～8 的整數或 null/u
       );
+    }
+  });
+
+  test('gradeLevel、targetCreditsMax、schemaVersion 只接受正整數或 null', () => {
+    for (const field of ['gradeLevel', 'targetCreditsMax', 'schemaVersion']) {
+      assert.equal(validateProfileUpdate({ [field]: 1 }), null);
+      assert.equal(validateProfileUpdate({ [field]: 4 }), null);
+      assert.equal(validateProfileUpdate({ [field]: null }), null);
+      for (const value of ['abc', '2', 0, -1, 1.5, Number.NaN, {}, [], true]) {
+        assert.match(
+          validateProfileUpdate({ [field]: value }) ?? '',
+          new RegExp(`${field} 必須是正整數或 null`, 'u'),
+          `${field}=${JSON.stringify(value)} 應該被擋下`
+        );
+      }
     }
   });
 
@@ -60,11 +74,19 @@ describe('#10 任務 3A POST /api/profile 的輸入驗證', () => {
   });
 
   test('既有的陣列、字串與 department 規則維持不變', () => {
-    assert.match(validateProfileUpdate({ interests: 'AI' }) ?? '', /interests 必須是陣列/u);
+    assert.match(validateProfileUpdate({ avoidInstructors: 'AI' }) ?? '', /avoidInstructors 必須是陣列/u);
     assert.match(validateProfileUpdate({ mustTakeCourses: {} }) ?? '', /mustTakeCourses 必須是陣列/u);
     assert.match(validateProfileUpdate({ preferredTrack: 42 }) ?? '', /preferredTrack 必須是字串或 null/u);
     assert.match(validateProfileUpdate({ department: '' }) ?? '', /department 必須是非空字串/u);
     assert.match(validateProfileUpdate({ department: {} }) ?? '', /department 必須是非空字串/u);
+  });
+
+  test('ADR-032 已移除的 interests／preferredKeywords：帶了就回 400，引導改用課程主題問答', () => {
+    for (const field of ['interests', 'preferredKeywords']) {
+      for (const value of [[], ['AI'], 'AI']) {
+        assert.match(validateProfileUpdate({ [field]: value }) ?? '', new RegExp(`${field} 已停用.*課程主題問答`, 'u'));
+      }
+    }
   });
 
   test('第一個不合法的欄位決定訊息，不會把多個錯誤混在一起', () => {

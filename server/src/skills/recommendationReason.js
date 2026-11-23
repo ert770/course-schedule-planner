@@ -101,7 +101,8 @@ function resolveDataSources(course) {
  * @param placementReason   `addCourseToPlan()` 既有的理由字串
  * @param scoreComponents   `computeScoreComponents()` 的結果
  * @param contentHits       `collectContentPreferenceHits()` 的結果
- * @param interestHits      `collectInterestHits()` 的結果
+ * @param interestHits      `collectKeywordHits()` 的結果（興趣關鍵字）
+ * @param selectedTagHits   `collectSelectedTagHits()` 的結果（課程主題問答勾選的標籤名稱，ADR-031）
  * @param alternatives      同一決策點的落選者，`null` 代表這條路徑不適用
  * @param tradeoffs         排入這門課付出的代價（例如必修豁免了時段偏好）
  */
@@ -112,6 +113,7 @@ export function buildRecommendationReason({
   scoringPolicy = null,
   contentHits = [],
   interestHits = [],
+  selectedTagHits = [],
   alternatives = null,
   tradeoffs = [],
   requiredSelection = false,
@@ -142,6 +144,9 @@ export function buildRecommendationReason({
       })),
       ...interestHits.map(keyword => ({
         type: 'interest', preferenceId: 'interests', label: keyword, score: null,
+      })),
+      ...selectedTagHits.map(name => ({
+        type: 'interest', preferenceId: 'interestSelections', label: name, score: null,
       })),
     ],
     // 為什麼算必修／算哪一類。沿用既有欄位，不新增判定。

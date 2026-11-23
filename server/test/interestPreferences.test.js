@@ -19,10 +19,10 @@ describe('興趣偏好的 preferences_json 契約', () => {
     );
   });
 
-  test('更新興趣時保留 values 內其他個人化資料', () => {
+  test('更新興趣時保留 values 內其他個人化資料；舊文字興趣欄位不寫入且殘留的被刪除（ADR-032）', () => {
     const merged = mergeInterestPreferences({
       schemaVersion: 1,
-      values: { learnedWeights: { interest: 1.4 }, untouched: true },
+      values: { learnedWeights: { interest: 1.4 }, untouched: true, interests: ['舊'], preferredKeywords: ['舊'] },
     }, {
       preferredTrack: '網路與安全類',
       interests: ['資安', ' 網路 '],
@@ -31,10 +31,11 @@ describe('興趣偏好的 preferences_json 契約', () => {
     assert.deepEqual(merged.values.learnedWeights, { interest: 1.4 });
     assert.equal(merged.values.untouched, true);
     assert.equal(merged.values.preferredTrack, '網路與安全類');
-    assert.deepEqual(merged.values.interests, ['資安', '網路']);
+    assert.equal('interests' in merged.values, false);
+    assert.equal('preferredKeywords' in merged.values, false);
   });
 
-  test('能從正式儲存格式還原排課器使用的頂層欄位', () => {
+  test('能從正式儲存格式還原排課器使用的頂層欄位；不再回傳舊文字興趣欄位', () => {
     const interest = readInterestPreferences({
       preferencesJson: {
         schemaVersion: 1,
@@ -48,8 +49,6 @@ describe('興趣偏好的 preferences_json 契約', () => {
 
     assert.deepEqual(interest, {
       preferredTrack: '技術應用類',
-      interests: ['人工智慧'],
-      preferredKeywords: ['深度學習'],
       interestSelections: [],
     });
   });
@@ -108,7 +107,7 @@ describe('課程主題選擇結果 interestSelections（Step A：資料模型）
     }
   });
 
-  test('IS5 寫入時只動 interestSelections，保留 interests、學習權重與其他鍵', () => {
+  test('IS5 寫入時只動 interestSelections，保留學習權重與其他鍵，刪除殘留的舊 interests', () => {
     const merged = mergeInterestPreferences({
       schemaVersion: 1,
       values: { interests: ['資安'], learnedWeights: { interest: 1.4 }, untouched: true },
@@ -116,19 +115,19 @@ describe('課程主題選擇結果 interestSelections（Step A：資料模型）
       interestSelections: [selection('outside', 'main_lang', ['jp'])],
     });
 
-    assert.deepEqual(merged.values.interests, ['資安']);
+    assert.equal('interests' in merged.values, false);
     assert.deepEqual(merged.values.learnedWeights, { interest: 1.4 });
     assert.equal(merged.values.untouched, true);
     assert.deepEqual(merged.values.interestSelections.map(item => item.categoryId), ['main_lang']);
   });
 
-  test('IS6 更新其他興趣欄位時，不會洗掉已存的 interestSelections', () => {
+  test('IS6 更新其他興趣欄位（修課路徑）時，不會洗掉已存的 interestSelections', () => {
     const stored = mergeInterestPreferences(null, {
       interestSelections: [selection('outside', 'main_lang', ['jp'])],
     });
-    const after = mergeInterestPreferences(stored, { interests: ['雲端'] });
+    const after = mergeInterestPreferences(stored, { preferredTrack: '技術應用類' });
 
-    assert.deepEqual(after.values.interests, ['雲端']);
+    assert.equal(after.values.preferredTrack, '技術應用類');
     assert.equal(after.values.interestSelections.length, 1);
     assert.deepEqual(after.values.interestSelections[0].tagIds, ['jp']);
   });

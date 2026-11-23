@@ -479,9 +479,10 @@ context 只經 server runtime options 傳給 scheduler，REST 與 Chat 共用；
 本學期目標學分 = max(0, 畢業要求學分 - 已取得學分) / 剩餘學期數
 ```
 
-剩餘學期優先讀取 Profile 的 `remainingSemesters`；未設定時依年級與 active term 推算，
-而且把目前學期算進去。例如大四下為 1 學期，大三下為 3 學期。無歷史修課、找不到
-適用規則或無法判定剩餘學期時，不啟用這組配額，並在 `warnings` 說明原因。
+剩餘學期由後端推算，包含目前學期。四年制以入學學年上學期為起點；有正式入學學年時，
+至少需一筆介於入學與當期的有效修課紀錄。缺入學學年時，需有一筆與既有年級相符的預期入學上學期紀錄。
+起點無法核對時，依年級與當期學期回退。例如大四下為 1 學期，大三下為 3 學期。
+無歷史修課、找不到適用規則或無法判定剩餘學期時，依既有規則不啟用配額，並在 `warnings` 說明原因。
 
 實際順序固定為：
 
@@ -934,13 +935,14 @@ REST 路徑沒有 preflight（該檔第 (13) 項的註解已說明這道防線�
 - 涼課／高分優先（`preferEasyCourses`）或挑戰難課（`preferChallengingCourses`，
   Roadmap #5B）——兩者方向相反，同時為 `true` 時排課引擎視為未表態並在
   `warnings` 說明矛盾。見「涼度評分與評價覆蓋率」與下方「Per-user 加權方向」。
-- 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`）。
+- 興趣關鍵字／修課路徑優先（`preferredKeywords`／`interests`／`preferredTrack`），以及課程主題問答勾選的標籤（`interestTagIds`，2026-11-22 起，見下方「課程主題問答勾選的標籤」）。
+  2026-11-23 起（ADR-032）`preferredKeywords`／`interests` 只來自這次請求（AI 聊天單次排課），不再有已存的文字興趣欄位；長期興趣只剩 `interestTagIds`。
 - 8 個內容偏好——免期中考（`noMidterm`）、免分組報告（`noGroupReport`）、討論課
   （`discussion`）、重視平時成績（`weightDaily`）、實作評量（`practicalExam`）、
   期末報告（`finalReport`）、英文授課（`englishTaught`）、學到較多內容（`learnMore`），
   見下方「內容偏好評分與訊號可靠度警告」。
 
-興趣可以由設定頁明確詢問，不需等待互動學習。資訊工程學系先讓使用者單選正式課程地圖的
+興趣可以由設定頁明確詢問，不需等待互動學習（2026-11-23 起只透過課程主題問答；下面描述的單選路徑與自訂關鍵字是早期設計，已不存在）。資訊工程學系先讓使用者單選正式課程地圖的
 `嵌入式系統類`、`技術應用類`、`網路與安全類`，再從目前排課候選課程的
 `Course_Sections.rag_tag` 顯示可複選的細部主題；使用者也可輸入自訂關鍵字或選擇
 「沒有特定方向」。這些值保存於 `User_Profiles.preferences_json.values`，經 Profile
@@ -976,6 +978,26 @@ REST 路徑沒有 preflight（該檔第 (13) 項的註解已說明這道防線�
 
 設定頁讓使用者勾選的細部主題本身就是 `rag_tag` 的原值，走「相同」這條，不受影響。
 興趣命中只提高單門課與方案的偏好分數，不會排除未命中的課，也不會壓過必修與重補修。
+
+### 課程主題問答勾選的標籤（2026-11-22，ADR-031）
+
+`constraintService.js` 會把 profile 裡課程主題問答（`interestSelections`）勾選的標籤轉成
+`constraints.interestTagIds`（`[{ id, name }]`，依 ID 去重）。只選方向、沒勾標籤時是空陣列，方向本身不計分。
+
+- **興趣方向**：有勾選標籤就是 1，和有關鍵字一樣（`scoringPolicy.js`）。
+- **命中**：課程的 `ragTag` 解析成標準標籤 ID 後，在勾選清單裡就算命中，比 ID、不比字面。
+- **單門課的興趣程度** = max(關鍵字命中數／關鍵字數, 勾選標籤命中數／勾選標籤數)。
+  - 兩種來源各自算比例、取較大值，**不合併成一個分母**。合併會稀釋關鍵字：實測有 2 個關鍵字的帳號加上 9 個勾選標籤後，關鍵字課的興趣分由 188 掉到 17。
+  - 只有關鍵字時，與改動前的「命中數／關鍵字數」完全相同。
+- **用到的地方**：單課偏好分、方案的興趣覆蓋率、MILP 的興趣導向方案。
+- **推薦理由**：`matchedPreferences` 的 `preferenceId` 是 `interestSelections`，`label` 是標籤名稱。
+- **關鍵字比對保留**：AI 聊天的單次排課（「這次想排資安」）靠它。
+
+**這次請求帶了關鍵字時（修法 A，2026-11-23）**：AI 聊天這次給了非空的 `interests` 或 `preferredKeywords` 時，`interestTagIds` 為空陣列，興趣軸只看這次的關鍵字。這和「這次的 `interests` 蓋掉已存的 `interests`」是同一條規則。
+
+- 只影響這一次的興趣軸。S_tag、s_vec、探索卡仍讀已存的勾選，也不寫入任何資料。
+- 只給 `preferredTrack`、空陣列或其他條件時，照常使用勾選。
+- 首頁與設定頁的排課請求不帶關鍵字，不會觸發。
 
 ## Hard/Soft Constraint Schema（Roadmap #21）
 
@@ -1175,6 +1197,10 @@ Hebrard 等（AAAI 2005）；內層由 HiGHS（npm `highs` 1.15.3，第三方 hi
 5. 沒有訊號時不建模（`no-signal`）。依序檢查下列條件，第一個不成立的記在 `detail`：
    - 興趣：沒有興趣關鍵字（`no-interest-keywords`）、興趣分數全部相同（`flat-scores`）、
      門檻落在可達範圍外（`threshold-unreachable`）。
+     興趣主軸若是因第 4 點的 `axis-threshold-infeasible` 而沒產生，且綜合方案本身已有興趣命中，
+     `detail` 記為 `base-already-best-interest`：其他條件都滿足的課表裡，沒有比綜合方案興趣程度高出門檻的，
+     綜合方案就是最符合興趣的組合（2026-11-23；D0009002、D0009008 關掉 S_tag／s_vec 後興趣導向方案就回來，
+     證實是綜合方案已吃滿興趣，而不是興趣沒被考慮）。
    - 輕鬆／挑戰：S₀ 沒有難度基準（`no-easiness-baseline`）、有評價的課不足 `minRated`
      （`insufficient-rating`）、難度分數全部相同（`flat-scores`）、門檻落在可達範圍外
      （`threshold-unreachable`）。

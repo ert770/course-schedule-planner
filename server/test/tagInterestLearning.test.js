@@ -45,8 +45,11 @@ function snapshot(event, course = courseFor()) {
 
 describe('rag-tag-interest-v1 pure model', () => {
   test('explicit broad category is retained as category intent without expanding descendant tags', () => {
+    // 方向只選不勾（課程主題問答，ADR-032 後唯一的明確興趣來源）。
     const category = interestTagCatalog.mainCategories[0];
-    const profile = computeTagInterestProfile([], { interests: [category.name] });
+    const profile = computeTagInterestProfile([], {
+      interestSelections: [{ group: 'outside', categoryId: category.id, tagIds: [] }],
+    });
     assert.deepEqual(profile.categoryInterests.map(item => item.mainCategoryId), [category.id]);
     assert.deepEqual(profile.tagInterests, []);
   });
@@ -63,6 +66,30 @@ describe('rag-tag-interest-v1 pure model', () => {
     assert.throws(() => snapshot(baseEvent({
       interestFeedback: { response: 'not_interested', canonicalTagIds: [] },
     }), courseFor()), /必須指定/u);
+  });
+
+  test('雙卡選擇讓每門已選課的代表標籤各加 1，舊回饋維持平均分配', () => {
+    const third = matchableTags[2];
+    const fourth = matchableTags[3];
+    const withSnapshot = (event, course) => ({ ...event, tagInterestSnapshot: snapshot(event, course) });
+    const first = baseEvent({
+      interestFeedback: { response: 'paired_interested', canonicalTagIds: [firstTag.id, secondTag.id] },
+    });
+    const second = baseEvent({
+      eventId: 'event-2', course: { catalogCourseCode: 'TEST1002', sectionId: 102 },
+      interestFeedback: { response: 'paired_interested', canonicalTagIds: [third.id] },
+    });
+    const old = baseEvent({ eventId: 'event-3' });
+    const settings = { now: first.timestamp, activeTerm: first.term };
+    const profile = computeTagInterestProfile([
+      withSnapshot(first, courseFor([firstTag, secondTag, fourth])),
+      withSnapshot(second, { ...courseFor([third]), sectionId: 102, catalogCourseCode: 'TEST1002' }),
+    ], {}, settings);
+    assert.deepEqual(new Map(profile.tagInterests.map(tag => [tag.canonicalTagId, tag.positiveEvidence])),
+      new Map([[firstTag.id, 1], [secondTag.id, 1], [third.id, 1]]));
+    const legacy = computeTagInterestProfile([withSnapshot(old, courseFor([firstTag, secondTag]))], {}, settings);
+    assert.deepEqual(legacy.tagInterests.map(tag => tag.positiveEvidence), [0.5, 0.5]);
+    assert.throws(() => snapshot(first, courseFor([firstTag, fourth, secondTag])), /顯示的代表標籤/u);
   });
 
   test('required course and unresolved required scope fail closed', () => {

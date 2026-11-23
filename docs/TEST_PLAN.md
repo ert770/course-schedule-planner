@@ -782,6 +782,21 @@ spike 報告（`server/test/reports/highs-spike-latest.json`）的 GO 判斷同�
 | `server/test/interestTagEligibility.test.js`（4） | `isSelectableInterestTag` 共用資格判定 |
 | `server/test/curatedInterestOptions.test.js`（19） | ADR-026：`curated_ai` 對應目錄「AI」子類別；只有清單內的 too_common 可選與計分豁免（Python 不行）；只對資工系、候選池有命中時顯示，排第一且不佔名額；從目錄「AI」子類別送人工智慧仍拒絕；先驗帶 `selectionScoringExempt`；《人工智慧導論》未選時 3 個計分標籤、選了人工智慧與機器學習變 5 個且分數 0.4；保存驗證的系所、層級與候選池檢查 |
 | `server/test/interestRoutes.test.js`（18） | 路由處理函式注入假候選池、偏好與追問服務：`/interest-options` 的 400、缺班別不查候選池、只回 `topicGroups`、修課路徑只給資工；`/interest-followups` 的 429（不呼叫服務）、限流以使用者為鍵、400、`previousSelections` 傳遞、送出內容不含使用者 ID；保存時以驗證結果取代送來的選擇、範圍以本次欄位優先、`unverified` 回傳。真的 app（不連資料庫）：缺班別 200、缺系所 400、未登入 401、未同意 428、同意後 400 與第 7 次 429 |
+| `server/test/interestQuestionnaireService.test.js`（20） | 課程主題問答 v1（ADR-027）：請求驗證；預設方向排首批且不呼叫語言模型；換一組排除看過的方向、最後一批有幾個回幾個；送給模型的內容沒有 ID 與學生資料；缺項、多項、順序錯、過長整批退回；逾時、錯誤、固定模式、沒有金鑰都能作答；文案快取；追問方向挑選（未確認優先、依順序、至少 2 個細項）；單一細項列為可勾選；細項換一組；人工智慧用自己的清單且不自動展開；摘要名稱與跨組去重；路由 429／400／200 |
+| `server/test/explanationFaithfulness.test.js`（F30d） | ADR-032：Agent 引導「到設定頁的「課程主題問答」勾選「資訊安全」」「把「資訊安全」帶入本次排課條件」不再被判成捏造課名；捏造課名照樣攔下 |
+| `server/test/legacyInterestMigration.test.js`（LM1～6） | ADR-032 舊關鍵字轉移成問答勾選：直接對到（exact）、名稱開頭（prefix）、相近標籤達 0.70 門檻（similar）與未達門檻捨棄、對不到的詞列為捨棄、與已存勾選合併不覆蓋、讀出舊關鍵字去重 |
+| ADR-032 舊欄位移除（分散在既有測試） | `profileUpdateValidation`：帶 `interests`／`preferredKeywords` 回 400；`interestPreferences`／`profileSchema`：讀取不回傳、寫入刪除殘留鍵；`constraints`／`scheduler` P10-6：關鍵字不再從已存偏好回填；`interestSelections` SP11：名稱路徑不產生先驗；`prompt`：`update_preferences` 不含兩欄位、system prompt 列出勾選主題、說明 Python 等太常見主題只能單次排課；`personaFindingsFixes` PERS-1：舊 `interests` 不算表達偏好 |
+| `server/test/schedulerInterestSelections.test.js`（CD1～2） | 興趣導向方案達不到門檻且綜合方案已有興趣命中時，`detail` 為 `base-already-best-interest`；綜合方案沒有興趣命中、其他主軸、其他原因、已有 detail 時不改 |
+| `server/test/schedulerInterestSelections.test.js`（SP、SI1～5、SC1～3） | ADR-031 排課興趣軸納入問答勾選的標籤：只有勾選標籤時興趣方向為 1；勾選標籤的課有 interest 分數，推薦理由列 `interestSelections`；`hasExpressedPreference` 為 true；關鍵字與標籤並存時兩種命中分開列；加上勾選標籤不稀釋關鍵字課的 interest 分數；沒有勾選時與改動前相同；constraintService 依 ID 去重、只選方向時為空陣列；修法 A：這次請求帶 `interests`／`preferredKeywords` 時 `interestTagIds` 為空，只帶修課路徑、空陣列或其他條件時照常使用勾選 |
+| `server/scripts/personalizationAccountsReport.js`（手動，唯讀） | 全部帳號的個人化表現：每個帳號排一次課，記錄勾選標籤命中率、主方案平均 S_tag、興趣權重、方案數、學分、未滿足需求與方案指紋；`--simulate` 為每組加上模擬勾選（每組第一個方向、課程數前 3 個標籤，不保存） |
+| `server/scripts/agentSchedulerScenarioReport.js`（手動，唯讀） | AI Agent 聊天排課情境：20 個聊天關鍵字（`interests`／`preferredKeywords` 交替）＋多關鍵字，以及 `run_csp_scheduler` 工具 schema 其餘每個參數至少一個情境，記錄關鍵字命中率與各限制是否被遵守 |
+| `server/test/userTagVector.test.js`（UV2、UV-SEL1～4） | ADR-030 s_vec 的明確興趣只讀問答勾選的標籤：勾選標籤進入向量、只有舊 `interests`／`preferredKeywords` 時向量為空、只選方向不加任何東西、策畫「人工智慧」選項勾的 too_common 標籤可進向量、目錄沒有的分類或標籤被忽略 |
+| `server/test/tagInterestService.test.js`（STS1～3） | 課程主題問答 → S_tag 服務層，不 mock，走排課實際呼叫的 `loadTagInterestContextSafely`：未同意時只勾問答標籤也有 S_tag（`explicit-prior`）；已同意時改了問答，快取的標籤興趣檔會失效；只選方向、沒勾標籤時 S_tag 與沒選相同 |
+| `server/test/interestExplorationService.test.js`（IE-SEL1～6＋fixture） | ADR-029 探索卡只讀課程主題問答結果：勾了標籤的課排前面、只選大類或子類方向時該方向的課往前排、只有舊 `interests`／`preferredKeywords` 時不影響順序、目錄沒有的分類或標籤被忽略、勾中的標籤可疊加 |
+| `server/test/interestTagClusters.test.js`（7） | ADR-028 預算分群：完整性驗證（漏、重複、多出、群數、群大小、群名）；鍵與順序無關；命中時依課程數排序；候選池變動或存檔不完整時查不到（退回完整清單，不塞「其他」）；模型輸出編號轉換 |
+| `client/src/utils/interestQuestionnaireDraft.test.js`（13） | 前端作答邏輯：細項頁作答時以作答為準、略過時保留已存標籤；方向與細項不限數量（2026-11-22 拿掉兩項上限）；三組各自的追問答案；別名比對；略過與未答沿用已保存方向；上一題改掉方向後追問答案移除；寬泛方向不展開；確認的細項寫進對應方向；明確移除可撤回、共用標籤保留；同一標籤一起勾選；單一細項預設不勾 |
+
+方向卡回歸驗證沿用 `server/test/interestQuestionnaireService.test.js`：大沙漏仍為原本的三方向題；中沙漏僅包含已選方向，每頁最多四張，同批重疊方向分開。點卡後最多三個有效標籤、第二題去重，模型回應無效時使用備援。瀏覽器確認大沙漏 A／B／C、中沙漏卡片、小沙漏單題及最後確認頁依序呈現，返回中沙漏後保留答案。
 
 兩個新測試檔都做過突變測試：拿掉計分豁免、拿掉「以驗證結果取代送來的選擇」各會讓 1 個測試失敗。前端沒有元件測試，以 `npm run build`、`npm run lint` 與瀏覽器實測為準。
 

@@ -1,242 +1,163 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import PreferenceJourneySteps, { PreferenceBackButton } from '../components/Layout/PreferenceJourneySteps';
+import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import { useAuth } from '../contexts/useAuth';
 import { privacyAPI } from '../services/api';
 import { consentChoicesFromStatus, consentChoicesToPayload } from '../services/privacyConsentAdapter';
-import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
-import { ShieldCheck, Loader2, ArrowLeft } from 'lucide-react'; // 新增 ArrowLeft
+
+const optionalUses = [
+  {
+    key: 'personalized',
+    title: '從互動持續改善個人化',
+    description: '讓系統參考你之後的課程互動與回饋，調整自己的推薦。',
+  },
+  {
+    key: 'collaborative',
+    title: '協助推薦課程給其他同學',
+    description: '讓不含學號與姓名的修課及課程互動協助推薦。系統只使用至少 3 位同學共同的修課組合。',
+  },
+  {
+    key: 'research',
+    title: '匿名彙總研究',
+    description: '讓符合門檻的彙總統計用於研究。不匯出逐筆事件或完整修課歷史。',
+  },
+];
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { markOnboarded, logout } = useAuth();
-  
+  const { markOnboarded, refreshPrivacy, logout } = useAuth();
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const [consentsLoaded, setConsentsLoaded] = useState(false);
-  const [consents, setConsents] = useState({
-    necessary: true,
-    personalized: false,
-    collaborative: false,
-    research: false,
-  });
+  const [error, setError] = useState('');
+  const [consents, setConsents] = useState(null);
   const [personalization, setPersonalization] = useState(null);
   const [policyVersion, setPolicyVersion] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    const consentRequest = privacyAPI.getConsents()
+    privacyAPI.getConsents()
       .then(status => {
         if (cancelled) return;
         setConsents(consentChoicesFromStatus(status?.consents));
         setPolicyVersion(status?.policy?.version ?? '');
-        setConsentsLoaded(true);
       })
-      .catch(err => {
-        if (cancelled) return;
-        console.error('Failed to load consents:', err);
-        setSaveError('無法讀取目前的隱私選擇，請重新整理後再試。');
+      .catch(() => {
+        if (!cancelled) setError('無法讀取目前的資料使用設定。');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
-    const personalizationRequest = privacyAPI.getPersonalization()
+    privacyAPI.getPersonalization()
       .then(data => {
         if (!cancelled && data) setPersonalization(data);
       })
       .catch(() => {});
-    Promise.allSettled([consentRequest, personalizationRequest])
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
     return () => { cancelled = true; };
-  }, []);
+  }, [loadAttempt]);
 
-  const handleCheckboxChange = (key) => {
-    if (key === 'necessary') return;
-    setConsents(prev => {
-      const next = { ...prev, [key]: !prev[key] };
-      // 協同過濾以個人化學習為前提：取消個人化學習時一併取消。
+  const retry = () => {
+    setError('');
+    setLoading(true);
+    setLoadAttempt(previous => previous + 1);
+  };
+
+  const toggleConsent = (key) => {
+    setConsents(previous => {
+      if (!previous || (key === 'collaborative' && !previous.personalized)) return previous;
+      const next = { ...previous, [key]: !previous[key] };
       if (key === 'personalized' && !next.personalized) next.collaborative = false;
-      if (key === 'collaborative' && !prev.personalized) return prev;
       return next;
     });
   };
 
-  const handleAgreeAndSetup = async () => {
+  const continueToSetup = async () => {
+    if (!consents || saving) return;
     setSaving(true);
-    setSaveError('');
+    setError('');
     try {
       await privacyAPI.updateConsents(consentChoicesToPayload(consents));
       markOnboarded();
+      await refreshPrivacy().catch(() => {});
       navigate('/setup');
     } catch (err) {
       console.error('Failed to update consents:', err);
-      setSaveError(err.message || '隱私設定儲存失敗，請稍後再試。');
+      setError(err.message || '隱私設定儲存失敗，請稍後再試。');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleBack = () => {
-    logout();
-    window.location.href = '/login';
-  };
-
   return (
-    <div className="onboarding-page" id="onboarding-page" style={{ 
-      minHeight: '100vh', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      backgroundColor: '#f8fafc',
-      padding: '24px'
-    }}>
-      <div className="onboarding-card animate-fadeInUp" style={{ 
-        position: 'relative', // 新增相對定位供返回鍵使用
-        maxWidth: '720px', 
-        width: '100%', 
-        background: '#ffffff', 
-        padding: '36px 40px', 
-        borderRadius: '20px', 
-        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
-        border: '1px solid #e2e8f0'
-      }}>
-        
-        {/* 返回鍵 */}
-        <button 
-          onClick={handleBack}
-          style={{
-            position: 'absolute', top: '24px', left: '24px',
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '8px', borderRadius: '50%', transition: 'background 0.2s'
-          }}
-          onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-          onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-          title="返回登入"
-        >
-          <ArrowLeft size={22} />
-        </button>
+    <main id="onboarding-page" className="preference-journey-surface">
+      <section className="preference-journey-panel" aria-labelledby="consent-title">
+        <PreferenceBackButton onClick={() => { logout(); navigate('/login', { replace: true }); }}>
+          返回登入
+        </PreferenceBackButton>
+        <PreferenceJourneySteps current={1} />
+        <header className="preference-page-header">
+          <h1 id="consent-title">隱私與資料使用</h1>
+          <p>請確認提供排課服務所需的資料用途，再選擇是否開啟其他功能。</p>
+        </header>
 
-        {/* 頂部標題區 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '28px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', paddingLeft: '40px' /* 讓出版位給返回鍵 */ }}>
-          <div style={{ padding: '10px', background: '#eff6ff', borderRadius: '12px', color: '#3b82f6', display: 'flex' }}>
-            <ShieldCheck size={26} />
-          </div>
+        <div className="preference-consent-card required">
+          <ShieldCheck size={20} aria-hidden="true" />
           <div>
-            <h1 className="onboarding-title" style={{ fontSize: '1.25rem', fontWeight: '700', color: '#1e293b', margin: 0 }}>隱私與資料使用</h1>
-            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>政策版本：{policyVersion || '載入中'}</span>
+            <strong>提供排課與 AI 對話服務（必要）</strong>
+            <p>使用你的個人資料、修課歷史、偏好、已存課表及近期對話，提供排課、畢業檢核與對話服務。對話會傳送給 OpenAI。</p>
           </div>
         </div>
 
-        {saveError && (
-          <div role="alert" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '8px', background: '#fef2f2', color: '#b91c1c', fontSize: '0.9rem' }}>
-            {saveError}
+        {loading && <p className="preference-consent-status" role="status">正在讀取你的資料使用設定…</p>}
+        {error && (
+          <div className="preference-consent-status" role="alert">
+            <p>{error}</p>
+            {!consents && !loading && <button type="button" className="course-card-action" onClick={retry}>重新載入</button>}
           </div>
         )}
 
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '50px' }}>
-            <Loader2 size={36} className="spin-animation" style={{ color: '#3b82f6' }} />
-          </div>
-        ) : (
-          <div className="onboarding-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            
-            {/* 項目 1：必要 */}
-            <div style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8fafc', transition: 'all 0.2s' }}>
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', cursor: 'not-allowed' }}>
-                <input type="checkbox" checked={consents.necessary} disabled style={{ marginTop: '4px', width: '16px', height: '16px', accentColor: '#3b82f6' }} />
-                <div style={{ textAlign: 'left' }}>
-                  <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>提供排課與 AI 對話服務 (必要)</strong>
-                  <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0 0', lineHeight: '1.4' }}>
-                    使用 Profile、修課歷史、偏好、已存課表及近期對話，提供排課、畢業檢核與對話連續性。
-                  </p>
-                </div>
-              </label>
-            </div>
-
-            {/* 項目 2：個人化 */}
-            <div style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#ffffff', transition: 'all 0.2s' }}>
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', cursor: 'pointer' }}>
+        {consents && (
+          <div className="preference-consent-options">
+            <h2>可選用途</h2>
+            {optionalUses.map(({ key, title, description }) => (
+              <label className="preference-consent-card" key={key}>
                 <input
+                  id={`onboarding-consent-${key}`}
                   type="checkbox"
-                  checked={consents.personalized}
-                  onChange={() => handleCheckboxChange('personalized')}
-                  style={{ marginTop: '4px', width: '16px', height: '16px', accentColor: '#3b82f6', cursor: 'pointer' }}
+                  checked={consents[key]}
+                  disabled={saving || (key === 'collaborative' && !consents.personalized)}
+                  onChange={() => toggleConsent(key)}
                 />
-                <div style={{ textAlign: 'left' }}>
-                  <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>從互動持續改善個人化 (可選)</strong>
-                  <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0 0', lineHeight: '1.4' }}>
-                    允許未來的互動事件與學習紀錄使用你的操作回饋。
-                  </p>
-                </div>
+                <span>
+                  <strong>{title}</strong>
+                  <span className="preference-consent-description">{description}</span>
+                  {key === 'collaborative' && <small>需先開啟「從互動持續改善個人化」。</small>}
+                </span>
               </label>
-            </div>
-
-            {/* 項目 3：協同過濾（以個人化學習為前提） */}
-            <div style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#ffffff', transition: 'all 0.2s', opacity: consents.personalized ? 1 : 0.6 }}>
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', cursor: consents.personalized ? 'pointer' : 'not-allowed' }}>
-                <input
-                  id="onboarding-consent-collaborative"
-                  type="checkbox"
-                  checked={consents.collaborative}
-                  disabled={!consents.personalized}
-                  onChange={() => handleCheckboxChange('collaborative')}
-                  style={{ marginTop: '4px', width: '16px', height: '16px', accentColor: '#3b82f6', cursor: consents.personalized ? 'pointer' : 'not-allowed' }}
-                />
-                <div style={{ textAlign: 'left' }}>
-                  <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>協助推薦課程給其他同學 (可選)</strong>
-                  <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0 0', lineHeight: '1.4' }}>
-                    讓我的修課與課程互動紀錄（不含學號與姓名），協助推薦課程給其他同學。只有至少 3 位同學共同的修課組合才會被使用；需先同意上一項。
-                  </p>
-                </div>
-              </label>
-            </div>
-
-            {/* 項目 4：匿名研究 */}
-            <div style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#ffffff', transition: 'all 0.2s' }}>
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={consents.research}
-                  onChange={() => handleCheckboxChange('research')}
-                  style={{ marginTop: '4px', width: '16px', height: '16px', accentColor: '#3b82f6', cursor: 'pointer' }}
-                />
-                <div style={{ textAlign: 'left' }}>
-                  <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>匿名彙總研究 (可選)</strong>
-                  <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0 0', lineHeight: '1.4' }}>
-                    允許將符合門檻的彙總統計用於研究；不匯出逐筆事件或完整修課歷史。
-                  </p>
-                </div>
-              </label>
-            </div>
-
+            ))}
             {personalization && (
-              <div style={{ padding: '14px 18px', borderRadius: '12px', background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: '0.85rem', color: '#1e40af', textAlign: 'left' }}>
+              <div className="preference-consent-source">
                 <strong>目前個人化來源：</strong>
-                {/* API 沒有 label 欄位；與首頁、隱私頁共用同一個元件，依 source／sufficiency 顯示正確文字。 */}
                 <PreferenceSourceBadge variant="compact" personalization={personalization} />
               </div>
             )}
-
-            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '12px', marginTop: '20px' }}>
-              <button
-                className="onboarding-btn"
-                onClick={handleAgreeAndSetup}
-                disabled={saving || !consentsLoaded}
-                id="onboarding-agree-btn"
-                style={{ 
-                  width: '100%', margin: 0, padding: '14px', borderRadius: '10px', 
-                  fontSize: '1rem', fontWeight: '600', backgroundColor: '#3b82f6', 
-                  color: '#fff', border: 'none', cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', transition: 'background-color 0.2s'
-                }}
-              >
-                {saving ? '儲存中...' : '同意並開始設定 ✨'}
-              </button>
-            </div>
-
           </div>
         )}
-      </div>
-    </div>
+        <p className="preference-consent-foot">
+          可選用途可留空，之後可在隱私中心修改。{policyVersion && ` 政策版本 ${policyVersion}`}
+        </p>
+        <button
+          type="button"
+          className="onboarding-btn preference-consent-submit"
+          disabled={saving || !consents}
+          onClick={continueToSetup}
+          id="onboarding-agree-btn"
+        >
+          {saving ? <><Loader2 size={18} className="spin-animation" /> 正在保存…</> : <>同意必要用途並繼續 <ArrowRight size={18} /></>}
+        </button>
+      </section>
+    </main>
   );
 }

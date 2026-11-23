@@ -1,7 +1,6 @@
 import { ACTIVE_TERM, normalizeSemesterLabel } from './activeTerm.js';
 import { getEarnedCredits, getTotalEarnedCredits } from './courseHistory.js';
-import { resolveGraduationRule } from './graduationRuleVersions.js';
-import { normalizeRemainingSemesters } from './semesterPlanningPreferences.js';
+import { normalizeAdmissionYear, resolveGraduationRule } from './graduationRuleVersions.js';
 
 export const GRADUATION_BUCKETS = Object.freeze([
   'required', 'elective', 'general', 'external', 'unspecified',
@@ -30,16 +29,32 @@ export function resolveRequiredCredits(requirement) {
 }
 
 export function inferRemainingSemesters(profile = {}, activeTerm = ACTIVE_TERM) {
-  const explicit = normalizeRemainingSemesters(profile.remainingSemesters);
-  if (explicit !== null) return { value: explicit, source: 'profile' };
-
   const gradeLevel = Number(profile.gradeLevel);
+  const validGrade = Number.isInteger(gradeLevel) && gradeLevel >= 1 && gradeLevel <= 4;
   const semester = normalizeSemesterLabel(activeTerm?.semester);
-  if (!Number.isInteger(gradeLevel) || gradeLevel < 1 || gradeLevel > 4 || semester === null) {
-    return { value: null, source: 'unknown' };
+  if (semester === null) return { value: null, source: 'unknown' };
+
+  const activeYear = normalizeAdmissionYear(activeTerm?.academicYear);
+  const gradeAdmissionYear = activeYear !== null && validGrade ? activeYear - gradeLevel + 1 : null;
+  const admissionYear = normalizeAdmissionYear(profile.admissionYear);
+  const startYear = admissionYear ?? gradeAdmissionYear;
+  const semesterOffset = semester === 'second' ? 1 : 0;
+  if (activeYear !== null && startYear !== null) {
+    const elapsed = (activeYear - startYear) * 2 + semesterOffset;
+    const history = Array.isArray(profile.courseHistory) ? profile.courseHistory : [];
+    // Without an admission year, require a first-term record that agrees with the student's grade.
+    const hasHistoryAnchor = elapsed >= 0 && elapsed < 8 && history.some(record => {
+      const year = normalizeAdmissionYear(record?.academicYear);
+      const term = normalizeSemesterLabel(record?.semester);
+      if (year === null || term === null) return false;
+      const recordOffset = (year - startYear) * 2 + (term === 'second' ? 1 : 0);
+      return admissionYear === null ? recordOffset === 0 : recordOffset >= 0 && recordOffset <= elapsed;
+    });
+    if (hasHistoryAnchor) return { value: 8 - elapsed, source: 'course-history-and-active-term' };
   }
 
-  const value = Math.max(1, (4 - gradeLevel) * 2 + (semester === 'first' ? 2 : 1));
+  if (!validGrade) return { value: null, source: 'unknown' };
+  const value = (4 - gradeLevel) * 2 + 2 - semesterOffset;
   return { value, source: 'grade-and-active-term' };
 }
 

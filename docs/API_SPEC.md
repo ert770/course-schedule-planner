@@ -400,9 +400,19 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 
 ### `GET /api/interest-exploration/cards`（Roadmap #43 階段 4）
 
-需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳最多 8 張
-真實課程卡片；排除必修、已通過課程、資格未知／不符、沒有時段或沒有符合
-`interest_learning_eligible=true` 的標籤的課程。首輪先依使用者已選主題排序，並盡量分散主／子分類。
+需要登入及 `service_processing` 同意。從登入者的修課範圍與目前學期課程中，回傳 `pairs`，最多三組且每組兩門不同課號。
+排除必修、已通過課程、資格未知／不符及沒有時段的課程。雙卡還要求每門課至少一個可學習且可跨課配對的 `representativeTags`。
+課程先依主題相關度排序，同分再依既有向量訊號（s_vec）排序，最後依課號。配對優先找同類但代表標籤不同的另一門，候選不足時提供較少組。
+
+主題相關度從 2026-11-22 起只讀課程主題問答的結果 `interestSelections`，依 ID 比對（ADR-029）：
+
+- 課程的標籤中，每個學生勾選的標籤 +2。
+- 課程的分類路徑中，每條落在學生所選方向（大類或子類）的路徑 +1。
+- 課程屬於 `preferredTrack` 時 +1。
+- 以上各項可疊加。
+
+`interests`、`preferredKeywords` 不再影響相關度，s_vec 也從 2026-11-22 起不再讀這兩個欄位（ADR-030）。方向只用來排探索卡，不寫進任何分數。
+`cards` 保留最多八張的舊版平面清單。`categoryPrompts` 自 2026-11-23 起固定為空陣列（它只讀已移除的文字興趣欄位，ADR-032），欄位保留以維持相容。
 `GET /api/exploration` 是系外／通識相似度清單，與此初始興趣探索流程不同。
 
 ```json
@@ -431,6 +441,8 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
       "term": { "academicYear": 115, "semester": "first" },
       "category": "一般選修",
       "track": "技術應用類",
+      "description": "課程內容摘要",
+      "representativeTags": [{ "canonicalTagId": "tag_ac8bb4d19b34088425b1", "canonicalName": "0365 Copilot" }],
       "tags": [
         {
           "canonicalTagId": "tag_ac8bb4d19b34088425b1",
@@ -445,9 +457,9 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 }
 ```
 
-若使用者只選廣泛主分類，`categoryPrompts` 會列出目前探索卡片中可用的子分類；已經明確選過子分類時不重複追問。選定的子分類作為明確 Profile 主題先驗保存，不會展開成其下所有細標籤。
+`pairs` 是陣列，每一項都是上述格式的兩張卡。新版頁面直接顯示雙卡，不在探索頁加入額外的分類題。
 `emptyReason` 為 `student_scope_unavailable` 時代表 Profile 缺少可確認的系所／年級／班級；
-`no_eligible_courses` 代表目前沒有符合條件的卡片。兩種情況都可略過探索並繼續排課。
+`no_eligible_courses` 代表舊版平面清單沒有合格卡片。新版沒有完整雙卡時 `pairs` 為空，使用者可直接排課。
 課程主題回饋使用既有 `POST /api/interactions` 的
 `interest_exploration_feedback`；未同意選擇性的 `personalization_learning` 時，前端不送出回饋，
 不會阻止使用者繼續操作。
@@ -798,7 +810,8 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 「Active Term」一節。
 
 `preferredKeywords`、`interests`、`preferredTrack`、`preferCompact`、`preferEasyCourses`、
-`preferChallengingCourses` 為軟性偏好，用於計算各方案的偏好符合度並決定主推方案。未提供
+`preferChallengingCourses` 為軟性偏好（`preferredKeywords`／`interests` 只代表**這次請求**的興趣關鍵字，
+不從已存偏好回填，ADR-032；長期興趣是 Profile 的 `interestSelections`，經 `interestTagIds` 進入排課），用於計算各方案的偏好符合度並決定主推方案。未提供
 任何一項時，主推方案改以總學分決定。**`preferEasyCourses` 與 `preferChallengingCourses`
 方向相反，不得同時為 `true`**——兩者同時設定時（Roadmap #5B）排課引擎會把難度偏好視為
 未表態並在 `warnings` 說明，不會猜測使用者真正的意思。
@@ -869,7 +882,8 @@ Roadmap #22 的 bounded backtracking repair 會在主推 greedy baseline 未通�
 
 request 的 `constraints` 與使用者已儲存偏好由 `server/src/services/constraintService.js` 的 `buildScheduleConstraints()` 合併，REST 與 AI Agent 兩條路徑共用同一份邏輯。
 
-- **陣列型參數**（`preferredKeywords`、`interests`、`blockedPeriods`、`mustTakeCourseIds`、`avoidInstructors`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
+- **陣列型參數**（`blockedPeriods`、`mustTakeCourseIds`、`avoidInstructors`）：送空陣列 `[]` 視同**未指定**，會退回已儲存偏好。
+- **`preferredKeywords`、`interests`**（2026-11-23 起，ADR-032）：只取這次請求的值，不從已儲存偏好回填；空陣列或沒送就是沒有關鍵字。要覆蓋已儲存值必須送入非空陣列。此語意是為了避免前端每次都送出空陣列而靜默清空使用者的既有設定。
 - **`courseHistory`**：不適用上述合併規則，**純直通、不接受 request 覆蓋**——`constraints.courseHistory` 一律等於 MySQL `User_Course_History` 載入的 `prefs.courseHistory`。查詢成功但 0 筆是合法空歷史；查詢失敗時 Profile、Schedule、Chat 與 Graduation 回 `503 COURSE_HISTORY_UNAVAILABLE`，不得以空陣列繼續。REST 與 AI Agent 都不能提交或覆蓋歷史修課。
 - **`courseReviews`**（Roadmap #4）：與 `courseHistory` 同理，**純伺服器端注入、不接受 request 覆蓋**。`scheduleService.js` 從 `getAll('reviews')` 取得 `Course_Reviews` 全表後放進 `context`，request body 與 AI Agent 的 tool 參數都不含這個欄位——沒有任何管道能讓客戶端塞入捏造的評價分數。
 - **布林型參數**：`false` 是有效值，會覆蓋已儲存偏好；只有 `null` 與 `undefined` 才會退回已儲存值。
@@ -1040,7 +1054,7 @@ metadata」兩節。
 | `scoringPolicy` | 這個排序決策使用的版本化權重快照；必修預置、關注等不經一般 scorer 的放置路徑為 `null` |
 | `scoreBreakdown` | 分數組成，`[{ component, value }]`，只列非 0 的元件。除既有 `base`／`requiredSelection`／`requiredCourse`／`category`／`credits`／`contentPreference`／`compact`／`easy`／`interest` 外，啟用標籤候選排序時可包含 `tagInterest`（標籤興趣對池內基礎分的加減量）；系所年級規則可包含 `crossYearElective`／`outsideOwnDepartment` |
 | `scoreTotal` | 這門課在勝出方案裡的總分。**含**被 `scoreBreakdown` 過濾掉的 0 值元件 |
-| `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣關鍵字）。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
+| `matchedPreferences` | 這門課實際命中的偏好，`[{ type, preferenceId, label, score }]`。`type` 為 `content`（內容偏好旗標）或 `interest`（興趣）。`interest` 的 `preferenceId` 有兩種：`interests` 是興趣關鍵字（含 AI 聊天單次排課的關鍵字），`label` 是關鍵字本身；`interestSelections`（2026-11-22 起，ADR-031）是課程主題問答勾選的標籤，`label` 是標籤名稱。**空陣列代表它沒有命中任何偏好**，不得解讀成「還沒算」 |
 | `requiredRules` | 必修／分類的判定依據：`formallyRequired`、`category`、`sourceCategory`、`classificationSource`、`track`、`countsTowardGraduation`、`nonGraduationCategory` |
 | `reviewEvidence` | 同上表的 `reviewEvidence`；`null` 代表沒有評價 |
 | `easinessSource` | 同上表的 `easinessSource` |
@@ -1276,6 +1290,7 @@ combinedPlanScore = preferenceScore × planTagMultiplier
 `no-interest-keywords`、`no-easiness-baseline`、`insufficient-rating`、`flat-scores`、
 `threshold-unreachable`（主軸門檻超出「固定課 ∪ 競爭課」的可達範圍，做不到比 S₀ 更好）、
 `single-day`、`fixed-days-blocked`。**前端在 `detail` 有更精確說法時優先依 `detail` 顯示**：`threshold-unreachable` 顯示「綜合方案已達目前課程資料可改善的界線，無法再產生有意義的主軸改善」，其餘 `no-signal` 才顯示「候選課缺少可區分的資料」（`client/src/components/Schedule/PlanSwitcher.jsx`）。
+**2026-11-23 起**：興趣導向方案的 `reason` 為 `axis-threshold-infeasible`、且綜合方案本身已有興趣命中時，`detail` 為 `base-already-best-interest`，前後端顯示「綜合方案已經是最符合你興趣的組合，再排一份只會是重複的課表」（判斷式 `scheduler.js` 的 `collapseDetailFor()`）。
 
 MILP 方案另帶：
 
@@ -1597,6 +1612,97 @@ Response：
   `{ "followups": [], "scopeReady": false }`。
 - 錯誤：`400`（欄位缺漏或型別錯誤，例如 `selections 最多 6 筆`）、`429`（限流）。
 
+### `POST /api/profile/interest-questions`
+
+設定頁「想接觸的課程主題」的逐題問答（課程主題問答 v1，ADR-027，2026-11-22 起取代設定頁的三組分類按鈕與上面的追問對話框；
+`/interest-followups` 保留，但設定頁已不再呼叫）。一次出一題，選項由後端從這位學生的候選池選好，語言模型只改寫文案。
+需要登入與服務同意；每位使用者每分鐘最多 30 次（超過回 `429`、`code: "RATE_LIMITED"`）。不讀這位使用者的 Profile。
+
+共通欄位：`department`、`gradeLevel`、`className`（重建候選池，與 `GET /api/courses/interest-options` 相同）與 `stage`。
+
+**`stage: "group"`**：本系、通識、系外各一題，每批最多 3 個方向。
+
+```json
+{ "department": "資訊工程學系", "gradeLevel": 3, "className": "資訊三甲",
+  "stage": "group", "group": "department", "seenOptionIds": [] }
+```
+
+```json
+{
+  "stage": "group", "group": "department", "scopeReady": true,
+  "question": "如果下學期多修一門本系選修，你想深入哪些方向？",
+  "options": [
+    { "categoryId": "curated_ai", "aliasIds": [], "level": "sub", "title": "讓電腦從資料中學習",
+      "description": "了解模型怎麼辨識圖像、理解文字或做預測。", "categoryLabel": "人工智慧",
+      "topics": ["機器學習", "人工智慧", "生成式AI", "自然語言處理", "深度學習", "電腦視覺"], "topicCount": 7, "courseCount": 3 }
+  ],
+  "hasMore": true, "source": "default"
+}
+```
+
+- 方向順序：規格表的 9 個預設方向（`server/src/data/interestQuestionnaireCopy.js`）先出，其餘依選單原本的課程數排序。
+- 「換一組」：把看過的 `categoryId` 放進 `seenOptionIds` 再呼叫；`hasMore` 為 false 時沒有新方向。這組沒有任何方向時回
+  `question: null`、`options: []`，前端跳過這組。
+- 題幹固定用該組的題幹；有預設文案的方向直接用預設文案，其餘交給語言模型改寫短標題與一句說明。
+- `topics` 是這個方向在候選池裡課程數最多的前 6 個主題名稱，`topicCount` 是總數；只用來說明方向包含什麼（前端顯示「包含主題：…」），**不會被當成已選的具體主題**。
+
+**`stage: "card"`**：點方向卡時呼叫。傳同樣的班級範圍，另帶
+`direction: { group, categoryId }` 與可省略的 `seenTagIds`（最多 3 個，只用於第二題）。
+回 `question` 與至多三個 `options: [{ tagId, name, title, description }]`，其中 `tagId` 和 `name` 來自候選池。
+有預算分群時優先從各群取代表標籤；找不到分群時依既有標籤順序。`hasMore` 只在第一題還有其他標籤時回 `true`。
+語言模型改寫題幹及文案，遇到逾時、固定模式或回應不符時用原題幹及標籤名。前端確認後沿用 `interestSelections` 保存格式。
+
+**`stage: "detail"`**：中沙漏的方向總覽。一次送這一組**所有**已選方向。
+設定頁另外傳 `layout: "cards"` 以取得 `cardPages`，每頁最多四張 `{ group, categoryId, examples }`，
+候選標籤交集達較小集合的 60% 或同屬軟體、AI、資安、硬體的本系方向分開顯示。
+所有已選且有可用標籤的方向都會出現在其中一頁。方向總覽不呼叫語言模型，點方向才請求 `stage: "card"`。
+回應仍包含原有 `directions` 資料供相容。
+
+```json
+{ "department": "資訊工程學系", "gradeLevel": 3, "className": "資訊三甲", "stage": "detail",
+  "directions": [{ "group": "outside", "categoryId": "main_…" }] }
+```
+
+```json
+{
+  "stage": "detail", "scopeReady": true,
+  "question": "你想先接觸哪些主題？點有興趣的群展開，可複選，也可以略過。",
+  "directions": [
+    {
+      "group": "outside", "categoryId": "main_…", "title": "了解品牌與消費者", "categoryLabel": "商業與管理",
+      "tagCount": 76, "mode": "clusters",
+      "tags": [{ "tagId": "tag_…", "name": "行銷", "courseCount": 6 }],
+      "popular": [{ "tagId": "tag_…", "name": "行銷", "courseCount": 6 }],
+      "clusters": [{ "clusterId": "c1", "label": "行銷市場", "tagIds": ["tag_…"] }]
+    }
+  ]
+}
+```
+
+- `mode`：
+  - `flat`：標籤 12 個以下，或 13 個以上但沒有預先算好的分群（備援）。前端直接列出 `tags`，先 12 個，其餘收在「更多」。
+  - `clusters`：13 個以上，而且 `server/src/data/interestTagClusters.json` 有這個方向、這份標籤清單的分群。另附：
+    - `popular`：最熱門的 3 個標籤，放在區塊最上面；
+    - `clusters`：群卡，`clusterId: "other"` 是「其他」，只帶標籤 ID，名稱與課程數由 `tags` 對照。
+  - `tags` 一律是全部標籤（依課程數），供同頁搜尋。
+- 分群只查表，鍵是「方向 ID＋排序後的標籤 ID」。候選池的標籤有任何差異就查不到，退回 `flat`，不把對不上的標籤塞進「其他」。
+- 不在候選池的方向略過；全部都不在時回 `question: null`、`directions: []`。
+- 分群只是導覽，不保存、不計分；只有學生勾選的標籤 ID 會存進 `interestSelections`。
+
+**`stage: "summary"`**：把已存的方向與標籤 ID 換成顯示名稱（確認頁、重新進入設定頁），不呼叫語言模型。
+`selections` 為 `[{ group, categoryId, tagIds }]`，回 `{ directions: [{ group, categoryId, title, categoryLabel, available }],
+topics: [{ group, categoryId, tagId, name, duplicate }] }`；`available: false` 表示該方向目前不在候選池，同一標籤第二次出現時
+`duplicate: true`。
+
+- （以下只適用 `stage=group`）`source` 為 `default`、`gpt`、`fixed` 或 `mixed`。**固定文案後備**：沒有 `OPENAI_API_KEY`、`INTEREST_FOLLOWUP_MODE=fixed`、
+  逾時（12 秒，不重試）、呼叫失敗，或輸出的參照、順序、數量與輸入不符、文字過長或含網址，整批改用固定文案：方向的短標題用目錄名稱、
+  說明列代表課；細項的短標題用標籤名稱；題幹用固定題幹。頂層 `fallbackReason` 為 `mode_fixed`、`no_api_key`、`gpt_timeout`、
+  `gpt_error` 或 `invalid_gpt_output`。**出題失敗不回錯誤**。
+- 送給 OpenAI 的只有這一題的分類名稱與標籤名稱（見 `docs/PROMPT_DESIGN.md`）。文案依內容快取在伺服器記憶體 24 小時，所有使用者共用；失敗不快取。
+- 班別沒選好時回 `scopeReady: false`、`question: null`。
+- 錯誤：`400`（欄位缺漏或型別錯誤）、`429`（限流）。
+- 問答的結果仍由 `POST /api/profile` 的 `interestSelections` 保存，形狀不變；`tagIds` 只放使用者確認的具體主題（ADR-027）。
+
 ### `POST /api/profile`
 
 只更新 session 使用者的 `User_Profiles` 支援欄位。request 不需也不應傳 `userId`。
@@ -1604,15 +1710,14 @@ Response：
 興趣方向可用下列欄位更新：
 
 ```json
-{
-  "preferredTrack": "網路與安全類",
-  "interests": ["資訊安全", "網路"],
-  "preferredKeywords": ["密碼學"]
-}
+{ "preferredTrack": "網路與安全類" }
 ```
 
-`preferredTrack` 必須是字串或 `null`；`interests` 與 `preferredKeywords` 必須是陣列。
-這三個 API 欄位持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
+`preferredTrack` 必須是字串或 `null`，持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
+想學的主題改由下方的 `interestSelections`（課程主題問答）保存。
+
+**2026-11-23 起（ADR-032）不再接受 `interests`、`preferredKeywords`**：帶了任一個（含空陣列）都回 `400`，
+訊息為「`interests` 已停用，請改用設定頁的課程主題問答（interestSelections）」。Profile 回應也不再有這兩個欄位。
 更新時會保留 `values` 中其他個人化資料。
 
 **Roadmap #10 任務 3A** 另接受 `useLearnedPreference`（布林，預設 `true`）：
@@ -1626,14 +1731,20 @@ Response：
 
 更新興趣不會洗掉這個開關，更新開關也不會洗掉興趣。
 
-Profile 另接受 `remainingSemesters`（1～8 的整數或 `null`）：
+為相容既有呼叫端，Profile 仍接受舊欄位 `remainingSemesters`（1～8 的整數或 `null`）：
 
 ```json
 { "remainingSemesters": 3 }
 ```
 
-它保存在 `preferences_json.values.remainingSemesters`。`null` 會刪除明確設定，排課回到
-依年級與 active term 推算；字串 `"3"`、小數、0 與 9 一律回 `400`。
+它保存在 `preferences_json.values.remainingSemesters`。`null` 會刪除該欄位，字串 `"3"`、小數、0 與 9 一律回 `400`。
+設定頁已移除這個輸入。排課結果的 `graduationPlanning.remainingSemesters` 是後端推算值，包含當學期。
+`remainingSemestersSource` 為 `course-history-and-active-term`（歷史修課與入學起點可核對）、
+`grade-and-active-term`（依年級與當期學期回退）或 `unknown`（推算值為 `null`）。舊 Profile 欄位不參與推算。
+
+`gradeLevel`、`targetCreditsMax`、`schemaVersion` 會寫進 `User_Profiles` 的整數欄位，
+只接受正整數或 `null`；字串（包括 `"2"` 這種數字字串）、小數、0、負數、物件一律回 `400`。
+2026-11-08 以前這三個欄位沒有檢查，送 `"abc"` 會由 MySQL 拒絕寫入並回 `500`，錯誤訊息還帶出資料表欄位名稱。
 
 **`preferencesJson` 本身不可直接更新**（送了回 `400`）：`preferences_json.values` 的每個
 受管理欄位都有專屬 API 欄位。開放整包覆寫會讓上面的型別檢查可以被繞過
@@ -1658,17 +1769,17 @@ Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」
 `categoryId` 必須是非空字串；`tagIds` 省略或空陣列代表只選了類別、尚未追問；最多 48 筆。
 不是陣列、項目不是物件、未知 `group`、空的 `categoryId`、非字串的 `tagIds` 一律回 `400`。
 送空陣列代表清空所有選擇。它保存在 `preferences_json.values.interestSelections`，更新時不會
-洗掉 `interests` 與其他鍵。
+洗掉其他鍵（已移除的 `interests`／`preferredKeywords` 殘留時會一併刪除）。
 
 **保存前的驗證（2026-11-20）**：送了 `interestSelections` 時，伺服器對照這位學生的候選池（`department`、
 `gradeLevel`、`className` 取自這次請求，沒帶就用已保存的 Profile）：分類必須存在、層級與組別相符（本系用子類別、
 通識與系外用大類別）、在這一組的候選池裡有這個分類；標籤必須是該分類在這一組候選池裡的可選標籤，不在的丟掉。
+`categoryId` 也可以是人工策畫選項（`curated_ai`，只限本系組、只限適用的系所）：標籤對照它的人工清單在候選池裡
+實際命中的部分，清單內的 `too_common` 標籤也接受（ADR-026）。
 **與已保存的某一筆完全相同的選擇不重驗、原樣保留**，新學期候選池對不上舊答案時不會被默默刪掉。回應多兩個欄位：
 
 ```json
 { "success": true, "preferences": {}, "interestSelectionsStatus": "verified", "interestSelectionWarnings": [] }
-`categoryId` 也可以是人工策畫選項（`curated_ai`，只限本系組、只限適用的系所）：標籤對照它的人工清單在候選池裡
-實際命中的部分，清單內的 `too_common` 標籤也接受（ADR-026）。
 ```
 
 `interestSelectionsStatus` 是 `unchanged`（沒有任何變動）、`verified`（已對照候選池）或 `unverified`（候選池載入失敗
@@ -1764,7 +1875,10 @@ Request：
 
 `interested` with an empty tag list means all learning-eligible tags on the displayed course; a
 negative response must list at least one tag the user identified as unwanted. `learn_more` records no
-positive or negative evidence. The server resolves the course's current `rag_tag`, validates the
+positive or negative evidence. 新版雙卡用 `paired_interested`，每門勾選的課程一筆，附上實際顯示的 1～2 個代表標籤。
+同題的事件共用 `requestId`，每門課有自己的 `actionId`；重試時沿用這兩種 ID。每個代表標籤的名義正向證據各為 `+1`，
+沿用現有時間衰減。沒勾選或略過不送事件，舊 `interested` 規則仍按標籤數分攤。
+The server resolves the course's current `rag_tag`, validates the
 selected canonical IDs, checks the user's required-course scope, and stores the versioned tag snapshot
 in `Interaction_Events.tag_interest_snapshot_json`. Clients must not supply that server-owned snapshot.
 Events without a tag snapshot (including pre-feature history) are not used in the rag-tag profile.

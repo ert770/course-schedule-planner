@@ -11,7 +11,7 @@
       "scenarioId": "broad-topic-cold-start",
       "description": "廣泛分類只保存分類意圖，不展開成每個細項標籤的興趣。",
       "preferences": {
-        "interests": ["資訊與計算"]
+        "interestSelections": [{ "group": "outside", "categoryId": "main_064de4333e3b66b5b707", "tagIds": [] }]
       },
       "events": [],
       "candidateCourses": [
