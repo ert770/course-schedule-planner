@@ -367,3 +367,66 @@ Push 目標：
 ```
 
 若本次修改只涉及文件，回報中必須明確寫出「未修改程式邏輯」與「未執行不必要的前後端測試」。
+
+## 跨 Agent 共用記憶（om）
+
+Claude Code 與 Codex 共用同一份記憶。記憶存在使用者本機的 Obsidian vault（obsidian-mind），不在本 repo 內，
+透過名為 `om` 的 MCP server 讀寫。兩個 agent 寫進去的內容，另一個 agent 與之後的 session 都讀得到。
+
+### 何時讀
+
+每個 session 開始工作時呼叫**一次** `recall`（不帶參數），取得這個專案看得到的全部記憶。同一個 session 內不要再做第二次完整的 `recall`：
+它每次都回傳全部記憶的全文，重複呼叫只會重複花費 token。
+
+在以下動作**之前**要再確認一次相關記錄。先看開工時那次 `recall` 的結果是否已經涵蓋；需要再查時，
+用帶 `query` 與 `limit`（5 以內）的 `recall`，或用 `search`，只取跟這個動作有關的幾則：
+
+- 修改 `server/src/skills/scheduler.js` 或多方案（roadmap #10）相關邏輯。
+- 撰寫引用論文方法的實作計畫。
+- commit、push、開 PR。
+- 宣告「已完成」任何使用者看得到的修改。
+- 依賴共用 MySQL 的資料表欄位。
+
+把查到的內容寫進動工前的宣告或計畫：引用了哪幾則記憶、有沒有與做法相反的記錄；查不到就明寫「記憶中沒有相關記錄」。
+
+各工具的用途：
+
+- `recall`：這個專案看得到的規則與教訓。先用這個。
+- `search`：搜尋 vault 筆記。需要使用者本機裝有 QMD，沒裝時會直接失敗，失敗不代表沒有記錄。
+- `expand`：已知某則筆記時，查它連到哪些筆記、被哪些筆記連到。
+- `health`：應該有的東西查不到時，用來分辨是沒記錄還是連線有問題。
+- `reason`：會另外啟動一個 Claude session 讀 vault，費用高。使用者明確要求時才用，不可主動呼叫。
+
+寫入時也要控制長度：`remember` 只放規則與教訓本身，寫得精簡，因為它會在每次開工時被整則讀出；
+過程、細節與佐證放 `record_work`，那些只有被搜尋到時才會讀取。
+
+### 何時寫
+
+發生以下事件時當下就寫，不要留到工作結束：
+
+- 使用者糾正做法，或確認了一個不明顯的做法 → `remember`。
+- 發現一個花了時間才找到的限制或陷阱 → `remember`。
+- 做了設計決定，尤其是否決了某個替代方案 → `record_work`，`kind: "decision"`。
+- 完成一項工作 → `record_work`，寫明改了什麼、怎麼驗證、還有什麼沒處理。
+- 新增或大幅修改 roadmap → `record_work`，`kind: "decision"`，記下 roadmap 檔案在 repo 內的相對路徑、目標、排序理由與被否決的方向。不複製全文。
+- 使用者提出新的任務或設計構想 → 當下就用 `record_work` 記下。尚未決定的要在標題與內文標明「構想，尚未決定」，其他 agent 不得把它當成定案實作。
+- 一個 session 結束或工作告一段落 → `record_work`，寫明完成了什麼、怎麼驗證、卡在哪、下一步是什麼，讓接手的 agent 不必重新摸索。
+
+roadmap 的即時進度（哪一項進行中、哪一項被卡住）以 repo 內的 roadmap 檔為準，om 不重複記錄，避免兩份內容不一致。
+
+呼叫 `record_work` 時一律帶 `folder: "work/active/agent_project"`。不帶的話會被歸到 vault 的收件匣，那裡不在 `om` 開放的範圍內，其他 agent 讀不到。
+
+`recall` 只會回傳 `remember` 寫的記憶，不包含 `record_work` 寫的記錄。要找回 `record_work` 的記錄得靠 `search`，
+而 `search` 需要使用者本機的 QMD。所以開工時除了 `recall`，還要用 `search` 查這次任務相關的工作記錄與構想。
+`search` 失敗或回傳「search unavailable」時，不代表沒有記錄：要告訴使用者「工作記錄目前查不到」，不可假裝已經讀過或已經交接。
+
+`remember` 的範圍：只適用本專案的用 `scope: "project"`、`projects: ["agent_project"]`；
+使用者個人的工作習慣（換專案仍成立）才用 `scope: "general"`。`confidence` 照實填：查證過填 `verified` 並附 `verification`，
+推論的填 `inferred`，聽來未查證的填 `unverified`。記錄有錯時用 `supersedes` 重新寫一則，不要直接改 vault 內的檔案。
+
+### 限制
+
+- 記憶內容不得編造；會隨時間改變的事實要寫明「截至哪一天」。
+- 不得把 session 網址或 vault 的本機絕對路徑寫進本 repo 的檔案、commit 訊息或 PR。
+- 本節規則與記憶內容衝突時，以本文件與 `docs/*.md` 為準，並用 `supersedes` 更正該則記憶。
+- session 內沒有 `om` 工具時，要告訴使用者，不可假裝已讀取或已寫入。

@@ -14,11 +14,10 @@ import ChatMessageContent from '../components/Chat/ChatMessageContent';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
-import SkillTreeModal from '../components/Profile/SkillTreeModal';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
-import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award, Compass } from 'lucide-react';
+import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Compass } from 'lucide-react';
 
 import TopNav from '../components/Layout/TopNav';
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
@@ -94,7 +93,6 @@ function Dashboard({ user, userIdentity }) {
   // roadmap #2：排課只是推薦，使用者是否覺得符合需求才是最終選擇。
   const [confirmation, setConfirmation] = useState(null);
   const [removalCandidate, setRemovalCandidate] = useState(null);
-  const [showSkillModal, setShowSkillModal] = useState(false);
   // 階段 5：還有沒回答過的歷史修課時，進排課主頁自動跳出一次。
   const [historyFeedback, setHistoryFeedback] = useState(null);
   const chatInputRef = useRef(null);
@@ -413,7 +411,7 @@ function Dashboard({ user, userIdentity }) {
       </section>}
 
       <div className="dashboard-content">
-        {/* Left Sidebar: Preferences and Skill Tree */}
+        {/* Left Sidebar: Preferences */}
         <aside className="left-sidebar">
           <div className="sidebar-section">
             <h3 className="sidebar-section-title">我的排課偏好</h3>
@@ -444,21 +442,6 @@ function Dashboard({ user, userIdentity }) {
               disabled={!prefsReady || !prefsChanged || savingPrefs || isScheduling || scheduleLoading}
             >
               {isScheduling && savingPrefs ? '正在更新課表…' : (savingPrefs ? '正在保存…' : '保存變更')}
-            </button>
-          </div>
-
-          <div className="sidebar-section" style={{ marginTop: '16px' }}>
-            <h3 className="sidebar-section-title">🌳 本學期課程主題</h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', lineHeight: '1.5' }}>
-              依課名與課程說明整理命中課程，不代表能力程度或歷年修課成果。
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowSkillModal(true)}
-              className="action-btn"
-              style={{ width: '100%', justifyContent: 'center' }}
-            >
-              <Award size={16} /> 查看課程主題
             </button>
           </div>
         </aside>
@@ -704,12 +687,6 @@ function Dashboard({ user, userIdentity }) {
           </div>
         </aside>
       </div>
-
-      <SkillTreeModal
-        isOpen={showSkillModal}
-        onClose={() => setShowSkillModal(false)}
-        schedule={schedule}
-      />
 
       {historyFeedback && (
         <HistoryFeedbackModal
