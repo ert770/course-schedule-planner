@@ -1236,3 +1236,37 @@ Consequences:
 - The ADR-033 topic-tag gate no longer applies to this mode; the profile mode keeps its exact-tag rule.
 - Regenerating the artifact costs about 0.6M tokens (about USD 0.08 on 2026-11-24); the threshold has no user-study support.
 
+## ADR-036: Chat Preferences Are Saved Directly; Agent Can Find Replacements and Swap a Course
+
+Date: 2026-11-24
+
+Context:
+
+- In chat, "星期一排空" was applied to one scheduling run only (two-step confirmation for anything saved, and the
+  tool could change just 2 of the 15 sidebar preferences), so the sidebar disagreed with what the agent said. The
+  agent also told users that unmentioned items were "not decided for you" while saved preferences such as
+  no-morning classes were in fact applied.
+- Asked to swap a course for "a Monday general-education course", the agent searched with `keyword: "通識"`,
+  which matches no course name, and reported that none existed (D1249697 has 32 eligible ones).
+
+Decision (user decisions on 2026-11-24):
+
+- `update_preferences` writes immediately. Conditions the user states that exist as sidebar preferences are saved;
+  "這次就好／這學期先" keeps them one-off. The parameters are `check`/`uncheck` lists of preference flags (not 15
+  booleans, which the model filled in wholesale), and the server drops no-op fields, including an empty
+  `blockedPeriods`. The chat response carries `preferencesUpdated` so the dashboard reloads the sidebar.
+  `update_student_profile` keeps the two-step confirmation (Roadmap #24).
+- The prompt lists every saved preference; unmentioned items are described as following the saved preferences.
+- New tools `find_replacement_courses` (server filters by the other courses' times, saved preferences, history,
+  eligibility) and `swap_course` (server re-checks; the client validates the whole timetable before swapping).
+- Category words used as a query keyword are normalised into the category filter at the agent layer only.
+
+Rejected: keeping two-step confirmation for preferences (the user chose direct updates); letting the model
+assemble swaps from `query_course_db` + `run_csp_scheduler` (it lacks section times and re-optimises the whole
+timetable instead of swapping one course).
+
+Consequences:
+
+- Roadmap #24's "no permanent preference change without confirmation" no longer holds for scheduling preferences.
+- No-evening-classes and minimum credits still cannot be saved (no storage); they stay one-off.
+- Course-topic preferences (s_tag, s_vec, s_cf) are not yet readable or writable by the agent; that is batch 2.

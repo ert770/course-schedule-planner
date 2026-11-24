@@ -29,7 +29,7 @@ export const EMPTY_PREFS = {};
  * @param client OpenAI client
  * @param input  一句話（字串）或完整的 input items 陣列（多輪用）
  */
-export async function askModel(client, input) {
+export async function askModel(client, input, { preferredTool = null } = {}) {
   const messages = typeof input === 'string' ? [{ role: 'user', content: input }] : input;
   const response = await client.responses.create({
     model: process.env.OPENAI_MODEL || 'gpt-5.6-luna',
@@ -39,7 +39,9 @@ export async function askModel(client, input) {
     tool_choice: 'auto',
   }, { timeout: CALL_TIMEOUT_MS });
 
-  const call = (response.output || []).find(item => item.type === 'function_call');
+  const calls = (response.output || []).filter(item => item.type === 'function_call');
+  // 同一則回應平行呼叫多個工具時，優先看題目要測的那一個。
+  const call = calls.find(item => item.name === preferredTool) ?? calls[0];
   return {
     name: call?.name ?? null,
     // 與生產共用 `parseToolArguments`：自己 JSON.parse + catch 會把「模型吐出壞
@@ -53,6 +55,29 @@ export async function askModel(client, input) {
     // 記 API 解析後的真實 model id，不是送出去的別名——別名隨時可能被指到新快照。
     model: response.model || null,
   };
+}
+
+// 罐頭成功信封：把「題目要測的工具之前」的步驟當成成功，看模型下一步做什麼。
+const STEP_SUCCESS_ENVELOPE = JSON.stringify({
+  schemaVersion: 1, dataSource: 'mysql', warnings: [], errorCode: null, result: { success: true },
+});
+
+/**
+ * 單輪題目也可能要好幾步才走到要測的工具（ADR-036）：使用者說「星期一排空，幫我排課」時，
+ * 正確順序是先 update_preferences 存偏好、再 run_csp_scheduler。這裡比照生產的同一回合多步，
+ * 把前面的工具呼叫當成成功餵回去，最多 `maxSteps` 步；走到要測的工具或模型不再呼叫工具就停。
+ */
+export async function askModelUntil(client, utterance, wantedTool, maxSteps = 3) {
+  const input = [{ role: 'user', content: utterance }];
+  let call = await askModel(client, input, { preferredTool: wantedTool });
+  for (let step = 1; wantedTool && step < maxSteps && call.name && call.name !== wantedTool; step += 1) {
+    input.push(...call.output);
+    for (const item of call.output.filter(entry => entry.type === 'function_call')) {
+      input.push({ type: 'function_call_output', call_id: item.call_id, output: STEP_SUCCESS_ENVELOPE });
+    }
+    call = await askModel(client, input, { preferredTool: wantedTool });
+  }
+  return call;
 }
 
 /**
@@ -73,7 +98,7 @@ export async function runCase(client, testCase) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     let call = null;
     try {
-      call = await askModel(client, testCase.utterance);
+      call = await askModelUntil(client, testCase.utterance, testCase.expect?.tool ?? null);
       model = call.model ?? model;
     } catch (err) {
       lastFailures = [`呼叫模型失敗：${err.message}`];
@@ -190,4 +215,4 @@ export async function runMultiTurnCase(client, testCase, toolResultFor) {
   return { id: testCase.id, pass: true, attempts: 1, failures: [], turns: turnResults };
 }
 
-export default { askModel, runCase, runMultiTurnCase };
+export default { askModel, askModelUntil, runCase, runMultiTurnCase };

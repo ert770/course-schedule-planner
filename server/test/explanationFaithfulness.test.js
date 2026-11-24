@@ -806,3 +806,26 @@ ${JSON.stringify(audit.violations)}`);
   });
 });
 
+
+describe('F30 找替代課的候選可以出現在回覆（ADR-036）', () => {
+  test('find_replacement_courses 的 courses 會登記成證據', () => {
+    const ledger = createEvidenceLedger();
+    recordToolEvidence(ledger, {
+      toolName: 'find_replacement_courses',
+      callId: 'call-replace',
+      dataSource: 'mysql',
+      result: {
+        replacing: { sectionId: 7 },
+        courses: [course({ sectionId: 301, name: '台灣考古學與原住民', teacher: '陳老師', credits: 2, timeStr: '一 03-04' })],
+        totalCandidates: 1,
+        excludedCounts: {},
+        message: '找到 1 門符合條件的候選。',
+      },
+    });
+
+    const audit = validateFaithfulnessReply('可以換成「台灣考古學與原住民」，星期一第 3-4 節，2 學分。', ledger);
+    assert.equal(audit.passed, true, JSON.stringify(audit.violations));
+    const fabricated = validateFaithfulnessReply('可以換成「量子重力導論」。', ledger);
+    assert.equal(fabricated.passed, false);
+  });
+});

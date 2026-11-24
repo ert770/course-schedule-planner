@@ -15,7 +15,12 @@ import OpenAI from 'openai';
 import { buildSystemPrompt, getAgentTools, describeInterpretation } from './promptService.js';
 import { getUserPreferences, updateUserPreferences } from './memoryService.js';
 import { getChatHistory, saveChatExchange } from './privacyService.js';
-import { searchCoursesForAgent } from '../skills/courseQuery.js';
+import { searchCoursesForAgent, searchCoursesForSchedule } from '../skills/courseQuery.js';
+import {
+  timeConflict, getCourseKey, getTimeBlocks, hardConstraintReason,
+} from '../skills/scheduler.js';
+import { buildScheduleConstraints } from './constraintService.js';
+import { getPassedCourseCodes } from '../data/courseHistory.js';
 import { getEasyCourses, getSentimentSummary } from '../skills/reviewSearch.js';
 import { generateForUser } from './scheduleService.js';
 import { recordScheduleFeedback } from './scheduleFeedbackService.js';
@@ -62,6 +67,8 @@ function getModel() {
 
 const DEFAULT_MAX_STEPS = 12;
 export const MAX_COURSE_QUERIES_PER_TURN = 4;
+// 算進每回合查課上限的工具：找替代課本質上也是一次查課。
+const COURSE_QUERY_TOOLS = new Set(['query_course_db', 'find_replacement_courses']);
 // 每一步都是一次模型往返，而且 `input` 會持續累積（推理項目 + 工具結果）。
 // 不設天花板的話，一個卡住的模型會把延遲與費用拉到無界，也會重新逼近剛修好的
 // context window 問題——設定值寫錯（AGENT_MAX_STEPS=1000）不該變成一次失控的請求。
@@ -238,6 +245,7 @@ const TOOL_RESULT_SCHEMA_VERSION = 1;
 // 偏好／身分寫入與排課後確認不含課程物件，跟學期無關，不附加這個欄位。
 const COURSE_BEARING_TOOLS = new Set([
   'query_course_db', 'search_dcard_reviews', 'get_easy_courses', 'run_csp_scheduler',
+  'find_replacement_courses', 'swap_course',
 ]);
 
 /**
@@ -461,6 +469,146 @@ export function applyRemovalReasonResolutions(planningContext, rawResolutions) {
   });
 }
 
+// 查課關鍵字若整個就是「分類用語」，模型其實是想用分類篩選（2026-11-24 實測：
+// `keyword:"通識", category:"通識"` 讓星期一的 64 門通識課全部查不到——keyword 比對的是
+// 課名與說明，沒有課名含「通識」）。只在 Agent 這一層處理：查課頁也用同一支搜尋，
+// 使用者自己打「通識」想搜說明文字時不該被改。
+const CATEGORY_KEYWORDS = new Map([
+  ['通識', '通識'], ['通識課', '通識'], ['通識課程', '通識'],
+  ['系外', '系外選修'], ['系外選修', '系外選修'], ['外系', '系外選修'],
+  ['必修', '必修'], ['核心選修', '核心選修'],
+  // 選修分核心／一般兩類，不猜；課／課程沒有篩選意義。
+  ['選修', null], ['一般選修', null], ['課', null], ['課程', null],
+]);
+
+export function normalizeCourseQueryArgs(args = {}) {
+  const next = { ...(args ?? {}) };
+  if (typeof next.keyword !== 'string') return next;
+  const keyword = next.keyword.trim();
+  if (keyword === '') {
+    delete next.keyword;
+    return next;
+  }
+  if (!CATEGORY_KEYWORDS.has(keyword)) return next;
+  const category = CATEGORY_KEYWORDS.get(keyword);
+  delete next.keyword;
+  if (category && !next.category) next.category = category;
+  return next;
+}
+
+// update_preferences 的 check／uncheck 清單換成旗標（ADR-036）。也接受直接送旗標
+// （非 strict 模式下模型偶爾會這樣送）。同一項同時在 check 與 uncheck 時視為矛盾、不改。
+export function expandPreferenceChecklist(args = {}) {
+  const { check, uncheck, ...rest } = args ?? {};
+  const known = new Set(ALL_FLAGS);
+  const on = new Set((Array.isArray(check) ? check : []).filter(flag => known.has(flag)));
+  const off = new Set((Array.isArray(uncheck) ? uncheck : []).filter(flag => known.has(flag)));
+  const changes = { ...rest };
+  for (const flag of on) if (!off.has(flag)) changes[flag] = true;
+  for (const flag of off) if (!on.has(flag)) changes[flag] = false;
+  return changes;
+}
+
+// 拿掉不會改變任何東西的欄位（2026-11-24 重跑實測：模型會把目前的學分上限、修課路徑與
+// 空的 blockedPeriods 一起抄回來）。空的 blockedPeriods 視為「沒有要改」：照字面寫入會把
+// 使用者已存的不能上課時段整個清掉。旗標維持原樣，mergePreferenceTags 對相同值本來就不改標籤。
+export function dropNoopPreferenceChanges(changes = {}, prefs = {}) {
+  const next = { ...changes };
+  if (Array.isArray(next.blockedPeriods) && next.blockedPeriods.length === 0) delete next.blockedPeriods;
+  for (const field of ['targetCreditsMax', 'preferredTrack']) {
+    if (next[field] !== undefined && prefs[field] !== undefined && String(next[field]) === String(prefs[field])) {
+      delete next[field];
+    }
+  }
+  return next;
+}
+
+// 只回前 10 筆給模型，可修的要排在前面；否則前 10 筆可能大多是不能修的課，
+// 模型就會說「查不到可以修的」。同級維持原順序。
+const ELIGIBILITY_RANK = { eligible: 0, unknown: 1 };
+export function rankByEligibility(courses = []) {
+  return courses
+    .map((course, index) => ({ course, index }))
+    .sort((a, b) => (
+      (ELIGIBILITY_RANK[a.course?.eligibility] ?? 2) - (ELIGIBILITY_RANK[b.course?.eligibility] ?? 2)
+      || a.index - b.index
+    ))
+    .map(entry => entry.course);
+}
+
+const MODEL_COURSE_LIMIT = 10;
+
+// 換課候選被排除的原因（給模型解釋「為什麼查不到」用的中文標籤）。
+const REPLACEMENT_EXCLUSION_LABELS = Object.freeze({
+  inSchedule: '已在課表上',
+  sameCourse: '與課表上的課是同一門課',
+  removedThisSession: '這次已移除過',
+  passed: '已經修過',
+  ineligible: '資格不符',
+  noTime: '沒有上課時間',
+  timeConflict: '與課表上其他課衝堂',
+  preference: '不符合已存的排課偏好（早八、星期一排空、午休、不能上課的時段或避開教師）',
+});
+
+function replacementExclusionReason(course, state) {
+  const id = Number(course.sectionId ?? course.id);
+  if (state.scheduleIds.has(id)) return 'inSchedule';
+  if (state.removedIds.has(id)) return 'removedThisSession';
+  if (course.eligibility === 'ineligible') return 'ineligible';
+  if (getTimeBlocks(course).length === 0) return 'noTime';
+  if (course.catalogCourseCode && state.passed.has(course.catalogCourseCode)) return 'passed';
+  if (state.usedKeys.has(getCourseKey(course))) return 'sameCourse';
+  if (state.others.some(other => timeConflict(other, course))) return 'timeConflict';
+  if (hardConstraintReason(course, state.constraints)) return 'preference';
+  return null;
+}
+
+/**
+ * 換課候選：課表上其他課的時段固定，找「不衝堂、可修、沒修過、符合已存偏好」的班次。
+ * 只用伺服器端的事實（規劃狀態、課程資料、已存偏好），不依賴模型記得時間。
+ */
+async function findReplacementCandidates({ replaceSectionId, filters = {} }, ctx, { lookupCourses, searchScheduleCourses }) {
+  const current = ctx.planningContext?.currentCourses ?? [];
+  const replaceId = Number(replaceSectionId);
+  if (!Number.isInteger(replaceId) || !current.some(course => Number(course.sectionId) === replaceId)) {
+    return {
+      error: `sectionId ${replaceSectionId} 不在使用者目前的課表裡，無法替換。請用「目前規劃狀態」列出的 sectionId。`,
+      errorCode: 'REPLACE_TARGET_NOT_IN_SCHEDULE',
+    };
+  }
+  const scheduleIds = current.map(course => Number(course.sectionId));
+  const byId = await lookupCourses(scheduleIds);
+  const others = scheduleIds.filter(id => id !== replaceId).map(id => byId.get(id)).filter(Boolean);
+  const state = {
+    scheduleIds: new Set(scheduleIds),
+    removedIds: new Set((ctx.planningContext?.removedCourses ?? []).map(course => Number(course.sectionId))),
+    passed: new Set(getPassedCourseCodes(ctx.prefs?.courseHistory ?? [])),
+    // 被換掉的那門本身可以換成同課另一班；其他課的同課班次不算「換一門課」。
+    usedKeys: new Set(others.map(getCourseKey)),
+    others,
+    constraints: buildScheduleConstraints({}, ctx.prefs ?? {}),
+  };
+
+  const pool = await searchScheduleCourses(normalizeCourseQueryArgs(filters), ctx.studentScope);
+  const excluded = {};
+  const candidates = [];
+  for (const course of pool) {
+    const reason = replacementExclusionReason(course, state);
+    if (reason) {
+      excluded[reason] = (excluded[reason] ?? 0) + 1;
+      continue;
+    }
+    candidates.push(course);
+  }
+  return { candidates: rankByEligibility(candidates), excluded, poolSize: pool.length };
+}
+
+function describeExclusions(excluded) {
+  return Object.fromEntries(
+    Object.entries(excluded).map(([reason, count]) => [REPLACEMENT_EXCLUSION_LABELS[reason] ?? reason, count])
+  );
+}
+
 export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
   const { identity, prefs, studentScope } = ctx;
   const {
@@ -474,13 +622,57 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
     consumeChange = consumePendingChange,
     preflight = checkPreflightContradictions,
     lookupCourses = loadCoursesByIds,
+    searchScheduleCourses = searchCoursesForSchedule,
   } = deps;
 
   try {
     switch (name) {
       case 'query_course_db': {
-        const courses = await searchCourses(args, studentScope);
-        return courses.length > 10 ? courses.slice(0, 10) : courses;
+        const courses = rankByEligibility(await searchCourses(normalizeCourseQueryArgs(args), studentScope));
+        return courses.length > MODEL_COURSE_LIMIT ? courses.slice(0, MODEL_COURSE_LIMIT) : courses;
+      }
+
+      case 'find_replacement_courses': {
+        const { replaceSectionId, ...filters } = args;
+        const found = await findReplacementCandidates(
+          { replaceSectionId, filters }, ctx, { lookupCourses, searchScheduleCourses }
+        );
+        if (found.error) return found;
+        const courses = found.candidates.slice(0, MODEL_COURSE_LIMIT).map(compactCourse);
+        return {
+          // 只放 sectionId：這裡若帶課名，忠實度檢查會把它當成一門候選課。
+          replacing: { sectionId: Number(replaceSectionId) },
+          courses,
+          totalCandidates: found.candidates.length,
+          excludedCounts: describeExclusions(found.excluded),
+          message: courses.length > 0
+            ? `找到 ${found.candidates.length} 門符合條件的候選（可修的排前面，最多列 ${MODEL_COURSE_LIMIT} 門）。`
+            : `沒有符合條件的候選。查到 ${found.poolSize} 門，排除原因見 excludedCounts。`,
+        };
+      }
+
+      case 'swap_course': {
+        const removeSectionId = Number(args.removeSectionId);
+        const addSectionId = Number(args.addSectionId);
+        const found = await findReplacementCandidates(
+          { replaceSectionId: removeSectionId, filters: {} }, ctx, { lookupCourses, searchScheduleCourses }
+        );
+        if (found.error) return found;
+        const addCourse = found.candidates.find(course => Number(course.sectionId ?? course.id) === addSectionId);
+        if (!addCourse) {
+          return {
+            error: `sectionId ${args.addSectionId} 不是可替換的候選（可能衝堂、已修過、不符合偏好、資格不符或不在可排課範圍）。`
+              + '請先用 find_replacement_courses 查候選，再從結果中選。',
+            errorCode: 'SWAP_TARGET_NOT_ELIGIBLE',
+          };
+        }
+        return {
+          success: true,
+          // 前端拿完整課程物件加進課表；`courses` 是給忠實度檢查與模型看的精簡版。
+          swap: { removeSectionId, addSectionId, addCourse },
+          courses: [compactCourse(addCourse)],
+          message: '已換課：前端會移除原課並加入新課，課表畫面隨之更新。',
+        };
       }
 
       case 'search_dcard_reviews': {
@@ -600,7 +792,9 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // preferredKeywords，但模型仍可能送來（非 strict 模式），這裡一律丟掉，不寫入。
         const { interests: _interests, preferredKeywords: _keywords, ...preferenceArgs } = args;
         const droppedInterest = _interests !== undefined || _keywords !== undefined;
-        const { confirmationToken: _token, ...changes } = preferenceArgs;
+        const { confirmationToken: _token, ...rawChanges } = preferenceArgs;
+        const requested = expandPreferenceChecklist(rawChanges);
+        const changes = dropNoopPreferenceChanges(requested, prefs ?? {});
         if (droppedInterest && Object.keys(changes).length === 0 && !preferenceArgs.confirmationToken) {
           return {
             noChange: true,
@@ -608,20 +802,28 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
               + '這次排課想排的主題可以直接帶進 run_csp_scheduler 的 interests。',
           };
         }
-        // Roadmap #24：先前這裡直接寫進 MySQL，沒有任何確認步驟——唯一的保護是
-        // system prompt 裡一句模型可以無視的叮嚀，違反 #24 自己的「使用者確認前
-        // 不得永久更新偏好」。現在改成兩段式。
-        return await runConfirmedWrite({
-          identity, args: preferenceArgs, changeType: getConfirmationChangeType(name), stageChange, consumeChange, turnId: ctx.turnId,
-          write: async staged => {
-            const mergedTags = mergePreferenceTags(prefs ?? {}, staged);
-            const payload = mergedTags ? { ...staged, preferenceTags: mergedTags } : staged;
-            await updatePreferences(identity, payload);
-            // 同一次對話後續的排課要看得到剛更新的偏好，否則模型會以為存了卻沒生效。
-            if (prefs) Object.assign(prefs, payload);
-            return { success: true, updatedFields: staged };
-          },
-        });
+        // ADR-036（2026-11-24 使用者決定）：使用者在聊天中說出的排課偏好**直接寫入**，
+        // 左側偏好跟著改；說「這次就好」時模型不呼叫這個工具，只把條件帶進排課。
+        // 取代先前 #24 的兩段式確認——那套流程讓「星期一排空」講了也不會存，與畫面上的
+        // 偏好互相矛盾。
+        if (Object.keys(requested).length === 0) {
+          return { error: '沒有要變更的欄位，不需要呼叫這個工具。', errorCode: 'NOTHING_TO_CHANGE' };
+        }
+        if (Object.keys(changes).length === 0) {
+          return { noChange: true, message: '這些偏好和使用者目前已存的設定相同，沒有需要寫入的變更。' };
+        }
+        const mergedTags = mergePreferenceTags(prefs ?? {}, changes);
+        const payload = mergedTags
+          ? { ...changes, preferenceTags: mergedTags, selectedTags: mergedTags }
+          : changes;
+        await updatePreferences(identity, payload);
+        // 同一次對話後續的排課要看得到剛更新的偏好，否則模型會以為存了卻沒生效。
+        if (prefs) Object.assign(prefs, payload);
+        return {
+          success: true,
+          updatedFields: changes,
+          ...(mergedTags ? { preferenceTags: mergedTags } : {}),
+        };
       }
 
       case 'update_student_profile': {
@@ -820,6 +1022,7 @@ export async function handleChat(identity, message, planningContext = null, opti
   try {
     const maxSteps = resolveMaxSteps();
     let courseQueryCount = 0;
+    let preferencesUpdated = false;
     for (let step = 0; step < maxSteps; step++) {
       logger.trace(`傳送訊息至模型，步驟：${step}`, { label: 'LLM_Stream' });
 
@@ -851,7 +1054,7 @@ export async function handleChat(identity, message, planningContext = null, opti
 
         // 一回合最多查 MAX_COURSE_QUERIES_PER_TURN 次課程（2026-10-15 Persona 實測：一個問題連查 20 次、等 95 秒）。
         // 超過時不執行、也不記成失敗的操作（否則忠實度檢查會要求回答揭露「操作失敗」），只請模型用已查到的結果回答。
-        if (call.name === 'query_course_db' && ++courseQueryCount > MAX_COURSE_QUERIES_PER_TURN) {
+        if (COURSE_QUERY_TOOLS.has(call.name) && ++courseQueryCount > MAX_COURSE_QUERIES_PER_TURN) {
           input.push({
             type: 'function_call_output',
             call_id: call.call_id,
@@ -872,6 +1075,9 @@ export async function handleChat(identity, message, planningContext = null, opti
           logger.debug('工具參數已解析（內容不記錄）', { label: 'ToolCall' });
           result = await executeAgentTool(call.name, args, ctx);
         }
+
+        // 偏好寫入成功時告訴前端重抓偏好，左側勾選才會跟著改（ADR-036）。
+        if (call.name === 'update_preferences' && result?.success === true) preferencesUpdated = true;
 
         // `intent` 與 `data` 只反映**真正成功**的工具（見 `applyToolOutcome()`）。
         ({ intent: detectedIntent, data: responseData } =
@@ -952,7 +1158,10 @@ export async function handleChat(identity, message, planningContext = null, opti
     // 只有整次處理成功才原子保存 user/assistant 一對加密訊息。
     await saveChatExchange(identity, message, finalReply);
 
-    return { reply: finalReply, intent: detectedIntent, data: responseData, planningContextStatus };
+    return {
+      reply: finalReply, intent: detectedIntent, data: responseData, planningContextStatus,
+      ...(preferencesUpdated ? { preferencesUpdated: true } : {}),
+    };
   } catch (error) {
     logger.error(`Agent 聊天發生錯誤：${error.message}`, { label: 'AgentCore' });
     const errReply = '很抱歉，處理您的請求時發生錯誤。請確認後端金鑰是否設定正確，或稍後再試。';

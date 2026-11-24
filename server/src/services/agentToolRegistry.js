@@ -46,7 +46,8 @@ export const AGENT_TOOL_REGISTRY = Object.freeze([
     // 只是確認訊息；讓它覆蓋 data 會把畫面上已顯示的課表洗掉。
     renderable: false,
     writes: true,
-    confirmation: Object.freeze({ changeType: 'preferences' }),
+    // ADR-036：使用者在聊天中說出的偏好直接寫入，不再兩段式確認。
+    confirmation: null,
   }),
   Object.freeze({
     name: 'update_student_profile',
@@ -59,6 +60,21 @@ export const AGENT_TOOL_REGISTRY = Object.freeze([
     renderable: true,
     // 排課本身不直接寫入 Profile／偏好；曝光事件由 `scheduleService` 另外記錄，
     // 不屬於這裡定義的「工具本身的寫入」。
+    writes: false,
+    confirmation: null,
+  }),
+  Object.freeze({
+    name: 'find_replacement_courses',
+    // 只是候選清單；覆蓋 data 會讓同回合稍早的課表或換課結果在前端消失。
+    renderable: false,
+    writes: false,
+    confirmation: null,
+  }),
+  Object.freeze({
+    name: 'swap_course',
+    // 結果是要套用到課表上的換課指示，前端依 `data.swap` 移除舊課、加入新課。
+    renderable: true,
+    // 伺服器端不寫入；課表由前端更新。
     writes: false,
     confirmation: null,
   }),

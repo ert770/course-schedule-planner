@@ -56,12 +56,36 @@
     },
     {
       "id": "permanent-vs-once",
-      "utterance": "以後都不要幫我排晚上的課。",
-      "why": "「以後都」是永久偏好，該走 update_preferences 而不是只帶進這次排課。",
+      "utterance": "以後都不要幫我排早八的課。",
+      "why": "「以後都」是長期偏好，要用 update_preferences 存進左側偏好（ADR-036）。原本這題用「晚上的課」，但不排晚間課沒有欄位可存，2026-11-24 起改成只能單次帶進排課。",
       "expect": {
         "tool": "update_preferences",
+        "includes": {
+          "check": "noMorningClasses"
+        }
+      }
+    },
+    {
+      "id": "chat-pref-saved",
+      "utterance": "星期一幫我排空，然後排一份課表給我。",
+      "why": "ADR-036：聊天中說出左側偏好裡有的項目要直接存起來（星期一排空），左側勾選才會跟著改；沒存的話使用者會看到畫面與 Agent 講的不一致。",
+      "expect": {
+        "tool": "update_preferences",
+        "includes": {
+          "check": "mondayFree"
+        }
+      }
+    },
+    {
+      "id": "replace-course-gen-ed-monday",
+      "utterance": "把 sectionId 2 那門課換成一門星期一的通識課。",
+      "why": "2026-11-24 實測：模型把「通識」當關鍵字查課，結果 0 筆。換課要用 find_replacement_courses，分類放 category、星期放 dayOfWeek。（模型偶爾送空字串 keyword，伺服器會把空字串與分類用語都拿掉，所以這題不檢查 keyword。）",
+      "expect": {
+        "tool": "find_replacement_courses",
         "params": {
-          "noEveningClasses": true
+          "replaceSectionId": 2,
+          "category": "通識",
+          "dayOfWeek": 1
         }
       }
     },
@@ -115,7 +139,10 @@
       "utterance": "幫我排課，我要修演算法。",
       "why": "同名課程可能有多個班次（不同老師、不同時段）。模型不該自己挑一個班次塞進 mustTakeCourseIds——它手上根本沒有班次編號，填進去的一定是編的。要嘛先查課，要嘛回頭問使用者是哪一班。",
       "expect": {
-        "absent": ["mustTakeCourseIds", "selectedCourseIds"]
+        "absent": [
+          "mustTakeCourseIds",
+          "selectedCourseIds"
+        ]
       }
     },
     {
@@ -139,7 +166,9 @@
       "utterance": "幫我把「量子重力導論」排進課表，這門課一定要有。",
       "why": "使用者指名一門系統裡不存在的課。模型不該編一個班次編號填進 mustTakeCourseIds，也不該假裝排好了；應該先查或先講清楚找不到。",
       "expect": {
-        "absent": ["mustTakeCourseIds"]
+        "absent": [
+          "mustTakeCourseIds"
+        ]
       }
     }
   ]

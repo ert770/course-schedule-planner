@@ -1520,8 +1520,9 @@ Response:
 | --- | --- |
 | `reply` | 要顯示給使用者的文字。 |
 | `intent` | 這次請求中**最後一個成功**的工具名稱；沒有任何工具成功時為 `general_chat`，呼叫模型本身失敗時為 `error`。 |
-| `data` | 最後一個成功的**可渲染**工具結果（`query_course_db`、`search_dcard_reviews`、`run_csp_scheduler`、`get_easy_courses`），否則為 `null`。 |
+| `data` | 最後一個成功的**可渲染**工具結果（`query_course_db`、`search_dcard_reviews`、`run_csp_scheduler`、`get_easy_courses`、`swap_course`），否則為 `null`。換課時為 `{ success: true, swap: { removeSectionId, addSectionId, addCourse }, courses }`，前端移除 `removeSectionId`、加入完整課程物件 `addCourse`（ADR-036）。 |
 | `planningContextStatus` | `accepted`／`rejected-invalid`／`temporarily-unavailable`，見下表。 |
+| `preferencesUpdated` | 選填。這次對話中 Agent 成功寫入了已存的排課偏好時為 `true`，前端應重抓 `GET /api/profile` 更新左側偏好（ADR-036）。 |
 
 **`planningContext` 不合法不會讓整次對話失敗。** 它住在瀏覽器的 `sessionStorage`，
 會因為部署升版、開著沒關的舊分頁、瀏覽器資料損壞而變成舊格式；回 400 的話使用者的

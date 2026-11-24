@@ -14,6 +14,9 @@ import {
   resolveMaxSteps,
   summarizeScheduleForModel,
   dropUnchangedProfileFields,
+  normalizeCourseQueryArgs,
+  rankByEligibility,
+  expandPreferenceChecklist,
 } from '../src/services/agentService.js';
 
 const identity = { canonicalId: 'S1130001' };
@@ -117,23 +120,91 @@ describe('AG4 評價查詢', () => {
   });
 });
 
-describe('AG5 update_preferences 確認後才寫入，並同步這次對話的 prefs', () => {
+describe('AG5 update_preferences 直接寫入，並同步這次對話的 prefs（ADR-036）', () => {
   // 不同步的話，同一次對話裡「存好偏好後再排課」會用到舊值，
   // 模型會以為存了卻沒生效。
-  //
-  // Roadmap #24 之後，這個工具是兩段式的——本測試驗的是「確認之後」那一段；
-  // 「確認之前不得寫入」由 `requirementGate.test.js` 的 AG9 負責。
-  test('帶著有效 token 時才寫入後端並更新記憶體中的 prefs', async () => {
+  test('一次呼叫就寫入後端並更新記憶體中的 prefs', async () => {
     const prefs = { noMorningClasses: false };
-    const staged = { noMorningClasses: true };
+    let written = null;
     const result = await executeAgentTool(
-      'update_preferences', { confirmationToken: 'tok' }, { ...ctx, prefs },
-      { updatePreferences: async () => {}, consumeChange: () => staged }
+      'update_preferences', { noMorningClasses: true }, { ...ctx, prefs },
+      { updatePreferences: async (_id, payload) => { written = payload; } }
     );
 
     assert.equal(prefs.noMorningClasses, true);
     assert.equal(result.success, true);
     assert.deepEqual(result.updatedFields, { noMorningClasses: true });
+    assert.deepEqual(written.preferenceTags, ['#不排早八']);
+  });
+
+  test('星期一排空寫成 #星期一排空，且保留使用者沒提到的偏好', async () => {
+    const prefs = { preferenceTags: ['#不排早八', '#涼課優先'] };
+    let written = null;
+    const result = await executeAgentTool(
+      'update_preferences', { mondayFree: true }, { ...ctx, prefs },
+      { updatePreferences: async (_id, payload) => { written = payload; } }
+    );
+
+    assert.equal(result.success, true);
+    assert.deepEqual([...written.preferenceTags].sort(), ['#不排早八', '#星期一排空', '#涼課優先'].sort());
+    assert.deepEqual([...result.preferenceTags].sort(), [...written.preferenceTags].sort());
+    assert.equal(prefs.mondayFree, true);
+  });
+
+  test('check／uncheck 清單只改列出的項目，其他偏好保留', async () => {
+    const prefs = { preferenceTags: ['#不排早八', '#涼課優先', '#星期一排空'] };
+    let written = null;
+    const result = await executeAgentTool(
+      'update_preferences', { check: ['lunchBreakFree'], uncheck: ['mondayFree'] }, { ...ctx, prefs },
+      { updatePreferences: async (_id, payload) => { written = payload; } }
+    );
+    assert.deepEqual(result.updatedFields, { lunchBreakFree: true, mondayFree: false });
+    assert.deepEqual([...written.preferenceTags].sort(), ['#不排早八', '#午休務必空出', '#涼課優先'].sort());
+  });
+
+  test('同一項同時要勾又要取消時不改、未知項目忽略', () => {
+    assert.deepEqual(
+      expandPreferenceChecklist({ check: ['mondayFree', 'notAFlag'], uncheck: ['mondayFree'], targetCreditsMax: 20 }),
+      { targetCreditsMax: 20 }
+    );
+  });
+
+  test('模型抄回來的現值與空的 blockedPeriods 不寫入，不會清掉已存的不能上課時段', async () => {
+    const prefs = {
+      preferenceTags: ['#不排早八'], targetCreditsMax: 25, preferredTrack: '技術應用類',
+      blockedPeriods: [{ day: 5, period: 3 }],
+    };
+    let written = null;
+    const result = await executeAgentTool(
+      'update_preferences',
+      { check: ['mondayFree'], uncheck: [], targetCreditsMax: 25, blockedPeriods: [], preferredTrack: '技術應用類' },
+      { ...ctx, prefs },
+      { updatePreferences: async (_id, payload) => { written = payload; } }
+    );
+    assert.deepEqual(result.updatedFields, { mondayFree: true });
+    assert.equal(Object.hasOwn(written, 'blockedPeriods'), false);
+    assert.equal(Object.hasOwn(written, 'targetCreditsMax'), false);
+    assert.deepEqual(prefs.blockedPeriods, [{ day: 5, period: 3 }]);
+  });
+
+  test('全部都是現值時回 noChange、不寫入', async () => {
+    let called = false;
+    const result = await executeAgentTool(
+      'update_preferences', { targetCreditsMax: 25 }, { ...ctx, prefs: { targetCreditsMax: 25 } },
+      { updatePreferences: async () => { called = true; } }
+    );
+    assert.equal(result.noChange, true);
+    assert.equal(called, false);
+  });
+
+  test('沒有要改的欄位時回 error、不寫入', async () => {
+    let called = false;
+    const result = await executeAgentTool(
+      'update_preferences', {}, { ...ctx, prefs: {} },
+      { updatePreferences: async () => { called = true; } }
+    );
+    assert.equal(result.errorCode, 'NOTHING_TO_CHANGE');
+    assert.equal(called, false);
   });
 });
 
@@ -510,3 +581,141 @@ describe('update_student_profile 與目前資料相同時不提議更新', () =>
   });
 });
 
+
+describe('AG20 查課：分類用語不當關鍵字、可修的排前面（2026-11-24）', () => {
+  test('keyword 整個是分類用語時改用 category', () => {
+    assert.deepEqual(normalizeCourseQueryArgs({ keyword: '通識', dayOfWeek: 1 }), { category: '通識', dayOfWeek: 1 });
+    assert.deepEqual(normalizeCourseQueryArgs({ keyword: ' 通識課 ', category: '通識' }), { category: '通識' });
+    assert.deepEqual(normalizeCourseQueryArgs({ keyword: '系外' }), { category: '系外選修' });
+    // 選修分兩類不猜，只刪 keyword；已給的 category 不被覆蓋。
+    assert.deepEqual(normalizeCourseQueryArgs({ keyword: '選修' }), {});
+    assert.deepEqual(normalizeCourseQueryArgs({ keyword: '必修', category: '通識' }), { category: '通識' });
+  });
+
+  test('真正的關鍵字不動', () => {
+    assert.deepEqual(normalizeCourseQueryArgs({ keyword: '通識英文' }), { keyword: '通識英文' });
+    assert.deepEqual(normalizeCourseQueryArgs({ keyword: '網路' }), { keyword: '網路' });
+  });
+
+  test('query_course_db 送進搜尋前先正規化', async () => {
+    let received;
+    await executeAgentTool('query_course_db', { keyword: '通識', dayOfWeek: 1 }, ctx, {
+      searchCourses: args => { received = args; return []; },
+    });
+    assert.deepEqual(received, { category: '通識', dayOfWeek: 1 });
+  });
+
+  test('只回前 10 筆時，可修的排在不可修的前面（同級維持原順序）', async () => {
+    const list = [
+      ...Array.from({ length: 10 }, (_, i) => ({ id: i + 1, eligibility: 'ineligible' })),
+      { id: 11, eligibility: 'unknown' },
+      { id: 12, eligibility: 'eligible' },
+      { id: 13, eligibility: 'eligible' },
+    ];
+    const result = await executeAgentTool('query_course_db', {}, ctx, { searchCourses: () => list });
+    assert.deepEqual(result.slice(0, 3).map(item => item.id), [12, 13, 11]);
+    assert.equal(result.length, 10);
+    assert.deepEqual(rankByEligibility([{ id: 1 }, { id: 2, eligibility: 'eligible' }]).map(item => item.id), [2, 1]);
+  });
+});
+
+describe('AG21 找替代課與換課（ADR-036）', () => {
+  // 課表：A（週二 2-4）、B（週三 9-10，要被換掉）、C（週四 9-10）。
+  const block = (dayOfWeek, startPeriod, endPeriod) => ({ dayOfWeek, startPeriod, endPeriod });
+  const course = (id, name, code, timeBlocks, extra = {}) => ({
+    id, sectionId: id, name, catalogCourseCode: code, timeBlocks, credits: 2,
+    eligibility: 'eligible', category: '通識', timeStr: '', ...extra,
+  });
+  const A = course(1, '安全程式設計', 'IECS1', [block(2, 2, 4)]);
+  const B = course(2, '人工智慧入門與省思', 'GE1', [block(3, 9, 10)]);
+  const C = course(3, '程式設計與問題解決', 'IECS2', [block(4, 9, 10)]);
+  const catalog = new Map([A, B, C].map(item => [item.id, item]));
+  const pool = [
+    course(10, '台灣考古學與原住民', 'GE10', [block(1, 3, 4)]),
+    course(11, '衝堂通識', 'GE11', [block(2, 3, 4)]),
+    course(12, '早八通識', 'GE12', [block(1, 1, 2)]),
+    course(13, '修過的通識', 'GE13', [block(1, 6, 7)]),
+    course(14, '不能修的通識', 'GE14', [block(1, 6, 7)], { eligibility: 'ineligible' }),
+    course(15, '這次移除過的通識', 'GE15', [block(5, 3, 4)]),
+    course(16, '另一班安全程式設計', 'IECS1', [block(5, 6, 7)]),
+    course(17, '沒有時間的通識', 'GE17', []),
+    // 被換掉那門課的另一班可以換。
+    course(18, '人工智慧入門與省思', 'GE1', [block(5, 9, 10)]),
+    { ...B },
+  ];
+  const planningCtx = {
+    ...ctx,
+    prefs: {
+      noMorningClasses: true,
+      courseHistory: [{ courseCode: 'GE13', courseName: '修過的通識', passed: true, academicYear: 113, semester: 1 }],
+    },
+    planningContext: {
+      currentCourses: [{ sectionId: 1 }, { sectionId: 2 }, { sectionId: 3 }],
+      removedCourses: [{ sectionId: 15, reason: null }],
+    },
+  };
+  const deps = {
+    lookupCourses: async ids => new Map(
+      ids.map(id => [Number(id), catalog.get(Number(id))]).filter(([, value]) => value)
+    ),
+    searchScheduleCourses: async () => pool,
+  };
+  const PREFERENCE_LABEL = '不符合已存的排課偏好（早八、星期一排空、午休、不能上課的時段或避開教師）';
+
+  test('排除衝堂、早八、已修、不能修、這次移除、同一門課、沒時間與課表上的課', async () => {
+    const result = await executeAgentTool(
+      'find_replacement_courses', { replaceSectionId: 2, category: '通識', dayOfWeek: 1 }, planningCtx, deps
+    );
+    assert.deepEqual(result.courses.map(item => item.sectionId), [10, 18]);
+    assert.deepEqual(result.replacing, { sectionId: 2 });
+    assert.deepEqual(result.excludedCounts, {
+      '與課表上其他課衝堂': 1,
+      [PREFERENCE_LABEL]: 1,
+      '已經修過': 1,
+      '資格不符': 1,
+      '這次已移除過': 1,
+      '與課表上的課是同一門課': 1,
+      '沒有上課時間': 1,
+      '已在課表上': 1,
+    });
+    // 頂層不帶課名，避免被忠實度檢查當成一門候選課。
+    assert.equal(result.name, undefined);
+  });
+
+  test('搜尋條件經過正規化後才送出', async () => {
+    let received;
+    await executeAgentTool('find_replacement_courses', { replaceSectionId: 2, keyword: '通識' }, planningCtx, {
+      ...deps, searchScheduleCourses: async filters => { received = filters; return []; },
+    });
+    assert.deepEqual(received, { category: '通識' });
+  });
+
+  test('要換掉的課不在目前課表上時回 error', async () => {
+    const result = await executeAgentTool('find_replacement_courses', { replaceSectionId: 99 }, planningCtx, deps);
+    assert.equal(result.errorCode, 'REPLACE_TARGET_NOT_IN_SCHEDULE');
+  });
+
+  test('沒有候選時不是失敗，回空清單與原因', async () => {
+    const result = await executeAgentTool('find_replacement_courses', { replaceSectionId: 2 }, planningCtx, {
+      ...deps, searchScheduleCourses: async () => [pool[1]],
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.success, undefined);
+    assert.deepEqual(result.courses, []);
+    assert.equal(result.excludedCounts['與課表上其他課衝堂'], 1);
+  });
+
+  test('swap_course 換上合格的候選，回傳完整課程給前端', async () => {
+    const result = await executeAgentTool('swap_course', { removeSectionId: 2, addSectionId: 10 }, planningCtx, deps);
+    assert.equal(result.success, true);
+    assert.equal(result.swap.removeSectionId, 2);
+    assert.equal(result.swap.addCourse.sectionId, 10);
+    assert.deepEqual(result.swap.addCourse.timeBlocks, [block(1, 3, 4)]);
+    assert.equal(result.courses[0].name, '台灣考古學與原住民');
+  });
+
+  test('swap_course 拒絕不合格的課（例如衝堂）', async () => {
+    const result = await executeAgentTool('swap_course', { removeSectionId: 2, addSectionId: 11 }, planningCtx, deps);
+    assert.equal(result.errorCode, 'SWAP_TARGET_NOT_ELIGIBLE');
+  });
+});

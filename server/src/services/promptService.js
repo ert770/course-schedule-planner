@@ -14,6 +14,7 @@
 
 import { resolveInterestSelections } from '../data/interestSelections.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
+import { ALL_TAGS, TAG_TO_FLAG } from '../data/preferenceTags.js';
 
 // 課程主題問答勾選的標籤名稱（長期興趣的唯一來源，ADR-032）。
 function selectedTopicNames(prefs = {}) {
@@ -31,6 +32,43 @@ function formatList(...sources) {
 }
 
 const COURSE_CATEGORIES = ['必修', '核心選修', '一般選修', '通識', '系外選修'];
+
+// 左側偏好勾選的旗標（`preferenceTags.js` 的唯一來源）：update_preferences 用 check／uncheck
+// 兩個清單改這些。**不用 15 個布林欄位**：2026-11-24 重跑時模型把 15 個欄位全部填滿，
+// 只要抄錯一個（例如把已勾的涼課優先送成 false）就會靜默刪掉使用者的偏好；清單只放要改的項目。
+const PREFERENCE_FLAG_GUIDE = [...TAG_TO_FLAG.entries()]
+  .map(([tag, flag]) => `${flag}＝${tag.replace('#', '')}`)
+  .join('、');
+const PREFERENCE_FLAG_LIST = {
+  type: 'array',
+  items: { type: 'string', enum: [...TAG_TO_FLAG.values()] },
+};
+
+const WEEKDAY_LABELS = ['', '一', '二', '三', '四', '五', '六', '日'];
+
+// 已存的排課偏好（左側勾選）＋不能上課的時段，給模型看完整的已存設定。
+export function describeSavedPreferences(prefs = {}) {
+  const tags = Array.isArray(prefs.preferenceTags) ? prefs.preferenceTags : [];
+  const checked = ALL_TAGS
+    .filter(tag => tags.includes(tag) || prefs[TAG_TO_FLAG.get(tag)] === true)
+    .map(tag => tag.replace('#', ''));
+  const byDay = new Map();
+  for (const entry of Array.isArray(prefs.blockedPeriods) ? prefs.blockedPeriods : []) {
+    const day = Number(entry?.day);
+    const period = Number(entry?.period);
+    if (!Number.isInteger(day) || !Number.isInteger(period)) continue;
+    if (!byDay.has(day)) byDay.set(day, new Set());
+    byDay.get(day).add(period);
+  }
+  const blocked = [...byDay.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([day, periods]) => `星期${WEEKDAY_LABELS[day] ?? day} 第 ${[...periods].sort((x, y) => x - y).join('、')} 節`)
+    .join('；');
+  return {
+    checked: checked.length > 0 ? checked.join('、') : '沒有勾選任何項目',
+    blocked: blocked || '未設定',
+  };
+}
 
 // #29 的七個回饋原因。**這是 enum 不是自由文字**：`time`（衝堂）、`full`
 // （額滿）、`eligibility`（不符資格）對「課程內容偏好」是中性訊號，只有
@@ -320,6 +358,8 @@ export function getAgentTools() {
         + '通識領域以工具回傳的 generalEducationDomain 為準，不得由課號前綴猜測，也不得自行傳入班級。'
         + '若課程 eligibility 為 unknown，只能說「資格待確認」並附上 eligibilityReason，不得宣稱使用者確定可修。'
         + '關鍵字同時比對課名與課程描述；組合條件（全英授課、類別、星期）用對應參數一次查，不要逐一換關鍵字。'
+        + '分類（通識、必修、系外選修等）一律用 category 參數，不要放進 keyword；keyword 只放課名、教師或主題字。'
+        + 'language 只在使用者明確要求授課語言時才填。'
         + '一回合最多查 4 次，查不到就直接說查不到。',
       parameters: {
         type: 'object',
@@ -367,29 +407,66 @@ export function getAgentTools() {
       type: 'function',
       name: 'update_preferences',
       description:
-        '更新使用者長期偏好。只在使用者明確表達要「以後都這樣」時呼叫，'
-        + '單次排課條件請直接帶進 run_csp_scheduler。'
+        '更新使用者已存的排課偏好（左側偏好勾選、學分上限、不能上課的時段、修課路徑），**呼叫後立即寫入**，'
+        + '左側勾選會跟著改，之後的排課都會沿用。'
+        + '使用者在對話中說出這些偏好（例如「星期一排空」「不要早八」「涼課優先」）就呼叫；'
+        + '使用者說「這次就好」「這學期先」「只這一次」時**不要呼叫**，直接把條件帶進 run_csp_scheduler。'
+        + '只送這次真的要改的欄位，沒提到的不要送。'
+        + '不排晚間課與最低學分沒有地方存，只能當單次條件帶進 run_csp_scheduler。'
         + '**想學的主題（例如「以後都想排資安」）不能用這個工具保存**：請直接回覆使用者，'
-        + '到設定頁的「課程主題問答」勾選想學的主題；這次想排的主題可以直接帶進 run_csp_scheduler 的 interests。'
-        + '**兩段式**：不帶 confirmationToken 呼叫時只會提出變更、不會寫入，'
-        + '你必須把回傳的 proposedChanges 講給使用者確認；'
-        + '取得明確同意後，帶著回傳的 confirmationToken 再呼叫一次才會真的生效。',
+        + '到設定頁的「課程主題問答」勾選；這次想排的主題可以直接帶進 run_csp_scheduler 的 interests。',
       parameters: {
         type: 'object',
         properties: {
-          noMorningClasses: { type: 'boolean' },
-          noEveningClasses: { type: 'boolean' },
-          preferCompact: { type: 'boolean' },
-          targetCreditsMin: { type: 'integer' },
+          check: {
+            ...PREFERENCE_FLAG_LIST,
+            description: `這次要勾選（開啟）的左側偏好，只放使用者這次明確要開的項目。對照：${PREFERENCE_FLAG_GUIDE}。`,
+          },
+          uncheck: {
+            ...PREFERENCE_FLAG_LIST,
+            description: '這次要取消勾選的左側偏好，只放使用者這次明確要取消的項目。沒提到的偏好不要放，伺服器會保留原樣。',
+          },
           targetCreditsMax: { type: 'integer' },
           blockedPeriods: SCHEDULER_PARAMETERS.blockedPeriods,
           preferredTrack: SCHEDULER_PARAMETERS.preferredTrack,
           // 長期興趣只能透過設定頁的課程主題問答設定（ADR-032），這裡不再接受 interests／preferredKeywords。
-          confirmationToken: {
-            type: 'string',
-            description: '上一次呼叫回傳的 token。使用者確認後才帶，不可自行編造。',
-          },
         },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'find_replacement_courses',
+      description:
+        '找可以替換使用者課表上某一門課的候選班次。使用者說「把 A 換成…」「A 換一門別的」時先呼叫這個。'
+        + '伺服器會用目前課表上其他課的時間、已存的排課偏好、修課紀錄與資格自動排除衝堂、已修過、不符合偏好或不能修的課，'
+        + '你只需要給要換掉的 sectionId（從「目前規劃狀態」挑）和使用者提的條件。'
+        + '結果的 excludedCounts 說明被排除的原因與數量，查不到時用它向使用者說明是哪個條件擋掉的。',
+      parameters: {
+        type: 'object',
+        properties: {
+          replaceSectionId: { type: 'integer', description: '要換掉的課的 sectionId，必須是目前課表上的課。' },
+          category: { type: 'string', enum: COURSE_CATEGORIES, description: '新課要屬於哪一類，使用者沒說就不要填。' },
+          dayOfWeek: { type: 'integer', description: '新課要在星期幾上，1=週一 … 5=週五；使用者沒說就不要填。' },
+          keyword: { type: 'string', description: '課名、教師或主題字；不要填分類用語。' },
+        },
+        required: ['replaceSectionId'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'swap_course',
+      description:
+        '把使用者課表上的一門課換成另一門。addSectionId 必須來自 find_replacement_courses 的結果，'
+        + '而且使用者已經選定（或明說「直接換第一門」）。伺服器會再檢查一次，前端會移除舊課、加入新課。',
+      parameters: {
+        type: 'object',
+        properties: {
+          removeSectionId: { type: 'integer', description: '要換掉的課的 sectionId。' },
+          addSectionId: { type: 'integer', description: '要換上的課的 sectionId。' },
+        },
+        required: ['removeSectionId', 'addSectionId'],
         additionalProperties: false,
       },
     },
@@ -596,6 +673,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
   // 模型會分不出哪一份是現在的，`record_schedule_feedback` 也可能用到錯的 requestId。
   // 因此有規劃狀態時，把舊的那一次降級成「較早的一次聊天推薦」。
   const planningBlock = buildPlanningStateBlock(context.planningContext);
+  const savedPreferences = describeSavedPreferences(userPrefs);
   const latestIsCurrent = context.latestExposureIsCurrent !== false;
 
   const latest = context.latestExposure;
@@ -635,7 +713,8 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 工具使用方式：
 - 需要資料或要產生課表時，直接呼叫對應的工具；每個工具的參數說明寫在工具定義裡，以那份定義為準。
 - 工具回傳結果之後，若已足以回答，就直接用一般文字回覆使用者，不需要再呼叫任何工具。
-- 查詢課程時把條件放進同一次查詢的參數（keyword、category、language、dayOfWeek）；一回合最多查 4 次。
+- 查詢課程時把條件放進同一次查詢的參數（keyword、category、language、dayOfWeek）；一回合最多查 4 次（找替代課也算一次）。
+  分類用 category，不要把「通識」「必修」這類分類用語放進 keyword；使用者沒要求授課語言就不要填 language。
   查不到符合的課就直接說查不到，並建議可以放寬哪個條件，不要一直換關鍵字重查。
 - 推薦課程時只寫工具結果中真的有的課名；描述使用者的條件時直接用一般文字敘述即可。
 - 使用者順口提到的系所、年級、班級若和目前資料相同，不要呼叫 update_student_profile，也不要問要不要更新，直接回答他的問題。
@@ -651,21 +730,35 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 使用者要求個人化推薦，但目前使用者偏好中的「課程主題」與「修課路徑」都未設定，且這一輪也沒有說明興趣時，先用一個簡短問題詢問方向；可舉「技術應用、網路與安全、嵌入式系統」或目前課程主題為例，不要替使用者選。若使用者只要一般排課或明確表示沒有特定方向，直接排課，不得強迫回答。
 - 使用者說「這次想排資安相關」時，把方向放進單次 run_csp_scheduler 的 interests 或 preferredKeywords；它們只影響這一次排課。
 - 使用者要長期保存想學的主題（例如「以後都想排資安」）時，不要用 update_preferences 存關鍵字，請他到設定頁的「課程主題問答」勾選；修課路徑仍可用 update_preferences 的 preferredTrack 保存。
+
+已存偏好與這次條件（ADR-036）：
+- 下方「目前使用者偏好」是伺服器已存的設定，排課時伺服器會自動套用，不用你重送。
+- 使用者在對話中說出左側偏好裡有的項目（不排早八、星期一排空、午休空出、涼課優先、集中排課、不能上課的時段、學分上限……），
+  就直接呼叫 update_preferences 存起來，不用先問；左側勾選會跟著改。要開的放進 check，他說「不要了」「取消」的放進 uncheck，沒提到的偏好都不要放。
+- 使用者說「這次就好」「這學期先」「只這一次」時不要存，只把條件帶進 run_csp_scheduler。
+- 同一回合要存偏好又要排課時，先 update_preferences，**最後一個工具呼叫要是 run_csp_scheduler**，畫面才會顯示新課表。
+- 存好之後在回覆裡講清楚改了哪幾項偏好（例如「已幫你把『星期一排空』存進偏好」）。
+
+換課：
+- 使用者要把課表上的某門課換成別的（「把 A 換成一門星期一的通識課」「A 換掉」），先呼叫 find_replacement_courses，
+  replaceSectionId 從「目前規劃狀態」挑，使用者提的條件放進 category、dayOfWeek、keyword。
+- 有候選時列出最多 5 門（課名、時間、學分、資格）讓使用者選；他選定或明說「直接換第一門」才呼叫 swap_course。
+- 沒有候選時，依結果的 excludedCounts 說明是哪個條件擋掉的（例如衝堂、不符合已存偏好），並建議可以放寬哪個條件。
+- 使用者要換上的時段跟他已存的偏好衝突（例如已存「星期一排空」卻要星期一的課），先問他要不要取消那項偏好；
+  他同意後先 update_preferences 取消，再查候選。
 - 「Python」這類很常見的工具或技能不在課程主題問答的選項裡，也不能長期保存。使用者想排這類主題時，把它放進這一次 run_csp_scheduler 的 interests；使用者想長期保存時，說明問答沒有這類選項，請他之後每次排課時直接告訴你。
 - 使用者明確說要避開某位教師時，把教師完整姓名放進 avoidInstructors；不得自行猜測、補姓氏或改寫姓名。
 - preferEasyCourses 與 preferChallengingCourses 方向相反，不得同時設為 true；使用者若兩者都提到，要先確認實際想要哪一個。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。
 - 若回傳 hasExpressedPreference 為 false，代表沒有收到任何偏好，應主動詢問使用者的興趣或偏好。
 
-永久變更前必須先取得使用者確認（必做）：
-- update_preferences 與 update_student_profile 都是**兩段式**。第一次呼叫（不帶
-  confirmationToken）只會提出變更，不會寫入任何東西，回傳裡會有 proposedChanges
-  與 confirmationToken。
+更正系所、年級、班別前必須先取得使用者確認（必做）：
+- update_student_profile 是**兩段式**。第一次呼叫（不帶 confirmationToken）只會提出變更，
+  不會寫入任何東西，回傳裡會有 proposedChanges 與 confirmationToken。
 - 拿到之後，你必須用中文把「要改成什麼」講清楚並詢問使用者，等他明確同意
   （「好」「確認」「對」）之後，才帶著那個 confirmationToken 再呼叫一次。
 - 使用者沒有明確同意就不要帶 token 呼叫第二次；也不得自行編造 token。
-- 使用者說「這次就這樣」而不是「以後都這樣」時，不要呼叫 update_preferences，
-  直接把條件帶進 run_csp_scheduler 就好。
+- 排課偏好（update_preferences）不是兩段式，見上方「已存偏好與這次條件」。
 
 排課前的理解回講（必做）：
 - 呼叫 run_csp_scheduler 時必須附上 interpretation，把你的理解攤開來：
@@ -679,8 +772,9 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - interpretation 必須與實際參數一致。你在 nonNegotiable 說「絕對不排早八」，
   就必須同時把 noMorningClasses 設為 true 並把 NO_MORNING_CLASSES 放進
   nonNegotiablePreferenceIds；對不上會被伺服器退回要求你修正。
-- 排課後給使用者的文字回覆裡，要用一小段把這份理解講出來，並明說沒提到的項目
-  你沒有替他決定。
+- 排課後給使用者的文字回覆裡，要用一小段把這份理解講出來。使用者沒提到的項目，
+  有已存偏好的就說「沿用你已存的偏好」並點名是哪幾項（例如不排早八、涼課優先）；
+  偏好裡也沒有設定的項目，才說你沒有替他決定。
 
 偏好強度的判讀：
 - 使用者語氣有彈性（「盡量不要」「可以的話」「必要時可以」）時，把
@@ -715,7 +809,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 移除清單**不需要**你手動轉成排課參數：伺服器會自動套用本次避開條件。
 - 重排完成後，說明哪些課因為本次避開條件沒有再出現。
 - 結果的 appliedSessionAvoidances 每一筆都有 status：只有 "applied" 才是真的避開了。status 為 "protected-conflict" 代表那門課是必修而仍然留在課表裡，必須照實說明並請使用者決定要保留必修還是取消避開，**不得**說成已經避開。
-- 本次避開只在這次規劃有效，**不得**因此呼叫 update_preferences 把它存成永久偏好。使用者明確要求永久避開某位教師時才那樣做。
+- 本次避開（移除的課）只在這次規劃有效，**不得**因此呼叫 update_preferences 把它存成偏好；它跟左側偏好是兩回事。
 
 排課修復與澄清（Roadmap #22）：
 - 排課結果的 solver.status 只可解讀為 solved、infeasible、timeout、data-insufficient；timeout 不等於無解。
@@ -756,7 +850,9 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 課程資格說明：
 - 課程的 eligibility 為 unknown 時只能說「資格待確認」並附上 eligibilityReason，不得宣稱使用者確定可修。
 
-目前使用者偏好（不含可直接識別身分的欄位）：
+目前使用者偏好（伺服器已存，排課時自動套用；不含可直接識別身分的欄位）：
+- 左側已勾選的偏好：${savedPreferences.checked}
+- 不能上課的時段：${savedPreferences.blocked}
 - 目標學分：${userPrefs.targetCreditsMin || 12} ~ ${userPrefs.targetCreditsMax || 25}
 - 不排早八：${userPrefs.noMorningClasses ? '是' : '否'}
 - 不排晚間：${userPrefs.noEveningClasses ? '是' : '否'}

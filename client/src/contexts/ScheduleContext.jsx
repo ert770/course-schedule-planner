@@ -411,6 +411,29 @@ export function ScheduleProvider({ children }) {
     }
   }, [commitAvoidances, emit, requestIdForAction]);
 
+  // Agent 的換課（ADR-036）：伺服器已挑好不衝堂、符合偏好的新課，這裡先驗證
+  // 「拿掉舊課＋加入新課」整份課表，通過才真的移除與加入——驗證失敗時課表完全不動，
+  // 不會出現舊課被拿掉、新課卻加不進去的半套狀態。
+  const applyCourseSwap = useCallback(async (swap) => {
+    const removeId = String(swap?.removeSectionId ?? '');
+    const incoming = swap?.addCourse;
+    const removed = scheduleRef.current.find(course => courseId(course) === removeId);
+    if (!removed || !incoming || !courseId(incoming)) {
+      return { success: false, message: '課表已經變動，找不到要換掉的課，未換課。' };
+    }
+    const proposed = [...scheduleRef.current.filter(course => courseId(course) !== removeId), incoming];
+    try {
+      const result = await scheduleAPI.validate(proposed);
+      if (result?.valid !== true || result?.hardConstraintsValid !== true) {
+        return { success: false, ...describeValidationFailure(result) };
+      }
+    } catch (err) {
+      return { success: false, message: `無法驗證課表，因此未換課：${err.message}` };
+    }
+    removeCourse(removeId);
+    return addCourse(incoming);
+  }, [addCourse, removeCourse]);
+
   // 這次排課實際套用了哪些避開條件——由**伺服器**回報，不是前端自己推的。
   //
   // 這條回路是 Agent 追問原因之後的收尾：使用者在 Chat 回答「作業太多」，伺服器
@@ -617,6 +640,7 @@ export function ScheduleProvider({ children }) {
     userAddedCourseIds,
     addCourse,
     removeCourse,
+    applyCourseSwap,
     toggleWatchlist,
     saveCurrentSchedule,
     buildRecommendation,
@@ -631,7 +655,7 @@ export function ScheduleProvider({ children }) {
     planDiversity,
     selectPlan,
   }), [
-    acceptRecommendation, activePlan, addCourse, applyResolvedAvoidances,
+    acceptRecommendation, activePlan, addCourse, applyCourseSwap, applyResolvedAvoidances,
     buildAvoidanceConstraints, buildPlanningContext, clearSessionAvoidances, userAddedCourseIds,
     loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, planDiversity, plans,

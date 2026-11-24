@@ -45,6 +45,7 @@ function Dashboard({ user, userIdentity }) {
     saving,
     replaceSchedule,
     removeCourse,
+    applyCourseSwap,
     saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
@@ -241,13 +242,11 @@ function Dashboard({ user, userIdentity }) {
   }, []);
 
   // 目前勾選的偏好來自 profile，與 Setup 頁同一份資料。
-  useEffect(() => {
-    let cancelled = false;
-    if (userIdentity === null) return undefined;
-
+  // Agent 在聊天中改了偏好（ADR-036）之後也用同一支重抓，左側勾選才會跟著改。
+  const loadSavedPreferences = useCallback((isCancelled = () => false) => (
     profileAPI.get()
       .then(profile => {
-        if (cancelled) return;
+        if (isCancelled()) return;
         const tags = new Set(profile?.selectedTags ?? []);
         setSelectedTags(tags);
         setSavedTags(tags);
@@ -255,11 +254,16 @@ function Dashboard({ user, userIdentity }) {
         setPrefsError('');
       })
       .catch(err => {
-        if (!cancelled) setPrefsError(err.message || '偏好設定載入失敗');
-      });
+        if (!isCancelled()) setPrefsError(err.message || '偏好設定載入失敗');
+      })
+  ), [userIdentity]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (userIdentity === null) return undefined;
+    loadSavedPreferences(() => cancelled);
     return () => { cancelled = true; };
-  }, [userIdentity]);
+  }, [userIdentity, loadSavedPreferences]);
 
   const handlePrefToggle = (tag) => {
     setSelectedTags(previous => {
@@ -322,7 +326,21 @@ function Dashboard({ user, userIdentity }) {
       // 仍然有效的避開條件無聲消失。
       if (res.planningContextStatus === 'rejected-invalid') clearSessionAvoidances();
 
-      if (res.intent === 'run_csp_scheduler' && res.data?.success) {
+      // Agent 改了已存偏好：重抓，讓左側勾選跟著改（ADR-036）。
+      if (res.preferencesUpdated) loadSavedPreferences();
+
+      if (res.data?.success && res.data?.swap) {
+        // Agent 換課：伺服器已挑好新課，前端驗證整份課表後移除舊課、加入新課。
+        const outcome = await applyCourseSwap(res.data.swap);
+        setChatHistory(prev => [
+          ...prev,
+          { role: 'bot', text: res.reply },
+          ...(outcome?.success ? [] : [{
+            role: 'bot',
+            text: `課表沒有更新：${outcome?.message || '換課失敗。'}`,
+          }]),
+        ]);
+      } else if (res.intent === 'run_csp_scheduler' && res.data?.success) {
         // 伺服器回報這次實際套用了哪些避開條件（含 Agent 追問原因後重算的範圍），
         // 寫回 sessionStorage，之後按一般「重新排課」才會沿用同樣的範圍。
         applyResolvedAvoidances(res.data.appliedSessionAvoidances);
