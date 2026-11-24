@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
-import { profileAPI, historyFeedbackAPI, scheduleAPI } from '../services/api';
+import { profileAPI, historyFeedbackAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
 import PreferenceJourneySteps, { PreferenceBackButton } from '../components/Layout/PreferenceJourneySteps';
@@ -51,12 +51,15 @@ export default function SetupPage() {
   
   // 前端會顯示的選項
   const [profileLoaded, setProfileLoaded] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
   const [selectedTags, setSelectedTags] = useState(new Set());
   const [tagGroups, setTagGroups] = useState([]);
   // 課程主題的選擇結果：[{ group, categoryId, level, mode, tagIds }]，以 (group, categoryId) 為鍵。
   // 通識與系外都有「語言」時各自一筆，取消其中一組不影響另一組。
   const [topicSelections, setTopicSelections] = useState([]);
+  const [savedTopicSelections, setSavedTopicSelections] = useState(null);
+  const [topicSummary, setTopicSummary] = useState(null);
   // 保存成功但有主題標籤沒能保存時，先讓使用者看到說明再離開。
   const [saveNotice, setSaveNotice] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -103,8 +106,12 @@ export default function SetupPage() {
         }
         const savedSelections = Array.isArray(profile.interestSelections) ? profile.interestSelections : [];
         setTopicSelections(savedSelections);
+        setSavedTopicSelections(savedSelections);
+        setTopicSummary(profile.interestSummary ?? null);
       })
-      .catch(() => {})
+      .catch(err => {
+        if (!cancelled) setProfileError(err.message || '無法讀取偏好，請重新開啟設定頁。');
+      })
       .finally(() => {
         if (!cancelled) setProfileLoaded(true);
       });
@@ -149,7 +156,8 @@ export default function SetupPage() {
       navigate('/', { replace: true });
       return;
     }
-    navigate(exploration.status === 'in_progress' ? '/interest-exploration' : '/');
+    if (exploration.status === 'in_progress') navigate('/interest-exploration');
+    else navigate('/', { state: { preferencesSavedFor: userIdentity } });
   };
 
   const persist = async (selections) => {
@@ -167,21 +175,14 @@ export default function SetupPage() {
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
         // 長期興趣只由課程主題問答保存（ADR-032）；舊的文字興趣欄位已移除。
-        interestSelections: selections.map(({ group, categoryId, level, mode, tagIds }) => ({
-          group, categoryId, level, mode, tagIds,
-        })),
+        ...(selections !== savedTopicSelections ? {
+          interestSelections: selections.map(({ group, categoryId, level, mode, tagIds }) => ({
+            group, categoryId, level, mode, tagIds,
+          })),
+        } : {}),
       };
       // 1. 儲存個人偏好設定（回應帶課程主題選擇的驗證狀態，下面據此決定要不要顯示提示）
       const result = await profileAPI.update(prefData);
-
-      // 首次課表由首頁在探索結束後產生。既有帳號仍即時套用新設定。
-      if (wasSetupDone && exploration.status !== 'in_progress') {
-        try {
-          await scheduleAPI.generate({ tags: [...selectedTags] });
-        } catch (genErr) {
-          console.warn('自動生成課表失敗，但偏好已儲存：', genErr);
-        }
-      }
 
       markSetupDone();
       const warnings = result?.interestSelectionWarnings ?? [];
@@ -234,7 +235,7 @@ export default function SetupPage() {
             <div className="setup-generating-spinner">
               <Loader2 size={48} className="spin-animation" />
             </div>
-            <h2>{editing && exploration.status !== 'in_progress' ? '正在保存偏好並更新課表…' : '正在保存偏好…'}</h2>
+            <h2>正在保存偏好…</h2>
           </div>
         ) : (
           <div className="setup-content">
@@ -243,7 +244,7 @@ export default function SetupPage() {
                 <button type="button" key={section}
                   aria-current={index === setupStep ? 'step' : undefined}
                   onClick={() => goToStep(index)}
-                  disabled={!profileLoaded || (!editing && index > setupStep)}>
+                  disabled={!profileLoaded || Boolean(profileError) || (!editing && index > setupStep)}>
                   {section}
                 </button>
               ))}
@@ -283,6 +284,7 @@ export default function SetupPage() {
                     <InterestQuestionnaire
                       scope={{ department, gradeLevel: Number(gradeLevel), className }}
                       savedSelections={topicSelections}
+                      savedSummary={topicSummary}
                       confirmLabel={editing ? '確認並儲存' : '確認並繼續'}
                       onConfirm={confirmTopics}
                     />
@@ -338,17 +340,17 @@ export default function SetupPage() {
 
         {!generating && (
           <footer className="setup-footer">
-            {saveError && <p className="setup-error" role="alert">{saveError}</p>}
+            {(saveError || profileError) && <p className="setup-error" role="alert">{saveError || profileError}</p>}
             <div className="setup-journey-actions">
               {!editing && setupStep > 0 && (
                 <button type="button" className="course-card-action" onClick={() => goToStep(setupStep - 1)}>上一步</button>
               )}
               {!editing && setupStep < 2 ? (
-                <button type="button" className="course-card-action primary" onClick={continueSetup} disabled={!profileLoaded}>
+                <button type="button" className="course-card-action primary" onClick={continueSetup} disabled={!profileLoaded || Boolean(profileError)}>
                   {setupStep === 0 ? '繼續選課程興趣' : '繼續設定排課條件'} <ArrowRight size={17} />
                 </button>
               ) : (
-                <button type="button" className="course-card-action primary" onClick={handleSubmit} disabled={!profileLoaded}>
+                <button type="button" className="course-card-action primary" onClick={handleSubmit} disabled={!profileLoaded || Boolean(profileError)}>
                   {editing ? (exploration.status === 'in_progress' ? '保存並繼續探索' : '保存變更') : '保存並前往探索'} <ArrowRight size={17} />
                 </button>
               )}

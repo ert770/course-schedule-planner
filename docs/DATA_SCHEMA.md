@@ -385,6 +385,8 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 
 興趣偏好沿用 `preferences_json`，沒有新增 `preferred_track` 等平行欄位。
 
+`GET /api/profile` 的 `interestSummary` 是以已保存的選擇對照正規化標籤目錄即時組成的顯示欄位，不寫入資料庫。
+
 **2026-11-23 起（ADR-032）**：舊的文字興趣鍵 `values.interests`／`values.preferredKeywords` 已移除。21 個帳號的舊值先由 `server/scripts/legacyInterestMigration.js` 轉成 `interestSelections`，備份在 `server/backups/`（不進版控）後刪除；之後任何一次寫入都會刪掉殘留的這兩個鍵，讀取也不再回傳。
 
 範例：

@@ -531,24 +531,27 @@ async function buildCardQuestion({ direction, seenTagIds }, menu, deps) {
   };
 }
 
-/** 確認頁與重新進入時：把已存的方向與標籤 ID 換成顯示名稱。不呼叫語言模型。 */
+/** 把已存的 ID 換成正式名稱。只有傳入候選池時才判斷方向在本學期是否可選。 */
 export function buildSelectionSummary(menu, selections) {
   const directions = [];
   const topics = [];
   const seenTags = new Set();
   for (const selection of selections) {
-    const option = findMenuOption(menu, selection.group, selection.categoryId);
+    const option = menu ? findMenuOption(menu, selection.group, selection.categoryId) : null;
     const catalog = lookupInterestCategory(selection.categoryId);
-    const preset = option ? defaultCopyFor(selection.group, option) : null;
+    const curated = getCuratedInterestOption(selection.categoryId);
+    const label = option ?? curated ?? catalog;
+    const preset = label ? defaultCopyFor(selection.group, label) : null;
     directions.push({
       group: selection.group,
       categoryId: selection.categoryId,
-      title: preset?.title ?? option?.name ?? catalog?.name ?? selection.categoryId,
+      title: preset?.title ?? label?.name ?? (menu ? selection.categoryId : '舊版課程方向'),
       categoryLabel: option ? categoryLabelOf(option) : (catalog?.name ?? null),
-      available: Boolean(option),
+      ...(menu ? { available: Boolean(option) } : {}),
     });
     for (const tagId of selection.tagIds) {
       const tag = tagById.get(tagId);
+      if (!tag && !menu) continue;
       topics.push({
         group: selection.group,
         categoryId: selection.categoryId,

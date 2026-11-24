@@ -27,7 +27,7 @@ import {
 
 const GROUP_LABELS = { department: '本系', generalEducation: '通識', outside: '系外' };
 const LETTERS = ['A', 'B', 'C'];
-export default function InterestQuestionnaire({ scope, savedSelections = [], confirmLabel, onConfirm }) {
+export default function InterestQuestionnaire({ scope, savedSelections = [], savedSummary, confirmLabel, onConfirm }) {
   const scopeReady = Boolean(scope.department && scope.gradeLevel > 0 && scope.className);
   // phase：intro → group／detail（交錯）→ confirm。step 是目前畫面：{ type: 'group', index } 或 { type: 'detail', group }。
   const [phase, setPhase] = useState('intro');
@@ -51,9 +51,10 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
   const [error, setError] = useState('');
 
   const savedKey = JSON.stringify(savedSelections.map(({ group, categoryId, tagIds }) => [group, categoryId, tagIds]));
+  const isAnswering = phase !== 'intro';
   useEffect(() => {
     let cancelled = false;
-    if (!scopeReady || savedSelections.length === 0) {
+    if (!isAnswering || !scopeReady || savedSelections.length === 0) {
       setSummary(null);
       return () => { cancelled = true; };
     }
@@ -67,10 +68,11 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
     return () => { cancelled = true; };
     // savedKey 已涵蓋 savedSelections 的內容。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedKey, scope.department, scope.gradeLevel, scope.className, scopeReady]);
+  }, [isAnswering, savedKey, scope.department, scope.gradeLevel, scope.className, scopeReady]);
 
-  const savedDirections = useMemo(() => savedDirectionsFrom(savedSelections, summary), [savedSelections, summary]);
-  const savedTopicNames = useMemo(() => new Map((summary?.topics ?? []).map(topic => [topic.tagId, topic.name])), [summary]);
+  const savedLabels = summary?.scopeReady ? summary : savedSummary;
+  const savedDirections = useMemo(() => savedDirectionsFrom(savedSelections, savedLabels), [savedSelections, savedLabels]);
+  const savedTopicNames = useMemo(() => new Map((savedLabels?.topics ?? []).map(topic => [topic.tagId, topic.name])), [savedLabels]);
 
   const request = payload => profileAPI.getInterestQuestion({ ...scope, ...payload });
   const detailDirections = (directions) => directions.map(direction => ({
@@ -332,23 +334,37 @@ export default function InterestQuestionnaire({ scope, savedSelections = [], con
     });
   };
 
-  if (!scopeReady) {
+  if (!scopeReady && savedDirections.length === 0) {
     return <p className="interest-quiz-note">選好班別後會顯示目前候選課程的主題。</p>;
   }
 
   // ── 開場與目前的主題 ──
   if (phase === 'intro') {
-    const topicsByDirection = (summary?.topics ?? []).filter(topic => !topic.duplicate);
+    const topics = (savedSummary?.topics ?? []).filter(topic => !topic.duplicate);
     return (
       <div className="interest-quiz" id="interest-questionnaire">
         <p className="interest-quiz-lead">想先接觸哪些課程主題？選幾個你有興趣的方向，我們會用來推薦課程。現在不確定的可以略過。</p>
         {savedDirections.length > 0 && (
           <div className="interest-quiz-current" id="interest-quiz-current">
-            <p><strong>目前的方向</strong>{' '}{savedDirections.map(direction => direction.title).join('、')}</p>
-            <p><strong>確認的具體主題</strong>{' '}{topicsByDirection.length > 0 ? topicsByDirection.map(topic => topic.name).join('、') : '尚未確認'}</p>
+            <p><strong>目前的方向</strong></p>
+            <ul className="interest-quiz-confirm-list">
+              {QUESTION_GROUPS.map(group => {
+                const directions = savedDirections.filter(direction => direction.group === group);
+                return directions.length > 0 && (
+                  <li key={group}><strong>{GROUP_LABELS[group]}</strong> {directions.map(direction => direction.title).join('、')}</li>
+                );
+              })}
+            </ul>
+            <p><strong>確認的具體主題</strong></p>
+            {topics.length > 0 ? (
+              <ul className="interest-quiz-selected" aria-label="已確認的課程主題">
+                {topics.map(topic => <li className="interest-quiz-chip" key={topic.tagId}>{topic.name}</li>)}
+              </ul>
+            ) : <p>尚未確認</p>}
           </div>
         )}
-        <button type="button" className="course-card-action primary" id="interest-quiz-start" onClick={start}>
+        {!scopeReady && <p className="interest-quiz-note">選好班別後可重新回答課程主題問答。</p>}
+        <button type="button" className="course-card-action primary" id="interest-quiz-start" onClick={start} disabled={!scopeReady}>
           {savedDirections.length > 0 ? '重新回答' : '開始回答'}
         </button>
       </div>

@@ -7,7 +7,7 @@ import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
 import { FOLLOWUP_REQUESTS_PER_MINUTE, QUESTIONNAIRE_REQUESTS_PER_MINUTE } from '../data/interestMenuConfig.js';
 import { getInterestFollowups, validateFollowupRequest } from '../services/interestFollowupService.js';
-import { getInterestQuestion, validateQuestionRequest } from '../services/interestQuestionnaireService.js';
+import { buildSelectionSummary, getInterestQuestion, validateQuestionRequest } from '../services/interestQuestionnaireService.js';
 import { sanitizeInterestSelectionsForSave } from '../services/interestSelectionService.js';
 import { checkRateLimit } from '../utils/rateLimiter.js';
 
@@ -31,6 +31,7 @@ router.get('/', requireIdentity, requireServiceConsent, async (req, res) => {
     res.json({
       ...prefs,
       courseSearchScope: buildCourseSearchScope(prefs),
+      interestSummary: buildSelectionSummary(null, prefs.interestSelections ?? []),
     });
   } catch (err) {
     res.status(err.status || 500).json({
