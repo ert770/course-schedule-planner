@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {saveHistorySnapshot,readHistorySnapshot,claimHistorySnapshot,releaseHistorySnapshot,setHistorySnapshotPreflight} from '../src/services/historySnapshot.js';
+import {importExtractedHistory} from '../src/services/courseHistoryAutoImport.js';
+const identity={found:true,source:'mysql',canWriteMysqlProfile:true,numericId:2,canonicalId:'FAKE_A'};
+test('snapshot deduplicates, isolates owners, validates copy and cannot be reused after consumption',()=>{
+ const result={allCategoriesComplete:true,records:[{courseName:'虛構'}],pendingRecords:[],rawCategories:[{category:'test'}],excludedDetails:[],duplicateDetails:[]};const first=saveHistorySnapshot(identity,result),second=saveHistorySnapshot(identity,result);assert.equal(first.hash,second.hash);assert.equal(first.createdAt,second.createdAt);assert.equal(readHistorySnapshot({...identity,numericId:3,canonicalId:'FAKE_B'}),null);const copy=readHistorySnapshot(identity);copy.result.records[0].courseName='changed';assert.equal(readHistorySnapshot(identity).result.records[0].courseName,'虛構');setHistorySnapshotPreflight(identity,first.hash,{inserted:1,conflicts:0});assert.equal(claimHistorySnapshot(identity).preflight.inserted,1);assert.equal(readHistorySnapshot(identity),null);releaseHistorySnapshot(identity,true);assert.equal(readHistorySnapshot(identity),null);
+});
+test('dry-run uses actual grouping but makes no writes',async()=>{
+ const statements=[];const db={execute:async(sql,p)=>{statements.push(sql);if(sql.startsWith('SELECT student_id'))return [[{student_id:'FAKE_A'}]];if(sql.includes('FROM Unmatched_Course_History')||sql.includes('FROM User_Course_History')||sql.startsWith('SELECT DISTINCT'))return [[]];throw new Error('UNEXPECTED_WRITE')}};const row={courseName:'虛構',courseCode:'TEST',academicYear:112,semester:1,credits:3,score:60};const result=await importExtractedHistory(identity,[row,row],fn=>fn(db),{sessionImport:true,dryRun:true});assert.equal(result.inserted,1);assert.equal(result.skipped,1);assert.ok(statements.every(sql=>sql.startsWith('SELECT')&&!sql.includes('FOR UPDATE')));
+});

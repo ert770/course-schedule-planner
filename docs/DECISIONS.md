@@ -1189,3 +1189,50 @@ Consequences:
 - Persona trial: "start from a course" went from 1478 to 311 listed items across 11 accounts, and many starting courses now show no result (e.g. D0009004 from 3 to 18 of 23). Profile mode changed one item for 3 of 11 accounts.
 - Remaining borderline pairs (e.g. 電子商務安全 → 社會創業力或利 via 社會問題 at 0.453) are accepted; the thresholds were tuned by hand on this trial and have no user study behind them.
 - The TF-IDF functions in `skills/courseExploration.js` (tokenizer, index, cosine, shared phrases) were deleted with their tests (user decision 2026-11-23); only the per-unit selection `rankSerendipitous` remains and now requires a caller-supplied similarity.
+
+## ADR-034: Integrate Student Registration and MyFCU History Import from the Teammate's Branch
+
+Date: 2026-11-23
+
+Context:
+
+A teammate delivered `feature/myfcu-session-import` (commit 1d9db09) as a bundle with no shared git history: student registration with argon2id passwords, a Windows-local MyFCU capture, a session-bound snapshot, a read-only preview and a transactional history import. A read-only check showed migrations 010–015 were already applied to the shared MySQL. Three conflicts with the team code were found: the source login only verified MySQL password hashes, so demo and Persona accounts (student id but no hash) could no longer log in; imported rows have NULL requirement and graduation categories, which the team's history reader rejected (the whole history failed to load) and the source reader silently dropped; and the de-duplication merged same-name, same-score rows across semesters.
+
+Decision (user decisions on 2026-11-23):
+
+- Port feature by feature onto a branch from the latest main; never overwrite team files with the older source snapshot. Migrations 010–015 are copied for the record only and not re-run.
+- A(1): when a MySQL account has no password hash, outside production the login falls back to `users.json`. Legacy JSON auth is on by default outside production and can be disabled with `ALLOW_LEGACY_JSON_AUTH=false`; it is always off in production.
+- B(a): when reading history, skip rows without a catalogue code or a determinable pass state, and fill NULL categories from the course code and curriculum (`classifyHistoryEntryByCurriculum`), defaulting to 未確認／unspecified. Nothing is written back.
+- C: merge same-name rows only within the same academic year and semester.
+- Playwright is not added to `package.json`; it is lazily required only for real MyFCU capture and is installed separately when that is run.
+
+Consequences:
+
+- The teammate's imported account loads 39 usable rows (16 rows without a catalogue code are excluded) instead of failing.
+- Registration writes new accounts to the shared database; it was verified only up to client-side validation, not by creating an account.
+- The 10 `1804…` accounts still have no student id, password or history and cannot log in; the participant-study plan is unchanged for now (user decision D: leave it).
+- Real MyFCU capture, the mock capture page and Playwright-based tests were not run in this integration.
+
+Update 2026-11-24 (user decision): the read-time classification of imported rows was extended, because the curriculum classifier alone left PE/military, general-education domain courses and outside-department courses unclassified (for the imported account, 23 of 39 rows' credits fell into `unspecified`). Blank categories are now filled in order: course name PE/military/class activity → `nonGraduation`; CS curriculum and basic general education; the course catalogue's general-education identity → `general`; any catalogue course not offered by the student's own department → `external` (user decision "count them as outside for now": another department's required course, non-department units such as the language center, and continuing-education-only courses included; the mechanical outside-elective conditions are not applied here and office confirmation is still required); otherwise (not in the catalogue, or an own-department code outside the curriculum) `unspecified`. The catalogue and the student's department are queried once, only for blank-category rows; a query failure falls back to the first two steps. Rows with existing categories are never changed.
+
+## ADR-035: Explore "Start From a Course" Uses Three Precomputed Similarities (Name, Description, Topic)
+
+Date: 2026-11-24
+
+Context:
+
+After ADR-033 the explore page found nothing for most starting courses: for D1249697, 18 starts had shared topics but scored below 0.40, 6 had no candidate with a shared topic tag, and 15 could not be a start because the course is not in this term's catalogue (no description or tags). PE and military courses were never candidates because the page only offers outside electives and general education.
+
+Decision (user decisions on 2026-11-24):
+
+- Compute three OpenAI text embeddings per course offline (text-embedding-3-large, 512 dimensions): course name, course description, and course topic (topic-kind tags only; tool and format tags excluded). Courses only present in course history get a name vector from the history course name. The artifact is git-ignored and loaded once per server process; requests compute dot products only.
+- Score = mean of the cosines of the fields both courses have (equivalent to ranking by the sum when all three exist); list a course only when the score is at least 0.55. The threshold was chosen from an 11-account trial sweeping 0.30 upward with per-band samples.
+- Courses that do not count toward graduation (PE, national defence, class activity) and practice courses are neither starts nor candidates; a lab section attached to a lecture (code + P) still merges into the lecture card.
+- The start list is sorted by name (Latin A–Z first, Chinese by stroke order) and the default start is its first entry; the last chosen mode and start are remembered per user in the browser.
+
+Consequences:
+
+- Across 11 accounts and 263 starts: 484 listed items and 90 starts with no result (34%), versus 311 items with most starts empty under ADR-033. Name-only starts produce weaker matches.
+- The ADR-033 topic-tag gate no longer applies to this mode; the profile mode keeps its exact-tag rule.
+- Regenerating the artifact costs about 0.6M tokens (about USD 0.08 on 2026-11-24); the threshold has no user-study support.
+

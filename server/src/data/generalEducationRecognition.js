@@ -104,6 +104,13 @@ function matchesBasicNamePrefix(entry) {
   return BASIC_REQUIRED_NAME_PREFIXES.some(prefix => name.startsWith(prefix));
 }
 
+// 全校共同必修（通識基礎必修：中文、英文，以及兩門核心必修）。只看課程身分，
+// 不看領域欄位——探索頁用來排除這類課，不涉及畢業認列。
+export function isCommonRequiredCourse({ courseCode, courseName } = {}) {
+  return isCoreRequired({ courseCode: String(courseCode || '').trim().toUpperCase() })
+    || matchesBasicNamePrefix({ courseName });
+}
+
 // 一門通識課是「基礎必修」還是「選修」。
 //
 // **兩個獨立來源交叉驗證**，比照 `admissionYear` 回填的 `reconcileAdmissionYear()`：

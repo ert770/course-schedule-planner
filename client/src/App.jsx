@@ -4,6 +4,10 @@ import { useAuth } from './contexts/useAuth';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ScheduleProvider } from './contexts/ScheduleContext';
 import LoginPage from './pages/LoginPage';
+import ControlledHistoryMockPage from './pages/ControlledHistoryMockPage';
+import RegisterPage from './pages/RegisterPage';
+import CourseHistoryImportPage from './pages/CourseHistoryImportPage';
+import CourseHistoryPage from './pages/CourseHistoryPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SetupPage from './pages/SetupPage';
 import InterestExplorationPage from './pages/InterestExplorationPage';
@@ -40,6 +44,10 @@ function AppRoutes() {
 
   return (
     <Routes>
+      {import.meta.env.DEV && <Route path="/history-import-mock" element={<ProtectedRoute><ControlledHistoryMockPage /></ProtectedRoute>} />}
+      <Route path="/history-import" element={<ProtectedRoute><CourseHistoryImportPage /></ProtectedRoute>} />
+      <Route path="/course-history" element={<ProtectedRoute><CourseHistoryPage /></ProtectedRoute>} />
+      <Route path="/register" element={isLoggedIn ? <Navigate to="/" replace /> : <RegisterPage />} />
       <Route
         path="/login"
         element={

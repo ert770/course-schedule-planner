@@ -1,18 +1,19 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 async function request(endpoint, options = {}) {
+  const { noAuthRedirect = false, ...requestOptions } = options;
   const url = `${API_BASE}${endpoint}`;
   const config = {
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    ...options,
+    ...requestOptions,
   };
 
   try {
     const res = await fetch(url, config);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-      if (res.status === 401 && endpoint !== '/auth/login' && endpoint !== '/auth/me') {
+      if (res.status === 401 && !noAuthRedirect && endpoint !== '/auth/login' && endpoint !== '/auth/me') {
         localStorage.removeItem('fcu_user');
         if (window.location.pathname !== '/login') window.location.assign('/login');
       }
@@ -38,6 +39,8 @@ export const authAPI = {
       body: JSON.stringify({ studentId, password }),
     }),
   getMe: () => request('/auth/me'),
+  register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+  registerOptions: () => request('/auth/register-options'),
   logout: () => request('/auth/logout', { method: 'POST', keepalive: true }),
   updateWatchlist: (watchlist) =>
     request('/auth/update-watchlist', {
@@ -220,4 +223,27 @@ export const profileAPI = {
 export const reviewsAPI = {
   getEasy: (limit = 10) => request(`/reviews/easy?limit=${limit}`),
   getByCourse: (courseId) => request(`/reviews/${courseId}`),
+};
+
+// MyFCU 歷史修課匯入（2026-11-23 自 feature/myfcu-session-import 移植）。
+export const courseHistoryAPI = { list: () => request('/course-history') };
+
+// Grants remain in module memory and are never stored or embedded in URLs.
+const controlledGrants = new Map();
+const controlledHeaders = id => controlledGrants.has(id) ? { 'Content-Type':'application/json', 'X-Controlled-Grant':controlledGrants.get(id) } : { 'Content-Type':'application/json' };
+export const controlledBrowserAPI = {
+  config: () => request('/controlled-browser/config'),
+  start: async consent => { const result = await request('/controlled-browser/sessions', { method:'POST', body:JSON.stringify({ consent }) }); const {grant,...safe}=result; if (grant) controlledGrants.set(safe.id,grant); return safe; },
+  state: id => request('/controlled-browser/sessions/' + encodeURIComponent(id), {headers:controlledHeaders(id), noAuthRedirect:true}),
+  input: (id, event) => request('/controlled-browser/sessions/' + encodeURIComponent(id) + '/input', { method:'POST', headers:controlledHeaders(id), body:JSON.stringify(event) }),
+  cancel: async id => { try { return await request('/controlled-browser/sessions/' + encodeURIComponent(id), { method:'DELETE', headers:controlledHeaders(id), keepalive:true }); } finally { controlledGrants.delete(id); } },
+  frame: async id => { const res = await fetch(API_BASE + '/controlled-browser/sessions/' + encodeURIComponent(id) + '/frame', { credentials:'include', cache:'no-store', headers:controlledHeaders(id) }); if (!res.ok) throw new Error('無法取得模擬畫面'); return URL.createObjectURL(await res.blob()); },
+};
+
+export const courseHistoryImportAPI = {
+  auto: snapshotHash => request('/course-history-import/auto', {method:'POST',body:JSON.stringify({consent:true,identityConfirmed:true,...(snapshotHash ? {snapshotHash} : {})})}),
+  snapshot: () => request('/course-history-import/snapshot', {noAuthRedirect:true}),
+  snapshotPreview: () => request('/course-history-import/snapshot-preview', {method:'POST',body:JSON.stringify({}),noAuthRedirect:true}),
+  preview: body => request('/course-history-import/preview', {method:'POST',body:JSON.stringify(body)}),
+  commit: body => request('/course-history-import/commit', {method:'POST',body:JSON.stringify(body)}),
 };

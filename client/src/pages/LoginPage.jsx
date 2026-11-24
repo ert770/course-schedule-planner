@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, GraduationCap, Loader2, AlertCircle } from 'lucide-react';
 import { authAPI } from '../services/api';
 import { useAuth } from '../contexts/useAuth';
@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
 
   const handleLogin = async (e) => {
@@ -47,6 +48,7 @@ export default function LoginPage() {
         <h1 className="login-title">逢甲大學排課系統</h1>
         <p className="login-subtitle">Smart Schedule Planner</p>
 
+        {location.state?.registered && <p role="status">註冊成功，請使用新帳號登入。</p>}
         <form onSubmit={handleLogin} className="login-form">
           <div className="login-field">
             <label className="login-label" htmlFor="login-student-id">學號</label>
@@ -113,6 +115,7 @@ export default function LoginPage() {
           </button>
         </form>
 
+        <p className="login-footer"><Link to="/register">建立學生帳號</Link></p>
         <p className="login-footer">
           © 2026 逢甲大學 資訊工程學系
         </p>

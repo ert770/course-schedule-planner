@@ -84,15 +84,27 @@ function fillers() {
   }));
 }
 
-// 依課程說明產生的文字向量；`vectors` 可覆寫個別課號。
-function textLoader(courses, vectors = {}) {
-  const map = new Map();
+const unit = values => { const n = Math.hypot(...values); return Float32Array.from(values, v => v / n); };
+
+// 探索向量（ADR-035）：課名、課程說明、課程主題三個欄位。測試中三欄預設相同（依說明關鍵字），
+// `vectors` 可覆寫課號的三欄（陣列＝三欄同值；物件＝逐欄），`historyOnly` 是只有課名向量的課（本學期沒開）。
+function vectorLoader(courses, vectors = {}, historyOnly = {}) {
+  const entries = new Map();
   for (const course of courses) {
     const code = String(course.catalogCourseCode).toUpperCase();
-    if (!map.has(code) && course.description) map.set(code, Float32Array.from(vectors[code] ?? textVectorOf(course.description)));
+    if (entries.has(code) || !course.description) continue;
+    const override = vectors[code];
+    const base = Array.isArray(override) ? override : textVectorOf(course.description);
+    const field = name => (override && !Array.isArray(override) && name in override
+      ? (override[name] ? unit(override[name]) : null) : unit(base));
+    entries.set(code, { source: 'catalog', name: course.name,
+      vectors: { name: field('name'), description: field('description'), topic: field('topic') } });
   }
-  return async () => ({ available: true, index: { vectors: map, documents: new Map(),
-    method: { representation: 'course-text-embedding-v1', embeddingModel: 'fixture-only' } } });
+  for (const [code, values] of Object.entries(historyOnly)) {
+    entries.set(code, { source: 'history', name: code, vectors: { name: unit(values), description: null, topic: null } });
+  }
+  return async () => ({ available: true,
+    index: { entries, method: { model: 'fixture-only', dimension: 3, generatedAt: '2026-11-24T00:00:00Z' } } });
 }
 
 function history(courseCode, courseName, score, extra = {}) {
@@ -114,7 +126,7 @@ function run(courses, courseHistory, input = {}, extra = {}) {
   return exploreForUser(IDENTITY, input, {
     loadCourses: async () => courses,
     loadProfile: async () => profile(courseHistory),
-    loadTextEmbeddings: textLoader(courses),
+    loadExplorationVectors: vectorLoader(courses),
     ...extra,
   });
 }
@@ -156,26 +168,29 @@ describe('XS1 起點與候選分開', () => {
     assert.deepEqual(codes, ['NOW1']);
   });
 
-  test('XS1c 沒有文字向量或沒有主題標籤的已修課不能當起點，並標明原因', async () => {
-    const courses = [
-      section('IECS3059', '人工智慧導論', '資訊三合', AI),
-      section('NOTAG1', '沒有標籤的課', '資訊三合', '課程概論', { ragTag: [] }),
-      ...fillers(),
-    ];
+  test('XS1c 沒有探索向量的已修課不能當起點並標明原因；本學期沒開的課有課名向量也能當起點', async () => {
+    const courses = [section('IECS3059', '人工智慧導論', '資訊三合', AI), section('COME3046', '機器學習', '通訊三甲', AI), ...fillers()];
+    const loader = vectorLoader(courses, {}, { IECS2007: [1, 0, 0.05] });
     const result = await run(courses, [
       history('IECS3059', '人工智慧導論', 80),
-      history('CHIN1065', '中文思辨與表達(一)', 95, { graduationCategory: 'general' }),
-      history('NOTAG1', '沒有標籤的課', 70),
-    ]);
-    const reasonOf = code => result.favorites.find(item => item.courseCode === code);
+      history('CHIN2011', '中國文學史(二)', 95, { graduationCategory: 'general' }),
+      history('IECS2007', '離散數學', 70),
+    ], {}, { loadExplorationVectors: loader });
+    const of = code => result.favorites.find(item => item.courseCode === code);
+    assert.deepEqual([of('CHIN2011').available, of('CHIN2011').reason], [false, 'no-course-vector']);
+    assert.equal(of('IECS2007').available, true);
 
-    assert.deepEqual([reasonOf('CHIN1065').available, reasonOf('CHIN1065').reason], [false, 'no-text-embedding']);
-    assert.deepEqual([reasonOf('NOTAG1').available, reasonOf('NOTAG1').reason], [false, 'no-course-tags']);
-    assert.equal(reasonOf('IECS3059').available, true);
-
-    const chosen = await run(courses, [history('CHIN1065', '中文思辨與表達(一)', 95)], { favoriteCourseCode: 'CHIN1065' });
+    const chosen = await run(courses, [history('CHIN2011', '中國文學史(二)', 95)], { favoriteCourseCode: 'CHIN2011' }, { loadExplorationVectors: loader });
     assert.equal(chosen.favorite, null);
-    assert.equal(chosen.emptyReason, 'favorite-no-text-embedding');
+    assert.equal(chosen.emptyReason, 'favorite-no-course-vector');
+
+    // 只有課名向量的起點只比課名。
+    const nameOnly = await run(courses, [history('IECS2007', '離散數學', 70)], { favoriteCourseCode: 'IECS2007' }, { loadExplorationVectors: loader });
+    const [item] = nameOnly.outside.items;
+    assert.equal(item.courseCode, 'COME3046');
+    assert.equal(item.semanticMatch.parts.description, null);
+    assert.equal(item.semanticMatch.parts.topic, null);
+    assert.ok(item.semanticMatch.parts.name > 0.9);
   });
 
   test('XS1d 不是已通過的課不能當起點', async () => {
@@ -190,42 +205,71 @@ describe('XS1 起點與候選分開', () => {
     );
   });
 
-  // 班級活動、微積分實習這類 0 學分課沒有可比的主題內容。
-  test('XS1e 0 學分課不當起點', async () => {
+  // 2026-11-24 使用者決定：不計入畢業學分的課（體育、國防科技、班級活動）與實習課不進探索。
+  test('XS1e 體育、國防、班級活動與實習課不列為起點，也不推薦', async () => {
     const courses = [
+      section('ATHL1004', '體育(二)', '體育一甲', AI),
+      section('MILT1035', '國防科技', '共同一甲', AI),
       section('GEID0010', '班級活動', '資訊三合', AI, { credits: 0 }),
+      section('IECS2061', '資料結構實習', '資訊二合', AI),
+      section('IECS3059', '人工智慧導論', '資訊三合', AI),
+      section('ATHL2001', '體育－羽球', '體育二甲', AI),
       section('COME3046', '機器學習', '通訊三甲', AI),
       ...fillers(),
     ];
-    const result = await run(courses, [history('GEID0010', '班級活動', 90, { credits: 0 })]);
-    assert.deepEqual(result.favorites.map(item => [item.courseCode, item.available, item.reason]),
-      [['GEID0010', false, 'zero-credit-course']]);
-    assert.equal(result.emptyReason, 'no-available-favorite');
+    const result = await run(courses, [
+      history('ATHL1004', '體育(二)', 90), history('MILT1035', '國防科技', 90),
+      history('GEID0010', '班級活動', 90, { credits: 0 }), history('IECS2061', '資料結構實習', 90),
+      history('IECS3059', '人工智慧導論', 80),
+    ]);
+    assert.deepEqual(result.favorites.map(item => item.courseCode), ['IECS3059']);
+    const codes = [...result.outside.items, ...result.general.items].map(item => item.courseCode);
+    assert.equal(codes.includes('ATHL2001'), false);
+    await assert.rejects(run(courses, [history('ATHL1004', '體育(二)', 90)], { favoriteCourseCode: 'ATHL1004' }),
+      error => error.code === 'FAVORITE_NOT_IN_HISTORY');
+  });
 
-    const chosen = await run(courses, [history('GEID0010', '班級活動', 90, { credits: 0 })], { favoriteCourseCode: 'GEID0010' });
-    assert.equal(chosen.emptyReason, 'favorite-zero-credit-course');
-    assert.deepEqual(chosen.outside.items, []);
+  // 2026-11-24 使用者決定：全校共同必修（中文思辨與表達、大學基礎／精進英文、核心必修）也不進探索。
+  test('XS1f 全校共同必修不列為起點，也不推薦；同內容的一般課照常推薦', async () => {
+    const courses = [
+      section('CHIN1066', '中文思辨與表達(二)', '國文綜合班', AI),
+      section('ENGL1027', '大學基礎英文(二)中級', '通訊三甲', AI),
+      section('ENGL1056', '大學精進英文(二)中級', '通訊三甲', AI),
+      section('GEG2000', '現代公民與社會實踐', '通訊三甲', AI),
+      section('IECS3059', '人工智慧導論', '資訊三合', AI),
+      section('COME3046', '機器學習', '通訊三甲', AI),
+      ...fillers(),
+    ];
+    const result = await run(courses, [
+      history('CHIN1066', '中文思辨與表達(二)', 90), history('ENGL1026', '大學基礎英文(二)初級', 90),
+      history('GEK2000', '科學與人文的對話', 90), history('IECS3059', '人工智慧導論', 80),
+    ]);
+    assert.deepEqual(result.favorites.map(item => item.courseCode), ['IECS3059']);
+    const codes = [...result.outside.items, ...result.general.items].map(item => item.courseCode);
+    assert.ok(codes.includes('COME3046'));
+    for (const code of ['ENGL1027', 'ENGL1056', 'GEG2000']) assert.equal(codes.includes(code), false, code);
+    await assert.rejects(run(courses, [history('CHIN1066', '中文思辨與表達(二)', 90)], { favoriteCourseCode: 'CHIN1066' }),
+      error => error.code === 'FAVORITE_NOT_IN_HISTORY');
   });
 });
 
 describe('XS2 預設起點與空狀態', () => {
-  test('XS2 未指定時取成績最高、可用的本系課，並標明是系統代選', async () => {
+  test('XS2 起點選單依課名排序（英文 A～Z 在前、中文依筆畫），未指定時取第一門並標明是系統代選', async () => {
     const courses = [
-      section('IECS3059', '人工智慧導論', '資訊三合', AI),
-      section('IECS4052', '資訊與網路安全', '資訊三合', NET),
-      section('GEX1', '通識課', '科技知識原理與趨勢浪潮', AI),
+      section('IECS3059', '資料探勘', '資訊三合', AI),
+      section('IECS4052', 'Web程式設計', '資訊三合', NET),
+      section('IECS1001', 'Python程式設計', '資訊三合', AI),
+      section('GEX1', '人工智慧與社會', '科技知識原理與趨勢浪潮', AI),
       ...fillers(),
     ];
     const result = await run(courses, [
-      history('IECS3059', '人工智慧導論', 70),
-      history('IECS4052', '資訊與網路安全', 88),
-      // 成績最高但不是本系課，不該被選為預設。
-      history('GEX1', '通識課', 99, { graduationCategory: 'general' }),
+      history('IECS3059', '資料探勘', 99),
+      history('IECS4052', 'Web程式設計', 60),
+      history('IECS1001', 'Python程式設計', 70),
+      history('GEX1', '人工智慧與社會', 95, { graduationCategory: 'general' }),
     ]);
-
-    assert.deepEqual(result.favorite, {
-      courseCode: 'IECS4052', name: '資訊與網路安全', source: FAVORITE_SOURCE.SYSTEM_DEFAULT,
-    });
+    assert.deepEqual(result.favorites.map(item => item.name), ['Python程式設計', 'Web程式設計', '人工智慧與社會', '資料探勘']);
+    assert.deepEqual(result.favorite, { courseCode: 'IECS1001', name: 'Python程式設計', source: FAVORITE_SOURCE.SYSTEM_DEFAULT });
   });
 
   test('XS2b 沒有修課紀錄', async () => {
@@ -237,7 +281,7 @@ describe('XS2 預設起點與空狀態', () => {
   });
 
   test('XS2c 有修課紀錄但都不能當起點', async () => {
-    const result = await run(fillers(), [history('CHIN1065', '中文思辨與表達(一)', 95)]);
+    const result = await run(fillers(), [history('CHIN2011', '中國文學史(二)', 95)]);
 
     assert.equal(result.favorite, null);
     assert.equal(result.emptyReason, 'no-available-favorite');
@@ -246,9 +290,9 @@ describe('XS2 預設起點與空狀態', () => {
   test('XS2d 課程內容比較資料不可用時回空狀態，不改用其他方法', async () => {
     const courses = [section('IECS3059', '人工智慧導論', '資訊三合', AI), ...fillers()];
     const result = await run(courses, [history('IECS3059', '人工智慧導論', 90)], {}, {
-      loadTextEmbeddings: async () => ({ available: false, reason: 'text-embeddings-unavailable' }),
+      loadExplorationVectors: async () => ({ available: false, reason: 'exploration-vectors-unavailable' }),
     });
-    assert.equal(result.emptyReason, 'text-embeddings-unavailable');
+    assert.equal(result.emptyReason, 'exploration-vectors-unavailable');
     assert.deepEqual(result.outside.items, []);
   });
 
@@ -316,7 +360,7 @@ describe('XS4 認列狀態照實回傳', () => {
     ];
     const result = await exploreForUser(IDENTITY, {}, {
       loadCourses: async () => courses,
-      loadTextEmbeddings: textLoader(courses),
+      loadExplorationVectors: vectorLoader(courses),
       loadProfile: async () => ({
         department: '企業管理學系', gradeLevel: 3, className: '企管三甲',
         courseHistory: [history('MGT3001', '管理學進階', 90)],
@@ -442,7 +486,7 @@ describe('XS7 快取', () => {
     const deps = {
       loadCourses: async () => { loads += 1; return courses; },
       loadProfile: async () => profile([history('IECS3059', '人工智慧導論', 90)]),
-      loadTextEmbeddings: textLoader(courses),
+      loadExplorationVectors: vectorLoader(courses),
       now: () => clock,
     };
 
@@ -468,15 +512,17 @@ test('XS8 回應帶方法說明且不含內部向量', async () => {
   ];
   const result = await run(courses, [history('IECS3059', '人工智慧導論', 90)]);
 
-  assert.equal(result.method.representation, 'course-text-embedding-v1');
+  assert.equal(result.method.representation, 'course-exploration-vectors-v1');
+  assert.deepEqual(result.method.fields, ['name', 'description', 'topic']);
   assert.equal(result.method.selection, 'one-per-unit-cosine');
-  assert.equal(result.method.tagGate, 'shared-topic-tag');
-  assert.deepEqual([result.method.minSimilarity, result.method.genericMinSimilarity], [0.4, 0.45]);
+  assert.equal(result.method.minSimilarity, 0.55);
   const [item] = result.outside.items;
   assert.equal(Object.hasOwn(item, 'vector'), false);
   assert.equal(Object.hasOwn(item, 'sharedTerms'), false);
-  assert.ok(item.similarity >= 0.4 && item.similarity <= 1);
-  assert.deepEqual(item.semanticMatch, { sourceCourseCode: 'IECS3059', commonTags: [TOPIC_A] });
+  assert.ok(item.similarity >= 0.55 && item.similarity <= 1);
+  assert.equal(item.semanticMatch.sourceCourseCode, 'IECS3059');
+  assert.deepEqual(Object.keys(item.semanticMatch.parts), ['name', 'description', 'topic']);
+  assert.deepEqual(item.semanticMatch.commonTags, [TOPIC_A]);
   assert.equal(result.favorites.every(f => !Object.hasOwn(f, 'graduationCategory')), true);
 });
 
@@ -563,78 +609,44 @@ describe('XS9 依修課與興趣探索', () => {
   });
 });
 
-describe('XS10 課程文字向量與主題標籤門檻（ADR-033）', () => {
+describe('XS10 三種相近程度與門檻（ADR-035）', () => {
   const fav = [history('IECS3059', '人工智慧導論', 90)];
+  // 與起點 [1,0,0] 的 cosine 為 c 的向量。
+  const at = c => [c, Math.sqrt(1 - c ** 2), 0];
 
-  test('XS10 文字向量決定排序，仍排除舊學期、已修與沒有時間的課', async () => {
+  test('XS10 分數是三欄平均，未達 0.55 不列；仍排除舊學期、已修與沒有時間的課', async () => {
     const courses = [
       section('IECS3059', '人工智慧導論', '資訊三合', AI),
-      section('COMEWORD', '字面重疊課', '通訊三甲', AI),
-      section('COMEMEAN', '語意相近課', '通訊三甲', '模型預測與資料分析', { ragTag: [TOPIC_A] }),
-      section('OLD', '舊課', '通訊三甲', AI, PAST),
-      section('NOTIME', '沒時間的課', '機電三甲', AI, { timeBlocks: [], dayOfWeek: null }),
+      section('HIGH', '高分課', '通訊三甲', AI),
+      section('MIXED', '課名不像但內容像', '機電三甲', AI),
+      section('LOW', '低分課', '會計二甲', AI),
+      section('OLD', '舊課', '財法三甲', AI, PAST),
+      section('NOTIME', '沒時間的課', '企管三甲', AI, { timeBlocks: [], dayOfWeek: null }),
       ...fillers(),
     ];
-    // 走正式的文字向量建索引流程（課程文件雜湊、課號對應）。
-    const artifact = { schemaVersion: 1, textVersion: COURSE_TEXT_VECTOR_VERSION,
-      catalogVersion: interestTagCatalog.catalogVersion, embeddingModel: 'fixture-only', dimension: 2,
-      generatedAt: '2026-10-14T00:00:00Z', courses: buildCourseTextDocuments(courses).map(doc => ({
-        courseCode: doc.courseCode, contentHash: doc.contentHash,
-        vector: { IECS3059: [1, 0], COMEWORD: [0.6, 0.8], COMEMEAN: [1, 0], OLD: [1, 0], NOTIME: [1, 0] }[doc.courseCode] ?? [0, 1],
-      })) };
-    const loadTextEmbeddings = async () => ({ available: true, index: buildCourseTextEmbeddingIndex(courses, artifact) });
-    const result = await run(courses, fav, { favoriteCourseCode: 'IECS3059' }, { loadTextEmbeddings });
-
-    assert.deepEqual(result.outside.items.map(item => item.courseCode), ['COMEMEAN']);
-    assert.equal(result.outside.items.some(item => ['OLD', 'NOTIME', 'IECS3059'].includes(item.courseCode)), false);
-  });
-
-  test('XS10b 只有工具軟體或上課方式標籤相同的課不列', async () => {
-    const courses = [
-      section('IECS3059', '人工智慧導論', '資訊三合', AI, { ragTag: [TOPIC_A, TOOL_TAG, FORMAT_TAG] }),
-      section('TOOL1', '同工具課', '通訊三甲', AI, { ragTag: [TOOL_TAG] }),
-      section('FMT1', '同上課方式課', '會計二甲', AI, { ragTag: [FORMAT_TAG] }),
-      section('TOPIC1', '同主題課', '機電三甲', AI, { ragTag: [TOPIC_A] }),
-      ...fillers(),
-    ];
-    const result = await run(courses, fav);
-    assert.deepEqual(result.outside.items.map(item => item.courseCode), ['TOPIC1']);
-    assert.deepEqual(result.outside.items[0].semanticMatch.commonTags, [TOPIC_A]);
-  });
-
-  // 分數＝0.7×文字＋0.3×標籤；兩門課標籤完全相同時標籤分數為 1，文字 cos 0.2 → 0.44，cos 0.1 → 0.37。
-  test('XS10c 分數未達 0.40 不列；只靠籠統標籤時要 0.45', async () => {
-    const departments = ['會計二甲', '財法三甲', '土木二甲', '建築二甲', '化工二甲', '材料二甲', '電機二甲',
-      '光電二甲', '統計二甲', '國貿二甲', '運輸二甲', '企管二甲', '經濟二甲', '風保二甲'];
-    assert.ok(departments.length >= GENERIC_TAG_DEPARTMENT_SPREAD);
-    // TOPIC_C 出現在 14 個系所（舊學期），成為籠統標籤；TOPIC_A 只在少數系所。
-    const spreadCourses = departments.map((department, index) => section(`SPREAD${index}`, `散布${index}`, department, '', {
-      ragTag: [TOPIC_C], ...PAST,
-    }));
-    const at = cos => [cos, Math.sqrt(1 - cos ** 2), 0];
-    const courses = [
-      section('START1', '具體主題起點', '資訊三合', '起點一', { ragTag: [TOPIC_A] }),
-      section('START2', '籠統主題起點', '資訊三合', '起點二', { ragTag: [TOPIC_C] }),
-      // 各自只有一個與起點相同的標籤，標籤分數皆為 1。
-      section('LOW1', '具體主題低分', '通訊三甲', '低', { ragTag: [TOPIC_A] }),
-      section('MID1', '具體主題中等分數', '機電三甲', '中', { ragTag: [TOPIC_A] }),
-      section('GMID', '籠統主題中等分數', '會計二甲', '中', { ragTag: [TOPIC_C] }),
-      section('GHIGH', '籠統主題較高分', '財法三甲', '高', { ragTag: [TOPIC_C] }),
-      ...spreadCourses,
-    ];
-    const vectors = { START1: [1, 0, 0], START2: [1, 0, 0], LOW1: at(0.1), MID1: at(0.2), GMID: at(0.2), GHIGH: at(0.3) };
-    const scoresFrom = async favoriteCourseCode => {
-      const history2 = [history('START1', '具體主題起點', 90), history('START2', '籠統主題起點', 90)];
-      const result = await run(courses, history2, { favoriteCourseCode }, { loadTextEmbeddings: textLoader(courses, vectors) });
-      return Object.fromEntries(result.outside.items.map(item => [item.courseCode, item.similarity]));
+    const vectors = {
+      IECS3059: [1, 0, 0],
+      HIGH: at(0.9),
+      // 課名 0.2、說明 0.8、主題 0.8 → 平均 0.6
+      MIXED: { name: at(0.2), description: at(0.8), topic: at(0.8) },
+      // 平均 0.5
+      LOW: at(0.5),
+      OLD: [1, 0, 0], NOTIME: [1, 0, 0],
     };
+    const result = await run(courses, fav, { favoriteCourseCode: 'IECS3059' }, { loadExplorationVectors: vectorLoader(courses, vectors) });
+    const byCode = Object.fromEntries(result.outside.items.map(item => [item.courseCode, item]));
+    assert.deepEqual(result.outside.items.map(item => item.courseCode), ['HIGH', 'MIXED']);
+    assert.ok(Math.abs(byCode.MIXED.similarity - 0.6) < 0.001);
+    assert.deepEqual(byCode.MIXED.semanticMatch.parts, { name: 0.2, description: 0.8, topic: 0.8 });
+  });
 
-    // 具體主題：LOW1＝0.7×0.1＋0.3＝0.37 < 0.40 不列；MID1＝0.44 列。
-    const specific = await scoresFrom('START1');
-    assert.deepEqual(Object.keys(specific), ['MID1']);
-    assert.ok(Math.abs(specific.MID1 - 0.44) < 0.01);
-    // 籠統主題：GMID＝0.44 < 0.45 不列；GHIGH＝0.51 列。
-    const generic = await scoresFrom('START2');
-    assert.deepEqual(Object.keys(generic), ['GHIGH']);
+  test('XS10b 只有一邊有的欄位不比，平均只算兩邊都有的欄位', async () => {
+    const courses = [section('IECS3059', '人工智慧導論', '資訊三合', AI), section('NODESC', '沒有說明向量', '通訊三甲', AI), ...fillers()];
+    const vectors = { IECS3059: [1, 0, 0], NODESC: { name: at(0.7), description: null, topic: at(0.5) } };
+    const result = await run(courses, fav, { favoriteCourseCode: 'IECS3059' }, { loadExplorationVectors: vectorLoader(courses, vectors) });
+    const [item] = result.outside.items;
+    assert.equal(item.courseCode, 'NODESC');
+    assert.ok(Math.abs(item.similarity - 0.6) < 0.001);
+    assert.equal(item.semanticMatch.parts.description, null);
   });
 });

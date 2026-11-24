@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AuthContext } from './AuthContextValue';
 import { authAPI, privacyAPI } from '../services/api';
 import { getUserIdentity } from '../utils/userIdentity';
+import { canSkipControlledBrowserSetup } from '../utils/controlledBrowserMock';
 
 const userKey = (studentId, suffix) => `fcu:${studentId}:${suffix}`;
 const canBypassSetupForE2E = (user) => Boolean(
@@ -119,6 +120,7 @@ export function AuthProvider({ children }) {
   // 以伺服器的 `setupComplete`（Profile 已有系所與年級）為準：登出、換裝置後仍算設定過。
   // 伺服器沒有回傳這個欄位時（例如未接 MySQL），才退回瀏覽器裡的 `setupDone` 標記。
   const isSetupDone = () => {
+    if (canSkipControlledBrowserSetup(user, import.meta.env.DEV)) return true;
     if (canBypassSetupForE2E(user)) return true;
     if (typeof user?.setupComplete === 'boolean') return user.setupComplete;
     const identity = getUserIdentity(user);

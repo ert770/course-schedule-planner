@@ -2,8 +2,17 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-11-24
+
+- [PR #41 合入最新 main 並解衝突](./2026-11-24-pr41-merge-main.md)
+- [探索頁排除全校共同必修](./2026-11-24-explore-exclude-common-required.md)
+- [探索頁起點選單：「沒有課程資料」改為「尚未建立比較資料」](./2026-11-24-explore-unavailable-label.md)
+- [探索頁「從一門課出發」改用課名、說明、主題三種相近程度（ADR-035）](./2026-11-24-explore-three-similarities.md)
+- [MyFCU 匯入的修課紀錄：讀取時補分類擴充為五步](./2026-11-24-imported-history-classification.md)
+
 ## 2026-11-23
 
+- [整合隊友的學生註冊與 MyFCU 歷史修課匯入（ADR-034）](./2026-11-23-integrate-myfcu-history.md)
 - [探索頁主題門檻：停用「共同用詞」、要求相同主題與最低分數（ADR-033）](./2026-11-23-explore-topic-gate.md)
 - [探索頁逐課檢查：D1249697 從一門課出發與修課輪廓](./2026-11-23-explore-page-audit-D1249697.md)
 - [移除舊的文字興趣欄位 interests／preferredKeywords（先轉移再刪除）](./2026-11-23-remove-legacy-interest-fields.md)

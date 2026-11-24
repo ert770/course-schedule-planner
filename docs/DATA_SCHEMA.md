@@ -1012,6 +1012,23 @@ conflict，不靜默覆寫。`resolveIdempotentAppend()` 目前只對傳入陣�
 文字向量服務只讀 `course_code`、`academic_year`、`semester`、`syllabus_text`、`source_key`：
 每個穩定課號取最新且有內容的學期，再從該學期同課號班次挑最長的大綱文字。
 
+## 探索三種相近程度向量產物（2026-11-24，ADR-035）
+
+`server/simulation-runs/course-exploration-embeddings/index.json`（git-ignored）。由
+`node server/scripts/courseExplorationEmbeddings.js --apply` 產生；預設 dry-run，加 `--apply` 才呼叫 OpenAI。
+同目錄的 `text-embedding-3-large-512-cache.json` 以「模型＋維度＋文字」雜湊快取，重跑只送變動的文字。
+
+```json
+{ "schemaVersion": 1, "version": "course-exploration-vectors-v1", "model": "text-embedding-3-large",
+  "dimension": 512, "generatedAt": "…", "actualTokens": 620957,
+  "courses": [{ "courseCode": "IECS1001", "source": "catalog", "name": "資料結構",
+    "vectors": { "name": "<base64 Float32>", "description": "<base64>|null", "topic": "<base64>|null" } }] }
+```
+
+- `source: "catalog"`：課程表的課號（2026-11-24 共 2,004 個），三欄依課名、最長的課程說明（最多 1,800 字）、主題類標籤名稱。
+- `source: "history"`：只出現在 `User_Course_History` 的課號（24 個），只有課名向量；只取課號與課名，不含使用者或成績。
+- 向量已正規化；請求時只讀檔與做內積。檔案約 17MB。
+
 ## 課程文字向量本機產物（2026-10-14，階段 4 原型；大綱來源為選配 v2）
 
 本階段沒有建立 `Course_Text_Embeddings` MySQL 表。衍生資料預設放在
@@ -1062,3 +1079,30 @@ v2 向量尚未產生：需在另行確認大綱文字的 API 傳送與費用後
 使用完整課程目錄與同意有效的本人歷史／事件建立向量，再對本次候選算 `s_vec`；未同意或失敗為空 Map。
 回應只保留 `graduationPlanning.externalInterestReservation` 的來源、上限 5 與可用前五門 `{courseCode,score}`；
 不傳出本人原始事件、歷史證據或向量。清單不代表實際入選，需看 `selected`；替代方案可能選別的系外課。
+
+## 學生註冊與 MyFCU 歷史修課匯入（migration 010～015，2026-11-23 移植）
+
+migration 檔自 `feature/myfcu-session-import` 移植到 `server/migrations/`，**共用 MySQL 已全部套用**（2026-11-23 唯讀查證：欄位、表與索引皆存在）；檔案只作紀錄，不可再對共用 DB 執行。013～015 只有 up，MySQL DDL 會隱含 commit，無法整批回滾。
+
+| migration | 內容 |
+| --- | --- |
+| 010 | `User_Profiles.student_id` VARCHAR(32) UNIQUE；`User_Id_Allocator`（註冊配發 user_id，範圍 5～8999） |
+| 011 | `User_Course_History.source_credit_record`：MyFCU 原始「取得學分記錄」，不是成績或通過證明 |
+| 012 | `Local_History_Attestations`：本人聲明（信任等級、聲明版本、確認時間） |
+| 013 | 歷史表新增 `course_id`、`source_payload` JSON；`passed`、`requirement_type`、`graduation_category` 可為 NULL；新增 `Unmatched_Course_History` |
+| 014 | `Unmatched_Course_History.source_identity` 與 `(user_id, source_identity, academic_year, semester)` 唯一鍵 |
+| 015 | 歷史表 `catalog_course_code` 可為 NULL（utf8mb4_bin）、新增 `source_course_code`、`source_attempt_key` 與唯一鍵 |
+
+**帳號**：註冊流程建立的帳號在 `User_Profiles.password_hash` 存 argon2id 雜湊（Node 內建 `crypto.argon2`，需 Node ≥ 24.7）。demo 與 Persona 帳號有 `student_id` 但沒有雜湊，非 production 登入時退回 `users.json`（見 API_SPEC）。
+
+**匯入的列**：MyFCU 自動匯入寫入 `source`=`myfcu_session` 或 `myfcu_self_attested`，修別與畢業分類為 NULL；對不到目錄課號時 `catalog_course_code` 為 NULL、原始課號在 `source_course_code`。
+
+**讀取規則**（`getUserCourseHistory()`，2026-11-23 團隊決定）：
+- `catalog_course_code` 或 `passed` 為 NULL 的列不進推薦、排課與畢業計算（仍可在歷史修課列表看到）。
+- 修別或畢業分類為 NULL 時，只在讀取時依序補分類，不寫回資料庫（2026-11-24 擴充）：
+  1. 課名是體育、國防科技、班級活動 → `nonGraduation`（修別「必修」）；
+  2. 資工必選修、通識基礎必修 → `classifyHistoryEntryByCurriculum()`；
+  3. 課程表裡是通識課 → `general`（修別「通識」）；
+  4. 課程表查得到、且不是本系開的課 → `external`（修別「選修」）。依使用者決定「都先算系外」：別系必修、語言中心等非系所單位、只有進修部班次的課都先算系外，不套用系外選修的機械認列條件；是否計入畢業仍須向系辦確認；
+  5. 其餘（課程表查不到、本系課號但不在科目表）→ `未確認`／`unspecified`。
+  課程表與學生系所只為分類空白的列查一次；查詢失敗時只用 1、2 步，不讓整份修課紀錄載入失敗。
