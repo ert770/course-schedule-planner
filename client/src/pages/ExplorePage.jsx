@@ -37,7 +37,7 @@ const EMPTY_REASON_TEXT = {
 
 // 起點下拉選單中，不可用的課後面加的說明。
 const FAVORITE_UNAVAILABLE_TEXT = {
-  'no-course-vector': '（沒有課程資料）',
+  'no-course-vector': '（尚未建立比較資料）',
 };
 
 // 記住這位使用者上次的探索方式與起點（只存在這台瀏覽器；讀不到時用預設值）。
