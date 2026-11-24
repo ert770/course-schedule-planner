@@ -11,58 +11,42 @@ import { executeAgentTool, mergePreferenceTags } from '../src/services/agentServ
 const identity = { canonicalId: 'S1130001' };
 const ctx = { identity, prefs: {}, studentScope: { department: '資訊工程系', resolved: true } };
 
-describe('AG9 永久寫入前必須先經使用者確認', () => {
-  // 先前 `update_preferences` 在模型決定呼叫的當下就寫進 MySQL，唯一的保護是
-  // system prompt 裡一句模型可以無視的叮嚀——這正是 #24 自己的範圍條文
-  // 「使用者確認前不得永久更新偏好」被違反的地方。
-  test('沒有 confirmationToken 時只暫存，絕不呼叫寫入', async () => {
-    let wrote = false;
-    const result = await executeAgentTool('update_preferences', { noEveningClasses: true }, ctx, {
-      updatePreferences: async () => { wrote = true; },
-      stageChange: () => ({ token: 'tok-1', expiresAt: '2026-08-30T12:00:00.000Z' }),
-    });
-
-    assert.equal(wrote, false, '未確認前不得有任何寫入');
-    assert.equal(result.pendingConfirmation, true);
-    assert.equal(result.confirmationToken, 'tok-1');
-    assert.deepEqual(result.proposedChanges, { noEveningClasses: true });
-    assert.equal(result.success, undefined, '不得讓模型以為已經成功');
-  });
-
-  // 模型可能拿一個使用者確認過的 token，夾帶使用者從沒同意過的欄位一起送。
-  // 寫入的必須是**當初暫存**的內容。同樣的防護思路已存在於
-  // `scheduleFeedbackService`：不信模型自報的 sectionId，只信伺服器的曝光紀錄。
-  test('確認時寫入的是暫存內容，夾帶的額外欄位一律忽略', async () => {
+describe('AG9 排課偏好直接寫入（ADR-036，取代 Roadmap #24 的兩段式確認）', () => {
+  // 2026-11-24 使用者決定：聊天中說出的排課偏好直接寫入，左側勾選跟著改；
+  // 說「這次就好」時由 prompt 規則讓模型不呼叫這個工具。兩段式確認讓「星期一排空」
+  // 講了也不會存，與畫面上的偏好矛盾。
+  test('一次呼叫就寫入，不暫存、不發 token', async () => {
     let written = null;
-    const staged = { noEveningClasses: true };
-    await executeAgentTool(
-      'update_preferences',
-      { confirmationToken: 'tok-1', targetCreditsMax: 30, noMorningClasses: true },
-      ctx,
-      { updatePreferences: async (_id, fields) => { written = fields; }, consumeChange: () => staged }
-    );
-
-    assert.deepEqual(written, { noEveningClasses: true });
-  });
-
-  test('token 無效、過期或已用過時回 error 且不寫入', async () => {
-    let wrote = false;
-    const result = await executeAgentTool('update_preferences', { confirmationToken: 'bad' }, ctx, {
-      updatePreferences: async () => { wrote = true; },
-      consumeChange: () => null,
-    });
-
-    assert.equal(wrote, false);
-    assert.match(result.error, /confirmationToken/);
-  });
-
-  test('沒有任何要變更的欄位時直接拒絕，不佔用一個 token', async () => {
     let staged = false;
-    const result = await executeAgentTool('update_preferences', {}, ctx, {
+    const result = await executeAgentTool('update_preferences', { mondayFree: true }, ctx, {
+      updatePreferences: async (_id, fields) => { written = fields; },
       stageChange: () => { staged = true; return { token: 'x', expiresAt: 'y' }; },
     });
 
-    assert.equal(staged, false);
+    assert.equal(staged, false, '不得再走暫存流程');
+    assert.equal(result.success, true);
+    assert.equal(result.pendingConfirmation, undefined);
+    assert.equal(written.mondayFree, true);
+    assert.ok(written.preferenceTags.includes('#星期一排空'));
+  });
+
+  test('模型夾帶的 confirmationToken 不會被當成要寫入的欄位', async () => {
+    let written = null;
+    await executeAgentTool(
+      'update_preferences', { confirmationToken: 'tok-1', targetCreditsMax: 20 }, ctx,
+      { updatePreferences: async (_id, fields) => { written = fields; } }
+    );
+
+    assert.deepEqual(written, { targetCreditsMax: 20 });
+  });
+
+  test('沒有任何要變更的欄位時直接拒絕、不寫入', async () => {
+    let wrote = false;
+    const result = await executeAgentTool('update_preferences', {}, ctx, {
+      updatePreferences: async () => { wrote = true; },
+    });
+
+    assert.equal(wrote, false);
     assert.match(result.error, /沒有要變更的欄位/);
   });
 });
@@ -232,12 +216,9 @@ describe('AG12 部分偏好更新不得刪掉使用者沒提到的偏好', () =>
   test('寫入時帶上合併後的完整標籤清單', async () => {
     let written = null;
     await executeAgentTool(
-      'update_preferences', { confirmationToken: 'tok' },
+      'update_preferences', { lunchBreakFree: true },
       { identity, prefs: { ...existing }, studentScope: { resolved: true } },
-      {
-        updatePreferences: async (_id, payload) => { written = payload; },
-        consumeChange: () => ({ lunchBreakFree: true }),
-      }
+      { updatePreferences: async (_id, payload) => { written = payload; } }
     );
 
     assert.ok(written.preferenceTags.includes('#全英授課'), '無關偏好必須一起寫回去');

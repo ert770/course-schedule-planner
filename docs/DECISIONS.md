@@ -1236,3 +1236,71 @@ Consequences:
 - The ADR-033 topic-tag gate no longer applies to this mode; the profile mode keeps its exact-tag rule.
 - Regenerating the artifact costs about 0.6M tokens (about USD 0.08 on 2026-11-24); the threshold has no user-study support.
 
+## ADR-036: Chat Preferences Are Saved Directly; Agent Can Find Replacements and Swap a Course
+
+Date: 2026-11-24
+
+Context:
+
+- In chat, "星期一排空" was applied to one scheduling run only (two-step confirmation for anything saved, and the
+  tool could change just 2 of the 15 sidebar preferences), so the sidebar disagreed with what the agent said. The
+  agent also told users that unmentioned items were "not decided for you" while saved preferences such as
+  no-morning classes were in fact applied.
+- Asked to swap a course for "a Monday general-education course", the agent searched with `keyword: "通識"`,
+  which matches no course name, and reported that none existed (D1249697 has 32 eligible ones).
+
+Decision (user decisions on 2026-11-24):
+
+- `update_preferences` writes immediately. Conditions the user states that exist as sidebar preferences are saved;
+  "這次就好／這學期先" keeps them one-off. The parameters are `check`/`uncheck` lists of preference flags (not 15
+  booleans, which the model filled in wholesale), and the server drops no-op fields, including an empty
+  `blockedPeriods`. The chat response carries `preferencesUpdated` so the dashboard reloads the sidebar.
+  `update_student_profile` keeps the two-step confirmation (Roadmap #24).
+- The prompt lists every saved preference; unmentioned items are described as following the saved preferences.
+- New tools `find_replacement_courses` (server filters by the other courses' times, saved preferences, history,
+  eligibility) and `swap_course` (server re-checks; the client validates the whole timetable before swapping).
+- Category words used as a query keyword are normalised into the category filter at the agent layer only.
+
+Rejected: keeping two-step confirmation for preferences (the user chose direct updates); letting the model
+assemble swaps from `query_course_db` + `run_csp_scheduler` (it lacks section times and re-optimises the whole
+timetable instead of swapping one course).
+
+Consequences:
+
+- Roadmap #24's "no permanent preference change without confirmation" no longer holds for scheduling preferences.
+- No-evening-classes and minimum credits still cannot be saved (no storage); they stay one-off.
+- Course-topic preferences (s_tag, s_vec, s_cf) are not yet readable or writable by the agent; that is batch 2.
+
+## ADR-037: The Agent Reads and Changes Course-Topic Preferences (Partly Supersedes ADR-032)
+
+Date: 2026-11-24
+
+Context:
+
+The user wants the chat agent to work on the whole scheduling path, including the topic preferences behind s_tag
+(questionnaire selections + interaction events), s_vec (tag vectors) and s_cf (cross-user co-occurrence). Under
+ADR-032 the agent could only pass one-off `interests` and had to send users to the settings questionnaire; asked why a
+course was recommended it could not see any topic scores.
+
+Decision (user decisions on 2026-11-24):
+
+- New tools `get_topic_interests` (read: selected topics, strongest/weakest learned topics, and a per-course s_tag /
+  s_vec / s_cf breakdown) and `update_topic_interests` (write, no confirmation, consistent with ADR-036).
+- "I'm interested in X" adds X to `interestSelections`; "I don't want X any more" removes it and, by default, records
+  the existing `interest_exploration_feedback / not_interested` event (no new exclusion field). The event must be
+  anchored to a non-required candidate course carrying the tag; that course is then treated as rejected by the
+  exploration page.
+- Words are resolved to catalogue tags in the student's pool; ambiguous words return candidates and write nothing.
+  too_common tags (ADR-026) are still one-off only. s_cf is read-only.
+- Removals bypass save validation (it restores old tags when the pool is unavailable) and keep direction-only entries.
+
+Rejected: a new persisted "excluded topics" field (the user chose the existing negative event); editing
+`Learned_Tag_Interests` or `Course_Neighbors` directly (derived caches / cross-user data).
+
+Consequences:
+
+- ADR-032's "long-term interests only through the questionnaire" no longer holds; ADR-032's removal of the free-text
+  `interests` / `preferredKeywords` fields stands.
+- Negative events cannot be deleted individually and decay with the 120-day half-life; verification used unit tests and
+  read-only replays, not real events on the demo account.
+

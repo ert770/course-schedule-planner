@@ -10,14 +10,14 @@ import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmation
 import SessionAvoidanceBar from '../components/Schedule/SessionAvoidanceBar';
 import { formatCourseTime } from '../utils/courseTime';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
+import ChatMessageContent from '../components/Chat/ChatMessageContent';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
-import SkillTreeModal from '../components/Profile/SkillTreeModal';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
-import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Award, Compass } from 'lucide-react';
+import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Compass } from 'lucide-react';
 
 import TopNav from '../components/Layout/TopNav';
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
@@ -29,6 +29,10 @@ import TopNav from '../components/Layout/TopNav';
 export default function DashboardPage() {
   const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
+  return <Dashboard key={userIdentity} user={user} userIdentity={userIdentity} />;
+}
+
+function Dashboard({ user, userIdentity }) {
   const location = useLocation();
   const navigate = useNavigate();
   // MyFCU 本機同步入口（只在開發模式查詢）。本機模式沒開時後端回 404，視為未開放，不顯示錯誤。
@@ -41,6 +45,7 @@ export default function DashboardPage() {
     saving,
     replaceSchedule,
     removeCourse,
+    applyCourseSwap,
     saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
@@ -82,14 +87,13 @@ export default function DashboardPage() {
   const [prefsError, setPrefsError] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
-  const [chatHistory, setChatHistory] = useState([
-    { role: 'bot', text: '你好！我是課表規劃助手，用自然語言告訴我你的需求吧！' }
-  ]);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [restoredChat, setRestoredChat] = useState(null);
+  const chatHistoryLoading = userIdentity !== null && restoredChat === null;
   const [detailCourse, setDetailCourse] = useState(null);
   // roadmap #2：排課只是推薦，使用者是否覺得符合需求才是最終選擇。
   const [confirmation, setConfirmation] = useState(null);
   const [removalCandidate, setRemovalCandidate] = useState(null);
-  const [showSkillModal, setShowSkillModal] = useState(false);
   // 階段 5：還有沒回答過的歷史修課時，進排課主頁自動跳出一次。
   const [historyFeedback, setHistoryFeedback] = useState(null);
   const chatInputRef = useRef(null);
@@ -98,11 +102,29 @@ export default function DashboardPage() {
   const preferencesLocationRef = useRef(null);
   const schedulingRef = useRef(false);
   useEffect(() => {
+    if (userIdentity === null) return;
+    let active = true;
+    chatAPI.getHistory().then(({ messages }) => {
+      if (active) {
+        setRestoredChat({
+          messages: messages.map(({ role, content }) => ({
+            role: role === 'assistant' ? 'bot' : 'user',
+            text: content,
+          })),
+        });
+      }
+    }).catch(() => {
+      if (active) setRestoredChat({ messages: [], failed: true });
+    });
+    return () => { active = false; };
+  }, [userIdentity]);
+
+  useEffect(() => {
     // Scroll chat to bottom
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
-  }, [chatHistory]);
+  }, [chatHistory, restoredChat, chatLoading]);
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
   // 軍訓國防科技、體育、班級活動要排進課表但不計入畢業學分（校規）。
@@ -220,13 +242,11 @@ export default function DashboardPage() {
   }, []);
 
   // 目前勾選的偏好來自 profile，與 Setup 頁同一份資料。
-  useEffect(() => {
-    let cancelled = false;
-    if (userIdentity === null) return undefined;
-
+  // Agent 在聊天中改了偏好（ADR-036）之後也用同一支重抓，左側勾選才會跟著改。
+  const loadSavedPreferences = useCallback((isCancelled = () => false) => (
     profileAPI.get()
       .then(profile => {
-        if (cancelled) return;
+        if (isCancelled()) return;
         const tags = new Set(profile?.selectedTags ?? []);
         setSelectedTags(tags);
         setSavedTags(tags);
@@ -234,11 +254,16 @@ export default function DashboardPage() {
         setPrefsError('');
       })
       .catch(err => {
-        if (!cancelled) setPrefsError(err.message || '偏好設定載入失敗');
-      });
+        if (!isCancelled()) setPrefsError(err.message || '偏好設定載入失敗');
+      })
+  ), [userIdentity]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (userIdentity === null) return undefined;
+    loadSavedPreferences(() => cancelled);
     return () => { cancelled = true; };
-  }, [userIdentity]);
+  }, [userIdentity, loadSavedPreferences]);
 
   const handlePrefToggle = (tag) => {
     setSelectedTags(previous => {
@@ -274,7 +299,7 @@ export default function DashboardPage() {
 
   const handleChatSend = async (overrideMsg) => {
     const msg = overrideMsg || chatInput.trim();
-    if (!msg || chatLoading) return;
+    if (!msg || chatLoading || chatHistoryLoading) return;
 
     // 聊天記憶與偏好更新都寫進這位使用者，不得退回 `default`。
     if (userIdentity === null) {
@@ -301,7 +326,21 @@ export default function DashboardPage() {
       // 仍然有效的避開條件無聲消失。
       if (res.planningContextStatus === 'rejected-invalid') clearSessionAvoidances();
 
-      if (res.intent === 'run_csp_scheduler' && res.data?.success) {
+      // Agent 改了已存偏好：重抓，讓左側勾選跟著改（ADR-036）。
+      if (res.preferencesUpdated) loadSavedPreferences();
+
+      if (res.data?.success && res.data?.swap) {
+        // Agent 換課：伺服器已挑好新課，前端驗證整份課表後移除舊課、加入新課。
+        const outcome = await applyCourseSwap(res.data.swap);
+        setChatHistory(prev => [
+          ...prev,
+          { role: 'bot', text: res.reply },
+          ...(outcome?.success ? [] : [{
+            role: 'bot',
+            text: `課表沒有更新：${outcome?.message || '換課失敗。'}`,
+          }]),
+        ]);
+      } else if (res.intent === 'run_csp_scheduler' && res.data?.success) {
         // 伺服器回報這次實際套用了哪些避開條件（含 Agent 追問原因後重算的範圍），
         // 寫回 sessionStorage，之後按一般「重新排課」才會沿用同樣的範圍。
         applyResolvedAvoidances(res.data.appliedSessionAvoidances);
@@ -333,8 +372,9 @@ export default function DashboardPage() {
   // roadmap #2：明確回答「符合」才算接受。儲存課表刻意不算——存草稿也會按儲存。
   const handleConfirmFit = async () => {
     const outcome = await acceptRecommendation();
-    setConfirmation({ state: 'accepted', outcome });
+    setConfirmation(current => current === confirmation ? { state: 'accepted', outcome } : current);
   };
+  const dismissConfirmation = useCallback(() => setConfirmation(null), []);
 
   // 點擊「從課表移除」後，立即關閉背後的課程資訊視窗，只顯示退選原因視窗
   const handleRemoveClick = (course) => {
@@ -389,7 +429,7 @@ export default function DashboardPage() {
       </section>}
 
       <div className="dashboard-content">
-        {/* Left Sidebar: Preferences and Skill Tree */}
+        {/* Left Sidebar: Preferences */}
         <aside className="left-sidebar">
           <div className="sidebar-section">
             <h3 className="sidebar-section-title">我的排課偏好</h3>
@@ -420,21 +460,6 @@ export default function DashboardPage() {
               disabled={!prefsReady || !prefsChanged || savingPrefs || isScheduling || scheduleLoading}
             >
               {isScheduling && savingPrefs ? '正在更新課表…' : (savingPrefs ? '正在保存…' : '保存變更')}
-            </button>
-          </div>
-
-          <div className="sidebar-section" style={{ marginTop: '16px' }}>
-            <h3 className="sidebar-section-title">🌳 本學期課程主題</h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', lineHeight: '1.5' }}>
-              依課名與課程說明整理命中課程，不代表能力程度或歷年修課成果。
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowSkillModal(true)}
-              className="action-btn"
-              style={{ width: '100%', justifyContent: 'center' }}
-            >
-              <Award size={16} /> 查看課程主題
             </button>
           </div>
         </aside>
@@ -556,7 +581,7 @@ export default function DashboardPage() {
               personalizationEnabled={personalizationEnabled}
               onConfirmFit={handleConfirmFit}
               onRequestAdjust={() => setConfirmation({ state: 'adjusting' })}
-              onDismiss={() => setConfirmation(null)}
+              onDismiss={dismissConfirmation}
             />
 
             {/* 排課後的橘色說明（方案數、未排入、學分說明）依使用者要求不顯示（2026-10-26）；
@@ -588,7 +613,7 @@ export default function DashboardPage() {
             {isScheduling && (
               <div className="scheduling-overlay">
                 <Loader2 size={40} className="spin-animation" />
-                <p role="status">正在更新課表…</p>
+                <p role="status">正在規劃課表…</p>
               </div>
             )}
             <div id="schedule-grid-container">
@@ -608,12 +633,19 @@ export default function DashboardPage() {
           </div>
 
           <div className="chat-messages" ref={chatScrollRef}>
-            {chatHistory.map((msg, i) => (
+            {chatHistoryLoading && <p className="chat-history-status" role="status">正在載入對話…</p>}
+            {restoredChat?.failed && <p className="chat-history-status" role="status">暫時無法載入先前的對話。</p>}
+            {!chatHistoryLoading && !restoredChat?.messages.length && !chatHistory.length && (
+              <div className="chat-message bot">
+                <div className="message-bubble">你好！我是課表規劃助手，用自然語言告訴我你的需求吧！</div>
+              </div>
+            )}
+            {[...(restoredChat?.messages ?? []), ...chatHistory].map((msg, i) => (
               <div key={i} className={`chat-message ${msg.role}`}>
                 {msg.role === 'bot' && (
                   <div className="message-bubble">
                     {msg.schedule && <CheckCircle2 size={16} className="success-icon" />}
-                    <span>{msg.text}</span>
+                    <ChatMessageContent text={msg.text} />
 
                     {msg.schedule && (
                       <div className="chat-schedule-list">
@@ -639,8 +671,13 @@ export default function DashboardPage() {
             ))}
             {chatLoading && (
               <div className="chat-message bot">
-                <div className="message-bubble loading">
-                  <Loader2 size={16} className="spin-animation" /> 思考中...
+                <div className="message-bubble chat-thinking" role="status">
+                  思考中
+                  <span className="typing-indicator" aria-hidden="true">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </span>
                 </div>
               </div>
             )}
@@ -660,7 +697,7 @@ export default function DashboardPage() {
               <button
                 className="send-btn"
                 onClick={() => handleChatSend()}
-                disabled={!chatInput.trim() || chatLoading}
+                disabled={!chatInput.trim() || chatLoading || chatHistoryLoading}
               >
                 <Send size={18} />
               </button>
@@ -668,12 +705,6 @@ export default function DashboardPage() {
           </div>
         </aside>
       </div>
-
-      <SkillTreeModal
-        isOpen={showSkillModal}
-        onClose={() => setShowSkillModal(false)}
-        schedule={schedule}
-      />
 
       {historyFeedback && (
         <HistoryFeedbackModal

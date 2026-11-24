@@ -54,6 +54,7 @@ export const graduationAPI = { get: () => request('/graduation/me') };
 
 // Chat API
 export const chatAPI = {
+  getHistory: () => request('/chat/history'),
   // `planningContext` 是「使用者畫面上現在是什麼狀況」：目前留著哪些課、
   // 本次移除了哪些課、原因是什麼。少了它，Agent 只能反問它其實問得到的資料。
   //

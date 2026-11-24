@@ -5,6 +5,8 @@
 Prompt 與工具 schema 建構於 `server/src/services/promptService.js`，Agent 執行於
 `server/src/services/agentService.js`。
 
+簡短回答可用一段。回覆有多項資訊時，可用 Markdown 短標題、條列與粗體標示重點。畫面以文字呈現原始 HTML。
+
 **Provider 與協定（2026-08-30 起）**：OpenAI `gpt-5.6-luna`，走 **Responses API**
 （`/v1/responses`）的**原生 tool calling**。
 
@@ -64,7 +66,11 @@ System prompt 必須讓 Agent：
 | `search_dcard_reviews` | 查詢課程評價摘要 |
 | `run_csp_scheduler` | 產生課表 |
 | `get_easy_courses` | 取得涼課或高推薦課 |
-| `update_preferences` | 更新使用者偏好 |
+| `update_preferences` | 更新已存的排課偏好（左側勾選、學分上限、不能上課的時段、修課路徑），直接寫入（ADR-036） |
+| `find_replacement_courses` | 找可替換課表上某門課的候選（ADR-036） |
+| `swap_course` | 把課表上的一門課換成候選中的一門，前端套用（ADR-036） |
+| `get_topic_interests` | 讀取課程主題偏好與單門課的 s_tag／s_vec／s_cf 拆解（ADR-037） |
+| `update_topic_interests` | 加入／移除課程主題勾選，否定時記一筆「沒興趣」（ADR-037） |
 | `update_student_profile` | 更正系所／年級／班別／入學年度（roadmap #24 兩段式確認；入學年度為 #23 選擇畢業規則版本用） |
 | `record_schedule_feedback` | 記錄使用者對已產生課表的最終評價（roadmap #2） |
 
@@ -365,9 +371,70 @@ Roadmap #7 起方案不是固定五種；Agent 應依 policy、課程差異及�
 沒有才用「任務過於複雜，已達最大思考步數」這句罐頭訊息，同時在伺服器記一筆
 `logger.warn`。
 
-### 永久寫入的兩段式確認（Roadmap #24）
+### 聊天中的排課偏好直接寫入（ADR-036，2026-11-24）
 
-`update_preferences` 與 `update_student_profile` 的第一次呼叫**不寫入任何東西**，
+`update_preferences` **不再兩段式**：使用者在對話中說出左側偏好裡有的項目（不排早八、星期一排空、
+涼課優先……），模型就呼叫它，伺服器立即寫入，回應帶 `preferencesUpdated: true`，首頁重抓偏好讓左側
+勾選跟著改。使用者說「這次就好／這學期先／只這一次」時模型不呼叫，只把條件帶進 `run_csp_scheduler`。
+
+- **參數用 `check`／`uncheck` 兩個清單**（旗標名稱 enum，來源 `preferenceTags.js`），不開 15 個布林欄位。
+  重跑實測時模型把 15 個布林欄位全部填滿，只要抄錯一個就會靜默刪掉使用者的偏好；清單只放要改的項目。
+  伺服器仍接受直接送旗標（`expandPreferenceChecklist()`）。
+- **伺服器丟掉不會改變任何東西的欄位**（`dropNoopPreferenceChanges()`）：與現值相同的
+  `targetCreditsMax`、`preferredTrack`，以及空的 `blockedPeriods`——模型會把它們抄回來，照字面寫入
+  會清掉已存的不能上課時段。全部都是現值時回 `noChange`，不寫入。
+- 不排晚間課與最低學分沒有欄位可存，schema 不再收；只能當單次條件。
+- prompt 的「目前使用者偏好」列出全部已勾選的左側偏好與不能上課的時段；排課後的理解回講要說
+  「沿用你已存的偏好」並點名，偏好裡也沒有的項目才說沒有替他決定（取代「沒提到就說沒替他決定」，
+  那句與畫面上的已勾選偏好矛盾）。
+- 同一回合存偏好又排課時，最後一個呼叫要是 `run_csp_scheduler`，前端才會顯示新課表。
+
+### 課程主題偏好：`get_topic_interests` 與 `update_topic_interests`（ADR-037，2026-11-24）
+
+取代 ADR-032「長期主題只能從設定頁問答設定」：Agent 可以直接讀寫主題問答的勾選（`interestSelections`），
+這是 s_tag 先驗與 s_vec 明確興趣的唯一來源。實作在 `server/src/services/topicInterestService.js`。
+
+- `update_topic_interests({ addTerms, removeTerms, addTagIds, removeTagIds, recordNotInterested })`：
+  - 使用者的說法對到他候選課程裡可勾選的主題：完全相同（含別名、原始寫法）優先，其次中文包含、英文整字比對
+    （「AI」不會命中 Sustainability）。任何一個詞對不到唯一主題就**完全不寫入**，回 `needsChoice` 與候選，
+    使用者選定後用 tagIds 再呼叫一次。
+  - 加入：放進保存驗證會接受的方向（使用者已有的方向優先，其次本系、通識、系外），經
+    `sanitizeInterestSelectionsForSave` 後整份寫回；驗證無法進行時不寫入、照實回報。
+  - 移除：**不經保存驗證**（驗證在候選池載不到時會把舊標籤放回去，移除會靜默失效）；只刪因這次移除而變空的
+    方向，原本只選方向、沒勾主題的項目保留（瀏覽器實測抓到：一度把 12 個方向刪成 9 個）。
+  - `recordNotInterested`（預設 true）：用既有的 `interest_exploration_feedback / not_interested` 事件，
+    掛在帶有該主題、不是必修、課號最小的候選課上；`actionId` 由使用者＋主題＋學期決定，重試不重複計數。
+    需要使用者同意個人化學習；副作用是那門課會被探索頁視為不推薦。
+  - 太常見的主題（Python、人工智慧等，ADR-026）不寫入，回 `tooCommon`，請模型改用單次 `interests`。
+  - 成功時聊天回應帶 `preferencesUpdated: true`。
+- `get_topic_interests({ sectionId? })`：勾選的方向與主題、s_tag 最高與最低的主題、三項權重；給 `sectionId`
+  時加上那門課的 s_tag（命中主題）、s_vec（相對使用者候選池的分數與正負向原始值）、s_cf（共現表沒有資料時照實說明）。
+  結果的 `courses` 帶 `recommendationReason.matchedPreferences`（命中主題），忠實度檢查也把「主題興趣」
+  「命中…主題」「相近主題」視為轉述推薦原因。
+- s_cf 沒有寫入介面：共現表是全體學生彙總的，改它會影響所有人。
+
+### 換課：`find_replacement_courses` 與 `swap_course`（ADR-036）
+
+- `find_replacement_courses({ replaceSectionId, category?, dayOfWeek?, keyword? })`：伺服器用規劃狀態裡
+  其他課的時間、已存偏好（`buildScheduleConstraints({}, prefs)` 經 `hardConstraintReason`）、修課紀錄與資格，
+  排除衝堂、已修、同一門課、這次移除過、不能修、沒有上課時間、不符合偏好的候選；可修的排前面，最多 10 門。
+  結果放在 `courses`（忠實度帳本認得），`excludedCounts` 用中文原因統計被排除的數量，查不到不算失敗。
+  算進每回合查課 4 次的上限。
+- `swap_course({ removeSectionId, addSectionId })`：伺服器用同一套條件重驗，通過才回
+  `{ success, swap: { removeSectionId, addSectionId, addCourse }, courses }`；前端
+  `ScheduleContext.applyCourseSwap()` 先驗證「拿掉舊課＋加入新課」整份課表，通過才移除與加入。
+- prompt：先查候選、列最多 5 門讓使用者選，選定或明說「直接換第一門」才換；換上的時段與已存偏好衝突時
+  （例如已存星期一排空卻要星期一的課），先問要不要取消那項偏好。
+
+### `query_course_db` 的分類用語（2026-11-24）
+
+模型曾送 `keyword:"通識", category:"通識"`，keyword 比對課名與說明，結果 0 筆。伺服器在 Agent 這層
+（`normalizeCourseQueryArgs()`）把整個是分類用語的 keyword 拿掉、必要時補成 category；查課頁不受影響。
+回給模型的前 10 筆先把可修的排前面（`rankByEligibility()`）。
+
+### 系所年級班別的兩段式確認（Roadmap #24）
+
+`update_student_profile` 的第一次呼叫**不寫入任何東西**（2026-11-24 起 `update_preferences` 改為直接寫入，見上）。
 只回傳 `proposedChanges` 與 `confirmationToken`；模型必須把內容講給使用者確認，
 取得同意後帶著 token 再呼叫一次才生效。
 
@@ -509,7 +576,7 @@ parameter`）。
 
 ### 工具結果信封（Roadmap #25）
 
-七個工具的**政策**（是否可渲染、是否寫入、寫入要不要兩段式確認）統一登記在
+十一個工具的**政策**（是否可渲染、是否寫入、寫入要不要兩段式確認）統一登記在
 `server/src/services/agentToolRegistry.js`，不再分散成 `promptService.js` 的
 schema、`agentService.js` 的 switch、還有一份獨立的 `RENDERABLE_TOOLS` Set 三處
 各自維護——`agentToolRegistry.test.js` 直接讀原始碼比對三者的工具名稱集合，

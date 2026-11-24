@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { app } from '../src/app.js';
-import { resetPrivacyMemoryStoreForTests } from '../src/services/privacyService.js';
+import { resetPrivacyMemoryStoreForTests, saveChatExchange } from '../src/services/privacyService.js';
 import {
   recordInteractionEvents, getInteractionEventsForExport, resetInteractionEventStoreForTests,
 } from '../src/services/interactionEventService.js';
@@ -59,6 +59,13 @@ after(async () => {
 });
 
 test('#33 personal route is blocked before current service consent and allowed after opt-in', async () => {
+  const unsignedHistory = await fetch(`${baseUrl}/chat/history`);
+  assert.equal(unsignedHistory.status, 401);
+
+  const blockedHistory = await fetch(`${baseUrl}/chat/history`, { headers: { Cookie: cookie } });
+  assert.equal(blockedHistory.status, 428);
+  assert.equal((await blockedHistory.json()).code, 'CONSENT_REQUIRED');
+
   const before = await fetch(`${baseUrl}/chat`, {
     method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: '測試' }),
@@ -107,6 +114,29 @@ test('#33 personal route is blocked before current service consent and allowed a
 function identity() {
   return { canonicalId: demo.studentId };
 }
+
+test('chat history restores stored exchanges and respects chat deletion', async () => {
+  const headers = { Cookie: cookie };
+  await saveChatExchange(identity(), '週一上午不要排課。', '收到，這次規劃會避開週一上午。');
+
+  const response = await fetch(`${baseUrl}/chat/history`, { headers });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  const { messages } = await response.json();
+  assert.deepEqual(messages.map(({ role, content }) => ({ role, content })), [
+    { role: 'user', content: '週一上午不要排課。' },
+    { role: 'assistant', content: '收到，這次規劃會避開週一上午。' },
+  ]);
+  assert.ok(messages[0].createdAt < messages[1].createdAt);
+
+  const foreign = await fetch(`${baseUrl}/chat/history?studentId=another-student`, { headers });
+  assert.equal(foreign.status, 403);
+
+  const clear = await fetch(`${baseUrl}/privacy/chat`, { method: 'DELETE', headers });
+  assert.equal(clear.status, 200);
+  const empty = await fetch(`${baseUrl}/chat/history`, { headers });
+  assert.deepEqual(await empty.json(), { messages: [] });
+});
 
 test('#31 PL22 DELETE /api/privacy/personalization 清空學到的權重與互動事件，不動 Profile', async () => {
   resetInteractionEventStoreForTests();

@@ -806,3 +806,78 @@ ${JSON.stringify(audit.violations)}`);
   });
 });
 
+
+describe('F30 找替代課的候選可以出現在回覆（ADR-036）', () => {
+  test('find_replacement_courses 的 courses 會登記成證據', () => {
+    const ledger = createEvidenceLedger();
+    recordToolEvidence(ledger, {
+      toolName: 'find_replacement_courses',
+      callId: 'call-replace',
+      dataSource: 'mysql',
+      result: {
+        replacing: { sectionId: 7 },
+        courses: [course({ sectionId: 301, name: '台灣考古學與原住民', teacher: '陳老師', credits: 2, timeStr: '一 03-04' })],
+        totalCandidates: 1,
+        excludedCounts: {},
+        message: '找到 1 門符合條件的候選。',
+      },
+    });
+
+    const audit = validateFaithfulnessReply('可以換成「台灣考古學與原住民」，星期一第 3-4 節，2 學分。', ledger);
+    assert.equal(audit.passed, true, JSON.stringify(audit.violations));
+    const fabricated = validateFaithfulnessReply('可以換成「量子重力導論」。', ledger);
+    assert.equal(fabricated.passed, false);
+  });
+});
+
+describe('F31 主題興趣拆解的課名可以出現在回覆（ADR-037）', () => {
+  test('get_topic_interests 的 courses 會登記成證據', () => {
+    const ledger = createEvidenceLedger();
+    recordToolEvidence(ledger, {
+      toolName: 'get_topic_interests',
+      callId: 'call-topics',
+      dataSource: 'mysql',
+      result: {
+        selectedTopics: ['軟體開發'],
+        courses: [{ sectionId: 1307, name: '程式設計與問題解決' }],
+        course: { sectionId: 1307, name: '程式設計與問題解決', s_tag: { score: 0.67 } },
+      },
+    });
+    const audit = validateFaithfulnessReply('「程式設計與問題解決」命中你勾選的軟體開發主題。', ledger);
+    assert.equal(audit.passed, true, JSON.stringify(audit.violations));
+  });
+});
+
+describe('F32 問「為什麼推薦」時，主題興趣的拆解算轉述了推薦原因（ADR-037）', () => {
+  function topicLedger() {
+    const ledger = createEvidenceLedger();
+    recordToolEvidence(ledger, {
+      toolName: 'get_topic_interests',
+      callId: 'call-topics',
+      dataSource: 'mysql',
+      result: {
+        courses: [{ sectionId: 1307, name: '智慧生活科技', recommendationReason: { matchedPreferences: ['軟體開發'] } }],
+      },
+    });
+    return ledger;
+  }
+
+  test('引用命中的主題與相近主題分數不算缺少推薦原因', () => {
+    const audit = validateFaithfulnessReply(
+      '推薦「智慧生活科技」是因為它命中你的軟體開發主題，相近主題分數也高。',
+      topicLedger(),
+      { userMessage: '為什麼推薦智慧生活科技？' },
+    );
+    assert.equal(audit.passed, true, JSON.stringify(audit.violations));
+  });
+
+  test('說「符合你的偏好」有主題證據時不算誇大', () => {
+    const audit = validateFaithfulnessReply('「智慧生活科技」符合你的偏好。', topicLedger(), { userMessage: '為什麼推薦智慧生活科技？' });
+    assert.equal(audit.violations.some(item => item.code === 'PREFERENCE_OVERCLAIM'), false, JSON.stringify(audit.violations));
+  });
+
+  test('完全沒講原因仍會被擋', () => {
+    const audit = validateFaithfulnessReply('「智慧生活科技」是一門課。', topicLedger(), { userMessage: '為什麼推薦智慧生活科技？' });
+    assert.ok(audit.violations.some(item => item.code === 'MISSING_RECOMMENDATION_REASON'));
+  });
+});

@@ -44,8 +44,9 @@ describe('AR1 三處工具名稱集合必須一致', () => {
     );
   });
 
-  test('AR1 不多不少剛好七個工具（改動時請一併確認這個數字）', () => {
-    assert.equal(listToolNames().length, 7);
+  test('AR1 不多不少剛好十一個工具（改動時請一併確認這個數字）', () => {
+    // ADR-036 新增 find_replacement_courses、swap_course；ADR-037 新增 get_topic_interests、update_topic_interests。
+    assert.equal(listToolNames().length, 11);
   });
 });
 
@@ -87,7 +88,10 @@ describe('AR4 登記表的政策欄位有實際被消費', () => {
 
   test('AR4 getConfirmationChangeType() 對非確認工具回傳 null', () => {
     assert.equal(getConfirmationChangeType('query_course_db'), null);
-    assert.equal(getConfirmationChangeType('update_preferences'), 'preferences');
+    // ADR-036：排課偏好直接寫入，不再兩段式確認。
+    assert.equal(getConfirmationChangeType('update_preferences'), null);
+    assert.equal(getConfirmationChangeType('find_replacement_courses'), null);
+    assert.equal(getConfirmationChangeType('swap_course'), null);
     assert.equal(getConfirmationChangeType('update_student_profile'), 'profile-scope');
   });
 

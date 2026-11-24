@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 
 import { buildSystemPrompt, getAgentTools } from '../src/services/promptService.js';
 import { collectSchemaKeywords, SUPPORTED_SCHEMA_KEYWORDS } from '../src/services/toolSchemaValidator.js';
+import { ALL_FLAGS } from '../src/data/preferenceTags.js';
 
 // 與 server/src/services/constraintService.js 接受的欄位保持一致。
 // 新增參數時必須同時更新 promptService 與這份清單，否則本測試會失敗。
@@ -188,14 +189,32 @@ describe('P3 排課結果欄位有告知模型', () => {
   });
 });
 
-describe('P4 Roadmap #24：永久寫入的兩段式確認', () => {
-  test('update_preferences 與 update_student_profile 都收 confirmationToken', () => {
-    for (const name of ['update_preferences', 'update_student_profile']) {
-      assert.ok(
-        Object.hasOwn(toolByName.get(name).parameters.properties, 'confirmationToken'),
-        `${name} 缺少 confirmationToken`
-      );
+describe('P4 系所年級班別兩段式確認；排課偏好直接寫入（ADR-036）', () => {
+  test('只有 update_student_profile 收 confirmationToken', () => {
+    assert.ok(Object.hasOwn(toolByName.get('update_student_profile').parameters.properties, 'confirmationToken'));
+    assert.equal(Object.hasOwn(toolByName.get('update_preferences').parameters.properties, 'confirmationToken'), false);
+  });
+
+  test('update_preferences 涵蓋左側全部偏好勾選，且不收存不進去的欄位', () => {
+    const props = toolByName.get('update_preferences').parameters.properties;
+    // 用 check／uncheck 清單，不開 15 個布林欄位（模型會全部填滿、抄錯就刪掉偏好）。
+    for (const flag of ALL_FLAGS) {
+      assert.ok(props.check.items.enum.includes(flag), `check 缺少 ${flag}`);
+      assert.ok(props.uncheck.items.enum.includes(flag), `uncheck 缺少 ${flag}`);
+      assert.equal(Object.hasOwn(props, flag), false, `${flag} 不該是獨立的布林欄位`);
     }
+    for (const field of ['noEveningClasses', 'targetCreditsMin']) {
+      assert.equal(Object.hasOwn(props, field), false, `${field} 沒有地方存，不該出現在 update_preferences`);
+    }
+  });
+
+  test('prompt 說明聊天中的偏好直接存、這次就好不存、沒提到的沿用已存偏好', () => {
+    const prompt = buildSystemPrompt({ preferenceTags: ['#不排早八', '#涼課優先'] });
+    assert.ok(prompt.includes('就直接呼叫 update_preferences 存起來'));
+    assert.ok(prompt.includes('「這次就好」'));
+    assert.ok(prompt.includes('沿用你已存的偏好'));
+    assert.ok(prompt.includes('左側已勾選的偏好：不排早八、涼課優先'));
+    assert.equal(prompt.includes('明說沒提到的項目'), false, '舊規則「沒提到就說沒替他決定」已移除');
   });
 
   test('update_student_profile 開放系所、年級與班別三個欄位', () => {
@@ -238,7 +257,7 @@ describe('P4 Roadmap #24：永久寫入的兩段式確認', () => {
     assert.ok(prompt.includes('不得強迫回答'));
   });
 
-  test('system prompt 說明兩段式流程且禁止自行編造 token', () => {
+  test('system prompt 說明系所更正的兩段式流程且禁止自行編造 token', () => {
     const prompt = buildSystemPrompt({});
 
     assert.ok(prompt.includes('confirmationToken'));
@@ -373,5 +392,23 @@ describe('P9 Roadmap #34：tool schema 驗證器的 drift guard', () => {
       `schema 用到驗證器不支援的關鍵字：${unsupported.join('、')}。`
         + '請在 toolSchemaValidator.js 補上處理，或確認忽略它是刻意的決定。'
     );
+  });
+});
+
+describe('P20 Agent 讀寫課程主題偏好（ADR-037）', () => {
+  test('兩個主題工具存在，s_cf 沒有寫入參數', () => {
+    assert.ok(toolByName.has('get_topic_interests'));
+    const props = toolByName.get('update_topic_interests').parameters.properties;
+    for (const field of ['addTerms', 'removeTerms', 'addTagIds', 'removeTagIds', 'recordNotInterested']) {
+      assert.ok(Object.hasOwn(props, field), `缺少 ${field}`);
+    }
+    assert.equal(Object.keys(props).some(field => /cf/i.test(field)), false);
+  });
+
+  test('prompt 區分長期主題（存）與這次想排（interests），並要求照實轉述分數', () => {
+    const prompt = buildSystemPrompt({});
+    assert.ok(prompt.includes('呼叫 update_topic_interests 的 addTerms 直接存進課程主題'));
+    assert.ok(prompt.includes('呼叫 get_topic_interests'));
+    assert.ok(prompt.includes('把方向放進單次 run_csp_scheduler 的 interests'));
   });
 });

@@ -1457,6 +1457,21 @@ Returns locally saved schedules for the session user.
 
 ## Chat
 
+### `GET /api/chat/history`
+
+回傳登入者最近 50 則尚未過期的聊天文字，按時間由舊至新排列。使用者須同意當前版本的服務處理。紀錄沿用聊天資料的 30 天保留期限，使用者可從隱私設定清除。回應以 `Cache-Control: no-store` 禁止快取。
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "週一上午不要排課", "createdAt": "2026-11-24T02:00:00.000Z" },
+    { "role": "assistant", "content": "可以，這次規劃會避開週一上午。", "createdAt": "2026-11-24T02:00:00.001Z" }
+  ]
+}
+```
+
+`messages` 無紀錄時為空陣列。每則訊息含角色、文字及時間。未登入回 `401`，未同意當前版本資料用途回 `428`。
+
 ### `POST /api/chat`
 
 Request:
@@ -1505,8 +1520,9 @@ Response:
 | --- | --- |
 | `reply` | 要顯示給使用者的文字。 |
 | `intent` | 這次請求中**最後一個成功**的工具名稱；沒有任何工具成功時為 `general_chat`，呼叫模型本身失敗時為 `error`。 |
-| `data` | 最後一個成功的**可渲染**工具結果（`query_course_db`、`search_dcard_reviews`、`run_csp_scheduler`、`get_easy_courses`），否則為 `null`。 |
+| `data` | 最後一個成功的**可渲染**工具結果（`query_course_db`、`search_dcard_reviews`、`run_csp_scheduler`、`get_easy_courses`、`swap_course`），否則為 `null`。換課時為 `{ success: true, swap: { removeSectionId, addSectionId, addCourse }, courses }`，前端移除 `removeSectionId`、加入完整課程物件 `addCourse`（ADR-036）。 |
 | `planningContextStatus` | `accepted`／`rejected-invalid`／`temporarily-unavailable`，見下表。 |
+| `preferencesUpdated` | 選填。這次對話中 Agent 成功寫入了已存的排課偏好（ADR-036）或課程主題勾選（ADR-037）時為 `true`，前端應重抓 `GET /api/profile` 更新左側偏好與主題摘要。 |
 
 **`planningContext` 不合法不會讓整次對話失敗。** 它住在瀏覽器的 `sessionStorage`，
 會因為部署升版、開著沒關的舊分頁、瀏覽器資料損壞而變成舊格式；回 400 的話使用者的
