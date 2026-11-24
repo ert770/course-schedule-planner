@@ -1998,7 +1998,8 @@ Query：
   `outside`／`general` 各**最多** 5 門，可能少於 5 門或為空。
 - `semanticMatch.parts`：三種相近程度（無法比較時為 `null`）。`commonTags` 是兩門課都有的主題標籤
   （工具軟體、上課方式不列），只是附加說明。
-- `favorites`：已通過的課，**不含**不計入畢業學分的課（體育、國防科技、班級活動）與實習課；
+- `favorites`：已通過的課，**不含**不計入畢業學分的課（體育、國防科技、班級活動）、全校共同必修
+  （中文思辨與表達、大學基礎英文、大學精進英文，以及核心必修 `GEG2000`／`GEK2000`）與實習課；候選也同樣排除；
   依課名排序（英文 A～Z 在前、中文依筆畫），可用的排前面。`available: false` 的唯一原因是
   `no-course-vector`（沒有探索向量）。省略起點時 `favorite.source` 為 `system-default`。
 - 候選：當學期、資格確定（`eligibility` 不是 `unknown`／`ineligible`）、有上課時間、尚未通過、

@@ -30,6 +30,7 @@ import { scoreCoursesForUser, explainCourseForUser } from '../skills/userTagVect
 import { loadCourseExplorationVectors } from './courseExplorationEmbeddingService.js';
 import { explorationSimilarity, EXPLORATION_VECTOR_FIELDS } from '../skills/courseExplorationVectors.js';
 import { getNonGraduationCategory } from '../data/generalEducation.js';
+import { isCommonRequiredCourse } from '../data/generalEducationRecognition.js';
 import { profileExactTags, tagName, TAG_KIND, tagKind } from '../skills/explorationTagGate.js';
 
 export const EXPLORATION_RESULT_LIMIT = 5;
@@ -38,11 +39,14 @@ export const EXPLORATION_REPRESENTATION = 'embedding';
 // 三種相近程度平均的門檻（2026-11-24 使用者依 11 個帳號的試算與抽樣決定）。
 export const EXPLORATION_MIN_SIMILARITY = 0.55;
 
-// 不進探索的課：不計入畢業學分（體育、國防科技、班級活動）與實習課。
+// 不進探索的課：不計入畢業學分（體育、國防科技、班級活動）、全校共同必修
+// （中文思辨與表達、大學基礎／精進英文、核心必修）與實習課。
 const isPracticeName = name => /實習$/u.test(String(name ?? '').trim());
-export function isExcludedFromExploration(name) {
+export function isExcludedFromExploration(name, courseCode = null) {
   const text = String(name ?? '').trim();
-  return Boolean(getNonGraduationCategory({ name: text })) || isPracticeName(text);
+  return Boolean(getNonGraduationCategory({ name: text }))
+    || isCommonRequiredCourse({ courseCode, courseName: text })
+    || isPracticeName(text);
 }
 
 // 「依你的修課與興趣」模式：標籤空間使用者向量（階段 3）＋標籤相近表（階段 2）。
@@ -112,7 +116,7 @@ function buildFavorites(courseHistory, entries) {
   const latest = getLatestAttemptsByCourseCode(courseHistory);
   const attempts = latest instanceof Map ? [...latest.values()] : Object.values(latest ?? {});
   return attempts
-    .filter(entry => passed.has(normalizeCode(entry.courseCode)) && !isExcludedFromExploration(entry.courseName))
+    .filter(entry => passed.has(normalizeCode(entry.courseCode)) && !isExcludedFromExploration(entry.courseName, entry.courseCode))
     .map(entry => {
       const courseCode = normalizeCode(entry.courseCode);
       const available = Boolean(entries.get(courseCode)?.vectors?.name);
@@ -182,8 +186,9 @@ function buildCandidates(courses, category, scope, passedCodes, entries, { serie
   const sections = filterCategorizedCourses(courses, { category }, scope).filter(section => (
     // filterCategorizedCourses 已限制當學期、年級與學制。以下是探索自己的安全條件。
     !passedCodes.has(normalizeCode(section.catalogCourseCode))
-    // 不計入畢業學分的課不推薦（2026-11-24 使用者決定）；實習課在分組後判斷。
+    // 不計入畢業學分的課與全校共同必修不推薦（2026-11-24 使用者決定）；實習課在分組後判斷。
     && !getNonGraduationCategory({ name: section.name })
+    && !isCommonRequiredCourse({ courseCode: section.catalogCourseCode, courseName: section.name })
     // 系列課沒修過前一級不推薦（見 data/courseSeries.js）。
     && (!seriesLevels || isSeriesLevelReachable(section.name, seriesLevels))
     && section.eligibility !== 'unknown'
