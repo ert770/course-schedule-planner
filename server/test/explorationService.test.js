@@ -173,14 +173,14 @@ describe('XS1 起點與候選分開', () => {
     const loader = vectorLoader(courses, {}, { IECS2007: [1, 0, 0.05] });
     const result = await run(courses, [
       history('IECS3059', '人工智慧導論', 80),
-      history('CHIN1065', '中文思辨與表達(一)', 95, { graduationCategory: 'general' }),
+      history('CHIN2011', '中國文學史(二)', 95, { graduationCategory: 'general' }),
       history('IECS2007', '離散數學', 70),
     ], {}, { loadExplorationVectors: loader });
     const of = code => result.favorites.find(item => item.courseCode === code);
-    assert.deepEqual([of('CHIN1065').available, of('CHIN1065').reason], [false, 'no-course-vector']);
+    assert.deepEqual([of('CHIN2011').available, of('CHIN2011').reason], [false, 'no-course-vector']);
     assert.equal(of('IECS2007').available, true);
 
-    const chosen = await run(courses, [history('CHIN1065', '中文思辨與表達(一)', 95)], { favoriteCourseCode: 'CHIN1065' }, { loadExplorationVectors: loader });
+    const chosen = await run(courses, [history('CHIN2011', '中國文學史(二)', 95)], { favoriteCourseCode: 'CHIN2011' }, { loadExplorationVectors: loader });
     assert.equal(chosen.favorite, null);
     assert.equal(chosen.emptyReason, 'favorite-no-course-vector');
 
@@ -228,6 +228,29 @@ describe('XS1 起點與候選分開', () => {
     await assert.rejects(run(courses, [history('ATHL1004', '體育(二)', 90)], { favoriteCourseCode: 'ATHL1004' }),
       error => error.code === 'FAVORITE_NOT_IN_HISTORY');
   });
+
+  // 2026-11-24 使用者決定：全校共同必修（中文思辨與表達、大學基礎／精進英文、核心必修）也不進探索。
+  test('XS1f 全校共同必修不列為起點，也不推薦；同內容的一般課照常推薦', async () => {
+    const courses = [
+      section('CHIN1066', '中文思辨與表達(二)', '國文綜合班', AI),
+      section('ENGL1027', '大學基礎英文(二)中級', '通訊三甲', AI),
+      section('ENGL1056', '大學精進英文(二)中級', '通訊三甲', AI),
+      section('GEG2000', '現代公民與社會實踐', '通訊三甲', AI),
+      section('IECS3059', '人工智慧導論', '資訊三合', AI),
+      section('COME3046', '機器學習', '通訊三甲', AI),
+      ...fillers(),
+    ];
+    const result = await run(courses, [
+      history('CHIN1066', '中文思辨與表達(二)', 90), history('ENGL1026', '大學基礎英文(二)初級', 90),
+      history('GEK2000', '科學與人文的對話', 90), history('IECS3059', '人工智慧導論', 80),
+    ]);
+    assert.deepEqual(result.favorites.map(item => item.courseCode), ['IECS3059']);
+    const codes = [...result.outside.items, ...result.general.items].map(item => item.courseCode);
+    assert.ok(codes.includes('COME3046'));
+    for (const code of ['ENGL1027', 'ENGL1056', 'GEG2000']) assert.equal(codes.includes(code), false, code);
+    await assert.rejects(run(courses, [history('CHIN1066', '中文思辨與表達(二)', 90)], { favoriteCourseCode: 'CHIN1066' }),
+      error => error.code === 'FAVORITE_NOT_IN_HISTORY');
+  });
 });
 
 describe('XS2 預設起點與空狀態', () => {
@@ -258,7 +281,7 @@ describe('XS2 預設起點與空狀態', () => {
   });
 
   test('XS2c 有修課紀錄但都不能當起點', async () => {
-    const result = await run(fillers(), [history('CHIN1065', '中文思辨與表達(一)', 95)]);
+    const result = await run(fillers(), [history('CHIN2011', '中國文學史(二)', 95)]);
 
     assert.equal(result.favorite, null);
     assert.equal(result.emptyReason, 'no-available-favorite');

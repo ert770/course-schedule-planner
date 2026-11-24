@@ -4,6 +4,7 @@
 
 ## 2026-11-24
 
+- [探索頁排除全校共同必修](./2026-11-24-explore-exclude-common-required.md)
 - [探索頁起點選單：「沒有課程資料」改為「尚未建立比較資料」](./2026-11-24-explore-unavailable-label.md)
 - [探索頁「從一門課出發」改用課名、說明、主題三種相近程度（ADR-035）](./2026-11-24-explore-three-similarities.md)
 - [MyFCU 匯入的修課紀錄：讀取時補分類擴充為五步](./2026-11-24-imported-history-classification.md)
