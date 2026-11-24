@@ -21,6 +21,9 @@ import {
 } from '../skills/scheduler.js';
 import { buildScheduleConstraints } from './constraintService.js';
 import { getPassedCourseCodes } from '../data/courseHistory.js';
+import { describeTopicInterests, updateTopicInterests } from './topicInterestService.js';
+import { loadCandidateVectorScores } from './externalInterestReservationService.js';
+import { loadCfInterestContext } from './scheduleService.js';
 import { getEasyCourses, getSentimentSummary } from '../skills/reviewSearch.js';
 import { generateForUser } from './scheduleService.js';
 import { recordScheduleFeedback } from './scheduleFeedbackService.js';
@@ -623,6 +626,10 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
     preflight = checkPreflightContradictions,
     lookupCourses = loadCoursesByIds,
     searchScheduleCourses = searchCoursesForSchedule,
+    readTopicInterests = (id, p, options) => describeTopicInterests(id, p, options, {
+      loadVectorScores: loadCandidateVectorScores, loadCf: loadCfInterestContext,
+    }),
+    writeTopicInterests = updateTopicInterests,
   } = deps;
 
   try {
@@ -650,6 +657,15 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
             : `沒有符合條件的候選。查到 ${found.poolSize} 門，排除原因見 excludedCounts。`,
         };
       }
+
+      case 'get_topic_interests':
+        // ADR-037：只讀。s_cf 只能讀，共現表是全體學生彙總的，不提供修改。
+        return await readTopicInterests(identity, prefs ?? {}, { sectionId: args.sectionId ?? null });
+
+      case 'update_topic_interests':
+        // ADR-037：使用者說的主題直接寫進主題問答勾選；「不想再排」另記一筆既有的
+        // not_interested 事件（使用者決定不新增排除欄位）。
+        return await writeTopicInterests(identity, prefs ?? {}, args);
 
       case 'swap_course': {
         const removeSectionId = Number(args.removeSectionId);
@@ -1077,7 +1093,9 @@ export async function handleChat(identity, message, planningContext = null, opti
         }
 
         // 偏好寫入成功時告訴前端重抓偏好，左側勾選才會跟著改（ADR-036）。
-        if (call.name === 'update_preferences' && result?.success === true) preferencesUpdated = true;
+        if (['update_preferences', 'update_topic_interests'].includes(call.name) && result?.success === true) {
+          preferencesUpdated = true;
+        }
 
         // `intent` 與 `data` 只反映**真正成功**的工具（見 `applyToolOutcome()`）。
         ({ intent: detectedIntent, data: responseData } =

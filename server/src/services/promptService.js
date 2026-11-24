@@ -413,8 +413,7 @@ export function getAgentTools() {
         + '使用者說「這次就好」「這學期先」「只這一次」時**不要呼叫**，直接把條件帶進 run_csp_scheduler。'
         + '只送這次真的要改的欄位，沒提到的不要送。'
         + '不排晚間課與最低學分沒有地方存，只能當單次條件帶進 run_csp_scheduler。'
-        + '**想學的主題（例如「以後都想排資安」）不能用這個工具保存**：請直接回覆使用者，'
-        + '到設定頁的「課程主題問答」勾選；這次想排的主題可以直接帶進 run_csp_scheduler 的 interests。',
+        + '想學的主題（例如「以後都想排資安」）不用這個工具，改用 update_topic_interests。',
       parameters: {
         type: 'object',
         properties: {
@@ -430,6 +429,47 @@ export function getAgentTools() {
           blockedPeriods: SCHEDULER_PARAMETERS.blockedPeriods,
           preferredTrack: SCHEDULER_PARAMETERS.preferredTrack,
           // 長期興趣只能透過設定頁的課程主題問答設定（ADR-032），這裡不再接受 interests／preferredKeywords。
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'get_topic_interests',
+      description:
+        '讀取使用者的課程主題偏好：勾選的主題、學到的主題興趣分數（最高與最低），以及排課權重。'
+        + '給 sectionId 時另外拆解那門課的三項興趣分數：s_tag（主題興趣，命中哪些主題）、'
+        + 's_vec（相近主題向量）、s_cf（同學選課，目前共現表沒有資料）。'
+        + '使用者問「為什麼推薦這門課」「系統覺得我對什麼有興趣」時呼叫，照結果轉述，不要推測。',
+      parameters: {
+        type: 'object',
+        properties: {
+          sectionId: { type: 'integer', description: '要拆解分數的課（sectionId），沒有特定課就不要填。' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'update_topic_interests',
+      description:
+        '修改使用者長期的課程主題偏好（主題問答的勾選），**呼叫後立即寫入**，之後的排課與探索都會沿用。'
+        + '使用者說「我對 X 有興趣」「以後想多排 X」時放進 addTerms；說「不想再排 X」「X 不要了」時放進 removeTerms，'
+        + '伺服器會拿掉勾選並記一筆「沒興趣」讓相關課降分（只想拿掉勾選、不是討厭時把 recordNotInterested 設為 false）。'
+        + '使用者說「這次想排 X」時**不要呼叫**，把 X 帶進 run_csp_scheduler 的 interests。'
+        + '回傳 needsChoice 時代表有詞對不到唯一主題、什麼都沒寫入：把候選念給使用者選，再用 addTagIds／removeTagIds 呼叫一次。'
+        + 'tooCommon 列出的主題（例如 Python、人工智慧）太常見、不能長期保存，請改成每次排課帶進 interests。',
+      parameters: {
+        type: 'object',
+        properties: {
+          addTerms: { type: 'array', items: { type: 'string' }, description: '要加入的主題，用使用者的說法（例如「資安」「區塊鏈」）。' },
+          removeTerms: { type: 'array', items: { type: 'string' }, description: '要拿掉的主題，用使用者的說法。' },
+          addTagIds: { type: 'array', items: { type: 'string' }, description: '使用者從 needsChoice 候選中選定要加入的 tagId。' },
+          removeTagIds: { type: 'array', items: { type: 'string' }, description: '使用者從 needsChoice 候選中選定要拿掉的 tagId。' },
+          recordNotInterested: {
+            type: 'boolean',
+            description: '拿掉主題時是否記一筆「沒興趣」（預設 true）。使用者只是想取消勾選、不是不喜歡時填 false。',
+          },
         },
         additionalProperties: false,
       },
@@ -729,7 +769,11 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - preferredKeywords、interests、preferCompact、preferEasyCourses、preferChallengingCourses 會影響單門課挑選及多個方案的主推排序。
 - 使用者要求個人化推薦，但目前使用者偏好中的「課程主題」與「修課路徑」都未設定，且這一輪也沒有說明興趣時，先用一個簡短問題詢問方向；可舉「技術應用、網路與安全、嵌入式系統」或目前課程主題為例，不要替使用者選。若使用者只要一般排課或明確表示沒有特定方向，直接排課，不得強迫回答。
 - 使用者說「這次想排資安相關」時，把方向放進單次 run_csp_scheduler 的 interests 或 preferredKeywords；它們只影響這一次排課。
-- 使用者要長期保存想學的主題（例如「以後都想排資安」）時，不要用 update_preferences 存關鍵字，請他到設定頁的「課程主題問答」勾選；修課路徑仍可用 update_preferences 的 preferredTrack 保存。
+- 使用者說「我對 X 有興趣」「以後想多排 X」時，呼叫 update_topic_interests 的 addTerms 直接存進課程主題（ADR-037）；
+  說「不想再排 X」時放進 removeTerms。存好後講清楚加了或拿掉了哪些主題；要排課就接著呼叫 run_csp_scheduler，
+  而且最後一個呼叫要是它。修課路徑仍用 update_preferences 的 preferredTrack 保存。
+- 使用者問「為什麼推薦這門課」「系統覺得我對什麼有興趣」時，呼叫 get_topic_interests（要問某門課就帶 sectionId），
+  只轉述結果裡的主題與分數；s_cf 目前沒有資料時照實說。
 
 已存偏好與這次條件（ADR-036）：
 - 下方「目前使用者偏好」是伺服器已存的設定，排課時伺服器會自動套用，不用你重送。
@@ -746,7 +790,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 沒有候選時，依結果的 excludedCounts 說明是哪個條件擋掉的（例如衝堂、不符合已存偏好），並建議可以放寬哪個條件。
 - 使用者要換上的時段跟他已存的偏好衝突（例如已存「星期一排空」卻要星期一的課），先問他要不要取消那項偏好；
   他同意後先 update_preferences 取消，再查候選。
-- 「Python」這類很常見的工具或技能不在課程主題問答的選項裡，也不能長期保存。使用者想排這類主題時，把它放進這一次 run_csp_scheduler 的 interests；使用者想長期保存時，說明問答沒有這類選項，請他之後每次排課時直接告訴你。
+- 「Python」這類很常見的工具或技能不在課程主題問答的選項裡，也不能長期保存（update_topic_interests 會在 tooCommon 列出）。使用者想排這類主題時，把它放進這一次 run_csp_scheduler 的 interests；使用者想長期保存時，說明這類主題不能存，請他之後每次排課時直接告訴你。
 - 使用者明確說要避開某位教師時，把教師完整姓名放進 avoidInstructors；不得自行猜測、補姓氏或改寫姓名。
 - preferEasyCourses 與 preferChallengingCourses 方向相反，不得同時設為 true；使用者若兩者都提到，要先確認實際想要哪一個。
 - 排課結果的每個方案都有 preferenceScore（0~1 的偏好符合度），可用來向使用者說明為什麼主推該方案。

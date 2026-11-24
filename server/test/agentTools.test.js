@@ -719,3 +719,24 @@ describe('AG21 找替代課與換課（ADR-036）', () => {
     assert.equal(result.errorCode, 'SWAP_TARGET_NOT_ELIGIBLE');
   });
 });
+
+describe('AG22 課程主題偏好工具（ADR-037）', () => {
+  test('get_topic_interests 帶 sectionId 給讀取服務，不寫入', async () => {
+    let received;
+    const result = await executeAgentTool('get_topic_interests', { sectionId: 7 }, ctx, {
+      readTopicInterests: async (_id, _prefs, options) => { received = options; return { selectedTopics: ['區塊鏈'] }; },
+    });
+    assert.deepEqual(received, { sectionId: 7 });
+    assert.deepEqual(result.selectedTopics, ['區塊鏈']);
+  });
+
+  test('update_topic_interests 把參數原樣交給寫入服務', async () => {
+    let received;
+    const args = { addTerms: ['區塊鏈'], removeTerms: ['生成式AI'], recordNotInterested: false };
+    const result = await executeAgentTool('update_topic_interests', args, ctx, {
+      writeTopicInterests: async (_id, _prefs, input) => { received = input; return { success: true, added: ['區塊鏈'] }; },
+    });
+    assert.deepEqual(received, args);
+    assert.equal(result.success, true);
+  });
+});

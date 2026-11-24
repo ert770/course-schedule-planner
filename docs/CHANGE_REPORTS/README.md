@@ -4,6 +4,7 @@
 
 ## 2026-11-24
 
+- [Agent 讀取並修改課程主題偏好（ADR-037）](./2026-11-24-agent-topic-interests.md)
 - [Agent：查課修正、聊天偏好直接存、找替代課與換課（ADR-036）](./2026-11-24-agent-query-prefs-swap.md)
 - [拿掉首頁「本學期課程主題」區塊、補回 AGENTS.md 的 om 一節](./2026-11-24-remove-topic-tree-and-restore-om.md)
 - [PR #41 合入最新 main 並解衝突](./2026-11-24-pr41-merge-main.md)

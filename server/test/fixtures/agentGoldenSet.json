@@ -77,6 +77,28 @@
       }
     },
     {
+      "id": "topic-interest-saved",
+      "utterance": "我以後想多排一點區塊鏈相關的課。",
+      "why": "ADR-037：長期的主題興趣要存進課程主題（update_topic_interests），不能只放進單次 interests，也不該叫使用者自己去設定頁。",
+      "expect": {
+        "tool": "update_topic_interests",
+        "includes": {
+          "addTerms": "區塊鏈"
+        }
+      }
+    },
+    {
+      "id": "topic-not-interested",
+      "utterance": "我不想再排生成式AI的課了。",
+      "why": "ADR-037：「不想再排」要拿掉主題勾選並記一筆沒興趣，讓相關課降分。",
+      "expect": {
+        "tool": "update_topic_interests",
+        "includes": {
+          "removeTerms": "生成式AI"
+        }
+      }
+    },
+    {
       "id": "replace-course-gen-ed-monday",
       "utterance": "把 sectionId 2 那門課換成一門星期一的通識課。",
       "why": "2026-11-24 實測：模型把「通識」當關鍵字查課，結果 0 筆。換課要用 find_replacement_courses，分類放 category、星期放 dayOfWeek。（模型偶爾送空字串 keyword，伺服器會把空字串與分類用語都拿掉，所以這題不檢查 keyword。）",

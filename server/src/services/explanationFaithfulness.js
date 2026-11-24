@@ -62,7 +62,8 @@ const REASON_QUESTION = /為什麼|推薦理由|推薦原因/u;
 // （「補足目標學分」）四種轉述文字都對不上，導致後端自己的安全回答在
 // 使用者問「為什麼推薦」時，反而被自己的 `MISSING_RECOMMENDATION_REASON`
 // 判定違規——F22 逐一走過全部 `selectedBecause` 值時抓到。
-const REASON_PARAPHRASE = /必修|重修|補修|你指定|明確指定|關注課程|關注清單|成對排入|補足.{0,4}學分|沒有命中任何偏好|主要推薦原因.{0,8}(?:未知|未提供|無法確認)/u;
+// ADR-037：get_topic_interests 的分數拆解（主題興趣 s_tag、相近主題 s_vec）也是推薦原因的轉述。
+const REASON_PARAPHRASE = /必修|重修|補修|你指定|明確指定|關注課程|關注清單|成對排入|補足.{0,4}學分|沒有命中任何偏好|主要推薦原因.{0,8}(?:未知|未提供|無法確認)|主題興趣|命中.{0,10}主題|相近主題/u;
 
 // 「推薦形狀」的斷言——捏造偵測（動賓片語規則）與 EXCLUDED_COURSE_PRESENTED_AS_RECOMMENDED
 // 共用同一份，不要各寫一次判斷標準。

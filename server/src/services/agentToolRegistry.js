@@ -79,6 +79,20 @@ export const AGENT_TOOL_REGISTRY = Object.freeze([
     confirmation: null,
   }),
   Object.freeze({
+    name: 'get_topic_interests',
+    // 只讀：主題興趣與單門課的 s_tag／s_vec／s_cf 拆解（ADR-037）。
+    renderable: false,
+    writes: false,
+    confirmation: null,
+  }),
+  Object.freeze({
+    name: 'update_topic_interests',
+    // 直接寫入主題問答勾選，否定時另記 not_interested 事件（ADR-037）。
+    renderable: false,
+    writes: true,
+    confirmation: null,
+  }),
+  Object.freeze({
     name: 'record_schedule_feedback',
     // 只是確認訊息，同 update_preferences 的理由。
     renderable: false,

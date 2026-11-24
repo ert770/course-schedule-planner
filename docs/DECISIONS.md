@@ -1270,3 +1270,37 @@ Consequences:
 - Roadmap #24's "no permanent preference change without confirmation" no longer holds for scheduling preferences.
 - No-evening-classes and minimum credits still cannot be saved (no storage); they stay one-off.
 - Course-topic preferences (s_tag, s_vec, s_cf) are not yet readable or writable by the agent; that is batch 2.
+
+## ADR-037: The Agent Reads and Changes Course-Topic Preferences (Partly Supersedes ADR-032)
+
+Date: 2026-11-24
+
+Context:
+
+The user wants the chat agent to work on the whole scheduling path, including the topic preferences behind s_tag
+(questionnaire selections + interaction events), s_vec (tag vectors) and s_cf (cross-user co-occurrence). Under
+ADR-032 the agent could only pass one-off `interests` and had to send users to the settings questionnaire; asked why a
+course was recommended it could not see any topic scores.
+
+Decision (user decisions on 2026-11-24):
+
+- New tools `get_topic_interests` (read: selected topics, strongest/weakest learned topics, and a per-course s_tag /
+  s_vec / s_cf breakdown) and `update_topic_interests` (write, no confirmation, consistent with ADR-036).
+- "I'm interested in X" adds X to `interestSelections`; "I don't want X any more" removes it and, by default, records
+  the existing `interest_exploration_feedback / not_interested` event (no new exclusion field). The event must be
+  anchored to a non-required candidate course carrying the tag; that course is then treated as rejected by the
+  exploration page.
+- Words are resolved to catalogue tags in the student's pool; ambiguous words return candidates and write nothing.
+  too_common tags (ADR-026) are still one-off only. s_cf is read-only.
+- Removals bypass save validation (it restores old tags when the pool is unavailable) and keep direction-only entries.
+
+Rejected: a new persisted "excluded topics" field (the user chose the existing negative event); editing
+`Learned_Tag_Interests` or `Course_Neighbors` directly (derived caches / cross-user data).
+
+Consequences:
+
+- ADR-032's "long-term interests only through the questionnaire" no longer holds; ADR-032's removal of the free-text
+  `interests` / `preferredKeywords` fields stands.
+- Negative events cannot be deleted individually and decay with the 120-day half-life; verification used unit tests and
+  read-only replays, not real events on the demo account.
+

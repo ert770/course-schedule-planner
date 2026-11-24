@@ -394,3 +394,21 @@ describe('P9 Roadmap #34：tool schema 驗證器的 drift guard', () => {
     );
   });
 });
+
+describe('P20 Agent 讀寫課程主題偏好（ADR-037）', () => {
+  test('兩個主題工具存在，s_cf 沒有寫入參數', () => {
+    assert.ok(toolByName.has('get_topic_interests'));
+    const props = toolByName.get('update_topic_interests').parameters.properties;
+    for (const field of ['addTerms', 'removeTerms', 'addTagIds', 'removeTagIds', 'recordNotInterested']) {
+      assert.ok(Object.hasOwn(props, field), `缺少 ${field}`);
+    }
+    assert.equal(Object.keys(props).some(field => /cf/i.test(field)), false);
+  });
+
+  test('prompt 區分長期主題（存）與這次想排（interests），並要求照實轉述分數', () => {
+    const prompt = buildSystemPrompt({});
+    assert.ok(prompt.includes('呼叫 update_topic_interests 的 addTerms 直接存進課程主題'));
+    assert.ok(prompt.includes('呼叫 get_topic_interests'));
+    assert.ok(prompt.includes('把方向放進單次 run_csp_scheduler 的 interests'));
+  });
+});
