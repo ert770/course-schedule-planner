@@ -379,60 +379,82 @@ export function ScheduleProvider({ children }) {
   // 個人化或舊呼叫端），退課原因對話框本身不再提供略過選項。
   // 本系統沒有連學校選課系統，「退掉已經在課表上的課」就是 roadmap #2 的
   // 「加選後退選」，因此送 `course_withdrawn` 而不是 `course_removed`。
+  const recordWithdrawal = useCallback((removed, feedbackReason) => {
+    // 三件事**彼此獨立**：畫面移除、加入本次避開清單、送出長期學習事件。
+    // 先前只有第一與第三件，而第三件要累積到門檻才會影響權重——所以下一次重排
+    // 的條件跟上一次完全相同，同一門課被排回來是必然。事件寫入失敗（或使用者
+    // 根本沒同意個人化）都不該影響前兩件。
+    const entry = buildAvoidanceEntry(removed, feedbackReason);
+    if (Number.isInteger(entry.sectionId) && entry.sectionId > 0) {
+      commitAvoidances([
+        ...avoidancesRef.current.filter(item => item.sectionId !== entry.sectionId),
+        entry,
+      ]);
+    }
+    emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN, removed, {
+      requestId: requestIdForAction(),
+      source: courseSource(removed, {
+        systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
+      }),
+      feedbackReason,
+    }));
+  }, [commitAvoidances, emit, requestIdForAction]);
+
   const removeCourse = useCallback((id, { feedbackReason = null } = {}) => {
     const removed = scheduleRef.current.find(course => courseId(course) === String(id));
     const next = scheduleRef.current.filter(course => courseId(course) !== String(id));
     scheduleRef.current = next;
     setSchedule(next);
     userAddedIdsRef.current.delete(String(id));
-
-    // 三件事**彼此獨立**：畫面移除、加入本次避開清單、送出長期學習事件。
-    // 先前只有第一與第三件，而第三件要累積到門檻才會影響權重——所以下一次重排
-    // 的條件跟上一次完全相同，同一門課被排回來是必然。事件寫入失敗（或使用者
-    // 根本沒同意個人化）都不該影響前兩件。
-    if (removed) {
-      const entry = buildAvoidanceEntry(removed, feedbackReason);
-      if (Number.isInteger(entry.sectionId) && entry.sectionId > 0) {
-        commitAvoidances([
-          ...avoidancesRef.current.filter(item => item.sectionId !== entry.sectionId),
-          entry,
-        ]);
-      }
-    }
-
-    if (removed) {
-      emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_WITHDRAWN, removed, {
-        requestId: requestIdForAction(),
-        source: courseSource(removed, {
-          systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
-        }),
-        feedbackReason,
-      }));
-    }
-  }, [commitAvoidances, emit, requestIdForAction]);
+    if (removed) recordWithdrawal(removed, feedbackReason);
+  }, [recordWithdrawal]);
 
   // Agent 的換課（ADR-036）：伺服器已挑好不衝堂、符合偏好的新課，這裡先驗證
   // 「拿掉舊課＋加入新課」整份課表，通過才真的移除與加入——驗證失敗時課表完全不動，
   // 不會出現舊課被拿掉、新課卻加不進去的半套狀態。
-  const applyCourseSwap = useCallback(async (swap) => {
-    const removeId = String(swap?.removeSectionId ?? '');
-    const incoming = swap?.addCourse;
-    const removed = scheduleRef.current.find(course => courseId(course) === removeId);
-    if (!removed || !incoming || !courseId(incoming)) {
-      return { success: false, message: '課表已經變動，找不到要換掉的課，未換課。' };
-    }
-    const proposed = [...scheduleRef.current.filter(course => courseId(course) !== removeId), incoming];
-    try {
-      const result = await scheduleAPI.validate(proposed);
-      if (result?.valid !== true || result?.hardConstraintsValid !== true) {
-        return { success: false, ...describeValidationFailure(result) };
+  const applyCourseSwap = useCallback((swap) => {
+    const account = accountGenerationRef.current;
+    const operation = addQueueRef.current.then(async () => {
+      const current = scheduleRef.current;
+      const removeId = String(swap?.removeSectionId ?? '');
+      const incoming = swap?.addCourse;
+      const incomingId = courseId(incoming);
+      const removed = current.find(course => courseId(course) === removeId);
+      if (account !== accountGenerationRef.current || !removed || !incomingId || current.some(course => courseId(course) === incomingId)) {
+        return { success: false, message: '目前課表與換課時的狀態不同，請重新選擇替代課。' };
       }
-    } catch (err) {
-      return { success: false, message: `無法驗證課表，因此未換課：${err.message}` };
-    }
-    removeCourse(removeId);
-    return addCourse(incoming);
-  }, [addCourse, removeCourse]);
+      const proposed = [...current.filter(course => courseId(course) !== removeId), incoming];
+      const credits = proposed.reduce((sum, course) => sum + Number(course?.credits || 0), 0);
+      if (credits > 30) {
+        return { success: false, message: `替換後共 ${credits} 學分，超過上限 30 學分。` };
+      }
+      try {
+        const result = await scheduleAPI.validate(proposed);
+        if (result?.valid !== true || result?.hardConstraintsValid !== true) {
+          return { success: false, ...describeValidationFailure(result) };
+        }
+      } catch (err) {
+        return { success: false, message: `無法驗證課表：${err.message}` };
+      }
+      if (account !== accountGenerationRef.current || scheduleRef.current !== current) {
+        return { success: false, message: '驗證期間課表已變動，請重新選擇替代課。' };
+      }
+      scheduleRef.current = proposed;
+      setSchedule(proposed);
+      userAddedIdsRef.current.delete(removeId);
+      userAddedIdsRef.current.add(incomingId);
+      recordWithdrawal(removed, null);
+      emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, incoming, {
+        requestId: requestIdForAction(),
+        source: courseSource(incoming, {
+          systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
+        }),
+      }));
+      return { success: true, removed };
+    });
+    addQueueRef.current = operation.catch(() => undefined);
+    return operation;
+  }, [emit, recordWithdrawal, requestIdForAction]);
 
   // 這次排課實際套用了哪些避開條件——由**伺服器**回報，不是前端自己推的。
   //

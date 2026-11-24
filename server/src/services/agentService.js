@@ -612,6 +612,100 @@ function describeExclusions(excluded) {
   );
 }
 
+function preferenceSummary(prefs) {
+  return [
+    prefs?.mondayFree && '星期一排空',
+    prefs?.noMorningClasses && '不排早八',
+    prefs?.noEveningClasses && '不排晚間課',
+    prefs?.lunchBreakFree && '保留午休',
+    prefs?.blockedPeriods?.length > 0 && '避開已設定的時段',
+    prefs?.avoidInstructors?.length > 0 && '避開已設定的教師',
+  ].filter(Boolean).join('、');
+}
+
+function describeChatTool(name, args, ctx, result) {
+  const course = id => ctx.planningContext?.currentCourses.find(item => Number(item.sectionId) === Number(id))?.name;
+  const top = Array.isArray(result) ? result[0] : result?.courses?.[0];
+  const topLabel = top?.name && [top.name, top.timeStr].filter(Boolean).join('｜');
+  const weekdays = ['', '週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+  const filters = normalizeCourseQueryArgs(args);
+  const criteria = [
+    weekdays[filters.dayOfWeek],
+    filters.category,
+    filters.keyword && `「${String(filters.keyword).slice(0, 80)}」`,
+    filters.language === 'English' ? '全英授課' : filters.language === '中文 (Chinese)' ? '中文授課' : '',
+  ].filter(Boolean).join('・');
+  const applied = preferenceSummary(ctx.prefs);
+  let title;
+  let detail;
+  switch (name) {
+    case 'find_replacement_courses':
+      title = `查詢${criteria || '本學期課程'}，替換${course(args.replaceSectionId) ? `「${course(args.replaceSectionId)}」` : '目前課程'}`;
+      detail = ['保留其他課程，排除衝堂與不符資格的班次', applied && `沿用偏好：${applied}`].filter(Boolean).join('。');
+      if (result && !result.error) {
+        const count = result.totalCandidates ?? result.courses?.length ?? 0;
+        title = count > 0 ? `找到 ${count} 個替代班次` : '沒有符合條件的替代班次';
+        detail = topLabel ? `第一個候選：${topLabel}` : Object.entries(result.excludedCounts ?? {})
+          .map(([reason, excluded]) => `${reason}：${excluded} 個`).join('、');
+      }
+      break;
+    case 'query_course_db':
+      title = `查詢${criteria || '本學期課程'}`;
+      if (result && !result.error) {
+        const count = Array.isArray(result) ? result.length : result.courses?.length ?? 0;
+        title = count ? `查詢回傳 ${count} 個班次` : '沒有查到符合條件的課程';
+        detail = topLabel;
+      }
+      break;
+    case 'swap_course':
+      title = course(args.removeSectionId) ? `檢查「${course(args.removeSectionId)}」的替換條件` : '檢查所選班次的換課條件';
+      detail = applied && `沿用偏好：${applied}`;
+      if (result?.success) {
+        title = topLabel ? `替代班次：${topLabel}` : '已確認所選班次的替換資格';
+        detail = '候選資格檢查通過，待驗證整份課表';
+      }
+      break;
+    case 'update_preferences': {
+      const flags = result?.updatedFields ?? expandPreferenceChecklist(args);
+      const changes = [
+        typeof flags.mondayFree === 'boolean' && `${flags.mondayFree ? '勾選' : '取消'}「星期一排空」`,
+        typeof flags.noMorningClasses === 'boolean' && `${flags.noMorningClasses ? '勾選' : '取消'}「不排早八」`,
+      ].filter(Boolean);
+      title = result?.noChange ? '排課偏好維持原設定' : result?.success ? '排課偏好已保存' : '更新排課偏好';
+      detail = changes.join('、');
+      break;
+    }
+    case 'run_csp_scheduler':
+      title = result?.success ? `產生 ${result.plans?.length || 1} 個課表方案` : '依目前條件產生課表';
+      detail = result?.success
+        ? `推薦方案：${result.schedule?.length ?? 0} 門課、${result.totalCredits ?? 0} 學分`
+        : applied && `沿用偏好：${applied}`;
+      break;
+    case 'search_dcard_reviews':
+      title = result ? '已取得課程評價資料' : '查詢課程評價';
+      detail = result?.courseName || criteria;
+      break;
+    default:
+      return null;
+  }
+  const failed = Boolean(result && (result.error || result.success === false));
+  if (failed) {
+    const reasons = {
+      REPLACE_TARGET_NOT_IN_SCHEDULE: '目前課表找不到要替換的課程',
+      SWAP_TARGET_NOT_ELIGIBLE: '所選班次未通過候選資格或衝堂檢查',
+      REVIEWS_NOT_FOUND: '找不到指定課程的評價',
+      NOTHING_TO_CHANGE: '沒有收到可保存的偏好變更',
+    };
+    detail = reasons[result.errorCode] ?? '這一步未取得可用結果，請查看助理回覆。';
+  }
+  return {
+    title: failed ? `${title}未完成` : title,
+    detail,
+    state: failed ? 'failed' : result ? 'done' : 'running',
+    ...(name === 'update_preferences' && result?.success && { preferencesUpdated: true }),
+  };
+}
+
 export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
   const { identity, prefs, studentScope } = ctx;
   const {
@@ -994,6 +1088,25 @@ export async function handleChat(identity, message, planningContext = null, opti
   });
   logger.info(`組合 Prompt 中。System prompt 長度：${systemInstruction.length} 字元。`, { label: 'Context' });
 
+  if (options.onProgress && resolvedPlanning && planningContextStatus === PLANNING_CONTEXT_STATUS.ACCEPTED) {
+    const { currentCourses, removedCourses } = resolvedPlanning;
+    const mentionedCourse = currentCourses.find(course => course.name && message.includes(course.name));
+    const courseCount = currentCourses.length;
+    const preferences = preferenceSummary(prefs);
+    options.onProgress({
+      id: 'context',
+      state: 'done',
+      title: mentionedCourse
+        ? `在目前課表找到「${mentionedCourse.name}」`
+        : `已核對目前課表的 ${courseCount} 門課`,
+      detail: [
+        mentionedCourse && `目前課表共 ${courseCount} 門課`,
+        removedCourses.length > 0 && `本次避開 ${removedCourses.length} 個班次`,
+        preferences && `已存時段偏好：${preferences}`,
+      ].filter(Boolean).join('。'),
+    });
+  }
+
   // `getChatHistory()` 已經是時序排好的 user／assistant 交替陣列，可以直接
   // 當成 Responses API 的 input items。先前這裡有一個 `contents.pop()`，等於
   // 每次都丟掉最近一則助理回覆——那是 Gemini `chats.create` 的 history 形狀
@@ -1015,6 +1128,9 @@ export async function handleChat(identity, message, planningContext = null, opti
   const ctx = {
     identity, prefs, studentScope, turnId,
     planningContext: hasPlanningState ? resolvedPlanning : null,
+  };
+  const publish = (id, activity) => {
+    if (activity) options.onProgress?.({ id, ...activity });
   };
   let responseData = null;
   let detectedIntent = 'general_chat';
@@ -1089,7 +1205,9 @@ export async function handleChat(identity, message, planningContext = null, opti
           result = { error: '工具參數不是合法的 JSON 物件，請重新產生。', errorCode: 'MALFORMED_ARGUMENTS' };
         } else {
           logger.debug('工具參數已解析（內容不記錄）', { label: 'ToolCall' });
+          if (options.onProgress) publish(call.call_id, describeChatTool(call.name, args, ctx));
           result = await executeAgentTool(call.name, args, ctx);
+          if (options.onProgress) publish(call.call_id, describeChatTool(call.name, args, ctx, result));
         }
 
         // 偏好寫入成功時告訴前端重抓偏好，左側勾選才會跟著改（ADR-036）。
@@ -1174,7 +1292,10 @@ export async function handleChat(identity, message, planningContext = null, opti
     finalReply = faithful.reply;
 
     // 只有整次處理成功才原子保存 user/assistant 一對加密訊息。
-    await saveChatExchange(identity, message, finalReply);
+    const historyReply = responseData?.success && responseData.swap
+      ? `已找到替代班次「${responseData.swap.addCourse.name}」。請以畫面上的課表為準。`
+      : finalReply;
+    await saveChatExchange(identity, message, historyReply);
 
     return {
       reply: finalReply, intent: detectedIntent, data: responseData, planningContextStatus,

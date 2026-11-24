@@ -1474,6 +1474,16 @@ Returns locally saved schedules for the session user.
 
 ### `POST /api/chat`
 
+聊天預設回傳 JSON。以 `Accept: text/event-stream` 送出相同請求時，伺服器在驗證登入、同意及訊息後開啟事件串流。每筆事件的 `data` 為單行 JSON。
+
+| 事件 | 內容 |
+| --- | --- |
+| `progress` | `id`、`title`、選填的 `detail`、`state`（`running`、`done`、`failed`）。相同 `id` 更新同一步。偏好寫入成功時可附 `preferencesUpdated: true`。 |
+| `result` | 與一般 JSON 回應相同。收到後串流結束。 |
+| `error` | 串流開始後發生的錯誤，含 `message`。串流前的驗證錯誤仍使用原有 HTTP 狀態與 JSON。 |
+
+換課工具回傳的候選只代表伺服器查到可替代班次。首頁先驗證整份課表，再一次套用替換。畫面確認課表更新後才顯示換課成功。串流中斷時由使用者確認目前狀態後重試。
+
 Request:
 
 ```json

@@ -20,6 +20,29 @@ import { getUserIdentity } from '../utils/userIdentity';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Compass } from 'lucide-react';
 
 import TopNav from '../components/Layout/TopNav';
+
+function ChatActivity({ items, pending = false }) {
+  if (!items?.length) return null;
+  const latest = items.at(-1);
+  return (
+    <details className="chat-activity" open={pending ? true : undefined}>
+      <summary>
+        <span role={pending ? 'status' : undefined}>
+          {pending || items.length === 1 ? latest.title : `${latest.title} · ${items.length} 個步驟`}
+        </span>
+      </summary>
+      <ol>
+        {items.map(({ id, title, detail, action, state }) => (
+          <li key={id} data-state={state}>
+            <strong>{title}</strong>
+            {detail && <span>{detail}</span>}
+            {action && <small>{action}</small>}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
 //
 // 這裡原本寫死一份 `PREFS`，用的是**排課旗標的 key**（`preferCompact` 等）
@@ -87,6 +110,8 @@ function Dashboard({ user, userIdentity }) {
   const [prefsError, setPrefsError] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatActivity, setChatActivity] = useState([]);
+  const chatSendingRef = useRef(false);
   const [chatHistory, setChatHistory] = useState([]);
   const [restoredChat, setRestoredChat] = useState(null);
   const chatHistoryLoading = userIdentity !== null && restoredChat === null;
@@ -124,7 +149,7 @@ function Dashboard({ user, userIdentity }) {
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
-  }, [chatHistory, restoredChat, chatLoading]);
+  }, [chatHistory, restoredChat, chatLoading, chatActivity]);
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
   // 軍訓國防科技、體育、班級活動要排進課表但不計入畢業學分（校規）。
@@ -299,7 +324,7 @@ function Dashboard({ user, userIdentity }) {
 
   const handleChatSend = async (overrideMsg) => {
     const msg = overrideMsg || chatInput.trim();
-    if (!msg || chatLoading || chatHistoryLoading) return;
+    if (!msg || chatSendingRef.current || chatHistoryLoading) return;
 
     // 聊天記憶與偏好更新都寫進這位使用者，不得退回 `default`。
     if (userIdentity === null) {
@@ -312,12 +337,40 @@ function Dashboard({ user, userIdentity }) {
 
     setChatInput('');
     setChatHistory(prev => [...prev, { role: 'user', text: msg }]);
+    chatSendingRef.current = true;
     setChatLoading(true);
+    const planningContext = buildPlanningContext();
+    const courseCount = planningContext.currentCourses.length;
+    const avoidedCount = planningContext.removedCourses.length;
+    const submittedContext = {
+      id: 'context',
+      title: courseCount ? `本次帶入目前課表的 ${courseCount} 門課` : '目前課表沒有已排入的課程',
+      detail: avoidedCount ? `另帶入 ${avoidedCount} 筆本次避開項目` : '',
+      state: 'done',
+    };
+    setChatActivity([submittedContext]);
+    const activity = new Map();
+    activity.set(submittedContext.id, submittedContext);
+    let preferencesReload;
+    const updateActivity = ({ id, title, detail, state, preferencesUpdated }) => {
+      const previous = activity.get(id);
+      activity.set(id, {
+        id, title, detail, state,
+        action: previous?.state === 'running' && previous.title !== title
+          ? [previous.title, previous.detail].filter(Boolean).join('。')
+          : previous?.action,
+      });
+      setChatActivity([...activity.values()]);
+      if (preferencesUpdated) preferencesReload = loadSavedPreferences();
+    };
+    const appendReply = (text, extras = {}) => {
+      setChatHistory(prev => [...prev, { role: 'bot', text, activity: [...activity.values()], ...extras }]);
+    };
 
     try {
       // 把畫面目前的狀態一起送過去：Agent 才不會反問它其實問得到的資料
       // （目前課表、剛移除了哪些課、原因是什麼）。
-      const res = await chatAPI.send(msg, buildPlanningContext());
+      const res = await chatAPI.send(msg, planningContext, { onProgress: updateActivity });
 
       // 規劃狀態的三態回覆。
       //
@@ -327,19 +380,23 @@ function Dashboard({ user, userIdentity }) {
       if (res.planningContextStatus === 'rejected-invalid') clearSessionAvoidances();
 
       // Agent 改了已存偏好：重抓，讓左側勾選跟著改（ADR-036）。
-      if (res.preferencesUpdated) loadSavedPreferences();
+      if (res.preferencesUpdated) await (preferencesReload ?? loadSavedPreferences());
 
       if (res.data?.success && res.data?.swap) {
         // Agent 換課：伺服器已挑好新課，前端驗證整份課表後移除舊課、加入新課。
-        const outcome = await applyCourseSwap(res.data.swap);
-        setChatHistory(prev => [
-          ...prev,
-          { role: 'bot', text: res.reply },
-          ...(outcome?.success ? [] : [{
-            role: 'bot',
-            text: `課表沒有更新：${outcome?.message || '換課失敗。'}`,
-          }]),
-        ]);
+        const { swap } = res.data;
+        const incoming = swap.addCourse;
+        const proposed = [incoming.name, formatCourseTime(incoming)].filter(Boolean).join('｜');
+        updateActivity({ id: 'apply-swap', title: '檢查替換後的整份課表', detail: proposed, state: 'running' });
+        const outcome = await applyCourseSwap(swap);
+        if (outcome?.success) {
+          updateActivity({ id: 'apply-swap', title: '衝堂檢查通過，課表已更新', detail: proposed, state: 'done' });
+          appendReply(`已把「${outcome.removed.name}」換成 **${proposed}**。原課已加入「本次避開」。`);
+        } else {
+          const reason = outcome?.message || '換課失敗。';
+          updateActivity({ id: 'apply-swap', title: '換課未完成，保留原課表', detail: reason, state: 'failed' });
+          appendReply(`課表沒有更新。${reason}`);
+        }
       } else if (res.intent === 'run_csp_scheduler' && res.data?.success) {
         // 伺服器回報這次實際套用了哪些避開條件（含 Agent 追問原因後重算的範圍），
         // 寫回 sessionStorage，之後按一般「重新排課」才會沿用同樣的範圍。
@@ -351,20 +408,23 @@ function Dashboard({ user, userIdentity }) {
         // 顯示的文字必須是 res.reply（已經過忠實度檢查），不能換成固定字串——
         // 換掉等於讓忠實度檢查的結果沒有出現在使用者真正看到的畫面上。
         // 課表本身另外用下面的 schedule 卡片呈現，不需要靠這句文字重複交代。
-        setChatHistory(prev => [...prev, {
-          role: 'bot',
-          text: res.reply,
+        appendReply(res.reply, {
           schedule: res.data.schedule,
           totalCredits: res.data.totalCredits
-        }]);
+        });
       } else {
         // 後端 agentService 回傳的欄位是 reply，不是 response
-        setChatHistory(prev => [...prev, { role: 'bot', text: res.reply }]);
+        appendReply(res.reply);
       }
     } catch (err) {
       console.error('Chat error:', err);
-      setChatHistory(prev => [...prev, { role: 'bot', text: '抱歉，處理您的請求時發生錯誤。' }]);
+      for (const item of activity.values()) {
+        if (item.state === 'running') updateActivity({ ...item, state: 'failed', title: '這一步未取得結果' });
+      }
+      appendReply(err.message || '處理訊息時發生錯誤。');
     } finally {
+      chatSendingRef.current = false;
+      setChatActivity([]);
       setChatLoading(false);
     }
   };
@@ -644,6 +704,7 @@ function Dashboard({ user, userIdentity }) {
               <div key={i} className={`chat-message ${msg.role}`}>
                 {msg.role === 'bot' && (
                   <div className="message-bubble">
+                    <ChatActivity items={msg.activity} />
                     {msg.schedule && <CheckCircle2 size={16} className="success-icon" />}
                     <ChatMessageContent text={msg.text} />
 
@@ -669,15 +730,10 @@ function Dashboard({ user, userIdentity }) {
                 )}
               </div>
             ))}
-            {chatLoading && (
+            {chatLoading && chatActivity.length > 0 && (
               <div className="chat-message bot">
-                <div className="message-bubble chat-thinking" role="status">
-                  思考中
-                  <span className="typing-indicator" aria-hidden="true">
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
-                  </span>
+                <div className="message-bubble">
+                  <ChatActivity items={chatActivity} pending />
                 </div>
               </div>
             )}

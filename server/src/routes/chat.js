@@ -26,6 +26,10 @@ router.get('/history', requireIdentity, async (req, res) => {
 
 // POST /api/chat — 處理對話
 router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
+  let streaming = false;
+  const sendEvent = (event, data) => {
+    if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
   try {
     const { message, planningContext } = req.body;
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -41,17 +45,32 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
     // 丟棄就是整包丟棄：未通過驗證的內容一律不得用來組 prompt 或當成排課限制，
     // 不做「這幾筆看起來還行」的部分採用。
     const validation = validatePlanningContext(planningContext);
+    streaming = req.get('accept')?.split(',').some(value => value.trim() === 'text/event-stream') ?? false;
+    if (streaming) {
+      res.set({
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store, no-transform',
+        'X-Accel-Buffering': 'no',
+      });
+      res.flushHeaders();
+    }
     if (validation.error) {
       // 只記原因，不記內容——`#33` 明訂 log 只留 metadata。
       logger.warn(`規劃狀態格式不合法，本回合忽略：${validation.error}`, { label: 'Chat' });
-      const result = await handleChat(req.identity, message.trim(), null);
-      return res.json({ ...result, planningContextStatus: PLANNING_CONTEXT_STATUS.REJECTED_INVALID });
     }
-
-    const result = await handleChat(req.identity, message.trim(), validation.value);
-    res.json(result);
+    const result = await handleChat(req.identity, message.trim(), validation.error ? null : validation.value, {
+      onProgress: streaming ? data => sendEvent('progress', data) : undefined,
+    });
+    if (validation.error) result.planningContextStatus = PLANNING_CONTEXT_STATUS.REJECTED_INVALID;
+    if (!streaming) return res.json(result);
+    sendEvent('result', result);
+    res.end();
   } catch (err) {
     console.error('Chat error:', err.message);
+    if (streaming && res.headersSent) {
+      sendEvent('error', { message: '處理訊息時發生錯誤' });
+      return res.end();
+    }
     res.status(err.status || 500).json({ error: err.status ? err.message : '處理訊息時發生錯誤', ...(err.code ? { code: err.code } : {}) });
   }
 });

@@ -94,6 +94,25 @@ test('#33 personal route is blocked before current service consent and allowed a
   assert.equal((await afterConsent.json()).intent, 'error');
 });
 
+test('chat event stream preserves validation and terminates with the JSON-compatible result', async () => {
+  const headers = { Cookie: cookie, 'Content-Type': 'application/json', Accept: 'text/event-stream' };
+  const send = body => fetch(`${baseUrl}/chat`, { method: 'POST', headers, body: JSON.stringify(body) });
+  const invalid = await send({ message: ' ' });
+  assert.equal(invalid.status, 400);
+  assert.match(invalid.headers.get('content-type'), /application\/json/);
+
+  const response = await send({ message: '測試', planningContext: 'invalid' });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^text\/event-stream/);
+  assert.match(response.headers.get('cache-control'), /no-store/);
+  assert.equal(response.headers.get('x-accel-buffering'), 'no');
+  const [event, data] = (await response.text()).trim().split('\n');
+  assert.equal(event, 'event: result');
+  const result = JSON.parse(data.slice('data: '.length));
+  assert.equal(result.intent, 'error');
+  assert.equal(result.planningContextStatus, 'rejected-invalid');
+});
+
 // roadmap #30 的「export 帶 learnedPreferenceWeights 欄位」原本在這裡用真的
 // `GET /api/privacy/export` 測——但那條路由本來就需要真實 MySQL 讀 Profile
 // （與這次改動無關的既有限制），CI 刻意不設定 DB secret（見 `.github/workflows/ci.yml`
