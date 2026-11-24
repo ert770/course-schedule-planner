@@ -1556,6 +1556,17 @@ tool result 信封（`schemaVersion`／`dataSource`／`term`／`warnings`／`err
 
 完整班級缺少或無法解析時，`courseSearchScope` 的三個欄位均為 `null`。
 
+`interestSummary` 由已保存的 `interestSelections` 和正規化標籤目錄產生。它帶有
+`directions`（`group`、`categoryId`、`title`、`categoryLabel`）與
+`topics`（`group`、`categoryId`、`tagId`、`name`、`duplicate`）。同一個標籤 ID
+從第二次出現起標為 `duplicate: true`。舊資料中目錄外的方向顯示為「舊版課程方向」，
+目錄外的標籤不列入摘要。這份摘要直接由目錄組成，候選池可用性仍由
+`POST /api/profile/interest-questions` 的 `stage: "summary"` 在作答時判斷。
+
+設定頁或首頁排課偏好成功保存後，首頁用現有的 `POST /api/schedule/generate`
+以 `surface: "dashboard"`、`trigger: "preference_regenerate"` 發出一次排課，
+並以回傳的方案更新課表。首次設定仍會先走探索流程。
+
 ### `POST /api/profile/interest-followups`
 
 設定頁「想接觸的課程主題」的追問題目（2026-11-20 起）。學生勾選類別、按「完成並保存偏好設定」之後，每個類別問一題，

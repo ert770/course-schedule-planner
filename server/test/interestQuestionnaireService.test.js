@@ -17,6 +17,7 @@ import {
   DETAIL_FLAT_MAX,
   DETAIL_POPULAR_COUNT,
   QUESTIONNAIRE_INSTRUCTIONS,
+  buildSelectionSummary,
   detailCandidatesFor,
   getInterestQuestion,
   normalizeQuestionOutput,
@@ -411,6 +412,24 @@ describe('課程主題問答：stage=detail（細項頁，三層沙漏的中、�
 });
 
 describe('課程主題問答：stage=summary 與輸出驗證', () => {
+  test('設定摘要只讀標準目錄，保留方向名稱並標記重複的具體主題', () => {
+    const language = mainByName.get('語言、文學與溝通');
+    const curated = getCuratedInterestOption('curated_ai');
+    const result = buildSelectionSummary(null, [
+      { group: 'outside', categoryId: language.id, tagIds: [LANG[0].id, 'unknown_tag'] },
+      { group: 'generalEducation', categoryId: language.id, tagIds: [LANG[0].id] },
+      { group: 'department', categoryId: curated.id, tagIds: [] },
+      { group: 'department', categoryId: 'unknown_category', tagIds: [] },
+    ]);
+    assert.deepEqual(result.directions.map(item => item.title), [
+      '學外語或了解不同文化', language.name, '讓電腦從資料中學習', '舊版課程方向',
+    ]);
+    assert.ok(result.directions.every(item => !Object.hasOwn(item, 'available')));
+    assert.deepEqual(result.topics.map(item => [item.name, item.duplicate]), [
+      [LANG[0].name, false], [LANG[0].name, true],
+    ]);
+  });
+
   test('QN16 摘要把已存的方向與標籤換成名稱；同一標籤從兩個方向選到只算一次', async () => {
     const langId = mainByName.get('語言、文學與溝通').id;
     const result = await getInterestQuestion({

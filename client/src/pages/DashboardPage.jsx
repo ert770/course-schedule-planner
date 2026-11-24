@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/useAuth';
 import { useSchedule } from '../contexts/useSchedule';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { scheduleAPI, chatAPI, profileAPI, historyFeedbackAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
@@ -28,6 +29,8 @@ import TopNav from '../components/Layout/TopNav';
 export default function DashboardPage() {
   const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
+  const location = useLocation();
+  const navigate = useNavigate();
   const {
     schedule,
     loading: scheduleLoading,
@@ -66,6 +69,11 @@ export default function DashboardPage() {
   // 副本與真相各自演化，Setup 改存標籤陣列之後，這裡讀 `prefs.noMorningClasses`
   // 全部是 undefined，側邊面板因此永遠不打勾。改讀同一份資料就沒有「同步」問題。
   const [selectedTags, setSelectedTags] = useState(new Set());
+  const [savedTags, setSavedTags] = useState(new Set());
+  const [prefsReadyFor, setPrefsReadyFor] = useState(null);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const prefsReady = userIdentity !== null && prefsReadyFor === userIdentity;
+  const prefsChanged = selectedTags.size !== savedTags.size || [...selectedTags].some(tag => !savedTags.has(tag));
   const [tagGroups, setTagGroups] = useState([]);
   const [prefsError, setPrefsError] = useState('');
   const [chatInput, setChatInput] = useState('');
@@ -83,6 +91,8 @@ export default function DashboardPage() {
   const chatInputRef = useRef(null);
   const chatScrollRef = useRef(null);
   const initialGenerationUserRef = useRef(null);
+  const preferencesLocationRef = useRef(null);
+  const schedulingRef = useRef(false);
   useEffect(() => {
     // Scroll chat to bottom
     if (chatScrollRef.current) {
@@ -99,27 +109,15 @@ export default function DashboardPage() {
   );
   const hasNonGraduationCredits = graduationCredits !== totalCredits;
 
-  const generateInitialSchedule = useCallback(async (trigger = 'initial_load') => {
+  const generateSchedule = useCallback(async (trigger = 'initial_load', { preferencesSaved = false } = {}) => {
+    if (schedulingRef.current) return;
+    schedulingRef.current = true;
     setIsScheduling(true);
+    setScheduleNotice(null);
     try {
-      // 【修復點】：前端防護網。
-      // 雖然註解說後端會自動讀取標籤，但實測後端未能將 '#星期一排空' 標籤轉換為硬性限制。
-      // 因此我們在這裡明確把阻擋時段 (blockedPeriods) 抓出來，包進 constraints 送給後端。
-      const isMondayFree = selectedTags.has('#星期一排空') || selectedTags.has('星期一排空');
-      const blockedPeriods = [];
-      
-      if (isMondayFree) {
-        // 星期一第 1 到 14 節全部排空
-        for (let i = 1; i <= 14; i++) {
-          blockedPeriods.push({ dayOfWeek: 1, period: i });
-        }
-      }
-
       const constraints = {
         sessionAvoidances: buildAvoidanceConstraints(),
         selectedCourseIds: userAddedCourseIds(),
-        // 如果有勾選星期一排空，強制將條件送給後端
-        ...(blockedPeriods.length > 0 && { mondayFree: true, blockedPeriods })
       };
 
       if (userIdentity === null) {
@@ -136,7 +134,10 @@ export default function DashboardPage() {
         trigger,
       });
 
-      setScheduleNotice(buildScheduleNotice(data));
+      const notice = buildScheduleNotice(data);
+      setScheduleNotice(!data.success && preferencesSaved
+        ? { ...notice, message: `偏好已保存，課表未更新。 ${notice.message}` }
+        : notice);
 
       if (trigger !== 'initial_load') {
         logScheduleRegenerated(data.requestId, { surface: 'dashboard', trigger });
@@ -155,24 +156,34 @@ export default function DashboardPage() {
       console.error('Schedule generation failed:', err);
       setScheduleNotice(makeNotice({
         level: 'error',
-        message: err.message || '無法連接到伺服器，請確認後端已啟動。',
+        message: preferencesSaved
+          ? `偏好已保存，課表未更新。 ${err.message || '請再按「套用偏好排課」。'}`
+          : (err.message || '無法連接到伺服器，請確認後端已啟動。'),
       }));
     } finally {
-      setTimeout(() => setIsScheduling(false), 1500);
+      schedulingRef.current = false;
+      setIsScheduling(false);
     }
-  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userAddedCourseIds, userIdentity, selectedTags]); 
-  // ↑ 注意最後的 dependency array 加入了 selectedTags
+  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userAddedCourseIds, userIdentity]);
   
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;
+    if (location.state?.preferencesSavedFor === userIdentity) {
+      if (preferencesLocationRef.current === location.key || schedulingRef.current) return;
+      preferencesLocationRef.current = location.key;
+      initialGenerationUserRef.current = userIdentity;
+      navigate(location.pathname + location.search + location.hash, { replace: true, state: null });
+      void generateSchedule('preference_regenerate', { preferencesSaved: true });
+      return;
+    }
     if (schedule.length > 0) {
       initialGenerationUserRef.current = userIdentity;
       return;
     }
     if (initialGenerationUserRef.current === userIdentity) return;
     initialGenerationUserRef.current = userIdentity;
-    generateInitialSchedule();
-  }, [generateInitialSchedule, schedule.length, scheduleLoading, userIdentity]);
+    void generateSchedule();
+  }, [generateSchedule, schedule.length, scheduleLoading, userIdentity, location, navigate]);
 
   // 階段 5：歷史修課回饋。只在同意個人化學習時查；查不到不影響排課。
   useEffect(() => {
@@ -204,9 +215,12 @@ export default function DashboardPage() {
 
     profileAPI.get()
       .then(profile => {
-        if (!cancelled && Array.isArray(profile?.selectedTags)) {
-          setSelectedTags(new Set(profile.selectedTags));
-        }
+        if (cancelled) return;
+        const tags = new Set(profile?.selectedTags ?? []);
+        setSelectedTags(tags);
+        setSavedTags(tags);
+        setPrefsReadyFor(userIdentity);
+        setPrefsError('');
       })
       .catch(err => {
         if (!cancelled) setPrefsError(err.message || '偏好設定載入失敗');
@@ -215,36 +229,36 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [userIdentity]);
 
-  // 勾選立即寫回 MySQL，但**不重新排課**——重排由「套用偏好排課」觸發，
-  // 否則連勾幾個偏好就會連跑幾次排課。
-  //
-  // 寫入失敗必須顯示出來。靜默失敗會讓使用者以為存好了、實際上沒有，
-  // 那正是這批問題反覆出現的原因。
-  const handlePrefToggle = async (tag) => {
-    const next = new Set(selectedTags);
-    if (next.has(tag)) next.delete(tag);
-    else next.add(tag);
+  const handlePrefToggle = (tag) => {
+    setSelectedTags(previous => {
+      const next = new Set(previous);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
 
-    if (userIdentity === null) {
-      setPrefsError('尚未登入，無法儲存偏好設定。');
-      return;
-    }
-
-    const previous = selectedTags;
-    setSelectedTags(next);
+  const handleSavePreferences = async () => {
+    if (!prefsReady || !prefsChanged || savingPrefs || isScheduling || scheduleLoading) return;
     setPrefsError('');
+    setSavingPrefs(true);
 
     try {
-      await profileAPI.update({ selectedTags: [...next] });
+      const result = await profileAPI.update({ selectedTags: [...selectedTags] });
+      const persistedTags = new Set(result?.preferences?.selectedTags ?? selectedTags);
+      setSelectedTags(persistedTags);
+      setSavedTags(persistedTags);
+      await generateSchedule('preference_regenerate', { preferencesSaved: true });
     } catch (err) {
-      // 存不進去就把畫面退回原狀，不讓勾選狀態與資料庫說法不一致。
-      setSelectedTags(previous);
       setPrefsError(err.message || '偏好儲存失敗，請再試一次。');
+    } finally {
+      setSavingPrefs(false);
     }
   };
 
   const handleRegenerate = () => {
-    generateInitialSchedule('preference_regenerate');
+    if (prefsChanged) void handleSavePreferences();
+    else void generateSchedule('preference_regenerate');
   };
 
   const handleChatSend = async (overrideMsg) => {
@@ -376,12 +390,21 @@ export default function DashboardPage() {
                   <input
                     type="checkbox"
                     checked={selectedTags.has(tag)}
+                    disabled={!prefsReady || savingPrefs || isScheduling}
                     onChange={() => handlePrefToggle(tag)}
                   />
                   {tag.replace('#', '')}
                 </label>
               ))}
             </div>
+            <button
+              type="button"
+              className="action-btn primary"
+              onClick={handleSavePreferences}
+              disabled={!prefsReady || !prefsChanged || savingPrefs || isScheduling || scheduleLoading}
+            >
+              {isScheduling && savingPrefs ? '正在更新課表…' : (savingPrefs ? '正在保存…' : '保存變更')}
+            </button>
           </div>
 
           <div className="sidebar-section" style={{ marginTop: '16px' }}>
@@ -488,6 +511,7 @@ export default function DashboardPage() {
               <button
                 className="action-btn primary"
                 onClick={handleRegenerate}
+                disabled={savingPrefs || isScheduling || scheduleLoading}
                 style={{
                   flexShrink: 0,
                   whiteSpace: 'nowrap',
@@ -544,7 +568,7 @@ export default function DashboardPage() {
             {isScheduling && (
               <div className="scheduling-overlay">
                 <Loader2 size={40} className="spin-animation" />
-                <p>Agent 正在呼叫排課演算法...</p>
+                <p role="status">正在更新課表…</p>
               </div>
             )}
             <div id="schedule-grid-container">
