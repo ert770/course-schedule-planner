@@ -1,7 +1,7 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 async function request(endpoint, options = {}) {
-  const { noAuthRedirect = false, ...requestOptions } = options;
+  const { noAuthRedirect = false, readResponse, ...requestOptions } = options;
   const url = `${API_BASE}${endpoint}`;
   const config = {
     headers: { 'Content-Type': 'application/json' },
@@ -22,12 +22,42 @@ async function request(endpoint, options = {}) {
       error.code = err.code;
       throw error;
     }
-    return await res.json();
+    return await (readResponse ? readResponse(res) : res.json());
   } catch (err) {
     if (err.message === 'Failed to fetch') {
       throw new Error('無法連接到伺服器，請確認後端已啟動。');
     }
     throw err;
+  }
+}
+
+async function readChatResponse(response, onProgress) {
+  if (!response.headers.get('content-type')?.startsWith('text/event-stream')) {
+    return response.json();
+  }
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error('對話連線已中斷，請確認課表或偏好狀態後再試。');
+      buffer += value;
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const [event, data] = frame.split('\n');
+        if (data?.startsWith('data: ')) {
+          const payload = JSON.parse(data.slice(6));
+          if (event === 'event: progress') onProgress(payload);
+          if (event === 'event: result') return payload;
+          if (event === 'event: error') throw new Error(payload.message);
+        }
+        boundary = buffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => {});
   }
 }
 
@@ -61,10 +91,14 @@ export const chatAPI = {
   // 只送 ID 與原因代號，**不送課名、課號或教師**——那些字串會進 system prompt，
   // 由伺服器從 Courses 重查才是唯一能保證對上的做法（見 planningContextService.js）。
   // 省略時完全維持既有行為。
-  send: (message, planningContext = null) =>
+  send: (message, planningContext = null, { onProgress } = {}) =>
     request('/chat', {
       method: 'POST',
       body: JSON.stringify(planningContext ? { message, planningContext } : { message }),
+      ...(onProgress && {
+        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        readResponse: response => readChatResponse(response, onProgress),
+      }),
     }),
 };
 
