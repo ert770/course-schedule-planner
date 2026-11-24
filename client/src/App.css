@@ -516,6 +516,10 @@
   30% { opacity: 1; transform: translateY(-3px); }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .typing-dot { animation: none; }
+}
+
 /* Chat Panel (Right) */
 .chat-panel {
   width: 380px;
@@ -559,6 +563,7 @@
   border-radius: 16px;
   font-size: 0.9rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .chat-message.user .message-bubble {
   background: var(--accent-blue);
@@ -572,6 +577,23 @@
   border-bottom-left-radius: 4px;
 }
 .success-icon { display: inline-block; vertical-align: text-bottom; margin-right: 6px; color: var(--accent-emerald); }
+
+.chat-history-status {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.chat-message-content { display: grid; gap: 0.65em; }
+.chat-message-content h4 { font-size: 1em; line-height: inherit; }
+.chat-message-content p { white-space: pre-line; }
+.chat-message-content :is(h4, p, ul, ol) { margin: 0; }
+.chat-message-content :is(ul, ol) { padding-inline-start: 1.45em; }
+.chat-message-content li + li { margin-top: 0.25em; }
+.chat-thinking {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.chat-thinking .typing-indicator { padding: 0; }
 
 .chat-schedule-list {
   margin-top: 12px;
@@ -1115,15 +1137,16 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-.schedule-confirmation {
-  transition: opacity 0.8s ease-in-out, transform 0.8s ease-in-out;
-  opacity: 1;
+.schedule-confirmation[data-state="accepted"] {
+  animation: schedule-confirmation-fade 300ms ease-out 2s forwards;
 }
 
-.schedule-confirmation.fade-out {
-  opacity: 0;
-  transform: translateY(-4px);
-  pointer-events: none;
+@keyframes schedule-confirmation-fade {
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schedule-confirmation[data-state="accepted"] { animation: none; }
 }
 
 /* 美化超修與低修警告標籤 */

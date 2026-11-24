@@ -5,6 +5,8 @@
 Prompt 與工具 schema 建構於 `server/src/services/promptService.js`，Agent 執行於
 `server/src/services/agentService.js`。
 
+簡短回答可用一段。回覆有多項資訊時，可用 Markdown 短標題、條列與粗體標示重點。畫面以文字呈現原始 HTML。
+
 **Provider 與協定（2026-08-30 起）**：OpenAI `gpt-5.6-luna`，走 **Responses API**
 （`/v1/responses`）的**原生 tool calling**。
 

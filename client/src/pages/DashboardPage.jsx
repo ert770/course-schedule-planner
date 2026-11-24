@@ -10,6 +10,7 @@ import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmation
 import SessionAvoidanceBar from '../components/Schedule/SessionAvoidanceBar';
 import { formatCourseTime } from '../utils/courseTime';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
+import ChatMessageContent from '../components/Chat/ChatMessageContent';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
@@ -29,6 +30,10 @@ import TopNav from '../components/Layout/TopNav';
 export default function DashboardPage() {
   const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
+  return <Dashboard key={userIdentity} user={user} userIdentity={userIdentity} />;
+}
+
+function Dashboard({ user, userIdentity }) {
   const location = useLocation();
   const navigate = useNavigate();
   // MyFCU 本機同步入口（只在開發模式查詢）。本機模式沒開時後端回 404，視為未開放，不顯示錯誤。
@@ -82,9 +87,9 @@ export default function DashboardPage() {
   const [prefsError, setPrefsError] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
-  const [chatHistory, setChatHistory] = useState([
-    { role: 'bot', text: '你好！我是課表規劃助手，用自然語言告訴我你的需求吧！' }
-  ]);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [restoredChat, setRestoredChat] = useState(null);
+  const chatHistoryLoading = userIdentity !== null && restoredChat === null;
   const [detailCourse, setDetailCourse] = useState(null);
   // roadmap #2：排課只是推薦，使用者是否覺得符合需求才是最終選擇。
   const [confirmation, setConfirmation] = useState(null);
@@ -98,11 +103,29 @@ export default function DashboardPage() {
   const preferencesLocationRef = useRef(null);
   const schedulingRef = useRef(false);
   useEffect(() => {
+    if (userIdentity === null) return;
+    let active = true;
+    chatAPI.getHistory().then(({ messages }) => {
+      if (active) {
+        setRestoredChat({
+          messages: messages.map(({ role, content }) => ({
+            role: role === 'assistant' ? 'bot' : 'user',
+            text: content,
+          })),
+        });
+      }
+    }).catch(() => {
+      if (active) setRestoredChat({ messages: [], failed: true });
+    });
+    return () => { active = false; };
+  }, [userIdentity]);
+
+  useEffect(() => {
     // Scroll chat to bottom
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
-  }, [chatHistory]);
+  }, [chatHistory, restoredChat, chatLoading]);
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
   // 軍訓國防科技、體育、班級活動要排進課表但不計入畢業學分（校規）。
@@ -274,7 +297,7 @@ export default function DashboardPage() {
 
   const handleChatSend = async (overrideMsg) => {
     const msg = overrideMsg || chatInput.trim();
-    if (!msg || chatLoading) return;
+    if (!msg || chatLoading || chatHistoryLoading) return;
 
     // 聊天記憶與偏好更新都寫進這位使用者，不得退回 `default`。
     if (userIdentity === null) {
@@ -333,8 +356,9 @@ export default function DashboardPage() {
   // roadmap #2：明確回答「符合」才算接受。儲存課表刻意不算——存草稿也會按儲存。
   const handleConfirmFit = async () => {
     const outcome = await acceptRecommendation();
-    setConfirmation({ state: 'accepted', outcome });
+    setConfirmation(current => current === confirmation ? { state: 'accepted', outcome } : current);
   };
+  const dismissConfirmation = useCallback(() => setConfirmation(null), []);
 
   // 點擊「從課表移除」後，立即關閉背後的課程資訊視窗，只顯示退選原因視窗
   const handleRemoveClick = (course) => {
@@ -556,7 +580,7 @@ export default function DashboardPage() {
               personalizationEnabled={personalizationEnabled}
               onConfirmFit={handleConfirmFit}
               onRequestAdjust={() => setConfirmation({ state: 'adjusting' })}
-              onDismiss={() => setConfirmation(null)}
+              onDismiss={dismissConfirmation}
             />
 
             {/* 排課後的橘色說明（方案數、未排入、學分說明）依使用者要求不顯示（2026-10-26）；
@@ -588,7 +612,7 @@ export default function DashboardPage() {
             {isScheduling && (
               <div className="scheduling-overlay">
                 <Loader2 size={40} className="spin-animation" />
-                <p role="status">正在更新課表…</p>
+                <p role="status">正在規劃課表…</p>
               </div>
             )}
             <div id="schedule-grid-container">
@@ -608,12 +632,19 @@ export default function DashboardPage() {
           </div>
 
           <div className="chat-messages" ref={chatScrollRef}>
-            {chatHistory.map((msg, i) => (
+            {chatHistoryLoading && <p className="chat-history-status" role="status">正在載入對話…</p>}
+            {restoredChat?.failed && <p className="chat-history-status" role="status">暫時無法載入先前的對話。</p>}
+            {!chatHistoryLoading && !restoredChat?.messages.length && !chatHistory.length && (
+              <div className="chat-message bot">
+                <div className="message-bubble">你好！我是課表規劃助手，用自然語言告訴我你的需求吧！</div>
+              </div>
+            )}
+            {[...(restoredChat?.messages ?? []), ...chatHistory].map((msg, i) => (
               <div key={i} className={`chat-message ${msg.role}`}>
                 {msg.role === 'bot' && (
                   <div className="message-bubble">
                     {msg.schedule && <CheckCircle2 size={16} className="success-icon" />}
-                    <span>{msg.text}</span>
+                    <ChatMessageContent text={msg.text} />
 
                     {msg.schedule && (
                       <div className="chat-schedule-list">
@@ -639,8 +670,13 @@ export default function DashboardPage() {
             ))}
             {chatLoading && (
               <div className="chat-message bot">
-                <div className="message-bubble loading">
-                  <Loader2 size={16} className="spin-animation" /> 思考中...
+                <div className="message-bubble chat-thinking" role="status">
+                  思考中
+                  <span className="typing-indicator" aria-hidden="true">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </span>
                 </div>
               </div>
             )}
@@ -660,7 +696,7 @@ export default function DashboardPage() {
               <button
                 className="send-btn"
                 onClick={() => handleChatSend()}
-                disabled={!chatInput.trim() || chatLoading}
+                disabled={!chatInput.trim() || chatLoading || chatHistoryLoading}
               >
                 <Send size={18} />
               </button>

@@ -375,12 +375,6 @@ input, textarea, select {
   font-size: 0.82rem;
   line-height: 1.6;
 }
-.reason-sources {
-  margin: 10px 0 0;
-  font-size: 0.74rem;
-  color: var(--text-muted);
-}
-
 /* roadmap #27：方案切換與比較。 */
 .plan-switcher {
   margin-bottom: 16px;

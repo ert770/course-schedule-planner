@@ -1457,6 +1457,21 @@ Returns locally saved schedules for the session user.
 
 ## Chat
 
+### `GET /api/chat/history`
+
+回傳登入者最近 50 則尚未過期的聊天文字，按時間由舊至新排列。使用者須同意當前版本的服務處理。紀錄沿用聊天資料的 30 天保留期限，使用者可從隱私設定清除。回應以 `Cache-Control: no-store` 禁止快取。
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "週一上午不要排課", "createdAt": "2026-11-24T02:00:00.000Z" },
+    { "role": "assistant", "content": "可以，這次規劃會避開週一上午。", "createdAt": "2026-11-24T02:00:00.001Z" }
+  ]
+}
+```
+
+`messages` 無紀錄時為空陣列。每則訊息含角色、文字及時間。未登入回 `401`，未同意當前版本資料用途回 `428`。
+
 ### `POST /api/chat`
 
 Request:

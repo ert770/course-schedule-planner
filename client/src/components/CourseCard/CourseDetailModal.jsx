@@ -121,11 +121,6 @@ function ReasonSection({ reason }) {
           </ul>
         </div>
       )}
-
-      {/* 依據來源 */}
-      {reason.dataSources?.length > 0 && (
-        <p className="reason-sources">依據來源：{reason.dataSources.join('、')}</p>
-      )}
     </div>
   );
 }

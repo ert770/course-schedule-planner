@@ -4,9 +4,25 @@ import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
 import { validatePlanningContext } from '../data/planningContextSchema.js';
 import { PLANNING_CONTEXT_STATUS } from '../services/planningContextService.js';
+import { getChatHistory, PrivacyError } from '../services/privacyService.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
+
+router.get('/history', requireIdentity, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    // getChatHistory also enforces current service-processing consent.
+    const messages = await getChatHistory(req.identity, 50);
+    res.json({ messages });
+  } catch (err) {
+    if (err instanceof PrivacyError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    logger.error('無法讀取對話歷史', { label: 'Chat' });
+    res.status(500).json({ error: '暫時無法載入先前的對話' });
+  }
+});
 
 // POST /api/chat — 處理對話
 router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
