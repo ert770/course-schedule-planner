@@ -308,10 +308,6 @@
   padding: 1px; /* To show grid borders properly */
 }
 
-/* roadmap #27：確認列／提示／方案切換／方案比較的文字量不設邊界，會把
-   `.schedule-wrapper`（課表格）擠到只剩幾十像素——`.schedule-area` 是
-   `overflow:hidden`，超出的內容不會有捲軸，等於課表格憑空消失。
-   這裡自己設一個上限並內建捲動，課表格永遠保有合理空間。 */
 .schedule-top-stack {
   flex-shrink: 0;
   max-height: 42vh;
@@ -319,22 +315,106 @@
   padding-right: 2px; /* 捲軸不擋住內容 */
 }
 
-/* 本次規劃的避開清單。沿用 .schedule-notice 的版面尺寸，讓它在同一個
-   .schedule-top-stack 裡看起來屬於同一組提示，而不是外掛上去的東西。 */
-.session-avoidance-bar {
-  margin: 12px 20px 0;
-  padding: 12px 14px;
+.schedule-plan-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+.plan-switcher { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.schedule-plan-name { padding: 6px 8px; color: var(--text-primary); font-size: .9rem; font-weight: 700; }
+.schedule-plan-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.schedule-plan-picker { border-color: var(--border-color); color: var(--text-primary); }
+.schedule-plan-button:hover { background: var(--bg-card-hover); }
+.schedule-plan-button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.schedule-temporary-avoidance { margin-inline-start: auto; }
+
+/* 原生浮窗在課表捲動區上方開啟。支援錨定的瀏覽器會把它放在觸發按鈕旁。 */
+.schedule-plan-popover {
+  box-sizing: border-box;
+  width: min(26rem, calc(100vw - 24px));
+  max-height: min(55vh, 28rem);
+  overflow: auto;
+  padding: 14px;
   border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
   background: var(--bg-card);
-  font-size: 0.85rem;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  font-size: .85rem;
   line-height: 1.6;
 }
-.session-avoidance-main { display: flex; flex-wrap: wrap; gap: 6px; }
-.session-avoidance-pending {
-  margin: 8px 0 0;
-  color: var(--text-secondary);
+.schedule-plan-options { width: min(20rem, calc(100vw - 24px)); padding: 5px; }
+.schedule-plan-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
 }
+.schedule-plan-option > span { display: inline-flex; align-items: center; gap: 5px; }
+.schedule-plan-option small { color: var(--text-secondary); }
+.schedule-plan-option:hover, .schedule-plan-option:focus-visible { background: var(--bg-card-hover); }
+.schedule-plan-option[aria-current="true"] { color: var(--accent-blue); font-weight: 700; background: var(--bg-card-hover); }
+.schedule-plan-popover h3 { margin: 0; font-size: .95rem; }
+.schedule-plan-popover p, .schedule-plan-popover details, .schedule-plan-popover ul { margin: 6px 0 0; }
+.schedule-plan-popover ul { padding-inline-start: 18px; }
+.schedule-plan-popover summary { cursor: pointer; color: var(--accent-blue); }
+.schedule-avoidance-popover .action-btn { margin-top: 10px; }
+
+@supports (position-area: block-end span-inline-end) {
+  .schedule-plan-popover {
+    inset: auto;
+    margin: 6px 0 0;
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-inline, flip-block, flip-inline flip-block;
+  }
+  .schedule-avoidance-popover { position-area: block-end span-inline-start; }
+}
+
+@media (max-width: 1100px) {
+  #dashboard-page .dashboard-content { flex-direction: column; overflow: auto; padding: 12px; gap: 12px; }
+  #dashboard-page .schedule-area { order: -1; flex: none; height: clamp(500px, 78dvh, 760px); }
+  #dashboard-page .schedule-header-bar { padding: 10px 12px; }
+  #dashboard-page .left-sidebar { flex: none; width: 100%; max-height: 300px; }
+  #dashboard-page .chat-panel { flex: none; width: 100%; height: min(55dvh, 480px); }
+}
+
+@media (max-width: 640px) {
+  #dashboard-page .schedule-grid { min-width: 570px; }
+  .schedule-plan-toolbar { padding-inline: 8px; }
+  .schedule-plan-popover, .schedule-avoidance-popover {
+    inset: auto 12px 16px;
+    margin: 0 auto;
+    position-area: none;
+  }
+}
+
 /* 必修衝突：那門課其實還在課表上，用警示色講清楚它「沒有」被避開。 */
 .session-avoidance-conflict {
   margin: 8px 0 0;
@@ -345,7 +425,6 @@
   color: #d97706;
 }
 [data-theme="dark"] .session-avoidance-conflict { color: #fbbf24; }
-.session-avoidance-bar .action-btn { margin-top: 10px; }
 
 /* 排課結果提示：失敗原因、警告與被排除課程 */
 .schedule-notice {

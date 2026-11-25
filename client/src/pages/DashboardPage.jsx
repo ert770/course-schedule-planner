@@ -666,7 +666,8 @@ function Dashboard({ user, userIdentity }) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                flexShrink: 0,
+                flexWrap: 'wrap',
+                minWidth: 0,
               }}
             >
               {/* MyFCU 歷史修課：列表入口與本機同步（開發模式）。 */}
@@ -732,11 +733,7 @@ function Dashboard({ user, userIdentity }) {
             </div>
           </div>
 
-          {/* roadmap #27：`.schedule-area` 是 `overflow:hidden`、`.schedule-wrapper`
-              是 `flex:1`——這個區塊（確認列／提示／方案切換／方案比較）加了
-              PlanSwitcher 之後文字量可能很大，若不設邊界，
-              `.schedule-wrapper` 的可用高度會被擠到只剩幾十像素，課表格實質上
-              消失不見。用自己的捲動邊界把它圍起來，確保課表格永遠有合理空間。 */}
+          {/* 確認和錯誤提示有自己的捲動範圍，避免擠壓課表。 */}
           <div className="schedule-top-stack">
             <ScheduleConfirmationBar
               confirmation={confirmation}
@@ -754,22 +751,17 @@ function Dashboard({ user, userIdentity }) {
               domId="schedule-notice"
             />
 
-            {/* 本次避開條件必須看得見。系統默默套用使用者看不到的排課限制，
-                跟「移除後又被排回來、畫面沒有解釋」是同一種毛病的反面。 */}
-            <SessionAvoidanceBar
-              avoidances={sessionAvoidances}
-              onClear={clearSessionAvoidances}
-            />
-
-            {!refreshingImportedSchedule && <PlanSwitcher
-              plans={plans}
-              selectedPlanId={selectedPlanId}
-              recommendedPlanId={recommendedPlanId}
-              planDiversity={planDiversity}
-              onSelectPlan={handleSelectPlan}
-            />}
-
           </div>
+
+          {((!refreshingImportedSchedule && plans.length > 0) || sessionAvoidances.length > 0) && (
+            <div className="schedule-plan-toolbar">
+              {!refreshingImportedSchedule && (
+                <PlanSwitcher plans={plans} selectedPlanId={selectedPlanId} recommendedPlanId={recommendedPlanId}
+                  planDiversity={planDiversity} onSelectPlan={handleSelectPlan} />
+              )}
+              <SessionAvoidanceBar avoidances={sessionAvoidances} onClear={clearSessionAvoidances} />
+            </div>
+          )}
 
           <div className="schedule-wrapper">
             {(isScheduling || refreshingImportedSchedule) && (
