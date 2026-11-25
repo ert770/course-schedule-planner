@@ -729,7 +729,7 @@
 .grad-avatar { width: 44px; height: 44px; }
 .grad-name { font-size: 0.9rem; font-weight: 600; }
 .grad-meta { font-size: 0.75rem; color: var(--text-muted); }
-.graduation-content { display: grid; grid-template-columns: 1fr 360px; gap: 24px; }
+.graduation-content { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; }
 .graduation-left { display: flex; flex-direction: column; gap: 16px; }
 .graduation-right { }
 
@@ -818,20 +818,16 @@
 .grad-watchlist-desc { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 12px; }
 .grad-watchlist-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grad-watchlist-item {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; flex-direction: column; gap: 4px;
   padding: 14px 16px; background: var(--bg-card); border: 1px solid var(--border-color);
   border-radius: var(--radius-md); transition: all var(--transition-normal);
 }
 .grad-watchlist-item:hover { border-color: var(--accent-blue); box-shadow: var(--shadow-sm); }
 .grad-watchlist-name { font-size: 0.88rem; font-weight: 600; }
 .grad-watchlist-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
-.grad-watchlist-add {
-  width: 30px; height: 30px; border-radius: 50%;
-  background: rgba(74,124,247,0.1); color: var(--accent-blue);
-  display: flex; align-items: center; justify-content: center;
-  transition: all var(--transition-fast);
-}
-.grad-watchlist-add:hover { background: var(--accent-blue); color: white; }
+.grad-course-controls { display: flex; flex-wrap: wrap; align-items: start; gap: 8px; margin-top: 4px; }
+.grad-course-controls .course-actions { flex: 1; }
+.grad-course-detail { flex: 0 0 auto; white-space: nowrap; }
 
 /* AI Recommendation */
 .grad-ai-card {
@@ -850,20 +846,6 @@
 .rec-icon.suggestion { color: #16a34a; }
 .grad-rec-type { font-size: 0.85rem; font-weight: 600; }
 .grad-rec-message { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px; }
-.grad-rec-actions { display: flex; gap: 8px; }
-.grad-rec-btn {
-  display: flex; align-items: center; gap: 4px;
-  padding: 7px 14px; border-radius: var(--radius-sm);
-  font-size: 0.78rem; font-weight: 600; transition: all var(--transition-fast);
-}
-.grad-rec-btn.primary {
-  background: var(--accent-blue); color: white; border: none;
-}
-.grad-rec-btn.primary:hover { background: var(--accent-blue-light); }
-.grad-rec-btn.secondary {
-  background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border-color);
-}
-.grad-rec-btn.secondary:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
 
 /* ===== Responsive ===== */
 @media (max-width: 900px) {
@@ -921,7 +903,9 @@
 .course-card-body { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px; }
 .course-card-footer { display: flex; gap: 8px; flex-wrap: wrap; }
 .course-card-footer .tag { font-size: 0.75rem; padding: 4px 8px; background: var(--bg-card-hover); border-radius: 100px; color: var(--text-muted); }
-.course-card-actions { display: flex; gap: 8px; margin-top: 14px; }
+.course-card > .course-actions { margin-top: 14px; }
+.course-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.course-card-actions .course-card-action { white-space: nowrap; }
 .course-card-action {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   flex: 1; padding: 8px 10px; border: 1px solid var(--border-color);
@@ -938,21 +922,27 @@
 .course-card-action.danger { background: var(--accent-red); border-color: var(--accent-red); color: white; }
 .course-card-action.danger:hover:not(:disabled) { background: #dc2626; border-color: #dc2626; color: white; }
 .course-card-action:disabled { cursor: not-allowed; opacity: 0.6; }
-.search-watch-action.active,
-.search-watch-action.active:hover:not(:disabled) { color: var(--accent-red); border-color: var(--accent-red); }
-.search-added-action,
-.search-added-action:hover:not(:disabled) { background: #087347; border-color: #087347; color: white; }
-.search-card-feedback { margin: 8px 0 0; font-size: .82rem; color: var(--text-secondary); }
-.search-card-feedback.error { color: var(--accent-red); }
-.search-heart-pop { animation: search-action-pop .32s ease-out; }
-@keyframes search-action-pop {
+.course-watch-action.active,
+.course-watch-action.active:hover:not(:disabled) { color: var(--accent-red); border-color: var(--accent-red); }
+.course-added-action,
+.course-added-action:hover:not(:disabled) { background: #087347; border-color: #087347; color: white; }
+.course-action-feedback {
+  margin: 8px 0 0;
+  font-size: .82rem;
+  color: var(--text-secondary);
+  transition: opacity var(--course-feedback-fade-duration) ease-out;
+}
+.course-action-feedback.error { color: var(--accent-red); }
+.course-action-feedback.fading { opacity: 0; }
+.course-action-pop { animation: course-action-pop .32s ease-out; }
+@keyframes course-action-pop {
   45% { transform: scale(1.35); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .search-heart-pop { animation: none; }
+  .course-action-pop { animation: none; }
+  .course-action-feedback { transition: none; }
 }
 .search-action-notice { margin-bottom: 16px; padding: 10px 12px; border-radius: var(--radius-sm); }
-.search-action-notice.success { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
 .search-action-notice.error { background: rgba(239, 68, 68, 0.12); color: var(--accent-red); }
 .modal-remove-course { margin-top: 18px; color: var(--accent-red); border-color: var(--accent-red); }
 
@@ -1223,11 +1213,11 @@
 .explore-shared-terms { margin: 10px 0 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6; }
 .explore-sections { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .explore-sections-title { margin: 0; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
-.explore-section-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); }
-.explore-section-info { display: flex; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--text-secondary); min-width: 0; }
+.explore-section-row { display: flex; flex-wrap: wrap; align-items: start; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-color); }
+.explore-section-info { display: flex; flex: 1 1 100%; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--text-secondary); min-width: 0; }
 .explore-section-time { color: var(--text-muted); }
-.explore-section-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.explore-section-actions .course-card-action { flex: 0 0 auto; padding: 6px 10px; font-size: 0.8rem; }
+.explore-section-detail { flex: 0 0 auto; }
+.explore-section-row .course-actions { flex: 1; }
 .explore-method-note { font-size: 0.78rem; color: var(--text-muted); text-align: center; }
 
 /* 階段 5：歷史修課回饋視窗 */

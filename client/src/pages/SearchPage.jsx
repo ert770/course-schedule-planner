@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/useAuth';
 import { useSchedule } from '../contexts/useSchedule';
 import { coursesAPI, profileAPI } from '../services/api';
-import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
+import CourseActions, { CourseActionsProvider } from '../components/CourseCard/CourseActions';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, Check, RotateCcw, X, Compass, GripVertical, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Search, RotateCcw, GripVertical, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import '../App.css'; 
 import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
@@ -22,22 +22,17 @@ const GRADE_CLASS_MAP = {
 export default function SearchPage() {
   const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
-  const {
-    schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed, personalizationEnabled
-  } = useSchedule();
+  const { watchlist, logCourseViewed } = useSchedule();
   
   const [activeTab, setActiveTab] = useState('dept');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
   const [searchError, setSearchError] = useState('');
-  const [courseFeedback, setCourseFeedback] = useState({});
-  const feedbackTimers = useRef(new Map());
-  const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
+  const [actionReset, setActionReset] = useState(0);
   const [watchlistCourses, setWatchlistCourses] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [watchlistError, setWatchlistError] = useState('');
-  const [removalCandidate, setRemovalCandidate] = useState(null);
   
   const [sidebarWidth, setSidebarWidth] = useState(340);
   const [isResizing, setIsResizing] = useState(false);
@@ -45,23 +40,6 @@ export default function SearchPage() {
   // 每次送出搜尋就加一。回應回來時號碼對不上，代表使用者已經換了分頁或送出更新的搜尋，
   // 那份結果不該再蓋到畫面上。
   const searchRequestRef = useRef(0);
-  useEffect(() => {
-    const timers = feedbackTimers.current;
-    return () => timers.forEach(timer => clearTimeout(timer));
-  }, []);
-
-  const showCourseFeedback = (id, feedback) => {
-    const timers = feedbackTimers.current;
-    clearTimeout(timers.get(id));
-    timers.delete(id);
-    setCourseFeedback(current => ({ ...current, [id]: feedback }));
-    if (feedback && feedback.type !== 'error') {
-      timers.set(id, setTimeout(() => {
-        timers.delete(id);
-        setCourseFeedback(current => ({ ...current, [id]: null }));
-      }, 1400));
-    }
-  };
   const [deptForm, setDeptForm] = useState({
     department: '資訊工程學系',
     gradeLevel: '4',
@@ -247,62 +225,21 @@ export default function SearchPage() {
     }
   };
 
-  const handleAddCourse = async (event, course) => {
-    if (event) event.stopPropagation();
-    const id = String(course.id);
-    showCourseFeedback(id, null);
-    const result = await addCourse(course);
-    showCourseFeedback(id, result.success ? { type: 'added' } : { type: 'error', text: result.message });
-  };
-
-  const handleToggleCourse = async (event, course) => {
-    if (event) event.stopPropagation();
-    const isAdded = schedule.some(item => String(item.id) === String(course.id));
-    if (isAdded) {
-      setDetailCourse(null);
-      setRemovalCandidate(course);
-      return;
-    }
-    await handleAddCourse(event, course);
-  };
-  
   const handleOpenDetail = (course) => {
     setDetailCourse(course);
     logCourseViewed(course);
   };
 
-  const handleRemoveConfirmed = async (feedbackReason) => {
-    const course = removalCandidate;
-    const result = await removeCourse(course.id, { feedbackReason });
-    if (result.success) {
-      setRemovalCandidate(null);
-      showCourseFeedback(String(course.id), { type: 'removed', text: '已從課表移除並避開。' });
-    }
-    return result;
-  };
-
-  const handleToggleWatchlist = async (event, course) => {
-    if (event) event.stopPropagation();
-    const id = String(course.id);
-    setWatchlistUpdatingId(id);
-    showCourseFeedback(id, null);
-    const result = await toggleWatchlist(course);
-    setWatchlistUpdatingId('');
-    showCourseFeedback(id, result.success
-      ? (result.watching ? { type: 'watched' } : null)
-      : { type: 'error', text: result.message });
-  };
-
   const handleResetDeptForm = () => {
     setDeptForm({ department: '資訊工程學系', gradeLevel: '', className: '合', category: '', keyword: '' });
     setSearchError('');
-    setCourseFeedback({});
+    setActionReset(value => value + 1);
   };
 
   const handleResetCondForm = () => {
     setCondForm({ code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: '' });
     setSearchError('');
-    setCourseFeedback({});
+    setActionReset(value => value + 1);
   };
 
   const displayCourses = activeTab === 'watchlist' ? watchlistCourses : searchResults;
@@ -508,14 +445,9 @@ export default function SearchPage() {
               {activeTab === 'watchlist' ? '目前沒有關注課程。' : '請設定條件並開始搜尋'}
             </div>
           ) : displayCourses.length > 0 ? (
-            <div className="results-grid">
-              {displayCourses.map(course => {
-                const id = String(course.id);
-                const watched = watchlist.includes(id);
-                const added = schedule.some(item => String(item.id) === id);
-                const feedback = courseFeedback[id];
-                const justAdded = added && feedback?.type === 'added';
-                return (
+            <CourseActionsProvider>
+              <div className="results-grid">
+                {displayCourses.map(course => (
                 <div key={course.id} className="course-card" onClick={() => handleOpenDetail(course)}>
                   <div className="course-card-header">
                     <h4>{course.name}</h4><span className="course-code">{course.code}</span>
@@ -535,49 +467,18 @@ export default function SearchPage() {
                       </span>
                     )}
                   </div>
-                  <div className="course-card-actions">
-                    <button type="button" className={`course-card-action search-watch-action${watched ? ' active' : ''}`} aria-pressed={watched}
-                      onClick={event => handleToggleWatchlist(event, course)} disabled={Boolean(watchlistUpdatingId)}>
-                      <Heart aria-hidden="true" size={15} fill={watched ? 'currentColor' : 'none'}
-                        className={watched && feedback?.type === 'watched' ? 'search-heart-pop' : undefined} />
-                      {watchlistUpdatingId === id ? '更新中…' : (watched ? '已關注' : '關注')}
-                    </button>
-                    <button type="button" className={`course-card-action ${justAdded ? 'search-added-action' : added ? 'danger' : 'primary'}`}
-                      onClick={event => handleToggleCourse(event, course)} disabled={validating && !added}>
-                      {justAdded ? <><Check size={15} aria-hidden="true" className="search-heart-pop" /><span role="status">已加入</span></>
-                        : added ? <><X size={15} aria-hidden="true" /> 取消加選</>
-                          : <><Plus size={15} aria-hidden="true" /> {validating ? '驗證中…' : '加入課表'}</>}
-                    </button>
-                  </div>
-                  {feedback?.text && (
-                    <p className={`search-card-feedback ${feedback.type}`} role={feedback.type === 'error' ? 'alert' : 'status'}>
-                      {feedback.text}
-                    </p>
-                  )}
+                  <CourseActions key={actionReset} course={course} />
                 </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            </CourseActionsProvider>
           ) : null}
         </div>
       </div>
 
-      <RemoveReasonDialog
-        course={removalCandidate}
-        collectReason={personalizationEnabled}
-        onCancel={() => setRemovalCandidate(null)}
-        onConfirm={handleRemoveConfirmed}
-      />
-
       <CourseDetailModal
         course={detailCourse}
         onClose={() => setDetailCourse(null)}
-        isWatched={detailCourse ? watchlist.includes(String(detailCourse.id)) : false}
-        isAdded={detailCourse ? schedule.some(item => String(item.id) === String(detailCourse.id)) : false}
-        onToggleWatchlist={handleToggleWatchlist}
-        onToggleCourse={handleToggleCourse}
-        validating={validating}
-        watchlistUpdating={detailCourse ? watchlistUpdatingId === String(detailCourse.id) : false}
       />
     </div>
   );

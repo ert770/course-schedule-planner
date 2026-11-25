@@ -8,12 +8,11 @@
 // 表示有興趣）排序，卡片附上共同主題與最接近的那門課當理由。需同意個人化學習。
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Compass, LayoutDashboard, Moon, Plus, Search, Settings, Sun } from 'lucide-react';
-import { useSchedule } from '../contexts/useSchedule';
 import { useAuth } from '../contexts/useAuth';
 import { getUserIdentity } from '../utils/userIdentity';
 import { explorationAPI } from '../services/api';
 import { EXPLORATION_SOURCE } from '../services/selectionSource';
+import CourseActions, { CourseActionsProvider } from '../components/CourseCard/CourseActions';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import { formatCourseTime } from '../utils/courseTime';
 import '../App.css';
@@ -91,8 +90,7 @@ function ProfileReasons({ reasons }) {
   );
 }
 
-function ExploreCard({ item, favoriteName, schedule, validating, onAdd, onOpenDetail }) {
-  const inSchedule = section => schedule.some(course => String(course.id) === String(section.id));
+function ExploreCard({ item, favoriteName, onOpenDetail }) {
   const domainLabel = item.recognition?.status === 'general-education'
     ? (item.recognition.domain || '不分領域')
     : item.unit;
@@ -129,19 +127,10 @@ function ExploreCard({ item, favoriteName, schedule, validating, onAdd, onOpenDe
               <span>班級：{section.department}｜老師：{section.instructor || '未定'}</span>
               <span className="explore-section-time">時間：{formatCourseTime(section)}</span>
             </div>
-            <div className="explore-section-actions">
-              <button type="button" className="course-card-action" onClick={() => onOpenDetail(section)}>
-                詳情
-              </button>
-              <button
-                type="button"
-                className="course-card-action primary"
-                disabled={validating || inSchedule(section)}
-                onClick={() => onAdd(section)}
-              >
-                {inSchedule(section) ? '已在課表' : <><Plus size={15} /> 加入課表</>}
-              </button>
-            </div>
+            <button type="button" className="course-card-action explore-section-detail" onClick={() => onOpenDetail(section)}>
+              詳情
+            </button>
+            <CourseActions course={section} source={EXPLORATION_SOURCE} />
           </div>
         ))}
       </div>
@@ -167,7 +156,6 @@ function ExploreGroup({ title, hint, group, emptyText, ...cardProps }) {
 
 export default function ExplorePage() {
   const navigate = useNavigate();
-  const { schedule, validating, addCourse } = useSchedule();
   const { user } = useAuth();
   const identity = getUserIdentity(user);
 
@@ -177,7 +165,6 @@ export default function ExplorePage() {
   const [favoriteCode, setFavoriteCode] = useState(() => readExploreState(identity).favoriteCode || '');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState(null);
   const [detailCourse, setDetailCourse] = useState(null);
   useEffect(() => {
     let cancelled = false;
@@ -209,7 +196,6 @@ export default function ExplorePage() {
     if (nextMode === mode) return;
     setLoading(true);
     setError('');
-    setNotice(null);
     setData(null);
     setMode(nextMode);
   };
@@ -218,17 +204,7 @@ export default function ExplorePage() {
   const handleFavoriteChange = (courseCode) => {
     setLoading(true);
     setError('');
-    setNotice(null);
     setFavoriteCode(courseCode);
-  };
-
-  const handleAdd = async (section) => {
-    setNotice(null);
-    // 從探索清單加入的課，事件來源記為 exploration。
-    const result = await addCourse(section, { source: EXPLORATION_SOURCE });
-    setNotice(result.success
-      ? { type: 'success', message: `已將「${section.name}」加入課表。` }
-      : { type: 'error', message: result.message || '無法加入課表。' });
   };
 
   const profileMode = mode === MODE.PROFILE;
@@ -237,9 +213,6 @@ export default function ExplorePage() {
   const startName = profileMode ? '你的修課與興趣' : '起點';
   const cardProps = {
     favoriteName: favorite?.name ?? '',
-    schedule,
-    validating,
-    onAdd: handleAdd,
     onOpenDetail: setDetailCourse,
   };
 
@@ -296,9 +269,6 @@ export default function ExplorePage() {
           )}
         </div>
 
-        {notice && (
-          <div className={`search-action-notice ${notice.type}`}>{notice.message}</div>
-        )}
         {error && <div className="search-action-notice error">{error}</div>}
 
         {loading ? (
@@ -320,7 +290,7 @@ export default function ExplorePage() {
             )}
           </div>
         ) : data ? (
-          <>
+          <CourseActionsProvider>
             <ExploreGroup
               title="跨系探索"
               hint={`每個系所只列與${startName}最相近的一門。系外選修是否認列為畢業學分，仍須向系辦確認。`}
@@ -346,7 +316,7 @@ export default function ExplorePage() {
                 ? '相近程度是比對課程的主題標籤算出來的；每門課至少和你有一個完全相同的主題（上課工具、上課方式不算），不代表課程內容相同，也不代表你一定會喜歡。'
                 : '相近程度是分別比對課名、課程說明、課程主題，三者平均達 55% 以上才列出；本學期沒開的已修課只比課名。相近不代表你一定會喜歡。'}
             </p>
-          </>
+          </CourseActionsProvider>
         ) : null}
       </div>
 

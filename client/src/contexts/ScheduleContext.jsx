@@ -27,6 +27,37 @@ function courseIsAvoided(course, avoidances) {
     || (code && entry.catalogCourseCode === code));
 }
 
+const manualCoursesKey = identity => `fcu:${identity}:manualScheduleCourses`;
+
+function readManualCourses(identity) {
+  if (identity === null) return [];
+  try {
+    const courses = JSON.parse(localStorage.getItem(manualCoursesKey(identity)));
+    return Array.isArray(courses) ? courses.filter(courseId) : [];
+  } catch {
+    return [];
+  }
+}
+
+function missingManualCourses(schedule, manualCourses) {
+  const present = new Set(schedule.map(courseId));
+  return manualCourses.filter(course => !present.has(courseId(course)));
+}
+
+async function validateManualSelection(courses) {
+  const credits = courses.reduce((sum, course) => sum + (Number(course?.credits) || 0), 0);
+  if (credits > 30) {
+    return { success: false, code: 'CREDIT_CEILING', message: `課表共 ${credits} 學分，已超過絕對上限 30 學分。` };
+  }
+
+  const validation = await scheduleAPI.validate(courses);
+  const violations = validation?.violations ?? [];
+  const onlyCreditOverload = violations.length > 0 && violations.every(item => item.constraintId === 'CREDIT_CEILING');
+  if (validation?.valid !== true || (validation.hardConstraintsValid !== true && !onlyCreditOverload)) {
+    return { success: false, ...describeValidationFailure(validation), validation };
+  }
+  return { success: true, validation };
+}
 
 // ---------------------------------------------------------------------------
 // 本次規劃的避開清單
@@ -119,15 +150,6 @@ function latestSavedSchedule(rows) {
 }
 
 function describeValidationFailure(result) {
-  const violation = result?.violations?.[0];
-  if (violation) {
-    return {
-      code: violation.constraintId || 'HARD_CONSTRAINT_VIOLATION',
-      message: violation.reason || '這門課不符合目前課表的硬性限制。',
-      courses: Array.isArray(violation.courses) ? violation.courses : [],
-    };
-  }
-
   const conflict = result?.conflicts?.[0];
   if (conflict) {
     const names = [conflict.course1?.name, conflict.course2?.name].filter(Boolean);
@@ -149,6 +171,15 @@ function describeValidationFailure(result) {
         ? `課表已有「${names[0]}」的其他班次。`
         : '課表已有同一門課的其他班次。',
       courses: [duplicate.course1, duplicate.course2].filter(Boolean),
+    };
+  }
+
+  const violation = result?.violations?.[0];
+  if (violation) {
+    return {
+      code: violation.constraintId || 'HARD_CONSTRAINT_VIOLATION',
+      message: violation.reason || '這門課不符合目前課表的硬性限制。',
+      courses: Array.isArray(violation.courses) ? violation.courses : [],
     };
   }
 
@@ -207,10 +238,18 @@ export function ScheduleProvider({ children }) {
   // 不會發現自己剛做的移除靜默失效。
   const [sessionAvoidances, setSessionAvoidances] = useState(() => readStoredAvoidances(userIdentity));
   const avoidancesRef = useRef(sessionAvoidances);
-  // 使用者自己加入課表的班次（搜尋、探索、畢業頁的「加入課表」）。重新排課時當成指定課程送出，
-  // 否則「套用偏好排課」會把它們整份換掉（2026-10-15 Persona UX 測試發現）。
-  // 從已存課表載回的課不算：那樣重排會被釘死在舊課表上。
-  const userAddedIdsRef = useRef(new Set());
+  // 手動加選由帳號各自保存，只有這些班次會固定帶入下一次排課。
+  const manualCoursesRef = useRef([]);
+  const commitManualCourses = useCallback(courses => {
+    manualCoursesRef.current = courses;
+    if (userIdentity === null) return;
+    try {
+      if (courses.length) localStorage.setItem(manualCoursesKey(userIdentity), JSON.stringify(courses));
+      else localStorage.removeItem(manualCoursesKey(userIdentity));
+    } catch {
+      // 封鎖瀏覽器儲存時，本次使用仍以記憶體中的課程為準。
+    }
+  }, [userIdentity]);
 
   // 一律經由這個函式更新，狀態與 sessionStorage 才不會有一邊忘了寫。
   const commitAvoidances = useCallback((next) => {
@@ -227,15 +266,15 @@ export function ScheduleProvider({ children }) {
   const commitSavedAvoidances = useCallback(list => {
     savedAvoidancesRef.current = list;
     setSavedAvoidances(list);
+    const manual = manualCoursesRef.current.filter(course => !courseIsAvoided(course, list));
+    if (manual.length !== manualCoursesRef.current.length) commitManualCourses(manual);
     const current = scheduleRef.current;
     const next = current.filter(course => !courseIsAvoided(course, list));
     if (next.length !== current.length) {
       scheduleRef.current = next;
       setSchedule(next);
-      current.filter(course => courseIsAvoided(course, list))
-        .forEach(course => userAddedIdsRef.current.delete(courseId(course)));
     }
-  }, []);
+  }, [commitManualCourses]);
 
   // 回傳 promise 供需要知道結果的呼叫端使用（目前只有確認列）。
   // 其餘埋點一律忽略回傳值，維持 fire-and-forget。
@@ -266,37 +305,65 @@ export function ScheduleProvider({ children }) {
     setPlanDiversity(diversity);
   }, []);
 
-  // 目前仍在課表上的、使用者自己加入的班次。
-  const userAddedCourseIds = useCallback(() => {
-    const present = new Set(scheduleRef.current.map(course => courseId(course)));
-    return [...userAddedIdsRef.current].filter(id => present.has(id));
-  }, []);
+  const userAddedCourseIds = useCallback(() => manualCoursesRef.current.map(courseId), []);
 
-  // roadmap #27：切換到方案清單裡的另一個方案。
-  //
-  // 不是重新排課，是把畫面換成**同一次排課結果**裡的另一個方案——`requestId`
-  // 沿用，`plans` 不變，只有 `schedule`／`recommendationRef`／`selectedPlanId`
-  // 跟著換。watched／explicit／時間未定課程不會遺失：它們本來就是每個 plan
-  // 各自帶著的欄位（`watchedCourses`／`unscheduledCourses`），切換時自然跟著
-  // 選中的方案換過去，不需要另外保存。
-  const selectPlan = useCallback((variantId) => {
-    const target = plans.find(plan => plan.id === variantId);
-    if (!target) return false;
+  const clearGeneratedSchedule = useCallback(() => {
+    replaceSchedule(manualCoursesRef.current);
+  }, [replaceSchedule]);
 
-    const baseRecommendation = recommendationRef.current;
-    scheduleRef.current = target.schedule;
-    recommendationRef.current = {
-      requestId: baseRecommendation?.requestId ?? null,
-      planId: target.planId ?? null,
-      variantId: target.id,
-      systemRecommendedIds: new Set(
-        target.schedule.map(course => String(course.id ?? course.sectionId))
-      ),
-    };
-    setSchedule(target.schedule);
-    setSelectedPlanId(variantId);
+  const applyGeneratedSchedule = useCallback((result, recommendation) => {
+    const schedule = Array.isArray(result.schedule) ? result.schedule : [];
+    const manuallyAddedIds = new Set(userAddedCourseIds());
+    const manuallyAddedUnscheduled = (result.unscheduledCourses ?? [])
+      .filter(course => manuallyAddedIds.has(courseId(course)));
+    const next = [...schedule, ...missingManualCourses(schedule, manuallyAddedUnscheduled)];
+    if (missingManualCourses(next, manualCoursesRef.current).length) return false;
+    replaceSchedule(next, recommendation, result.plans, result.planDiversity);
     return true;
-  }, [plans]);
+  }, [replaceSchedule, userAddedCourseIds]);
+
+  const selectPlan = useCallback(variantId => {
+    const generation = accountGenerationRef.current;
+    const requestId = recommendationRef.current?.requestId;
+    const target = rawPlans.find(plan => plan.id === variantId);
+    const operation = addQueueRef.current.then(async () => {
+      const current = scheduleRef.current;
+      if (!target || generation !== accountGenerationRef.current || requestId !== recommendationRef.current?.requestId) {
+        return { success: false, message: '可切換的方案已更新，請再試一次。' };
+      }
+
+      const available = course => !courseIsAvoided(course, savedAvoidancesRef.current);
+      const scheduled = target.schedule.filter(available);
+      const unscheduled = (target.unscheduledCourses ?? []).filter(available);
+      const missing = missingManualCourses(scheduled, manualCoursesRef.current);
+      const added = missingManualCourses(unscheduled, missing);
+      const next = [...scheduled, ...missing];
+      if (added.length) {
+        try {
+          const result = await validateManualSelection([...scheduled, ...unscheduled, ...added]);
+          if (!result.success) return result;
+        } catch (error) {
+          return { success: false, message: `無法驗證方案：${error.message}` };
+        }
+      }
+
+      if (generation !== accountGenerationRef.current || scheduleRef.current !== current) {
+        return { success: false, message: '驗證期間課表已更新，請再試一次。' };
+      }
+      scheduleRef.current = next;
+      recommendationRef.current = {
+        requestId: requestId ?? null,
+        planId: target.planId ?? null,
+        variantId: target.id,
+        systemRecommendedIds: new Set(scheduled.map(courseId)),
+      };
+      setSchedule(next);
+      setSelectedPlanId(variantId);
+      return { success: true };
+    });
+    addQueueRef.current = operation.catch(() => undefined);
+    return operation;
+  }, [rawPlans]);
 
   // 目前選中的完整方案物件——課表以外的欄位（`unscheduledCourses`／
   // `watchedCourses`／`warnings`／`excludedCourses`／`planMetrics` 讀不到就得
@@ -310,9 +377,9 @@ export function ScheduleProvider({ children }) {
   useEffect(() => {
     accountGenerationRef.current += 1;
     const generation = accountGenerationRef.current;
+    manualCoursesRef.current = readManualCourses(userIdentity);
     replaceSchedule([]);
     commitSavedAvoidances([]);
-    userAddedIdsRef.current = new Set();
     setWatchlist(normalizeWatchlist(user?.watchlist));
     // 避開清單是「這個人這一次規劃」的狀態。換帳號時換成那個帳號自己的那一份，
     // 不能讓上一位使用者移除的課繼續影響下一位。
@@ -337,18 +404,25 @@ export function ScheduleProvider({ children }) {
       scheduleAPI.getSaved(userIdentity, controller.signal),
       scheduleAPI.getAvoidances(userIdentity, controller.signal),
     ])
-      .then(([result, avoidanceResult]) => {
+      .then(async ([result, avoidanceResult]) => {
         if (cancelled || generation !== accountGenerationRef.current) return;
         commitSavedAvoidances(avoidanceResult.avoidances ?? []);
         const latest = latestSavedSchedule(result?.schedules?.filter(
           saved => String(saved.userId) === String(userIdentity)
         ));
-        replaceSchedule(Array.isArray(latest?.scheduleData) ? latest.scheduleData : []);
+        const saved = (Array.isArray(latest?.scheduleData) ? latest.scheduleData : [])
+          .filter(course => !courseIsAvoided(course, savedAvoidancesRef.current));
+        const missing = missingManualCourses(saved, manualCoursesRef.current);
+        const combined = [...saved, ...missing];
+        const valid = !saved.length || !missing.length || (await validateManualSelection(combined)).success;
+        if (!cancelled && generation === accountGenerationRef.current) {
+          replaceSchedule(valid ? combined : manualCoursesRef.current);
+        }
       })
       .catch(err => {
         if (!cancelled && generation === accountGenerationRef.current) {
           console.error('Saved schedule load failed:', err);
-          replaceSchedule([]);
+          replaceSchedule(manualCoursesRef.current);
         }
       })
       .finally(() => {
@@ -364,6 +438,7 @@ export function ScheduleProvider({ children }) {
   // options.source 只接受 exploration（探索頁加入的課），其他值會被忽略——
   // 見 services/selectionSource.js。
   const addCourse = useCallback((course, options = {}) => {
+    if (loading) return Promise.resolve({ success: false, message: '正在載入課表，請稍後再加入課程。' });
     const requestedGeneration = accountGenerationRef.current;
     const operation = addQueueRef.current.then(async () => {
       if (requestedGeneration !== accountGenerationRef.current) {
@@ -378,41 +453,31 @@ export function ScheduleProvider({ children }) {
         return { success: false, code: 'SECTION_ALREADY_SELECTED', message: '這個班次已在課表中。' };
       }
 
-      const proposed = [...scheduleRef.current, course];
-      
-      // 計算加入後的總學分
-      const proposedTotalCredits = proposed.reduce((sum, c) => sum + Number(c?.credits || 0), 0);
-      // 絕對上限 30 學分（超過 30 才死擋，25 到 30 之間允許超修加入並顯示警告）
-      if (proposedTotalCredits > 30) {
-        return { success: false, code: 'CREDIT_CEILING', message: `課表共 ${proposedTotalCredits} 學分，已超過絕對上限 30 學分。` };
-      }
+      const current = scheduleRef.current;
+      const proposed = [...current, course];
 
       setValidating(true);
       try {
-        const result = await scheduleAPI.validate(proposed);
-        
-        // 允許除了「學分上限 (CREDIT_CEILING)」以外的錯誤阻擋，
-        // 如果只是超過 25 學分但小於等於 30，我們放行讓它加入！
-        const hasOnlyCreditOverload = result?.violations?.every(v => v.constraintId === 'CREDIT_CEILING') && proposedTotalCredits <= 30;
-
-        if ((result?.valid !== true || result?.hardConstraintsValid !== true) && !hasOnlyCreditOverload) {
-          return { success: false, ...describeValidationFailure(result), validation: result };
-        }
+        const result = await validateManualSelection(proposed);
+        if (!result.success) return result;
 
         if (requestedGeneration !== accountGenerationRef.current) {
           return { success: false, code: 'ACCOUNT_CHANGED', message: '登入帳號已變更，未加入課程。' };
         }
+        if (scheduleRef.current !== current) {
+          return { success: false, message: '驗證期間課表已更新，請再試一次。' };
+        }
 
         scheduleRef.current = proposed;
         setSchedule(proposed);
-        userAddedIdsRef.current.add(id);
+        commitManualCourses([...manualCoursesRef.current, course]);
         emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, course, {
           requestId: requestIdForAction(),
           source: resolveSelectionSource(courseSource(course, {
             systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
           }), options?.source),
         }));
-        return { success: true, course, validation: result };
+        return { success: true, course, validation: result.validation };
       } catch (err) {
         return {
           success: false,
@@ -426,7 +491,7 @@ export function ScheduleProvider({ children }) {
 
     addQueueRef.current = operation.catch(() => undefined);
     return operation;
-  }, [emit, requestIdForAction]);
+  }, [commitManualCourses, emit, loading, requestIdForAction]);
   // `feedbackReason` 為 7 個 enum 之一或 null；null 只代表未蒐集原因（例如未啟用
   // 個人化或舊呼叫端），退課原因對話框本身不再提供略過選項。
   // 本系統沒有連學校選課系統，「退掉已經在課表上的課」就是 roadmap #2 的
@@ -522,8 +587,7 @@ export function ScheduleProvider({ children }) {
       }
       scheduleRef.current = proposed;
       setSchedule(proposed);
-      userAddedIdsRef.current.delete(removeId);
-      userAddedIdsRef.current.add(incomingId);
+      commitManualCourses([...manualCoursesRef.current.filter(course => courseId(course) !== removeId), incoming]);
       recordWithdrawal(removed, null);
       emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, incoming, {
         requestId: requestIdForAction(),
@@ -535,7 +599,7 @@ export function ScheduleProvider({ children }) {
     });
     addQueueRef.current = operation.catch(() => undefined);
     return operation;
-  }, [emit, recordWithdrawal, requestIdForAction]);
+  }, [commitManualCourses, emit, recordWithdrawal, requestIdForAction]);
 
   // 這次排課實際套用了哪些避開條件——由**伺服器**回報，不是前端自己推的。
   //
@@ -734,7 +798,8 @@ export function ScheduleProvider({ children }) {
     saving,
     validating,
     personalizationEnabled,
-    replaceSchedule,
+    applyGeneratedSchedule,
+    clearGeneratedSchedule,
     // 本次規劃的避開清單
     sessionAvoidances,
     savedAvoidances,
@@ -761,11 +826,11 @@ export function ScheduleProvider({ children }) {
     planDiversity,
     selectPlan,
   }), [
-    acceptRecommendation, activePlan, addCourse, applyCourseSwap, applyResolvedAvoidances,
+    acceptRecommendation, activePlan, addCourse, applyCourseSwap, applyGeneratedSchedule, applyResolvedAvoidances,
     buildAvoidanceConstraints, buildPlanningContext, clearSessionAvoidances, userAddedCourseIds,
     loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, planDiversity, plans,
-    removeCourse, replaceSchedule, restoreAvoidedCourse, saveCurrentSchedule, savedAvoidances, saving, schedule, sessionAvoidances,
+    clearGeneratedSchedule, removeCourse, restoreAvoidedCourse, saveCurrentSchedule, savedAvoidances, saving, schedule, sessionAvoidances,
     recommendedPlanId, selectedPlanId, selectPlan, toggleWatchlist, validating, watchlist,
   ]);
 

@@ -8,7 +8,7 @@ import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
 import SessionAvoidanceBar from '../components/Schedule/SessionAvoidanceBar';
-import { formatCourseTime } from '../utils/courseTime';
+import { formatCourseTime, UNSCHEDULED_LABEL } from '../utils/courseTime';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import ChatMessageContent from '../components/Chat/ChatMessageContent';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
@@ -104,7 +104,8 @@ function Dashboard({ user, userIdentity }) {
     schedule,
     loading: scheduleLoading,
     saving,
-    replaceSchedule,
+    applyGeneratedSchedule,
+    clearGeneratedSchedule,
     removeCourse,
     applyCourseSwap,
     saveCurrentSchedule,
@@ -128,6 +129,7 @@ function Dashboard({ user, userIdentity }) {
     buildPlanningContext,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
+  const [switchingPlan, setSwitchingPlan] = useState(false);
   // 儲存課表的結果提示（2026-10-15 Persona 實測：按儲存沒有任何回饋）。
   // 排課提示框只顯示錯誤（見下方 ScheduleNotice）；儲存結果只走這則短暫提示。
   const [saveToast, setSaveToast] = useState(null);
@@ -200,6 +202,7 @@ function Dashboard({ user, userIdentity }) {
   }, [chatHistory, restoredChat, chatLoading, chatActivity]);
 
   const totalCredits = schedule.reduce((sum, course) => sum + (course.credits || 0), 0);
+  const unscheduledSelections = schedule.filter(course => formatCourseTime(course) === UNSCHEDULED_LABEL);
   // 軍訓國防科技、體育、班級活動要排進課表但不計入畢業學分（校規）。
   // 後端在每門課上標記 countsTowardGraduation；未標記者一律視為計入。
   const graduationCredits = schedule.reduce(
@@ -253,8 +256,14 @@ function Dashboard({ user, userIdentity }) {
       }
 
       if (data.success) {
-        replaceSchedule(data.schedule, buildRecommendation(data), data.plans, data.planDiversity);
-        setConfirmation(data.requestId ? { state: 'pending' } : null);
+        if (applyGeneratedSchedule(data, buildRecommendation(data))) {
+          setConfirmation(data.requestId ? { state: 'pending' } : null);
+        } else {
+          setScheduleNotice(makeNotice({
+            level: 'error',
+            message: '新課表無法保留所有手動加入的課，已保留目前課表。',
+          }));
+        }
       } else {
         setChatHistory(prev => [...prev, {
           role: 'bot',
@@ -275,7 +284,7 @@ function Dashboard({ user, userIdentity }) {
       schedulingRef.current = false;
       setIsScheduling(false);
     }
-  }, [buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, replaceSchedule, userAddedCourseIds, userIdentity]);
+  }, [applyGeneratedSchedule, buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, userAddedCourseIds, userIdentity]);
   
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;
@@ -294,7 +303,7 @@ function Dashboard({ user, userIdentity }) {
       initialGenerationUserRef.current = userIdentity;
       const selectedCourseIds = userAddedCourseIds();
       setIsReschedulingImportedHistory(true);
-      replaceSchedule([]);
+      clearGeneratedSchedule();
       navigate(location.pathname + location.search + location.hash, {
         replace: true,
         state: historySyncSummary ? { historySyncSummary, historyRescheduleHandled: true } : null,
@@ -303,14 +312,14 @@ function Dashboard({ user, userIdentity }) {
         .finally(() => setIsReschedulingImportedHistory(false));
       return;
     }
-    if (schedule.length > 0) {
+    if (schedule.length > userAddedCourseIds().length) {
       initialGenerationUserRef.current = userIdentity;
       return;
     }
     if (initialGenerationUserRef.current === userIdentity) return;
     initialGenerationUserRef.current = userIdentity;
     void generateSchedule();
-  }, [generateSchedule, historySyncSummary, needsHistoryReschedule, replaceSchedule, schedule.length, scheduleLoading, userAddedCourseIds, userIdentity, location, navigate]);
+  }, [clearGeneratedSchedule, generateSchedule, historySyncSummary, needsHistoryReschedule, schedule.length, scheduleLoading, userAddedCourseIds, userIdentity, location, navigate]);
 
   // 階段 5：歷史修課回饋。只在同意個人化學習時查；查不到不影響排課。
   useEffect(() => {
@@ -473,7 +482,10 @@ function Dashboard({ user, userIdentity }) {
         // Chat 路徑同樣不再由前端回報曝光——`agentService.js` 呼叫
         // `generateForUser()` 時已經固定帶 `surface:'chat', trigger:'chat_tool'`，
         // 伺服器在算出結果時就直接寫入了。
-        replaceSchedule(res.data.schedule, buildRecommendation(res.data), res.data.plans, res.data.planDiversity);
+        if (!applyGeneratedSchedule(res.data, buildRecommendation(res.data))) {
+          appendReply('新課表無法保留所有手動加入的課，已保留目前課表。可使用「套用偏好排課」，讓系統以手動加選為必排條件重排。');
+          return;
+        }
         // 顯示的文字必須是 res.reply（已經過忠實度檢查），不能換成固定字串——
         // 換掉等於讓忠實度檢查的結果沒有出現在使用者真正看到的畫面上。
         // 課表本身另外用下面的 schedule 卡片呈現，不需要靠這句文字重複交代。
@@ -528,13 +540,23 @@ function Dashboard({ user, userIdentity }) {
   // roadmap #27：切換方案後，提示訊息（排除原因、時間未定課程）也要換成
   // 選中方案自己的，不是繼續顯示前一個方案的——否則畫面上的課表已經換了，
   // 底下的「有 N 門課未被排入」卻還是舊方案的數字。
-  const handleSelectPlan = (variantId) => {
+  const handleSelectPlan = async (variantId) => {
+    if (switchingPlan || schedulingRef.current || variantId === selectedPlanId) return;
     const target = plans.find(plan => plan.id === variantId);
-    if (!selectPlan(variantId)) return;
-    setScheduleNotice(prev => buildScheduleNoticeForPlan(
-      { success: true, message: prev?.message },
-      target
-    ));
+    setSwitchingPlan(true);
+    try {
+      const result = await selectPlan(variantId);
+      if (!result.success) {
+        setScheduleNotice(makeNotice({
+          level: 'error',
+          message: `已保留目前方案。${result.message}`,
+        }));
+        return;
+      }
+      setScheduleNotice(buildScheduleNoticeForPlan({ success: true }, target));
+    } finally {
+      setSwitchingPlan(false);
+    }
   };
 
   const handleSave = async () => {
@@ -759,6 +781,16 @@ function Dashboard({ user, userIdentity }) {
             {!refreshingImportedSchedule && <div id="schedule-grid-container">
               <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} />
             </div>}
+            {!refreshingImportedSchedule && unscheduledSelections.length > 0 && (
+              <section aria-label="時間未定的已選課程">
+                <p>時間未定的已選課程</p>
+                {unscheduledSelections.map(course => (
+                  <button key={course.id ?? course.sectionId} type="button" className="action-btn secondary" onClick={() => handleOpenDetail(course)}>
+                    {course.name}
+                  </button>
+                ))}
+              </section>
+            )}
           </div>
         </div>
 
