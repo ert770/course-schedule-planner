@@ -1455,6 +1455,21 @@
 }
 .history-sync-toast svg { flex-shrink: 0; color: #087747; }
 .history-sync-toast strong { font-size: 1.12rem; }
+.schedule-planning-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+.schedule-planning-toast svg { color: var(--accent-blue); flex: none; }
+.sidebar-topics { margin-top: 16px; }
+.sidebar-topics .action-btn { margin-top: 8px; }
+.history-feedback-row .restore-avoidance-button { flex: 0 0 7rem; min-height: 36px; white-space: nowrap; }
 [data-theme="dark"] .history-sync-toast { border-color: #398065; background: #153d2b; color: #e1f9ea; }
 [data-theme="dark"] .history-sync-toast svg { color: #78e0a9; }
 .action-btn.history-entry { color: var(--accent-blue); border-color: rgba(74,124,247,.35); }

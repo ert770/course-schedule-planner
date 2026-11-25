@@ -21,7 +21,7 @@ const SCHEDULER_PARAMS = [
   'blockedPeriods', 'mondayFree', 'noMorningClasses', 'noEveningClasses', 'lunchBreakFree',
   'mustTakeCourseIds', 'avoidInstructors',
   'selectedCourseIds', 'watchingCourseIds', 'courseStates',
-  'noMidterm', 'noGroupReport', 'discussion', 'learnMore',
+  'noMidterm', 'noGroupReport', 'noRollCall', 'discussion', 'learnMore',
   'weightDaily', 'practicalExam', 'finalReport', 'englishTaught',
   'preferCompact', 'preferEasyCourses', 'preferChallengingCourses', 'preferredKeywords', 'interests', 'preferredTrack',
   'digitalCreditsNeeded',

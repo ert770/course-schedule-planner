@@ -285,7 +285,7 @@ export const CONSTRAINTS = Object.freeze({
     confidence: 1,
     enforced: true,
   },
-  // 8 個內容偏好（roadmap #3/#7）：weight 是實際評分的唯一係數來源。
+  // 內容偏好（roadmap #3/#7）：weight 是實際評分的唯一係數來源。
   CONTENT_PREFERENCE_NO_MIDTERM: {
     id: 'CONTENT_PREFERENCE_NO_MIDTERM',
     flag: 'noMidterm',
@@ -311,6 +311,17 @@ export const CONSTRAINTS = Object.freeze({
   CONTENT_PREFERENCE_DISCUSSION: {
     id: 'CONTENT_PREFERENCE_DISCUSSION',
     flag: 'discussion',
+    category: CONSTRAINT_CATEGORY.SOFT,
+    relaxable: null,
+    exemptForRequiredCourses: null,
+    weight: 40,
+    source: CONSTRAINT_SOURCE.USER_CONTENT_KEYWORD,
+    confidence: null,
+    enforced: true,
+  },
+  CONTENT_PREFERENCE_NO_ROLL_CALL: {
+    id: 'CONTENT_PREFERENCE_NO_ROLL_CALL',
+    flag: 'noRollCall',
     category: CONSTRAINT_CATEGORY.SOFT,
     relaxable: null,
     exemptForRequiredCourses: null,

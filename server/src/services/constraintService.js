@@ -54,7 +54,7 @@ function buildBlockedPeriods(input, prefs) {
     pickList(input.blockedPeriods, prefs.blockedPeriods)
   );
 
-  if (input.mondayFree || prefs.mondayFree) {
+  if (pickFlag(input.mondayFree, prefs.mondayFree)) {
     for (let period = 1; period <= PERIODS_PER_DAY; period += 1) {
       if (!blockedPeriods.some(item => item.day === MONDAY && item.period === period)) {
         blockedPeriods.push({ day: MONDAY, period });
@@ -91,6 +91,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
 
     noMidterm: pickFlag(input.noMidterm, prefs.noMidterm),
     noGroupReport: pickFlag(input.noGroupReport, prefs.noGroupReport),
+    noRollCall: pickFlag(input.noRollCall, prefs.noRollCall),
     discussion: pickFlag(input.discussion, prefs.preferDiscussion),
     learnMore: pickFlag(input.learnMore, prefs.learnMore),
     weightDaily: pickFlag(input.weightDaily, prefs.weightDaily),

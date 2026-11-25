@@ -196,11 +196,21 @@ export function ScheduleProvider({ children }) {
   const [schedule, setSchedule] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [loading, setLoading] = useState(Boolean(user));
-  const [saving, setSaving] = useState(false);
+  const [hasSavedSchedule, setHasSavedSchedule] = useState(false);
+  const [scheduleSaveError, setScheduleSaveError] = useState('');
+  const [scheduleToSave, setScheduleToSave] = useState(null);
   const [validating, setValidating] = useState(false);
   const scheduleRef = useRef([]);
+  const saveQueueRef = useRef(Promise.resolve());
+  const savedScheduleKeyRef = useRef(null);
   const addQueueRef = useRef(Promise.resolve());
   const accountGenerationRef = useRef(0);
+  const latestGenerationRequest = useRef(0);
+  const beginScheduleGeneration = useCallback(() => {
+    const id = ++latestGenerationRequest.current;
+    const account = accountGenerationRef.current;
+    return () => id === latestGenerationRequest.current && account === accountGenerationRef.current;
+  }, []);
   // 目前畫面上這份課表來自哪一次推薦。從 saved_schedules 載回時為 null——
   // 那份課表確實不屬於任何一次推薦曝光，不偽造關聯。
   const recommendationRef = useRef(null);
@@ -319,6 +329,7 @@ export function ScheduleProvider({ children }) {
     const next = [...schedule, ...missingManualCourses(schedule, manuallyAddedUnscheduled)];
     if (missingManualCourses(next, manualCoursesRef.current).length) return false;
     replaceSchedule(next, recommendation, result.plans, result.planDiversity);
+    setScheduleToSave(scheduleRef.current);
     return true;
   }, [replaceSchedule, userAddedCourseIds]);
 
@@ -358,6 +369,7 @@ export function ScheduleProvider({ children }) {
         systemRecommendedIds: new Set(scheduled.map(courseId)),
       };
       setSchedule(next);
+      setScheduleToSave(next);
       setSelectedPlanId(variantId);
       return { success: true };
     });
@@ -377,6 +389,10 @@ export function ScheduleProvider({ children }) {
   useEffect(() => {
     accountGenerationRef.current += 1;
     const generation = accountGenerationRef.current;
+    setScheduleToSave(null);
+    setHasSavedSchedule(false);
+    setScheduleSaveError('');
+    savedScheduleKeyRef.current = null;
     manualCoursesRef.current = readManualCourses(userIdentity);
     replaceSchedule([]);
     commitSavedAvoidances([]);
@@ -416,6 +432,8 @@ export function ScheduleProvider({ children }) {
         const combined = [...saved, ...missing];
         const valid = !saved.length || !missing.length || (await validateManualSelection(combined)).success;
         if (!cancelled && generation === accountGenerationRef.current) {
+          setHasSavedSchedule(Boolean(latest) && valid);
+          savedScheduleKeyRef.current = latest ? JSON.stringify(latest.scheduleData) : null;
           replaceSchedule(valid ? combined : manualCoursesRef.current);
         }
       })
@@ -431,9 +449,32 @@ export function ScheduleProvider({ children }) {
 
     return () => {
       cancelled = true;
+      if (generation === accountGenerationRef.current) accountGenerationRef.current += 1;
       controller.abort();
     };
   }, [commitSavedAvoidances, privacyLoading, privacyStatus?.requiresAction, replaceSchedule, userIdentity, user?.watchlist]);
+
+  useEffect(() => {
+    if (loading || userIdentity === null || scheduleToSave === null) return;
+    const generation = accountGenerationRef.current;
+    const snapshotKey = JSON.stringify(scheduleToSave);
+    const operation = saveQueueRef.current.then(async () => {
+      const stillCurrent = () => generation === accountGenerationRef.current;
+      if (!stillCurrent() || scheduleRef.current !== scheduleToSave || savedScheduleKeyRef.current === snapshotKey) return;
+
+      try {
+        const credits = scheduleToSave.reduce((sum, course) => sum + (Number(course?.credits) || 0), 0);
+        await scheduleAPI.save('我的課表', scheduleToSave, credits, userIdentity);
+        if (!stillCurrent()) return;
+        savedScheduleKeyRef.current = snapshotKey;
+        setHasSavedSchedule(true);
+        setScheduleSaveError('');
+      } catch (error) {
+        if (stillCurrent()) setScheduleSaveError(`課表自動儲存失敗：${error.message}`);
+      }
+    });
+    saveQueueRef.current = operation;
+  }, [loading, scheduleToSave, userIdentity]);
 
   // options.source 只接受 exploration（探索頁加入的課），其他值會被忽略——
   // 見 services/selectionSource.js。
@@ -470,6 +511,7 @@ export function ScheduleProvider({ children }) {
 
         scheduleRef.current = proposed;
         setSchedule(proposed);
+        setScheduleToSave(proposed);
         commitManualCourses([...manualCoursesRef.current, course]);
         emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, course, {
           requestId: requestIdForAction(),
@@ -532,7 +574,10 @@ export function ScheduleProvider({ children }) {
           return { success: false, message: '登入帳號已變更。' };
         }
         commitSavedAvoidances(result.avoidances);
-        if (removed) recordWithdrawal(removed, feedbackReason, false);
+        if (removed) {
+          setScheduleToSave(scheduleRef.current);
+          recordWithdrawal(removed, feedbackReason, false);
+        }
         if (restored) {
           commitAvoidances(avoidancesRef.current.filter(item => item.sectionId !== restored.sectionId
             && (!restored.catalogCourseCode || item.catalogCourseCode !== restored.catalogCourseCode)));
@@ -587,6 +632,7 @@ export function ScheduleProvider({ children }) {
       }
       scheduleRef.current = proposed;
       setSchedule(proposed);
+      setScheduleToSave(proposed);
       commitManualCourses([...manualCoursesRef.current.filter(course => courseId(course) !== removeId), incoming]);
       recordWithdrawal(removed, null);
       emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, incoming, {
@@ -693,30 +739,6 @@ export function ScheduleProvider({ children }) {
     }
   }, [emit, requestIdForAction, watchlist]);
 
-  // roadmap #28：與 `addCourse`／`toggleWatchlist` 同一個世代檢查——這裡原本
-  // 沒有。`await` 之後才回傳，若使用者在請求送出後、回應回來前切換帳號，
-  // 畫面會用**新帳號的 session**去存**舊帳號畫面上的課表**，儲存結果落到
-  // 錯的人身上。時間窗很窄（切帳號快到能插進一次 HTTP 往返之間），雙帳號
-  // 驗收沒有實際重現，但與既有兩處的防護是同一類漏洞，補齊避免不對稱。
-  const saveCurrentSchedule = useCallback(async (name = '我的課表') => {
-    if (userIdentity === null) return { success: false, message: '請先登入再儲存課表。' };
-    const requestedGeneration = accountGenerationRef.current;
-    setSaving(true);
-    try {
-      const current = scheduleRef.current;
-      const totalCredits = current.reduce((sum, course) => sum + Number(course?.credits || 0), 0);
-      const result = await scheduleAPI.save(name, current, totalCredits, userIdentity);
-      if (requestedGeneration !== accountGenerationRef.current) {
-        return { success: false, message: '登入帳號已變更，未儲存課表。' };
-      }
-      return { success: true, saved: result?.schedule };
-    } catch (err) {
-      return { success: false, message: `課表儲存失敗：${err.message}` };
-    } finally {
-      setSaving(false);
-    }
-  }, [userIdentity]);
-
   // 開啟課程詳情。放在 context 而不是各頁自己送，兩個頁面才不會各記一套。
   const logCourseViewed = useCallback((course) => {
     if (!course) return;
@@ -795,10 +817,12 @@ export function ScheduleProvider({ children }) {
     schedule,
     watchlist,
     loading,
-    saving,
+    hasSavedSchedule,
+    scheduleSaveError,
     validating,
     personalizationEnabled,
     applyGeneratedSchedule,
+    beginScheduleGeneration,
     clearGeneratedSchedule,
     // 本次規劃的避開清單
     sessionAvoidances,
@@ -813,7 +837,6 @@ export function ScheduleProvider({ children }) {
     removeCourse,
     applyCourseSwap,
     toggleWatchlist,
-    saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
     logScheduleRegenerated,
@@ -827,10 +850,10 @@ export function ScheduleProvider({ children }) {
     selectPlan,
   }), [
     acceptRecommendation, activePlan, addCourse, applyCourseSwap, applyGeneratedSchedule, applyResolvedAvoidances,
-    buildAvoidanceConstraints, buildPlanningContext, clearSessionAvoidances, userAddedCourseIds,
-    loading, logCourseViewed,
+    beginScheduleGeneration, buildAvoidanceConstraints, buildPlanningContext, clearSessionAvoidances, userAddedCourseIds,
+    hasSavedSchedule, loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, planDiversity, plans,
-    clearGeneratedSchedule, removeCourse, restoreAvoidedCourse, saveCurrentSchedule, savedAvoidances, saving, schedule, sessionAvoidances,
+    clearGeneratedSchedule, removeCourse, restoreAvoidedCourse, savedAvoidances, schedule, scheduleSaveError, sessionAvoidances,
     recommendedPlanId, selectedPlanId, selectPlan, toggleWatchlist, validating, watchlist,
   ]);
 

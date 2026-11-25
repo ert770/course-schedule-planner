@@ -12,7 +12,7 @@
 
 import crypto from 'node:crypto';
 import OpenAI from 'openai';
-import { buildSystemPrompt, getAgentTools, describeInterpretation } from './promptService.js';
+import { buildSystemPrompt, getAgentTools, describeInterpretation, describeSavedPreferences } from './promptService.js';
 import { getUserPreferences, updateUserPreferences } from './memoryService.js';
 import { getChatHistory, saveChatExchange } from './privacyService.js';
 import { searchCoursesForAgent, searchCoursesForSchedule } from '../skills/courseQuery.js';
@@ -42,7 +42,7 @@ import { getAll } from '../db/database.js';
 import { isMysqlConfigured } from '../db/mysql.js';
 import { logger } from '../utils/logger.js';
 import { buildStudentScope } from '../skills/courseScope.js';
-import { ALL_FLAGS, tagsToFlags, flagsToTags } from '../data/preferenceTags.js';
+import { ALL_FLAGS, ALL_TAGS, tagsToFlags, flagsToTags } from '../data/preferenceTags.js';
 import { ACTIVE_TERM } from '../data/activeTerm.js';
 import {
   getConfirmationChangeType, isRenderableTool, listConfirmationChangeTypes,
@@ -926,9 +926,9 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         const payload = mergedTags
           ? { ...changes, preferenceTags: mergedTags, selectedTags: mergedTags }
           : changes;
-        await updatePreferences(identity, payload);
+        const saved = await updatePreferences(identity, payload);
         // 同一次對話後續的排課要看得到剛更新的偏好，否則模型會以為存了卻沒生效。
-        if (prefs) Object.assign(prefs, payload);
+        if (prefs) Object.assign(prefs, payload, saved);
         return {
           success: true,
           updatedFields: changes,
@@ -1011,8 +1011,27 @@ async function resolveLatestRecommendation(identity) {
 // 聊天記憶與偏好更新都以 canonical ID（學號）為鍵，避免同一位學生的對話
 // 依前端送的是學號還是 numeric id 而分裂成兩份。
 // `options.onFaithfulness`：診斷與測試用，收到原始回答與檢查結果；伺服器日誌依 #33 不記錄內容。
+function followsPreferenceQuestion(history) {
+  const lastQuestion = history.findLast(entry => entry.role === 'user')?.content ?? '';
+  return /排課偏好|偏好設定/u.test(lastQuestion) || ALL_TAGS.some(tag => lastQuestion.includes(tag.slice(1)));
+}
+
 export async function handleChat(identity, message, planningContext = null, options = {}) {
   logger.info('收到已驗證的聊天請求', { label: 'AgentCore', messageLength: message.length });
+
+  const loadHistory = options.loadHistory ?? getChatHistory;
+  const loadPreferences = options.loadPreferences ?? getUserPreferences;
+  const saveExchange = options.saveExchange ?? saveChatExchange;
+  const text = message.trim().replace(/[。？！?!]+$/u, '');
+  const explicitStatusQuestion = /^(?:請問)?(?:現在|目前)(?:的)?(?:已存|已保存|已儲存)?(?:排課偏好|偏好設定)(?:有哪些|是什麼|是哪些)?$/u.test(text);
+  const shortFollowUp = /^(?:那[， ]*)?(?:現在|目前)呢$/u.test(text);
+  const earlierMessages = shortFollowUp ? await loadHistory(identity, 20) : null;
+  if (explicitStatusQuestion || (earlierMessages && followsPreferenceQuestion(earlierMessages))) {
+    const { checked, blocked } = describeSavedPreferences(await loadPreferences(identity));
+    const reply = `目前已保存的排課偏好：${checked}。不能上課的時段：${blocked}。目前課表仍以最近一次排課結果為準，按「套用偏好排課」即可使用最新設定重排。`;
+    await saveExchange(identity, message, reply);
+    return { reply, intent: 'general_chat', data: null };
+  }
 
   const client = getAIClient();
   if (!client) {
@@ -1021,7 +1040,7 @@ export async function handleChat(identity, message, planningContext = null, opti
     return { reply: errorMsg, intent: 'error', data: null };
   }
 
-  const prefs = await getUserPreferences(identity);
+  const prefs = await loadPreferences(identity);
   const studentScope = buildStudentScope(prefs);
   logger.debug('已載入使用者限制條件（內容不記錄）', { label: 'Memory' });
 
@@ -1111,7 +1130,7 @@ export async function handleChat(identity, message, planningContext = null, opti
   // 當成 Responses API 的 input items。先前這裡有一個 `contents.pop()`，等於
   // 每次都丟掉最近一則助理回覆——那是 Gemini `chats.create` 的 history 形狀
   // 限制留下的痕跡，在這裡只會弄壞對話連續性，因此不保留。
-  const history = await getChatHistory(identity, 20);
+  const history = earlierMessages ?? await loadHistory(identity, 20);
   const input = [
     ...history.map(m => ({
       role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -1295,7 +1314,7 @@ export async function handleChat(identity, message, planningContext = null, opti
     const historyReply = responseData?.success && responseData.swap
       ? `已找到替代班次「${responseData.swap.addCourse.name}」。請以畫面上的課表為準。`
       : finalReply;
-    await saveChatExchange(identity, message, historyReply);
+    await saveExchange(identity, message, historyReply);
 
     return {
       reply: finalReply, intent: detectedIntent, data: responseData, planningContextStatus,

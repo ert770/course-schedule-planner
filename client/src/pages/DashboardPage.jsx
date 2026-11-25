@@ -15,6 +15,7 @@ import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
+import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
 import { getUserIdentity } from '../utils/userIdentity';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Compass } from 'lucide-react';
@@ -64,6 +65,45 @@ function HistorySyncToast() {
   );
 }
 
+function topicOptionsFromProfile(profile) {
+  const options = new Map();
+  const selections = profile.interestSelections ?? [];
+  for (const topic of profile.interestSummary?.topics ?? []) {
+    if (options.has(topic.tagId)) continue;
+    options.set(topic.tagId, {
+      name: topic.name,
+      tagId: topic.tagId,
+      selections: selections.filter(selection => selection.tagIds.includes(topic.tagId)),
+    });
+  }
+  return options;
+}
+
+function updateTopicSelection(selections, option, checked) {
+  if (!checked) {
+    return selections.flatMap(selection => {
+      const tagIds = selection.tagIds.filter(id => id !== option.tagId);
+      return tagIds.length === 0 && selection.tagIds.length > 0 ? [] : [{ ...selection, tagIds }];
+    });
+  }
+
+  const next = [...selections];
+  for (const source of option.selections) {
+    const index = next.findIndex(item => item.group === source.group && item.categoryId === source.categoryId);
+    if (index === -1) next.push({ ...source, tagIds: [option.tagId] });
+    else next[index] = { ...next[index], tagIds: [...new Set([...next[index].tagIds, option.tagId])] };
+  }
+  return next;
+}
+
+function readPendingPreferences(identity) {
+  try {
+    return sessionStorage.getItem(`fcu:${identity}:preferencesPending`) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
 //
 // 這裡原本寫死一份 `PREFS`，用的是**排課旗標的 key**（`preferCompact` 等）
@@ -103,12 +143,13 @@ function Dashboard({ user, userIdentity }) {
   const {
     schedule,
     loading: scheduleLoading,
-    saving,
+    hasSavedSchedule,
+    scheduleSaveError,
     applyGeneratedSchedule,
+    beginScheduleGeneration,
     clearGeneratedSchedule,
     removeCourse,
     applyCourseSwap,
-    saveCurrentSchedule,
     buildRecommendation,
     logCourseViewed,
     logScheduleRegenerated,
@@ -130,10 +171,10 @@ function Dashboard({ user, userIdentity }) {
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
   const [switchingPlan, setSwitchingPlan] = useState(false);
-  // 儲存課表的結果提示（2026-10-15 Persona 實測：按儲存沒有任何回饋）。
-  // 排課提示框只顯示錯誤（見下方 ScheduleNotice）；儲存結果只走這則短暫提示。
-  const [saveToast, setSaveToast] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
+  const [planningToast, setPlanningToast] = useState('');
+  const planningToastTimer = useRef(null);
+  useEffect(() => () => clearTimeout(planningToastTimer.current), []);
   const [isReschedulingImportedHistory, setIsReschedulingImportedHistory] = useState(false);
   // 偏好狀態就是**目前勾選的標籤集合**，來源是 profile API（即 MySQL
   // `User_Profiles.preference_tags`），與 Setup 頁讀的是同一支 API、同一份資料。
@@ -142,11 +183,20 @@ function Dashboard({ user, userIdentity }) {
   // 副本與真相各自演化，Setup 改存標籤陣列之後，這裡讀 `prefs.noMorningClasses`
   // 全部是 undefined，側邊面板因此永遠不打勾。改讀同一份資料就沒有「同步」問題。
   const [selectedTags, setSelectedTags] = useState(new Set());
-  const [savedTags, setSavedTags] = useState(new Set());
+  const [savedProfile, setSavedProfile] = useState(null);
+  const [topicOptions, setTopicOptions] = useState(new Map());
+  const [editingTopics, setEditingTopics] = useState(false);
   const [prefsReadyFor, setPrefsReadyFor] = useState(null);
   const [savingPrefs, setSavingPrefs] = useState(false);
+  const [preferencesPending, setPreferencesPending] = useState(() => readPendingPreferences(userIdentity));
+  const preferenceWriteRef = useRef(Promise.resolve(true));
+  const preferenceWriteVersion = useRef(0);
+  const savedProfileRef = useRef(null);
+  const selectedTagsRef = useRef(new Set());
+  const refreshTopicSummaryRef = useRef(false);
+  const applyingPreferencesRef = useRef(false);
+  const preferenceReadVersion = useRef(0);
   const prefsReady = userIdentity !== null && prefsReadyFor === userIdentity;
-  const prefsChanged = selectedTags.size !== savedTags.size || [...selectedTags].some(tag => !savedTags.has(tag));
   const [tagGroups, setTagGroups] = useState([]);
   const [prefsError, setPrefsError] = useState('');
   const [chatInput, setChatInput] = useState('');
@@ -211,12 +261,25 @@ function Dashboard({ user, userIdentity }) {
   );
   const hasNonGraduationCredits = graduationCredits !== totalCredits;
 
+  const markPreferencesPending = useCallback(pending => {
+    setPreferencesPending(pending);
+    try {
+      sessionStorage.setItem(`fcu:${userIdentity}:preferencesPending`, String(pending));
+    } catch {
+      // 瀏覽器禁止儲存時，本頁仍有待套用狀態。
+    }
+  }, [userIdentity]);
+
   const generateSchedule = useCallback(async (trigger = 'initial_load', {
     preferencesSaved = false, historyImported = false, selectedCourseIds,
   } = {}) => {
     if (schedulingRef.current) return;
+    const isLatest = beginScheduleGeneration();
     schedulingRef.current = true;
     setIsScheduling(true);
+    clearTimeout(planningToastTimer.current);
+    setPlanningToast(historyImported ? '正在依新修課紀錄排課…' : '正在規劃課表…');
+    planningToastTimer.current = setTimeout(() => setPlanningToast(''), 1000);
     setScheduleNotice(null);
     try {
       const constraints = {
@@ -238,6 +301,7 @@ function Dashboard({ user, userIdentity }) {
         surface: 'dashboard',
         trigger,
       });
+      if (!isLatest()) return;
 
       const notice = buildScheduleNotice(data);
       if (!data.success && historyImported) {
@@ -257,6 +321,7 @@ function Dashboard({ user, userIdentity }) {
 
       if (data.success) {
         if (applyGeneratedSchedule(data, buildRecommendation(data))) {
+          markPreferencesPending(false);
           setConfirmation(data.requestId ? { state: 'pending' } : null);
         } else {
           setScheduleNotice(makeNotice({
@@ -271,6 +336,7 @@ function Dashboard({ user, userIdentity }) {
         }]);
       }
     } catch (err) {
+      if (!isLatest()) return;
       console.error('Schedule generation failed:', err);
       setScheduleNotice(makeNotice({
         level: 'error',
@@ -284,16 +350,16 @@ function Dashboard({ user, userIdentity }) {
       schedulingRef.current = false;
       setIsScheduling(false);
     }
-  }, [applyGeneratedSchedule, buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, userAddedCourseIds, userIdentity]);
+  }, [applyGeneratedSchedule, beginScheduleGeneration, buildAvoidanceConstraints, buildRecommendation, logScheduleRegenerated, markPreferencesPending, userAddedCourseIds, userIdentity]);
   
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;
     if (location.state?.preferencesSavedFor === userIdentity) {
-      if (preferencesLocationRef.current === location.key || schedulingRef.current) return;
+      if (preferencesLocationRef.current === location.key) return;
       preferencesLocationRef.current = location.key;
       initialGenerationUserRef.current = userIdentity;
+      markPreferencesPending(true);
       navigate(location.pathname + location.search + location.hash, { replace: true, state: null });
-      void generateSchedule('preference_regenerate', { preferencesSaved: true });
       return;
     }
     // 兩種匯入入口都走同一條重排路徑。先清掉已載入的快照，重排失敗時也不顯示舊課。
@@ -312,14 +378,14 @@ function Dashboard({ user, userIdentity }) {
         .finally(() => setIsReschedulingImportedHistory(false));
       return;
     }
-    if (schedule.length > userAddedCourseIds().length) {
+    if (hasSavedSchedule || schedule.length > userAddedCourseIds().length) {
       initialGenerationUserRef.current = userIdentity;
       return;
     }
     if (initialGenerationUserRef.current === userIdentity) return;
     initialGenerationUserRef.current = userIdentity;
     void generateSchedule();
-  }, [clearGeneratedSchedule, generateSchedule, historySyncSummary, needsHistoryReschedule, schedule.length, scheduleLoading, userAddedCourseIds, userIdentity, location, navigate]);
+  }, [clearGeneratedSchedule, generateSchedule, hasSavedSchedule, historySyncSummary, markPreferencesPending, needsHistoryReschedule, schedule.length, scheduleLoading, userAddedCourseIds, userIdentity, location, navigate]);
 
   // 階段 5：歷史修課回饋。只在同意個人化學習時查；查不到不影響排課。
   useEffect(() => {
@@ -344,65 +410,117 @@ function Dashboard({ user, userIdentity }) {
     return () => { cancelled = true; };
   }, []);
 
-  // 目前勾選的偏好來自 profile，與 Setup 頁同一份資料。
-  // Agent 在聊天中改了偏好（ADR-036）之後也用同一支重抓，左側勾選才會跟著改。
-  const loadSavedPreferences = useCallback((isCancelled = () => false) => (
-    profileAPI.get()
-      .then(profile => {
-        if (isCancelled()) return;
-        const tags = new Set(profile?.selectedTags ?? []);
-        setSelectedTags(tags);
-        setSavedTags(tags);
-        setPrefsReadyFor(userIdentity);
+  const reflectSavedPreferences = useCallback(profile => {
+    savedProfileRef.current = profile;
+    setSavedProfile(profile);
+    const tags = new Set(profile.selectedTags ?? []);
+    selectedTagsRef.current = tags;
+    setSelectedTags(tags);
+    setTopicOptions(previous => new Map([...previous, ...topicOptionsFromProfile(profile)]));
+    setPrefsReadyFor(userIdentity);
+  }, [userIdentity]);
+
+  const loadSavedPreferences = useCallback(async (isCancelled = () => false) => {
+    const version = ++preferenceReadVersion.current;
+    const isCurrent = () => !isCancelled() && version === preferenceReadVersion.current;
+    try {
+      const profile = await profileAPI.get();
+      if (isCurrent()) {
+        reflectSavedPreferences(profile);
         setPrefsError('');
-      })
-      .catch(err => {
-        if (!isCancelled()) setPrefsError(err.message || '偏好設定載入失敗');
-      })
-  ), [userIdentity]);
+      }
+    } catch (err) {
+      if (isCurrent()) setPrefsError(err.message || '偏好設定載入失敗');
+    }
+  }, [reflectSavedPreferences]);
 
   useEffect(() => {
-    let cancelled = false;
     if (userIdentity === null) return undefined;
-    loadSavedPreferences(() => cancelled);
+    let cancelled = false;
+    void loadSavedPreferences(() => cancelled);
     return () => { cancelled = true; };
   }, [userIdentity, loadSavedPreferences]);
 
-  const handlePrefToggle = (tag) => {
-    setSelectedTags(previous => {
-      const next = new Set(previous);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
-      return next;
-    });
-  };
-
-  const handleSavePreferences = async () => {
-    if (!prefsReady || !prefsChanged || savingPrefs || isScheduling || scheduleLoading) return;
-    setPrefsError('');
+  const preferenceControlsDisabled = !prefsReady || isScheduling || scheduleLoading || chatLoading;
+  const persistDashboardPreferences = updates => {
+    if (preferenceControlsDisabled || chatSendingRef.current || schedulingRef.current) return Promise.resolve(false);
+    const version = ++preferenceWriteVersion.current;
+    const isLatest = () => version === preferenceWriteVersion.current;
     setSavingPrefs(true);
-
-    try {
-      const result = await profileAPI.update({ selectedTags: [...selectedTags] });
-      const persistedTags = new Set(result?.preferences?.selectedTags ?? selectedTags);
-      setSelectedTags(persistedTags);
-      setSavedTags(persistedTags);
-      await generateSchedule('preference_regenerate', { preferencesSaved: true });
-    } catch (err) {
-      setPrefsError(err.message || '偏好儲存失敗，請再試一次。');
-    } finally {
-      setSavingPrefs(false);
+    setPrefsError('');
+    preferenceReadVersion.current += 1;
+    if (updates.interestSelections) refreshTopicSummaryRef.current = true;
+    if (updates.selectedTags) {
+      selectedTagsRef.current = new Set(updates.selectedTags);
+      setSelectedTags(selectedTagsRef.current);
     }
+
+    const operation = profileAPI.update({ ...updates, userId: userIdentity }).then(async result => {
+      const saved = result.preferences ?? updates;
+      savedProfileRef.current = { ...savedProfileRef.current, ...saved };
+      markPreferencesPending(true);
+      if (isLatest()) {
+        reflectSavedPreferences(savedProfileRef.current);
+        if (refreshTopicSummaryRef.current) {
+          refreshTopicSummaryRef.current = false;
+          await loadSavedPreferences();
+        }
+        if (isLatest() && result.interestSelectionWarnings?.length) {
+          setPrefsError('部分課程主題目前不適用，已依保存結果更新。');
+        } else if (isLatest() && result.interestSelectionsStatus === 'unverified') {
+          setPrefsError('目前無法驗證課程主題，請稍後再試。');
+        }
+      }
+      return true;
+    }).catch(err => {
+      if (isLatest()) {
+        if (savedProfileRef.current) reflectSavedPreferences(savedProfileRef.current);
+        setPrefsError(err.message || '偏好儲存失敗，請再試一次。');
+      }
+      return false;
+    }).finally(() => {
+      if (isLatest()) setSavingPrefs(false);
+    });
+    preferenceWriteRef.current = operation;
+    return operation;
   };
 
-  const handleRegenerate = () => {
-    if (prefsChanged) void handleSavePreferences();
-    else void generateSchedule('preference_regenerate');
+  const handlePrefToggle = tag => {
+    const next = new Set(selectedTagsRef.current);
+    if (next.has(tag)) next.delete(tag);
+    else next.add(tag);
+    void persistDashboardPreferences({ selectedTags: [...next] });
+  };
+
+  const enabledTopicIds = new Set((savedProfile?.interestSelections ?? []).flatMap(selection => selection.tagIds));
+  const handleTopicToggle = (option, checked) => {
+    const selections = savedProfile?.interestSelections ?? [];
+    void persistDashboardPreferences({ interestSelections: updateTopicSelection(selections, option, checked) });
+  };
+
+  const waitForLatestPreferences = async () => {
+    let write;
+    let saved;
+    do {
+      write = preferenceWriteRef.current;
+      saved = await write;
+    } while (write !== preferenceWriteRef.current);
+    return saved;
+  };
+
+  const handleRegenerate = async () => {
+    if (applyingPreferencesRef.current || chatSendingRef.current) return;
+    applyingPreferencesRef.current = true;
+    try {
+      if (await waitForLatestPreferences()) await generateSchedule('preference_regenerate', { preferencesSaved: true });
+    } finally {
+      applyingPreferencesRef.current = false;
+    }
   };
 
   const handleChatSend = async (overrideMsg) => {
     const msg = overrideMsg || chatInput.trim();
-    if (!msg || chatSendingRef.current || chatHistoryLoading) return;
+    if (!msg || chatSendingRef.current || chatHistoryLoading || applyingPreferencesRef.current || schedulingRef.current) return;
 
     // 聊天記憶與偏好更新都寫進這位使用者，不得退回 `default`。
     if (userIdentity === null) {
@@ -429,7 +547,7 @@ function Dashboard({ user, userIdentity }) {
     setChatActivity([submittedContext]);
     const activity = new Map();
     activity.set(submittedContext.id, submittedContext);
-    let preferencesReload;
+    let preferencesChangedInProgress = false;
     const updateActivity = ({ id, title, detail, state, preferencesUpdated }) => {
       const previous = activity.get(id);
       activity.set(id, {
@@ -439,13 +557,17 @@ function Dashboard({ user, userIdentity }) {
           : previous?.action,
       });
       setChatActivity([...activity.values()]);
-      if (preferencesUpdated) preferencesReload = loadSavedPreferences();
+      if (preferencesUpdated) {
+        preferencesChangedInProgress = true;
+        void loadSavedPreferences();
+      }
     };
     const appendReply = (text, extras = {}) => {
       setChatHistory(prev => [...prev, { role: 'bot', text, activity: [...activity.values()], ...extras }]);
     };
 
     try {
+      await waitForLatestPreferences();
       // 把畫面目前的狀態一起送過去：Agent 才不會反問它其實問得到的資料
       // （目前課表、剛移除了哪些課、原因是什麼）。
       const res = await chatAPI.send(msg, planningContext, { onProgress: updateActivity });
@@ -458,7 +580,11 @@ function Dashboard({ user, userIdentity }) {
       if (res.planningContextStatus === 'rejected-invalid') clearSessionAvoidances();
 
       // Agent 改了已存偏好：重抓，讓左側勾選跟著改（ADR-036）。
-      if (res.preferencesUpdated) await (preferencesReload ?? loadSavedPreferences());
+      const preferencesUpdated = res.preferencesUpdated || preferencesChangedInProgress;
+      if (preferencesUpdated) {
+        markPreferencesPending(true);
+        await loadSavedPreferences();
+      }
 
       if (res.data?.success && res.data?.swap) {
         // Agent 換課：伺服器已挑好新課，前端驗證整份課表後移除舊課、加入新課。
@@ -486,6 +612,7 @@ function Dashboard({ user, userIdentity }) {
           appendReply('新課表無法保留所有手動加入的課，已保留目前課表。可使用「套用偏好排課」，讓系統以手動加選為必排條件重排。');
           return;
         }
+        if (preferencesUpdated) markPreferencesPending(false);
         // 顯示的文字必須是 res.reply（已經過忠實度檢查），不能換成固定字串——
         // 換掉等於讓忠實度檢查的結果沒有出現在使用者真正看到的畫面上。
         // 課表本身另外用下面的 schedule 卡片呈現，不需要靠這句文字重複交代。
@@ -559,19 +686,6 @@ function Dashboard({ user, userIdentity }) {
     }
   };
 
-  const handleSave = async () => {
-    const result = await saveCurrentSchedule();
-    const message = result.success ? '課表已儲存。' : (result.message || '課表儲存失敗，請稍後再試。');
-    // 儲存結果只用按鈕旁的短暫提示；排課提示框（2026-10-26 恢復）專門顯示排課結果，避免同一句話出現兩次。
-    setSaveToast({ success: result.success, message });
-  };
-
-  useEffect(() => {
-    if (!saveToast) return undefined;
-    const timer = setTimeout(() => setSaveToast(null), 3000);
-    return () => clearTimeout(timer);
-  }, [saveToast]);
-
   const avoidedRequirementWarnings = (scheduleNotice?.warnings ?? [])
     .filter(warning => warning.startsWith('必修或重補修尚未滿足：'));
   const visibleScheduleNotice = scheduleNotice?.level === 'error'
@@ -585,6 +699,14 @@ function Dashboard({ user, userIdentity }) {
       {/* Top Navbar */}
       <TopNav active="home" />
       {showHistorySyncToast && <HistorySyncToast />}
+      {planningToast && (
+        <div className="history-sync-toast-position">
+          <section className="schedule-planning-toast" role="status" aria-atomic="true">
+            <Loader2 size={22} className="spin-animation" aria-hidden="true" />
+            <strong>{planningToast}</strong>
+          </section>
+        </div>
+      )}
 
       <div className="dashboard-content">
         {/* Left Sidebar: Preferences */}
@@ -598,27 +720,37 @@ function Dashboard({ user, userIdentity }) {
             {prefsError && (
               <div className="error-text" role="alert" id="prefs-error">{prefsError}</div>
             )}
+            {savingPrefs ? <p className="sidebar-skill-desc" role="status">正在保存偏好…</p>
+              : preferencesPending && <p className="sidebar-skill-desc" role="status">偏好已保存，尚未套用到目前課表。</p>}
             <div className="sidebar-prefs">
               {tagGroups.flatMap(group => group.tags).map(tag => (
                 <label key={tag} className="sidebar-pref-item">
                   <input
                     type="checkbox"
                     checked={selectedTags.has(tag)}
-                    disabled={!prefsReady || savingPrefs || isScheduling}
+                    disabled={preferenceControlsDisabled}
                     onChange={() => handlePrefToggle(tag)}
                   />
                   {tag.replace('#', '')}
                 </label>
               ))}
             </div>
-            <button
-              type="button"
-              className="action-btn primary"
-              onClick={handleSavePreferences}
-              disabled={!prefsReady || !prefsChanged || savingPrefs || isScheduling || scheduleLoading}
-            >
-              {isScheduling && savingPrefs ? '正在更新課表…' : (savingPrefs ? '正在保存…' : '保存變更')}
-            </button>
+            <div className="sidebar-topics">
+              <h3 className="sidebar-section-title">課程主題</h3>
+              <div className="sidebar-prefs">
+                {[...topicOptions.values()].map(option => (
+                  <label key={option.tagId} className="sidebar-pref-item">
+                    <input type="checkbox" checked={enabledTopicIds.has(option.tagId)}
+                      disabled={preferenceControlsDisabled || savingPrefs} onChange={event => handleTopicToggle(option, event.target.checked)} />
+                    {option.name}
+                  </label>
+                ))}
+              </div>
+              <button type="button" className="action-btn secondary" disabled={preferenceControlsDisabled || savingPrefs}
+                onClick={() => setEditingTopics(true)}>
+                編輯課程主題
+              </button>
+            </div>
           </div>
         </aside>
 
@@ -683,43 +815,10 @@ function Dashboard({ user, userIdentity }) {
                 <ExportDropdown schedule={schedule} gridElementId="schedule-grid-container" />
               </div>}
 
-              {/* 儲存課表按鈕：點擊後原地覆蓋為「✓ 課表已儲存」，3 秒後自動恢復 */}
-              <button
-                className="action-btn secondary"
-                onClick={handleSave}
-                disabled={refreshingImportedSchedule || saving || schedule.length === 0}
-                id="save-dashboard-schedule-btn"
-                style={{
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                  minWidth: '116px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.25s ease',
-                  ...(saveToast?.success ? {
-                    backgroundColor: '#10b981',
-                    borderColor: '#10b981',
-                    color: '#ffffff',
-                  } : {}),
-                  ...(saveToast && !saveToast.success ? {
-                    backgroundColor: '#ef4444',
-                    borderColor: '#ef4444',
-                    color: '#ffffff',
-                  } : {}),
-                }}
-              >
-                {saving
-                  ? '儲存中…'
-                  : saveToast
-                    ? saveToast.message
-                    : '儲存課表'}
-              </button>
-
               <button
                 className="action-btn primary"
                 onClick={handleRegenerate}
-                disabled={refreshingImportedSchedule || savingPrefs || isScheduling || scheduleLoading}
+                disabled={refreshingImportedSchedule || isScheduling || scheduleLoading || chatLoading}
                 style={{
                   flexShrink: 0,
                   whiteSpace: 'nowrap',
@@ -728,13 +827,14 @@ function Dashboard({ user, userIdentity }) {
                   gap: '6px',
                 }}
               >
-                <Sparkles size={16} /> 套用偏好排課
+                <Sparkles size={16} /> {isScheduling ? '排課中…' : '套用偏好排課'}
               </button>
             </div>
           </div>
 
           {/* 確認和錯誤提示有自己的捲動範圍，避免擠壓課表。 */}
           <div className="schedule-top-stack">
+            {scheduleSaveError && <p className="schedule-notice error" role="alert">{scheduleSaveError}</p>}
             <ScheduleConfirmationBar
               confirmation={confirmation}
               personalizationEnabled={personalizationEnabled}
@@ -763,13 +863,7 @@ function Dashboard({ user, userIdentity }) {
             </div>
           )}
 
-          <div className="schedule-wrapper">
-            {(isScheduling || refreshingImportedSchedule) && (
-              <div className="scheduling-overlay">
-                <Loader2 size={40} className="spin-animation" />
-                <p role="status">{refreshingImportedSchedule ? '正在依新修課紀錄排課…' : '正在規劃課表…'}</p>
-              </div>
-            )}
+          <div className="schedule-wrapper" aria-busy={isScheduling || refreshingImportedSchedule}>
             {!refreshingImportedSchedule && <div id="schedule-grid-container">
               <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} />
             </div>}
@@ -852,12 +946,12 @@ function Dashboard({ user, userIdentity }) {
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleChatSend()}
-                disabled={chatLoading}
+                disabled={chatLoading || isScheduling}
               />
               <button
                 className="send-btn"
                 onClick={() => handleChatSend()}
-                disabled={!chatInput.trim() || chatLoading || chatHistoryLoading}
+                disabled={!chatInput.trim() || chatLoading || chatHistoryLoading || isScheduling}
               >
                 <Send size={18} />
               </button>
@@ -875,6 +969,26 @@ function Dashboard({ user, userIdentity }) {
       )}
 
       {/* Modal is same as before */}
+      {editingTopics && savedProfile && (
+        <div className="modal-overlay" onClick={() => setEditingTopics(false)}>
+          <section className="modal-content" role="dialog" aria-modal="true" aria-labelledby="dashboard-topic-title"
+            onClick={event => event.stopPropagation()}>
+            <button type="button" className="modal-close" aria-label="關閉課程主題"
+              onClick={() => setEditingTopics(false)}>✕</button>
+            <h2 id="dashboard-topic-title">課程主題</h2>
+            <InterestQuestionnaire
+              scope={{ department: savedProfile.department, gradeLevel: savedProfile.gradeLevel, className: savedProfile.className }}
+              savedSelections={savedProfile.interestSelections}
+              savedSummary={savedProfile.interestSummary}
+              confirmLabel="確認課程主題"
+              onConfirm={async selections => {
+                if (await persistDashboardPreferences({ interestSelections: selections })) setEditingTopics(false);
+              }}
+            />
+          </section>
+        </div>
+      )}
+
       <CourseDetailModal
         course={detailCourse}
         onClose={() => setDetailCourse(null)}

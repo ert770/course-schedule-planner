@@ -180,6 +180,7 @@ export default function SetupPage() {
     setGenerating(true);
     try {
       const prefData = {
+        userId: userIdentity,
         department,
         gradeLevel: Number(gradeLevel),
         className,
@@ -329,7 +330,7 @@ export default function SetupPage() {
                     {savedAvoidances.map(course => (
                       <div className="history-feedback-row" key={course.sectionId}>
                         <span>{course.courseName}{course.catalogCourseCode && `（${course.catalogCourseCode}）`}</span>
-                        <button type="button" className="course-card-action" disabled={restoringCourse !== null}
+                        <button type="button" className="course-card-action restore-avoidance-button" disabled={restoringCourse !== null}
                           onClick={() => restoreCourse(course.sectionId)}>
                           {restoringCourse === course.sectionId ? '處理中…' : '解除避開'}
                         </button>

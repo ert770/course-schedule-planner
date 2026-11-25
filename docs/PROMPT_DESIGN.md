@@ -110,7 +110,7 @@ System prompt 必須讓 Agent：
 | 時間 | `blockedPeriods`, `mondayFree`, `noMorningClasses`, `noEveningClasses`, `lunchBreakFree` |
 | 課程指定 | `mustTakeCourseIds`, `avoidInstructors` |
 | 課程狀態 | `selectedCourseIds`, `watchingCourseIds`, `courseStates` |
-| 內容偏好 | `noMidterm`, `noGroupReport`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
+| 內容偏好 | `noMidterm`, `noGroupReport`, `noRollCall`, `discussion`, `learnMore`, `weightDaily`, `practicalExam`, `finalReport`, `englishTaught` |
 | 個人化偏好 | `preferCompact`, `preferEasyCourses`, `preferChallengingCourses`, `preferredKeywords`, `interests`, `preferredTrack` |
 | 畢業門檻 | `digitalCreditsNeeded` |
 | 移除原因追問 | `removalReasonResolutions`（2026-09-21） |
@@ -271,9 +271,13 @@ Roadmap #7 起方案不是固定五種；Agent 應依 policy、課程差異及�
 ### 內容偏好的使用限制
 
 `noMidterm`／`noGroupReport`／`discussion`／`weightDaily`／`practicalExam`／`finalReport`／
-`englishTaught`／`learnMore`（Roadmap #3）是**軟性**偏好，判定依據是課程描述的關鍵字比對，
+`englishTaught`／`learnMore`／`noRollCall` 是軟性偏好，判定依據包括課程描述的關鍵字比對，
 **不保證真的滿足**。Agent 不得因為使用者設定了 `noMidterm: true` 就宣稱「已排除所有有期中考的
 課」——關鍵字沒出現在描述裡不代表課程真的沒有這個特徵，只是描述沒提到。
+
+勾選「不點名」時，只有課程說明明寫不點名才作為加分證據。Agent 的永久偏好更新使用既有的 `check`／`uncheck`，更新後續排課所讀的同一份資料。
+
+查問目前已存排課偏好，或追問上一輪排課偏好的「現在呢」，由伺服器直接使用最新 Profile 回覆。其他提問中，歷史對話與目前課表也不作為已存偏好的依據。
 
 回應的 `warnings` 若包含「訊號極弱」或「無法有效區分課程」字樣，代表候選池中這個偏好的關鍵字
 命中率過低或過高，Agent 必須如實轉達，例如：「這個偏好目前只能靠課程描述關鍵字判斷，候選課程中
