@@ -2,6 +2,22 @@ import { withTransaction } from '../db/mysql.js';
 import { createHash } from 'node:crypto';
 import { planHistoryByName } from '../../../client/src/utils/historyNameDedup.js';
 
+function matchesOnlineHistoryAttempt(incoming, stored) {
+  if (!incoming.courseCode
+    || (incoming.courseCode !== stored.catalog_course_code && incoming.courseCode !== stored.source_course_code)
+    || incoming.academicYear !== Number(stored.academic_year)
+    || incoming.semester !== Number(stored.semester)
+    || !Number.isFinite(incoming.score) || stored.score == null
+    || incoming.score !== Number(stored.score)) return false;
+
+  const incomingName = incoming.courseName.trim();
+  const storedName = stored.course_name?.trim();
+  if (!storedName || incomingName === storedName) return false;
+  const onlineSuffix = /\s*\(Online\)$/;
+  return incomingName.replace(onlineSuffix, '') === storedName
+    || storedName.replace(onlineSuffix, '') === incomingName;
+}
+
 // All input comes from the server-owned extraction session, never from the client.
 export async function importExtractedHistory(identity,rows,transaction=withTransaction,{sessionImport=false,dryRun=false}={}){
  const userId=Number(identity?.numericId);
@@ -33,6 +49,10 @@ export async function importExtractedHistory(identity,rows,transaction=withTrans
   for(const row of rows){
    if(!row||(row.courseCode!=null && row.courseCode!=='' && (typeof row.courseCode!=='string'||!/^[A-Z0-9]{1,45}$/.test(row.courseCode)))||typeof row.courseName!=='string'||!row.courseName.trim()||row.courseName.length>255||(!row.courseCode && (typeof row.sourceClassName!=='string'||!row.sourceClassName.trim()))||!Number.isInteger(row.academicYear)||row.academicYear<1||row.academicYear>65535||![1,2,3].includes(row.semester)||typeof row.credits!=='number'||!Number.isFinite(row.credits)||row.credits<0||row.credits>999.9)throw Error('INVALID_RECORD');
    if(skipCodeLess.has(row)){skipped++;continue;}
+   if (sessionImport && seen.has(key(row)) && existing.some(entry => matchesOnlineHistoryAttempt(row, entry))) {
+     skipped++;
+     continue;
+   }
    if (sessionImport && existingNames.has(row.courseName.trim())) { const entries = existingNames.get(row.courseName.trim()); const incoming = typeof row.score === 'number' ? row.score : null; if (incoming !== null && entries.some(e => e.score != null && Number(e.score) !== incoming)) conflicts++; else skipped++; continue; }
    const exactCode=byCode.get(row.courseCode)??new Set();
    let code=null,reason=null;

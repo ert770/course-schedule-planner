@@ -38,12 +38,15 @@ const deps = (events = [], consented = true) => ({
   now: () => Date.parse('2026-10-14T00:00:00.000Z'),
 });
 
-test('HFS-1 只列已通過的非必修課；排除沒有標籤與本學期沒開的課；學期由近到遠', async () => {
+test('HFS-1 已通過的非必修課完整列出，首頁只詢問當期有標籤的課', async () => {
   const result = await getHistoryFeedbackCourses({ canonicalId: 'T1' }, deps());
   assert.equal(result.consented, true);
-  assert.deepEqual(result.groups.map(group => `${group.academicYear}-${group.semester}`), ['113-2', '113-1']);
-  assert.deepEqual(result.groups.flatMap(group => group.courses.map(course => course.courseCode)), ['GEN1', 'ELEC1']);
+  assert.deepEqual(result.groups.map(group => `${group.academicYear}-${group.semester}`), ['113-2', '113-1', '112-2', '112-1']);
+  assert.deepEqual(result.groups.flatMap(group => group.courses.map(course => course.courseCode)), ['GEN1', 'ELEC1', 'OLD1', 'NOTAG']);
   assert.equal(result.groups[1].courses[0].sectionId, 10, '同課號取最小的班次 ID');
+  assert.equal(result.groups[2].courses[0].sectionId, null);
+  assert.equal(result.groups[2].courses[0].availableForInitialReview, false);
+  assert.equal(result.groups[3].courses[0].availableForInitialReview, false);
   assert.deepEqual(result.excluded, { noTags: 1, notOfferedThisTerm: 1 });
   assert.equal(result.pendingCount, 2);
 });
@@ -59,7 +62,7 @@ test('HFS-2 帶出未到期事件中最後一次的回答；已回答的課不�
     event('GEN1', 'liked', '2025-01-01T00:00:00.000Z'), // 已超過 180 天保存期限
   ]));
   const byCode = Object.fromEntries(result.groups.flatMap(group => group.courses).map(course => [course.courseCode, course.response]));
-  assert.deepEqual(byCode, { ELEC1: 'disliked', GEN1: null });
+  assert.deepEqual(byCode, { ELEC1: 'disliked', GEN1: null, OLD1: null, NOTAG: null });
   assert.equal(result.pendingCount, 1);
 });
 

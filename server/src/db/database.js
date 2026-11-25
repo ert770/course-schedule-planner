@@ -1029,13 +1029,18 @@ async function updateMysqlUserPreference(canonicalId, item) {
     ['enrolledPrograms', 'enrolled_programs'],
     ['mustTakeCourses', 'must_take_courses'],
     ['avoidInstructors', 'avoid_instructors'],
-    ['preferencesJson', 'preferences_json'],
   ];
   for (const [property, column] of jsonColumns) {
     if (item[property] !== undefined) {
       updates.push(`\`${column}\` = ?`);
       params.push(JSON.stringify(item[property]));
     }
+  }
+  if (item.preferencesJson !== undefined) {
+    // 課程避開由另一個端點更新，寫入其他偏好時保留資料庫目前的避開清單。
+    updates.push("`preferences_json` = JSON_SET(CAST(? AS JSON), '$.values.scheduleAvoidances', "
+      + "COALESCE(JSON_EXTRACT(`preferences_json`, '$.values.scheduleAvoidances'), JSON_ARRAY()))");
+    params.push(JSON.stringify(item.preferencesJson));
   }
   if (item.programType !== undefined) {
     updates.push('`program_type` = ?');

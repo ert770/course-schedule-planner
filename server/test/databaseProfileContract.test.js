@@ -114,7 +114,8 @@ describe('B14 興趣偏好沿用 preferences_json', () => {
   test('資料層讀寫既有 preferences_json，不新增另一組興趣欄位', () => {
     assert.match(databaseSource, /const preferencesJson = parseJson\(row\.preferences_json/u);
     assert.match(databaseSource, /\n\s*preferencesJson,\r?\n/u);
-    assert.match(databaseSource, /\['preferencesJson',\s*'preferences_json'\]/u);
+    assert.match(databaseSource, /`preferences_json` = JSON_SET\(CAST\(\? AS JSON\), '\$.values.scheduleAvoidances'/u);
+    assert.match(databaseSource, /JSON_EXTRACT\(`preferences_json`, '\$.values.scheduleAvoidances'\)/u);
     assert.doesNotMatch(databaseSource, /preferred_track|preferred_keywords/u);
   });
 });

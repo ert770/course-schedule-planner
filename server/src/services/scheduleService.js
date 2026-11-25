@@ -17,7 +17,7 @@
 import crypto from 'node:crypto';
 import { generateSchedule } from '../skills/scheduler.js';
 import { searchCoursesForSchedule } from '../skills/courseQuery.js';
-import { getUserPreferences } from './memoryService.js';
+import { getUserPreferences, readScheduleAvoidances } from './memoryService.js';
 import { buildScheduleConstraints } from './constraintService.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 import { getAll } from '../db/database.js';
@@ -438,7 +438,7 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
       explicitCourseIds: [...(constraints.explicitCourseIds || []), ...courseIds],
     },
     prefs,
-    { courseReviews, learnedPreference, graduationPlanning }
+    { courseReviews, learnedPreference, graduationPlanning, scheduleAvoidances: readScheduleAvoidances(prefs.preferencesJson) }
   );
 
   const studentScope = buildStudentScope(mergedConstraints);

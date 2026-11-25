@@ -355,8 +355,8 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 歷史修課回饋視窗的課程清單。**唯讀**；需登入與 service consent。未同意 `personalization_learning` 時
 `consented: false`、`groups` 為空陣列。
 
-只列最新一次已通過、畢業分類為選修／通識／系外選修的課（必修與不計學分課不列），且必須在當學期有開課
-（事件快照要從班次讀標籤）並有可比對的標籤（否則回答不影響推薦）。依學期由近到遠分組。
+依學期由近到遠列出最新一次已通過、畢業分類為選修／通識／系外選修的課。
+設定頁可以編輯全部回傳課程。當期有班次及可比對標籤的課才會由首頁主動詢問。
 
 ```json
 {
@@ -366,7 +366,8 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
     "academicYear": 113, "semester": 2,
     "courses": [{
       "courseCode": "IECS2011", "name": "系統分析與設計", "sectionId": 1234,
-      "graduationCategory": "elective", "response": null, "answeredAt": null
+      "graduationCategory": "elective", "response": null, "answeredAt": null,
+      "availableForInitialReview": true
     }]
   }],
   "pendingCount": 18,
@@ -375,7 +376,9 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 ```
 
 - `response`：未到期事件中最後一次的回答（`liked`／`neutral`／`disliked`），沒回答過為 `null`。
-- `pendingCount`：還沒回答過的課數。前端在排課主頁 `pendingCount > 0` 時自動跳出一次；
+- `sectionId`：當期沒有可對應的班次時為 `null`，仍可用本人修課紀錄的課號提交喜好。
+- `pendingCount`：`availableForInitialReview` 為 true 且尚未回答的課數。`excluded` 計算因無當期班次或缺標籤而未列入首頁詢問的課數。
+  前端在排課主頁 `pendingCount > 0` 時自動跳出一次；
   「稍後再說」會把這批課都記為 `neutral`，同一批課不再自動跳出。
 
 回答以 `POST /api/interactions` 送出 `history_course_feedback` 事件：
@@ -395,6 +398,7 @@ category 時維持 F7，只回傳本人班級及同年級合班；明確指定 `
 - `source` 必須是 `history_review`；`response` 只能是 `liked`／`neutral`／`disliked`；`canonicalTagIds` 必須是空陣列
   （針對整門課，證據標籤由伺服器快照決定）。
 - **伺服器依 Profile 的修課歷史核對課號**：不是本人已通過的選修／通識／系外選修就 `rejected`。
+- 無當期班次時，可傳 `course.sectionId: null` 保存課程喜好。這筆回答沒有班次標籤快照。
 - 學習權重：喜歡 +1、不喜歡 −1、普通 0；同一門課以最後一次回答為準，不套用時間衰減（事件 180 天到期）。
   標籤空間使用者向量中，回答「不喜歡」的課不再給歷史修課的 +0.5。
 
@@ -1439,21 +1443,27 @@ Constraint Schema（Roadmap #21）」與「共同必修（Co-requisite，Roadmap
 
 ### `POST /api/schedule/save`
 
-Request:
+需要登入及服務處理同意。前端附上目前登入的學號，伺服器仍以 session 驗證身分。
 
 ```json
 {
+  "userId": "D0009007",
   "name": "我的課表",
   "schedule": [],
   "totalCredits": 18
 }
 ```
 
-Saved schedules remain local JSON data.
+有 MySQL 時存入 `Saved_Schedules`。未設定 MySQL 時以本機 JSON 保存。
 
 ### `GET /api/schedule/saved`
 
-Returns locally saved schedules for the session user.
+只回傳登入帳號的已存課表。可附 `?userId=學號` 核對前端身分，與 session 不符時回傳 `403`。
+成功回應帶 `Cache-Control: private, no-store`。
+
+### `GET /api/schedule/avoidances`、`PUT /api/schedule/avoidances/:sectionId`
+
+需要登入及服務處理同意。GET 讀取目前登入帳號的避開課程，PUT 以 `{ "avoid": true }` 加入，或以 `{ "avoid": false }` 解除。回傳 `{ "avoidances": [{ "sectionId": 123, "catalogCourseCode": "COURSE1", "courseName": "課名" }] }`。新增時由伺服器查班次取得課號及名稱，排課依已存設定排除，無課號時僅避開該班次。
 
 ## Chat
 
@@ -2269,6 +2279,8 @@ Chrome 背景網路行為及異常退出時作業系統暫存尚未完整驗證�
 
 本機預覽設定啟用 `localSelfAttested` 時，可由同一個登入 Session 的使用者確認擷取來源及修課結果後呼叫既有匯入 API。此為學生聲明，並非校方身分驗證。後端僅接受該 Session 尚未逾時的完整擷取結果，使用 Session 的 numericId，禁止前端指定使用者。此模式僅限 Windows 非 production、loopback 及專用的 127.0.0.1:33160 隔離測試庫；正式匯入身分驗證阻擋不變。
 # 本機修課資料自動匯入
+
+Windows 本機 SessionImport 模式的快照預檢與確認匯入共用去重規則。已存紀錄的目錄課號或來源課號、學年、學期和已知數字成績均相同，且課名只差結尾的 `(Online)` 時，該筆計入 `skipped`，不產生衝突或寫入。
 
 `POST /api/course-history-import/auto` 僅限受限制的本機自行聲明模式，使用目前 Session 並從伺服器端已完成的擷取工作階段取得資料，不接受使用者或課程資料。以來源課號及課名精確對照 `Courses.subid3` 與 `Courses.name`，不以班級或學期匹配；同一課號、課名的不同班次視為同一代碼。缺課號、目錄缺課或課名不符時，完整來源紀錄保存於歷史表且 catalog 為 NULL，不覆蓋既有紀錄。回傳新增、重複跳過、未匹配及其中衝突筆數；此聲明不是官方身分驗證。
 

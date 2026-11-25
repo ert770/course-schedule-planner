@@ -1,4 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+let pendingLogout = Promise.resolve();
 
 async function request(endpoint, options = {}) {
   const { noAuthRedirect = false, readResponse, ...requestOptions } = options;
@@ -63,15 +64,21 @@ async function readChatResponse(response, onProgress) {
 
 // Auth API
 export const authAPI = {
-  login: (studentId, password) =>
-    request('/auth/login', {
+  login: async (studentId, password) => {
+    await pendingLogout;
+    return request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ studentId, password }),
-    }),
-  getMe: () => request('/auth/me'),
+    });
+  },
+  getMe: () => request('/auth/me', { cache: 'no-store' }),
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   registerOptions: () => request('/auth/register-options'),
-  logout: () => request('/auth/logout', { method: 'POST', keepalive: true }),
+  logout: () => {
+    const result = request('/auth/logout', { method: 'POST', keepalive: true });
+    pendingLogout = result.catch(() => {});
+    return result;
+  },
   updateWatchlist: (watchlist) =>
     request('/auth/update-watchlist', {
       method: 'POST',
@@ -206,16 +213,28 @@ export const scheduleAPI = {
       method: 'POST',
       body: JSON.stringify({ courses }),
     }),
-  save: (name, schedule, totalCredits) =>
+  save: (name, schedule, totalCredits, userId) =>
     request('/schedule/save', {
       method: 'POST',
       body: JSON.stringify({
         name,
         schedule,
         totalCredits,
+        userId,
       }),
     }),
-  getSaved: () => request('/schedule/saved'),
+  getSaved: (userId, signal) => request(
+    `/schedule/saved?userId=${encodeURIComponent(userId)}`,
+    { cache: 'no-store', noAuthRedirect: true, signal },
+  ),
+  getAvoidances: (userId, signal) => request(
+    `/schedule/avoidances?userId=${encodeURIComponent(userId)}`,
+    { cache: 'no-store', noAuthRedirect: true, signal },
+  ),
+  updateAvoidance: (userId, sectionId, avoid) => request(`/schedule/avoidances/${sectionId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ userId, avoid }),
+  }),
   // roadmap #27：counterfactual——只在使用者展開比較面板時才呼叫，
   // 不併入 `generate`（見 `scheduleService.counterfactualForUser()` 的效能說明）。
   counterfactual: (data) =>

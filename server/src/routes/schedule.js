@@ -1,12 +1,34 @@
 import { Router } from 'express';
 import { validateSchedule } from '../skills/scheduler.js';
 import { validateScheduleAgainstConstraints } from '../skills/scheduleValidator.js';
-import { saveSchedule, getSavedSchedules } from '../services/memoryService.js';
+import { saveSchedule, getSavedSchedules, getScheduleAvoidances, updateScheduleAvoidances } from '../services/memoryService.js';
 import { generateForUser, counterfactualForUser } from '../services/scheduleService.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
 
 const router = Router();
+
+router.get('/avoidances', requireIdentity, requireServiceConsent, async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  try {
+    res.json({ avoidances: await getScheduleAvoidances(req.identity) });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.status ? err.message : '無法載入避開課程。' });
+  }
+});
+
+router.put('/avoidances/:sectionId', requireIdentity, requireServiceConsent, async (req, res) => {
+  const sectionId = Number(req.params.sectionId);
+  const { avoid } = req.body ?? {};
+  if (!Number.isSafeInteger(sectionId) || sectionId <= 0 || typeof avoid !== 'boolean') {
+    return res.status(400).json({ error: '避開課程的班次或動作無效。' });
+  }
+  try {
+    return res.json({ avoidances: await updateScheduleAvoidances(req.identity, sectionId, avoid) });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.status ? err.message : '無法儲存避開課程，請再試一次。' });
+  }
+});
 
 router.post('/generate', requireIdentity, requireServiceConsent, async (req, res) => {
   try {
@@ -76,6 +98,7 @@ router.post('/save', requireIdentity, requireServiceConsent, async (req, res) =>
 });
 
 router.get('/saved', requireIdentity, requireServiceConsent, async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
   try {
     const schedules = await getSavedSchedules(req.identity);
     res.json({ schedules });

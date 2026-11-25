@@ -142,6 +142,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // 清單整包蓋掉。立場與 `nonNegotiablePreferenceIds` 相同：「這次不想要」不該
     // 靜默沉澱成永久設定，要永久固定應該走 update_preferences。
     sessionAvoidances: pickRequestList(input.sessionAvoidances),
+    scheduleAvoidances: context.scheduleAvoidances ?? [],
 
     selectedCourseIds: pickRequestList(input.selectedCourseIds),
     watchingCourseIds: pickRequestList(input.watchingCourseIds),

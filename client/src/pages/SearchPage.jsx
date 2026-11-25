@@ -4,7 +4,7 @@ import { useSchedule } from '../contexts/useSchedule';
 import { coursesAPI, profileAPI } from '../services/api';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, RotateCcw, X, Compass, GripVertical, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, Check, RotateCcw, X, Compass, GripVertical, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import '../App.css'; 
 import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
@@ -31,7 +31,8 @@ export default function SearchPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
   const [searchError, setSearchError] = useState('');
-  const [actionNotice, setActionNotice] = useState(null);
+  const [courseFeedback, setCourseFeedback] = useState({});
+  const feedbackTimers = useRef(new Map());
   const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
   const [watchlistCourses, setWatchlistCourses] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
@@ -44,6 +45,23 @@ export default function SearchPage() {
   // 每次送出搜尋就加一。回應回來時號碼對不上，代表使用者已經換了分頁或送出更新的搜尋，
   // 那份結果不該再蓋到畫面上。
   const searchRequestRef = useRef(0);
+  useEffect(() => {
+    const timers = feedbackTimers.current;
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, []);
+
+  const showCourseFeedback = (id, feedback) => {
+    const timers = feedbackTimers.current;
+    clearTimeout(timers.get(id));
+    timers.delete(id);
+    setCourseFeedback(current => ({ ...current, [id]: feedback }));
+    if (feedback && feedback.type !== 'error') {
+      timers.set(id, setTimeout(() => {
+        timers.delete(id);
+        setCourseFeedback(current => ({ ...current, [id]: null }));
+      }, 1400));
+    }
+  };
   const [deptForm, setDeptForm] = useState({
     department: '資訊工程學系',
     gradeLevel: '4',
@@ -231,12 +249,10 @@ export default function SearchPage() {
 
   const handleAddCourse = async (event, course) => {
     if (event) event.stopPropagation();
-    setActionNotice(null);
+    const id = String(course.id);
+    showCourseFeedback(id, null);
     const result = await addCourse(course);
-    setActionNotice({
-      level: result.success ? 'success' : 'error',
-      text: result.success ? `已將「${course.name}」加入課表。` : result.message,
-    });
+    showCourseFeedback(id, result.success ? { type: 'added' } : { type: 'error', text: result.message });
   };
 
   const handleToggleCourse = async (event, course) => {
@@ -244,11 +260,6 @@ export default function SearchPage() {
     const isAdded = schedule.some(item => String(item.id) === String(course.id));
     if (isAdded) {
       setDetailCourse(null);
-      if (!personalizationEnabled) {
-        removeCourse(course.id);
-        setActionNotice({ level: 'success', text: '已將「' + course.name + '」從課表移除。' });
-        return;
-      }
       setRemovalCandidate(course);
       return;
     }
@@ -260,39 +271,38 @@ export default function SearchPage() {
     logCourseViewed(course);
   };
 
-  const handleRemoveConfirmed = (feedbackReason) => {
+  const handleRemoveConfirmed = async (feedbackReason) => {
     const course = removalCandidate;
-    setRemovalCandidate(null);
-    if (!course) return;
-    removeCourse(course.id, { feedbackReason });
-    setActionNotice({ level: 'success', text: `已將「${course.name}」從課表移除。` });
+    const result = await removeCourse(course.id, { feedbackReason });
+    if (result.success) {
+      setRemovalCandidate(null);
+      showCourseFeedback(String(course.id), { type: 'removed', text: '已從課表移除並避開。' });
+    }
+    return result;
   };
 
   const handleToggleWatchlist = async (event, course) => {
     if (event) event.stopPropagation();
     const id = String(course.id);
     setWatchlistUpdatingId(id);
-    setActionNotice(null);
+    showCourseFeedback(id, null);
     const result = await toggleWatchlist(course);
     setWatchlistUpdatingId('');
-    setActionNotice({
-      level: result.success ? 'success' : 'error',
-      text: result.success
-        ? (result.watching ? `已關注「${course.name}」。` : `已取消關注「${course.name}」。`)
-        : result.message,
-    });
+    showCourseFeedback(id, result.success
+      ? (result.watching ? { type: 'watched' } : null)
+      : { type: 'error', text: result.message });
   };
 
   const handleResetDeptForm = () => {
     setDeptForm({ department: '資訊工程學系', gradeLevel: '', className: '合', category: '', keyword: '' });
     setSearchError('');
-    setActionNotice(null);
+    setCourseFeedback({});
   };
 
   const handleResetCondForm = () => {
     setCondForm({ code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: '' });
     setSearchError('');
-    setActionNotice(null);
+    setCourseFeedback({});
   };
 
   const displayCourses = activeTab === 'watchlist' ? watchlistCourses : searchResults;
@@ -489,7 +499,6 @@ export default function SearchPage() {
             </h3>
           </div>
 
-          {actionNotice && <div className={`search-action-notice ${actionNotice.level}`} role="status">{actionNotice.text}</div>}
           {resultError && <div className="search-action-notice error" role="alert">{resultError}</div>}
           
           {watchlistLoading ? (
@@ -500,7 +509,13 @@ export default function SearchPage() {
             </div>
           ) : displayCourses.length > 0 ? (
             <div className="results-grid">
-              {displayCourses.map(course => (
+              {displayCourses.map(course => {
+                const id = String(course.id);
+                const watched = watchlist.includes(id);
+                const added = schedule.some(item => String(item.id) === id);
+                const feedback = courseFeedback[id];
+                const justAdded = added && feedback?.type === 'added';
+                return (
                 <div key={course.id} className="course-card" onClick={() => handleOpenDetail(course)}>
                   <div className="course-card-header">
                     <h4>{course.name}</h4><span className="course-code">{course.code}</span>
@@ -521,16 +536,27 @@ export default function SearchPage() {
                     )}
                   </div>
                   <div className="course-card-actions">
-                    <button type="button" className={`course-card-action ${watchlist.includes(String(course.id)) ? 'active' : ''}`} onClick={event => handleToggleWatchlist(event, course)} disabled={watchlistUpdatingId === String(course.id)}>
-                      <Heart size={15} fill={watchlist.includes(String(course.id)) ? 'currentColor' : 'none'} />
-                      {watchlistUpdatingId === String(course.id) ? '更新中…' : (watchlist.includes(String(course.id)) ? '已關注' : '關注')}
+                    <button type="button" className={`course-card-action search-watch-action${watched ? ' active' : ''}`} aria-pressed={watched}
+                      onClick={event => handleToggleWatchlist(event, course)} disabled={Boolean(watchlistUpdatingId)}>
+                      <Heart aria-hidden="true" size={15} fill={watched ? 'currentColor' : 'none'}
+                        className={watched && feedback?.type === 'watched' ? 'search-heart-pop' : undefined} />
+                      {watchlistUpdatingId === id ? '更新中…' : (watched ? '已關注' : '關注')}
                     </button>
-                    <button type="button" className={`course-card-action ${schedule.some(item => String(item.id) === String(course.id)) ? 'danger' : 'primary'}`} onClick={event => handleToggleCourse(event, course)} disabled={validating && !schedule.some(item => String(item.id) === String(course.id))}>
-                      {schedule.some(item => String(item.id) === String(course.id)) ? <><X size={15} /> 取消加選</> : <><Plus size={15} /> {validating ? '驗證中…' : '加入課表'}</>}
+                    <button type="button" className={`course-card-action ${justAdded ? 'search-added-action' : added ? 'danger' : 'primary'}`}
+                      onClick={event => handleToggleCourse(event, course)} disabled={validating && !added}>
+                      {justAdded ? <><Check size={15} aria-hidden="true" className="search-heart-pop" /><span role="status">已加入</span></>
+                        : added ? <><X size={15} aria-hidden="true" /> 取消加選</>
+                          : <><Plus size={15} aria-hidden="true" /> {validating ? '驗證中…' : '加入課表'}</>}
                     </button>
                   </div>
+                  {feedback?.text && (
+                    <p className={`search-card-feedback ${feedback.type}`} role={feedback.type === 'error' ? 'alert' : 'status'}>
+                      {feedback.text}
+                    </p>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : null}
         </div>
@@ -538,6 +564,7 @@ export default function SearchPage() {
 
       <RemoveReasonDialog
         course={removalCandidate}
+        collectReason={personalizationEnabled}
         onCancel={() => setRemovalCandidate(null)}
         onConfirm={handleRemoveConfirmed}
       />

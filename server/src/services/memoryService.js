@@ -2,9 +2,10 @@ import {
   getAll, insert, upsertByField, clearCollection, getUserCourseHistory,
 } from '../db/database.js';
 import { normalizeProfile } from '../data/profileSchema.js';
-import { isMysqlConfigured, queryRows } from '../db/mysql.js';
+import { isMysqlConfigured, queryRows, withTransaction } from '../db/mysql.js';
 import { DEFAULT_MIN_CREDITS } from '../data/creditPolicy.js';
-import { mergeInterestPreferences } from '../data/interestPreferences.js';
+import { mergeInterestPreferences, normalizePreferencesJson } from '../data/interestPreferences.js';
+import { getCachedCourseCatalog } from './courseCatalogCache.js';
 import {
   mergeSemesterPlanningPreferences,
   SEMESTER_PLANNING_PREFERENCE_FIELDS,
@@ -144,6 +145,59 @@ function scheduleIdentity(identity) {
     return { canonicalId: String(identity.canonicalId), numericId: Number(identity.numericId) };
   }
   return { canonicalId: String(identity), numericId: Number.NaN };
+}
+
+export function readScheduleAvoidances(preferencesJson) {
+  const { values } = normalizePreferencesJson(parseScheduleJson(preferencesJson));
+  if (!Array.isArray(values.scheduleAvoidances)) return [];
+  return values.scheduleAvoidances.filter(item => Number.isSafeInteger(item?.sectionId) && item.sectionId > 0);
+}
+
+async function readScheduleAvoidanceProfile(identity, execute, lock = false) {
+  const { canonicalId, numericId } = scheduleIdentity(identity);
+  const rows = await execute(
+    'SELECT preferences_json FROM User_Profiles WHERE user_id = ? AND (student_id = ? OR student_id IS NULL)'
+      + (lock ? ' FOR UPDATE' : ''),
+    [numericId, canonicalId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('找不到可儲存避開課程的帳號資料。'), { status: 404 });
+  return normalizePreferencesJson(parseScheduleJson(rows[0].preferences_json));
+}
+
+export async function getScheduleAvoidances(identity) {
+  return readScheduleAvoidances(await readScheduleAvoidanceProfile(identity, queryRows));
+}
+
+export async function updateScheduleAvoidances(identity, sectionId, avoid, {
+  loadCourses = getCachedCourseCatalog, transaction = withTransaction,
+} = {}) {
+  let entry = null;
+  if (avoid) {
+    const course = (await loadCourses()).find(item => Number(item.id ?? item.sectionId) === sectionId);
+    if (!course) throw Object.assign(new Error('找不到這個課程班次。'), { status: 404 });
+    entry = {
+      sectionId,
+      catalogCourseCode: String(course.catalogCourseCode ?? '').trim(),
+      courseName: course.name,
+    };
+  }
+  return transaction(async connection => {
+    const profile = await readScheduleAvoidanceProfile(identity, async (sql, params) => {
+      const [rows] = await connection.execute(sql, params);
+      return rows;
+    }, true);
+    const current = readScheduleAvoidances(profile);
+    const next = avoid
+      ? [...current.filter(item => item.sectionId !== sectionId
+        && (!entry.catalogCourseCode || item.catalogCourseCode !== entry.catalogCourseCode)), entry]
+      : current.filter(item => item.sectionId !== sectionId);
+    const preferences = { ...profile, values: { ...profile.values, scheduleAvoidances: next } };
+    await connection.execute(
+      'UPDATE User_Profiles SET preferences_json = ? WHERE user_id = ?',
+      [JSON.stringify(preferences), Number(identity.numericId)]
+    );
+    return next;
+  });
 }
 
 // 測試套件使用 DATA_DIR fixture；即使 dotenv 又載入 shared DB 設定，也不得讓

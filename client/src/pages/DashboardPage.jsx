@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/useAuth';
 import { useSchedule } from '../contexts/useSchedule';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { scheduleAPI, chatAPI, profileAPI, historyFeedbackAPI, controlledBrowserAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
@@ -43,6 +43,27 @@ function ChatActivity({ items, pending = false }) {
     </details>
   );
 }
+
+function HistorySyncToast() {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <div className="history-sync-toast-position">
+      <section className="history-sync-toast" role="status" aria-atomic="true">
+        <CheckCircle2 size={26} aria-hidden="true" />
+        <strong>修課紀錄同步完成</strong>
+      </section>
+    </div>
+  );
+}
+
 // 偏好清單改由 `GET /api/profile/preference-tags` 提供。
 //
 // 這裡原本寫死一份 `PREFS`，用的是**排課旗標的 key**（`preferCompact` 等）
@@ -58,10 +79,27 @@ export default function DashboardPage() {
 function Dashboard({ user, userIdentity }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
   // MyFCU 本機同步入口（只在開發模式查詢）。本機模式沒開時後端回 404，視為未開放，不顯示錯誤。
   const [localMyFcuPreview, setLocalMyFcuPreview] = useState(false);
+  const [localMyFcuImport, setLocalMyFcuImport] = useState(false);
   const [localMyFcuError, setLocalMyFcuError] = useState('');
-  useEffect(() => { if (!import.meta.env.DEV || !userIdentity) return; let active=true; controlledBrowserAPI.config().then(x=>{if(active){setLocalMyFcuPreview(x.mode==='local');setLocalMyFcuError('');}}).catch(error=>{if(active){setLocalMyFcuPreview(false);setLocalMyFcuError(error.status === 404 ? '' : (error.message || '無法確認本機同步設定'));}}); return ()=>{active=false;}; }, [userIdentity]);
+  useEffect(() => {
+    if (!import.meta.env.DEV || !userIdentity) return undefined;
+    let active = true;
+    controlledBrowserAPI.config().then(config => {
+      if (!active) return;
+      setLocalMyFcuPreview(config.mode === 'local');
+      setLocalMyFcuImport(config.mode === 'local' && config.sessionImport === true);
+      setLocalMyFcuError('');
+    }).catch(error => {
+      if (!active) return;
+      setLocalMyFcuPreview(false);
+      setLocalMyFcuImport(false);
+      setLocalMyFcuError(error.status === 404 ? '' : (error.message || '無法確認本機同步設定'));
+    });
+    return () => { active = false; };
+  }, [userIdentity]);
   const {
     schedule,
     loading: scheduleLoading,
@@ -94,6 +132,7 @@ function Dashboard({ user, userIdentity }) {
   // 排課提示框只顯示錯誤（見下方 ScheduleNotice）；儲存結果只走這則短暫提示。
   const [saveToast, setSaveToast] = useState(null);
   const [isScheduling, setIsScheduling] = useState(false);
+  const [isReschedulingImportedHistory, setIsReschedulingImportedHistory] = useState(false);
   // 偏好狀態就是**目前勾選的標籤集合**，來源是 profile API（即 MySQL
   // `User_Profiles.preference_tags`），與 Setup 頁讀的是同一支 API、同一份資料。
   //
@@ -125,7 +164,16 @@ function Dashboard({ user, userIdentity }) {
   const chatScrollRef = useRef(null);
   const initialGenerationUserRef = useRef(null);
   const preferencesLocationRef = useRef(null);
+  const importedHistoryLocationRef = useRef(null);
   const schedulingRef = useRef(false);
+  const { historySyncSummary, courseHistoryImported, historyRescheduleHandled } = location.state ?? {};
+  // 重新整理或瀏覽器返回會保留歷史摘要，只有這次同步導入首頁才顯示提示。
+  const [showHistorySyncToast] = useState(() => Boolean(
+    historySyncSummary && !historyRescheduleHandled && navigationType !== 'POP'
+  ));
+  const importedCount = historySyncSummary?.inserted ?? courseHistoryImported;
+  const needsHistoryReschedule = !historyRescheduleHandled && Number.isInteger(importedCount) && importedCount > 0;
+  const refreshingImportedSchedule = needsHistoryReschedule || isReschedulingImportedHistory;
   useEffect(() => {
     if (userIdentity === null) return;
     let active = true;
@@ -160,7 +208,9 @@ function Dashboard({ user, userIdentity }) {
   );
   const hasNonGraduationCredits = graduationCredits !== totalCredits;
 
-  const generateSchedule = useCallback(async (trigger = 'initial_load', { preferencesSaved = false } = {}) => {
+  const generateSchedule = useCallback(async (trigger = 'initial_load', {
+    preferencesSaved = false, historyImported = false, selectedCourseIds,
+  } = {}) => {
     if (schedulingRef.current) return;
     schedulingRef.current = true;
     setIsScheduling(true);
@@ -168,7 +218,7 @@ function Dashboard({ user, userIdentity }) {
     try {
       const constraints = {
         sessionAvoidances: buildAvoidanceConstraints(),
-        selectedCourseIds: userAddedCourseIds(),
+        selectedCourseIds: selectedCourseIds ?? userAddedCourseIds(),
       };
 
       if (userIdentity === null) {
@@ -180,15 +230,23 @@ function Dashboard({ user, userIdentity }) {
       }
 
       const data = await scheduleAPI.generate({
+        userId: userIdentity,
         constraints,
         surface: 'dashboard',
         trigger,
       });
 
       const notice = buildScheduleNotice(data);
-      setScheduleNotice(!data.success && preferencesSaved
-        ? { ...notice, message: `偏好已保存，課表未更新。 ${notice.message}` }
-        : notice);
+      if (!data.success && historyImported) {
+        setScheduleNotice(makeNotice({
+          level: 'error',
+          message: `修課紀錄已匯入，重新排課未完成。 ${notice?.message || '請再按「套用偏好排課」。'}`,
+        }));
+      } else {
+        setScheduleNotice(!data.success && preferencesSaved
+          ? { ...notice, message: `偏好已保存，課表未更新。 ${notice.message}` }
+          : notice);
+      }
 
       if (trigger !== 'initial_load') {
         logScheduleRegenerated(data.requestId, { surface: 'dashboard', trigger });
@@ -207,7 +265,9 @@ function Dashboard({ user, userIdentity }) {
       console.error('Schedule generation failed:', err);
       setScheduleNotice(makeNotice({
         level: 'error',
-        message: preferencesSaved
+        message: historyImported
+          ? `修課紀錄已匯入，重新排課未完成。 ${err.message || '請再按「套用偏好排課」。'}`
+          : preferencesSaved
           ? `偏好已保存，課表未更新。 ${err.message || '請再按「套用偏好排課」。'}`
           : (err.message || '無法連接到伺服器，請確認後端已啟動。'),
       }));
@@ -227,11 +287,20 @@ function Dashboard({ user, userIdentity }) {
       void generateSchedule('preference_regenerate', { preferencesSaved: true });
       return;
     }
-    // 剛匯入修課紀錄回到首頁時，依新的修課紀錄重新排一次。
-    if (Number.isInteger(location.state?.courseHistoryImported) && location.state.courseHistoryImported > 0) {
+    // 兩種匯入入口都走同一條重排路徑。先清掉已載入的快照，重排失敗時也不顯示舊課。
+    if (needsHistoryReschedule) {
+      if (importedHistoryLocationRef.current === location.key || schedulingRef.current) return;
+      importedHistoryLocationRef.current = location.key;
       initialGenerationUserRef.current = userIdentity;
-      navigate(location.pathname + location.search + location.hash, { replace: true, state: null });
-      void generateSchedule();
+      const selectedCourseIds = userAddedCourseIds();
+      setIsReschedulingImportedHistory(true);
+      replaceSchedule([]);
+      navigate(location.pathname + location.search + location.hash, {
+        replace: true,
+        state: historySyncSummary ? { historySyncSummary, historyRescheduleHandled: true } : null,
+      });
+      void generateSchedule('initial_load', { historyImported: true, selectedCourseIds })
+        .finally(() => setIsReschedulingImportedHistory(false));
       return;
     }
     if (schedule.length > 0) {
@@ -241,7 +310,7 @@ function Dashboard({ user, userIdentity }) {
     if (initialGenerationUserRef.current === userIdentity) return;
     initialGenerationUserRef.current = userIdentity;
     void generateSchedule();
-  }, [generateSchedule, schedule.length, scheduleLoading, userIdentity, location, navigate]);
+  }, [generateSchedule, historySyncSummary, needsHistoryReschedule, replaceSchedule, schedule.length, scheduleLoading, userAddedCourseIds, userIdentity, location, navigate]);
 
   // 階段 5：歷史修課回饋。只在同意個人化學習時查；查不到不影響排課。
   useEffect(() => {
@@ -442,10 +511,13 @@ function Dashboard({ user, userIdentity }) {
     setRemovalCandidate(course);
   };
 
-  const handleRemoveConfirmed = (feedbackReason) => {
-    if (removalCandidate) removeCourse(removalCandidate.id, { feedbackReason });
-    setRemovalCandidate(null);
-    setDetailCourse(null);
+  const handleRemoveConfirmed = async (feedbackReason) => {
+    const result = await removeCourse(removalCandidate.id, { feedbackReason });
+    if (result.success) {
+      setRemovalCandidate(null);
+      setDetailCourse(null);
+    }
+    return result;
   };
 
   const handleOpenDetail = (course) => {
@@ -478,15 +550,19 @@ function Dashboard({ user, userIdentity }) {
     return () => clearTimeout(timer);
   }, [saveToast]);
 
+  const avoidedRequirementWarnings = (scheduleNotice?.warnings ?? [])
+    .filter(warning => warning.startsWith('必修或重補修尚未滿足：'));
+  const visibleScheduleNotice = scheduleNotice?.level === 'error'
+    ? scheduleNotice
+    : avoidedRequirementWarnings.length > 0
+      ? makeNotice({ level: 'warning', message: avoidedRequirementWarnings.join(' ') })
+      : null;
+
   return (
     <div className="layout-container" id="dashboard-page">
       {/* Top Navbar */}
       <TopNav active="home" />
-      {location.state?.historySyncSummary && <section className="history-dashboard-summary" role="status">
-        <div><strong>修課紀錄同步完成</strong><span>已更新本次同步結果</span></div>
-        <div className="history-dashboard-counts"><span>新增 <b>{location.state.historySyncSummary.inserted}</b> 筆</span><span>未匹配 <b>{location.state.historySyncSummary.unmatched}</b> 筆</span><span>重複跳過 <b>{location.state.historySyncSummary.skipped}</b> 筆</span><span>衝突 <b>{location.state.historySyncSummary.conflicts ?? 0}</b> 筆</span></div>
-        {location.state.historySyncSummary.legacyUnusable > 0 && <small>另有 {location.state.historySyncSummary.legacyUnusable} 筆舊待查資料缺少必要欄位，仍保留待查。</small>}
-      </section>}
+      {showHistorySyncToast && <HistorySyncToast />}
 
       <div className="dashboard-content">
         {/* Left Sidebar: Preferences */}
@@ -545,13 +621,13 @@ function Dashboard({ user, userIdentity }) {
                 gap: '8px',
               }}
             >
-              <span className="stat-badge course-badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+              {!refreshingImportedSchedule && <span className="stat-badge course-badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                 📚 {schedule.length} 門課
-              </span>
-              <span className="stat-badge credit-badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+              </span>}
+              {!refreshingImportedSchedule && <span className="stat-badge credit-badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                 🎓 {totalCredits} 學分
-              </span>
-              {hasNonGraduationCredits && (
+              </span>}
+              {!refreshingImportedSchedule && hasNonGraduationCredits && (
                 <span
                   className="stat-badge credit-badge"
                   title="軍訓國防科技、體育、班級活動依校規不計入畢業學分"
@@ -573,18 +649,22 @@ function Dashboard({ user, userIdentity }) {
             >
               {/* MyFCU 歷史修課：列表入口與本機同步（開發模式）。 */}
               <Link className="action-btn secondary history-entry" to="/course-history">歷史修課紀錄</Link>
-              {import.meta.env.DEV && (user?.controlledBrowserMock === true || localMyFcuPreview) ? <Link className="action-btn secondary" to="/history-import-mock">{localMyFcuPreview ? 'MyFCU 本機預覽' : '同步 MyFCU 修課紀錄（本機測試）'}</Link> : <button className="action-btn secondary" type="button" disabled title="MyFCU 同步尚未開放">同步 MyFCU 修課紀錄（尚未開放）</button>}
+              {import.meta.env.DEV && (user?.controlledBrowserMock === true || localMyFcuPreview) ? (
+                <Link className="action-btn secondary" to="/history-import-mock">
+                  {localMyFcuImport ? '同步 MyFCU 修課紀錄' : localMyFcuPreview ? 'MyFCU 本機預覽' : '同步 MyFCU 修課紀錄（本機測試）'}
+                </Link>
+              ) : <button className="action-btn secondary" type="button" disabled title="MyFCU 同步尚未開放">同步 MyFCU 修課紀錄（尚未開放）</button>}
               {import.meta.env.DEV && localMyFcuError && <span role="status">本機同步設定查詢失敗：{localMyFcuError}</span>}
               {/* 固定不壓縮、不換行 */}
-              <div style={{ flexShrink: 0, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>
+              {!refreshingImportedSchedule && <div style={{ flexShrink: 0, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>
                 <ExportDropdown schedule={schedule} gridElementId="schedule-grid-container" />
-              </div>
+              </div>}
 
               {/* 儲存課表按鈕：點擊後原地覆蓋為「✓ 課表已儲存」，3 秒後自動恢復 */}
               <button
                 className="action-btn secondary"
                 onClick={handleSave}
-                disabled={saving || schedule.length === 0}
+                disabled={refreshingImportedSchedule || saving || schedule.length === 0}
                 id="save-dashboard-schedule-btn"
                 style={{
                   flexShrink: 0,
@@ -616,7 +696,7 @@ function Dashboard({ user, userIdentity }) {
               <button
                 className="action-btn primary"
                 onClick={handleRegenerate}
-                disabled={savingPrefs || isScheduling || scheduleLoading}
+                disabled={refreshingImportedSchedule || savingPrefs || isScheduling || scheduleLoading}
                 style={{
                   flexShrink: 0,
                   whiteSpace: 'nowrap',
@@ -647,7 +727,7 @@ function Dashboard({ user, userIdentity }) {
             {/* 排課後的橘色說明（方案數、未排入、學分說明）依使用者要求不顯示（2026-10-26）；
                 只保留紅色錯誤（未登入、連不上伺服器），出錯時畫面才不會毫無反應。 */}
             <ScheduleNotice
-              notice={scheduleNotice?.level === 'error' ? scheduleNotice : null}
+              notice={visibleScheduleNotice}
               onDismiss={() => setScheduleNotice(null)}
               domId="schedule-notice"
             />
@@ -659,26 +739,26 @@ function Dashboard({ user, userIdentity }) {
               onClear={clearSessionAvoidances}
             />
 
-            <PlanSwitcher
+            {!refreshingImportedSchedule && <PlanSwitcher
               plans={plans}
               selectedPlanId={selectedPlanId}
               recommendedPlanId={recommendedPlanId}
               planDiversity={planDiversity}
               onSelectPlan={handleSelectPlan}
-            />
+            />}
 
           </div>
 
           <div className="schedule-wrapper">
-            {isScheduling && (
+            {(isScheduling || refreshingImportedSchedule) && (
               <div className="scheduling-overlay">
                 <Loader2 size={40} className="spin-animation" />
-                <p role="status">正在規劃課表…</p>
+                <p role="status">{refreshingImportedSchedule ? '正在依新修課紀錄排課…' : '正在規劃課表…'}</p>
               </div>
             )}
-            <div id="schedule-grid-container">
+            {!refreshingImportedSchedule && <div id="schedule-grid-container">
               <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} />
-            </div>
+            </div>}
           </div>
         </div>
 
@@ -780,6 +860,7 @@ function Dashboard({ user, userIdentity }) {
 
       <RemoveReasonDialog
         course={removalCandidate}
+        collectReason={personalizationEnabled}
         onCancel={() => setRemovalCandidate(null)}
         onConfirm={handleRemoveConfirmed}
       />

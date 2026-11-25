@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
+import { useSchedule } from '../contexts/useSchedule';
 import { profileAPI, historyFeedbackAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
@@ -17,6 +18,19 @@ const sections = ['基本資料', '課程興趣', '排課條件'];
 export default function SetupPage() {
   const navigate = useNavigate();
   const { user, markSetupDone, isSetupDone, privacyStatus } = useAuth();
+  const { savedAvoidances, restoreAvoidedCourse } = useSchedule();
+  const [restoringCourse, setRestoringCourse] = useState(null);
+  const [restoreError, setRestoreError] = useState('');
+  const restoreCourse = async (sectionId) => {
+    setRestoringCourse(sectionId);
+    setRestoreError('');
+    try {
+      const result = await restoreAvoidedCourse(sectionId);
+      if (!result.success) setRestoreError(result.message);
+    } finally {
+      setRestoringCourse(null);
+    }
+  };
   // 階段 5：「我修過的課」——隨時修改對歷史修課的喜好。
   const [historyFeedback, setHistoryFeedback] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -308,6 +322,21 @@ export default function SetupPage() {
               <section className="setup-section-box" aria-labelledby="setup-scheduling-title">
                 <h2 id="setup-scheduling-title" className="setup-section-title">設定排課條件</h2>
                 <p className="setup-journey-summary">選擇你希望課表符合的時段、集中程度與其他安排。</p>
+                {editing && (savedAvoidances.length > 0 || restoreError) && (
+                  <div className="setup-pref-group">
+                    <h3 className="setup-pref-category">避開的課程</h3>
+                    {restoreError && <p className="setup-error" role="alert">{restoreError}</p>}
+                    {savedAvoidances.map(course => (
+                      <div className="history-feedback-row" key={course.sectionId}>
+                        <span>{course.courseName}{course.catalogCourseCode && `（${course.catalogCourseCode}）`}</span>
+                        <button type="button" className="course-card-action" disabled={restoringCourse !== null}
+                          onClick={() => restoreCourse(course.sectionId)}>
+                          {restoringCourse === course.sectionId ? '處理中…' : '解除避開'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="setup-journey-review">
                   <span>主題分類：{topicSelections.length} 組</span>
                   <span>已確認細項：{new Set(topicSelections.flatMap(item => item.tagIds ?? [])).size} 個</span>

@@ -109,6 +109,13 @@ describe('AC 帳號隔離：兩個真帳號經 HTTP + cookie', () => {
     const bodyA = await savedForA.json();
     assert.equal(bodyA.schedules.length, 1);
     assert.equal(bodyA.schedules[0].name, 'A 的課表');
+    assert.equal(savedForA.headers.get('cache-control'), 'private, no-store');
+
+    const staleAccountRequest = await fetch(
+      `${baseUrl}/schedule/saved?userId=${encodeURIComponent(ACCOUNT_A.studentId)}`,
+      { headers: { Cookie: cookieB } }
+    );
+    assert.equal(staleAccountRequest.status, 403);
   });
 
   test('AC2 存課表時冒充另一個學號會被 403 擋下，不會寫到任一方', async () => {

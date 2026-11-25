@@ -1011,6 +1011,20 @@ describe('階段 5 歷史修課回饋（history_course_feedback）', () => {
     assert.equal((await getInteractionEventsForExport(identityA)).length, 0);
   });
 
+  test('HF-5 本人沒有當期班次的歷史課能保存喜好，不產生虛構班次或標籤', async () => {
+    await grantPersonalization(identityA);
+    const result = await recordInteractionEvents(identityA, [
+      draft({ course: { catalogCourseCode: 'IECS3002', sectionId: null } }),
+      draft({ course: { catalogCourseCode: 'IECS9999', sectionId: null } }),
+    ], { loadProfile });
+    assert.equal(result.recorded, 1);
+    assert.equal(result.results[1].status, 'rejected');
+    const [event] = await getInteractionEventsForExport(identityA);
+    assert.deepEqual(event.course, { catalogCourseCode: 'IECS3002', sectionId: null });
+    assert.equal(event.tagInterestSnapshot ?? null, null);
+    assert.equal(event.interestFeedback.response, 'liked');
+  });
+
   test('HF-3 來源、回答與標籤欄位的格式限制', async () => {
     await grantPersonalization(identityA);
     const bad = [
