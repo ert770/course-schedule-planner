@@ -308,10 +308,6 @@
   padding: 1px; /* To show grid borders properly */
 }
 
-/* roadmap #27：確認列／提示／方案切換／方案比較的文字量不設邊界，會把
-   `.schedule-wrapper`（課表格）擠到只剩幾十像素——`.schedule-area` 是
-   `overflow:hidden`，超出的內容不會有捲軸，等於課表格憑空消失。
-   這裡自己設一個上限並內建捲動，課表格永遠保有合理空間。 */
 .schedule-top-stack {
   flex-shrink: 0;
   max-height: 42vh;
@@ -319,22 +315,106 @@
   padding-right: 2px; /* 捲軸不擋住內容 */
 }
 
-/* 本次規劃的避開清單。沿用 .schedule-notice 的版面尺寸，讓它在同一個
-   .schedule-top-stack 裡看起來屬於同一組提示，而不是外掛上去的東西。 */
-.session-avoidance-bar {
-  margin: 12px 20px 0;
-  padding: 12px 14px;
+.schedule-plan-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+.plan-switcher { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.schedule-plan-name { padding: 6px 8px; color: var(--text-primary); font-size: .9rem; font-weight: 700; }
+.schedule-plan-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.schedule-plan-picker { border-color: var(--border-color); color: var(--text-primary); }
+.schedule-plan-button:hover { background: var(--bg-card-hover); }
+.schedule-plan-button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.schedule-temporary-avoidance { margin-inline-start: auto; }
+
+/* 原生浮窗在課表捲動區上方開啟。支援錨定的瀏覽器會把它放在觸發按鈕旁。 */
+.schedule-plan-popover {
+  box-sizing: border-box;
+  width: min(26rem, calc(100vw - 24px));
+  max-height: min(55vh, 28rem);
+  overflow: auto;
+  padding: 14px;
   border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
   background: var(--bg-card);
-  font-size: 0.85rem;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  font-size: .85rem;
   line-height: 1.6;
 }
-.session-avoidance-main { display: flex; flex-wrap: wrap; gap: 6px; }
-.session-avoidance-pending {
-  margin: 8px 0 0;
-  color: var(--text-secondary);
+.schedule-plan-options { width: min(20rem, calc(100vw - 24px)); padding: 5px; }
+.schedule-plan-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
 }
+.schedule-plan-option > span { display: inline-flex; align-items: center; gap: 5px; }
+.schedule-plan-option small { color: var(--text-secondary); }
+.schedule-plan-option:hover, .schedule-plan-option:focus-visible { background: var(--bg-card-hover); }
+.schedule-plan-option[aria-current="true"] { color: var(--accent-blue); font-weight: 700; background: var(--bg-card-hover); }
+.schedule-plan-popover h3 { margin: 0; font-size: .95rem; }
+.schedule-plan-popover p, .schedule-plan-popover details, .schedule-plan-popover ul { margin: 6px 0 0; }
+.schedule-plan-popover ul { padding-inline-start: 18px; }
+.schedule-plan-popover summary { cursor: pointer; color: var(--accent-blue); }
+.schedule-avoidance-popover .action-btn { margin-top: 10px; }
+
+@supports (position-area: block-end span-inline-end) {
+  .schedule-plan-popover {
+    inset: auto;
+    margin: 6px 0 0;
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-inline, flip-block, flip-inline flip-block;
+  }
+  .schedule-avoidance-popover { position-area: block-end span-inline-start; }
+}
+
+@media (max-width: 1100px) {
+  #dashboard-page .dashboard-content { flex-direction: column; overflow: auto; padding: 12px; gap: 12px; }
+  #dashboard-page .schedule-area { order: -1; flex: none; height: clamp(500px, 78dvh, 760px); }
+  #dashboard-page .schedule-header-bar { padding: 10px 12px; }
+  #dashboard-page .left-sidebar { flex: none; width: 100%; max-height: 300px; }
+  #dashboard-page .chat-panel { flex: none; width: 100%; height: min(55dvh, 480px); }
+}
+
+@media (max-width: 640px) {
+  #dashboard-page .schedule-grid { min-width: 570px; }
+  .schedule-plan-toolbar { padding-inline: 8px; }
+  .schedule-plan-popover, .schedule-avoidance-popover {
+    inset: auto 12px 16px;
+    margin: 0 auto;
+    position-area: none;
+  }
+}
+
 /* 必修衝突：那門課其實還在課表上，用警示色講清楚它「沒有」被避開。 */
 .session-avoidance-conflict {
   margin: 8px 0 0;
@@ -345,7 +425,6 @@
   color: #d97706;
 }
 [data-theme="dark"] .session-avoidance-conflict { color: #fbbf24; }
-.session-avoidance-bar .action-btn { margin-top: 10px; }
 
 /* 排課結果提示：失敗原因、警告與被排除課程 */
 .schedule-notice {
@@ -729,7 +808,7 @@
 .grad-avatar { width: 44px; height: 44px; }
 .grad-name { font-size: 0.9rem; font-weight: 600; }
 .grad-meta { font-size: 0.75rem; color: var(--text-muted); }
-.graduation-content { display: grid; grid-template-columns: 1fr 360px; gap: 24px; }
+.graduation-content { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; }
 .graduation-left { display: flex; flex-direction: column; gap: 16px; }
 .graduation-right { }
 
@@ -818,20 +897,16 @@
 .grad-watchlist-desc { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 12px; }
 .grad-watchlist-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grad-watchlist-item {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; flex-direction: column; gap: 4px;
   padding: 14px 16px; background: var(--bg-card); border: 1px solid var(--border-color);
   border-radius: var(--radius-md); transition: all var(--transition-normal);
 }
 .grad-watchlist-item:hover { border-color: var(--accent-blue); box-shadow: var(--shadow-sm); }
 .grad-watchlist-name { font-size: 0.88rem; font-weight: 600; }
 .grad-watchlist-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
-.grad-watchlist-add {
-  width: 30px; height: 30px; border-radius: 50%;
-  background: rgba(74,124,247,0.1); color: var(--accent-blue);
-  display: flex; align-items: center; justify-content: center;
-  transition: all var(--transition-fast);
-}
-.grad-watchlist-add:hover { background: var(--accent-blue); color: white; }
+.grad-course-controls { display: flex; flex-wrap: wrap; align-items: start; gap: 8px; margin-top: 4px; }
+.grad-course-controls .course-actions { flex: 1; }
+.grad-course-detail { flex: 0 0 auto; white-space: nowrap; }
 
 /* AI Recommendation */
 .grad-ai-card {
@@ -850,20 +925,6 @@
 .rec-icon.suggestion { color: #16a34a; }
 .grad-rec-type { font-size: 0.85rem; font-weight: 600; }
 .grad-rec-message { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px; }
-.grad-rec-actions { display: flex; gap: 8px; }
-.grad-rec-btn {
-  display: flex; align-items: center; gap: 4px;
-  padding: 7px 14px; border-radius: var(--radius-sm);
-  font-size: 0.78rem; font-weight: 600; transition: all var(--transition-fast);
-}
-.grad-rec-btn.primary {
-  background: var(--accent-blue); color: white; border: none;
-}
-.grad-rec-btn.primary:hover { background: var(--accent-blue-light); }
-.grad-rec-btn.secondary {
-  background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border-color);
-}
-.grad-rec-btn.secondary:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
 
 /* ===== Responsive ===== */
 @media (max-width: 900px) {
@@ -921,7 +982,9 @@
 .course-card-body { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px; }
 .course-card-footer { display: flex; gap: 8px; flex-wrap: wrap; }
 .course-card-footer .tag { font-size: 0.75rem; padding: 4px 8px; background: var(--bg-card-hover); border-radius: 100px; color: var(--text-muted); }
-.course-card-actions { display: flex; gap: 8px; margin-top: 14px; }
+.course-card > .course-actions { margin-top: 14px; }
+.course-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.course-card-actions .course-card-action { white-space: nowrap; }
 .course-card-action {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   flex: 1; padding: 8px 10px; border: 1px solid var(--border-color);
@@ -938,21 +1001,27 @@
 .course-card-action.danger { background: var(--accent-red); border-color: var(--accent-red); color: white; }
 .course-card-action.danger:hover:not(:disabled) { background: #dc2626; border-color: #dc2626; color: white; }
 .course-card-action:disabled { cursor: not-allowed; opacity: 0.6; }
-.search-watch-action.active,
-.search-watch-action.active:hover:not(:disabled) { color: var(--accent-red); border-color: var(--accent-red); }
-.search-added-action,
-.search-added-action:hover:not(:disabled) { background: #087347; border-color: #087347; color: white; }
-.search-card-feedback { margin: 8px 0 0; font-size: .82rem; color: var(--text-secondary); }
-.search-card-feedback.error { color: var(--accent-red); }
-.search-heart-pop { animation: search-action-pop .32s ease-out; }
-@keyframes search-action-pop {
+.course-watch-action.active,
+.course-watch-action.active:hover:not(:disabled) { color: var(--accent-red); border-color: var(--accent-red); }
+.course-added-action,
+.course-added-action:hover:not(:disabled) { background: #087347; border-color: #087347; color: white; }
+.course-action-feedback {
+  margin: 8px 0 0;
+  font-size: .82rem;
+  color: var(--text-secondary);
+  transition: opacity var(--course-feedback-fade-duration) ease-out;
+}
+.course-action-feedback.error { color: var(--accent-red); }
+.course-action-feedback.fading { opacity: 0; }
+.course-action-pop { animation: course-action-pop .32s ease-out; }
+@keyframes course-action-pop {
   45% { transform: scale(1.35); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .search-heart-pop { animation: none; }
+  .course-action-pop { animation: none; }
+  .course-action-feedback { transition: none; }
 }
 .search-action-notice { margin-bottom: 16px; padding: 10px 12px; border-radius: var(--radius-sm); }
-.search-action-notice.success { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
 .search-action-notice.error { background: rgba(239, 68, 68, 0.12); color: var(--accent-red); }
 .modal-remove-course { margin-top: 18px; color: var(--accent-red); border-color: var(--accent-red); }
 
@@ -1223,11 +1292,11 @@
 .explore-shared-terms { margin: 10px 0 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6; }
 .explore-sections { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .explore-sections-title { margin: 0; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
-.explore-section-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); }
-.explore-section-info { display: flex; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--text-secondary); min-width: 0; }
+.explore-section-row { display: flex; flex-wrap: wrap; align-items: start; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-color); }
+.explore-section-info { display: flex; flex: 1 1 100%; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--text-secondary); min-width: 0; }
 .explore-section-time { color: var(--text-muted); }
-.explore-section-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.explore-section-actions .course-card-action { flex: 0 0 auto; padding: 6px 10px; font-size: 0.8rem; }
+.explore-section-detail { flex: 0 0 auto; }
+.explore-section-row .course-actions { flex: 1; }
 .explore-method-note { font-size: 0.78rem; color: var(--text-muted); text-align: center; }
 
 /* 階段 5：歷史修課回饋視窗 */
@@ -1386,6 +1455,21 @@
 }
 .history-sync-toast svg { flex-shrink: 0; color: #087747; }
 .history-sync-toast strong { font-size: 1.12rem; }
+.schedule-planning-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+.schedule-planning-toast svg { color: var(--accent-blue); flex: none; }
+.sidebar-topics { margin-top: 16px; }
+.sidebar-topics .action-btn { margin-top: 8px; }
+.history-feedback-row .restore-avoidance-button { flex: 0 0 7rem; min-height: 36px; white-space: nowrap; }
 [data-theme="dark"] .history-sync-toast { border-color: #398065; background: #153d2b; color: #e1f9ea; }
 [data-theme="dark"] .history-sync-toast svg { color: #78e0a9; }
 .action-btn.history-entry { color: var(--accent-blue); border-color: rgba(74,124,247,.35); }

@@ -701,6 +701,7 @@ Request:
     "preferChallengingCourses": false,
     "noMidterm": false,
     "noGroupReport": false,
+    "noRollCall": false,
     "discussion": false,
     "weightDaily": false,
     "practicalExam": false,
@@ -821,7 +822,7 @@ schedule request 重複傳班級；route 會先依 session identity 讀取 profi
 未表態並在 `warnings` 說明，不會猜測使用者真正的意思。
 
 `noMidterm`／`noGroupReport`／`discussion`／`weightDaily`／`practicalExam`／`finalReport`／
-`englishTaught`／`learnMore` 這 8 個「內容偏好」（Roadmap #3）**同樣是軟性偏好，不會排除課程**：
+`englishTaught`／`learnMore`／`noRollCall` 這些內容偏好是軟性偏好，不會排除課程：
 判定依據是課程描述的關鍵字比對，命中會調整候選課的排序分數，未命中維持中性（不當成負面證據）。
 候選池中某個已設定旗標的關鍵字命中率過低（<5%）或過高（>95%）時，`warnings` 會附上一條「訊號
 可靠度」警告，說明這個偏好目前幾乎無法有效區分課程；未觸發門檻時不會有額外警告。詳見
@@ -1455,6 +1456,8 @@ Constraint Schema（Roadmap #21）」與「共同必修（Co-requisite，Roadmap
 ```
 
 有 MySQL 時存入 `Saved_Schedules`。未設定 MySQL 時以本機 JSON 保存。
+
+前端於課表成功變更後自動保存。載入既有快照時不重複寫入。同一個瀏覽器頁面依序保存新快照，未送出的中間版本可由最新版本取代。
 
 ### `GET /api/schedule/saved`
 

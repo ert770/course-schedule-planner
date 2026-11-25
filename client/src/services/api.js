@@ -1,5 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 let pendingLogout = Promise.resolve();
+let pendingProfileWrite = Promise.resolve();
 
 async function request(endpoint, options = {}) {
   const { noAuthRedirect = false, readResponse, ...requestOptions } = options;
@@ -246,12 +247,18 @@ export const scheduleAPI = {
 
 // Profile API
 export const profileAPI = {
-  get: () => request('/profile'),
-  update: (data) =>
-    request('/profile', {
+  get: async () => {
+    await pendingProfileWrite;
+    return request('/profile', { cache: 'no-store' });
+  },
+  update: data => {
+    const result = pendingProfileWrite.then(() => request('/profile', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
+    }));
+    pendingProfileWrite = result.catch(() => undefined);
+    return result;
+  },
   // 偏好標籤目錄。不帶身分——回傳的是標籤定義本身，不是任何人的資料。
   // 前端各頁不再自己寫死清單，避免像先前 Dashboard 那樣漏掉 `#不點名`。
   getPreferenceTags: () => request('/profile/preference-tags'),

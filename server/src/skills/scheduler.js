@@ -466,6 +466,7 @@ const CONTENT_PREFERENCE_RULES = [
     extra: course => course.hasTeamwork === true,
   },
   { flag: 'discussion', mode: 'prefer', label: '討論課', keywords: ['討論', '互動', '參與'] },
+  { flag: 'noRollCall', mode: 'prefer', label: '不點名', keywords: ['不點名', '不會點名', '無須點名', '免點名'] },
   { flag: 'weightDaily', mode: 'prefer', label: '重視平時成績', keywords: ['平時', '作業', '出席'] },
   { flag: 'practicalExam', mode: 'prefer', label: '實作評量', keywords: ['實作', '實驗', '專題'] },
   { flag: 'finalReport', mode: 'prefer', label: '期末報告', keywords: ['期末報告', '報告', '專題'] },

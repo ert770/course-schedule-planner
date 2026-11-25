@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/useAuth';
 import { useSchedule } from '../contexts/useSchedule';
 import { coursesAPI, profileAPI } from '../services/api';
-import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
+import CourseActions, { CourseActionsProvider } from '../components/CourseCard/CourseActions';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
-import { Calendar, Search, LayoutDashboard, Settings, Moon, Sun, Heart, Plus, Check, RotateCcw, X, Compass, GripVertical, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Heart, RotateCcw, GripVertical, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import '../App.css'; 
 import { formatCourseTime } from '../utils/courseTime';
 import { getUserIdentity } from '../utils/userIdentity';
@@ -18,61 +18,100 @@ const GRADE_CLASS_MAP = {
   '4': ['資訊四甲', '資訊四乙', '資訊四丙', '資訊四丁', '合'],
   '5': ['合'],
 };
+const DEFAULT_DEPT_FORM = {
+  department: '資訊工程學系', gradeLevel: '4', className: '合', category: '', keyword: '',
+};
+const DEFAULT_COND_FORM = {
+  code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: '',
+};
+const QUERY_TABS = ['dept', 'cond'];
+const SEARCH_TABS = [...QUERY_TABS, 'watchlist'];
+const searchStateKey = identity => `fcu:${identity}:courseSearch`;
+const searchResultsKey = (identity, tab) => `${searchStateKey(identity)}:${tab}`;
+
+function readSearchItem(key) {
+  try {
+    return JSON.parse(sessionStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
+function readSearchState(identity) {
+  if (identity === null) return null;
+  return {
+    ...readSearchItem(searchStateKey(identity)),
+    results: Object.fromEntries(QUERY_TABS.map(tab => [tab, readSearchItem(searchResultsKey(identity, tab))])),
+  };
+}
+
+function savedResults(courses) {
+  return Array.isArray(courses) ? courses.filter(course => course?.id != null) : null;
+}
+
+function storeSearchResults(identity, tab, filters, courses) {
+  if (identity === null) return;
+  const key = searchResultsKey(identity, tab);
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ filters, courses }));
+  } catch {
+    try {
+      // 全校結果太大時用上次成功送出的條件重查，保留完整的結果筆數。
+      sessionStorage.setItem(key, JSON.stringify({ filters }));
+    } catch {
+      // 瀏覽器禁止儲存時，這次查詢仍可在畫面上使用。
+    }
+  }
+}
 
 export default function SearchPage() {
   const { user } = useAuth();
   const userIdentity = getUserIdentity(user);
-  const {
-    schedule, watchlist, validating, addCourse, removeCourse, toggleWatchlist, logCourseViewed, personalizationEnabled
-  } = useSchedule();
+  const { watchlist, logCourseViewed } = useSchedule();
   
-  const [activeTab, setActiveTab] = useState('dept');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [initialSearch] = useState(() => readSearchState(userIdentity));
+  const [activeTab, setActiveTab] = useState(() => (
+    SEARCH_TABS.includes(initialSearch?.activeTab) ? initialSearch.activeTab : 'dept'
+  ));
+  const [searchResults, setSearchResults] = useState(() => ({
+    dept: savedResults(initialSearch?.results.dept?.courses),
+    cond: savedResults(initialSearch?.results.cond?.courses),
+  }));
+  const [requests, setRequests] = useState({});
   const [detailCourse, setDetailCourse] = useState(null);
-  const [searchError, setSearchError] = useState('');
-  const [courseFeedback, setCourseFeedback] = useState({});
-  const feedbackTimers = useRef(new Map());
-  const [watchlistUpdatingId, setWatchlistUpdatingId] = useState('');
+  const [actionReset, setActionReset] = useState(0);
   const [watchlistCourses, setWatchlistCourses] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [watchlistError, setWatchlistError] = useState('');
-  const [removalCandidate, setRemovalCandidate] = useState(null);
   
   const [sidebarWidth, setSidebarWidth] = useState(340);
   const [isResizing, setIsResizing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  // 每次送出搜尋就加一。回應回來時號碼對不上，代表使用者已經換了分頁或送出更新的搜尋，
-  // 那份結果不該再蓋到畫面上。
-  const searchRequestRef = useRef(0);
+  const searchRequestRef = useRef({ dept: 0, cond: 0 });
+  const [deptForm, setDeptForm] = useState(() => initialSearch?.deptForm
+    ? { ...DEFAULT_DEPT_FORM, ...initialSearch.deptForm } : DEFAULT_DEPT_FORM);
+  const [condForm, setCondForm] = useState(() => ({ ...DEFAULT_COND_FORM, ...initialSearch?.condForm }));
+
   useEffect(() => {
-    const timers = feedbackTimers.current;
-    return () => timers.forEach(timer => clearTimeout(timer));
-  }, []);
-
-  const showCourseFeedback = (id, feedback) => {
-    const timers = feedbackTimers.current;
-    clearTimeout(timers.get(id));
-    timers.delete(id);
-    setCourseFeedback(current => ({ ...current, [id]: feedback }));
-    if (feedback && feedback.type !== 'error') {
-      timers.set(id, setTimeout(() => {
-        timers.delete(id);
-        setCourseFeedback(current => ({ ...current, [id]: null }));
-      }, 1400));
+    if (userIdentity === null) return;
+    try {
+      sessionStorage.setItem(searchStateKey(userIdentity), JSON.stringify({
+        activeTab,
+        deptForm: deptForm === DEFAULT_DEPT_FORM ? undefined : deptForm,
+        condForm,
+      }));
+    } catch {
+      // 關閉瀏覽器儲存或超出容量時，仍可在這個頁面切換查詢。
     }
-  };
-  const [deptForm, setDeptForm] = useState({
-    department: '資訊工程學系',
-    gradeLevel: '4',
-    className: '合',
-    category: '',
-    keyword: ''
-  });
+  }, [activeTab, condForm, deptForm, userIdentity]);
 
-  const [condForm, setCondForm] = useState({
-    code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: ''
-  });
+  useEffect(() => {
+    const requestIds = searchRequestRef.current;
+    return () => {
+      requestIds.dept += 1;
+      requestIds.cond += 1;
+    };
+  }, []);
 
   const availableClasses = deptForm.gradeLevel 
     ? GRADE_CLASS_MAP[deptForm.gradeLevel] || ['合']
@@ -123,29 +162,25 @@ export default function SearchPage() {
   }, [isResizing]);
 
   useEffect(() => {
+    if (userIdentity === null || initialSearch?.deptForm) return undefined;
     let cancelled = false;
-    if (userIdentity === null) {
-      setSearchError('尚未登入，請重新登入後再操作。');
-      return () => { cancelled = true; };
-    }
 
     profileAPI.get()
       .then(profile => {
         if (cancelled) return;
         const scope = profile?.courseSearchScope || null;
         if (scope) {
-          setDeptForm(prev => ({
+          setDeptForm(prev => prev === DEFAULT_DEPT_FORM ? {
             ...prev,
-            department: '資訊工程學系',
             gradeLevel: scope.gradeLevel ? String(scope.gradeLevel) : '4',
             className: scope.className || '合',
-          }));
+          } : prev);
         }
       })
       .catch(() => {});
 
     return () => { cancelled = true; };
-  }, [userIdentity]);
+  }, [initialSearch, userIdentity]);
 
   useEffect(() => {
     if (activeTab !== 'watchlist') return undefined;
@@ -179,134 +214,88 @@ export default function SearchPage() {
     return () => { cancelled = true; };
   }, [activeTab, watchlist]);
 
-  // 「本系」與「全校」共用同一塊結果區。切換時清掉上一個分頁的結果，否則在全校搜尋
-  // 回應之前，畫面上顯示的仍是剛才的本系課程，看起來像是搜錯了。
-  const switchTab = (nextTab) => {
-    if (nextTab === activeTab) return;
-    if (nextTab !== 'watchlist' && activeTab !== 'watchlist') {
-      searchRequestRef.current += 1;
-      setSearchResults([]);
-      setSearchError('');
-      setIsSearching(false);
-    }
-    setActiveTab(nextTab);
-  };
-
-  const handleDeptSearch = async (e) => {
-    e.preventDefault();
-    const requestId = ++searchRequestRef.current;
-    setIsSearching(true);
-    setSearchError('');
+  const runSearch = useCallback(async (tab, filters) => {
+    const requestId = ++searchRequestRef.current[tab];
+    const isCurrent = () => requestId === searchRequestRef.current[tab];
+    setRequests(prev => ({ ...prev, [tab]: { loading: true } }));
     try {
-      const filters = { 
-        department: '資訊工程學系',
-        gradeLevel: deptForm.gradeLevel ? Number(deptForm.gradeLevel) : undefined,
-        className: deptForm.className,
-        keyword: deptForm.keyword, 
-        category: deptForm.category 
-      };
-      Object.keys(filters).forEach(k => { if (!filters[k]) delete filters[k]; });
-      const data = await coursesAPI.search(filters);
-      if (requestId !== searchRequestRef.current) return;
-      setSearchResults(data.courses || []);
+      const data = await (tab === 'dept' ? coursesAPI.search(filters) : coursesAPI.searchCatalog(filters));
+      if (!isCurrent()) return;
+      const courses = Array.isArray(data.courses) ? data.courses : [];
+      storeSearchResults(userIdentity, tab, filters, courses);
+      setSearchResults(prev => ({ ...prev, [tab]: courses }));
+      setRequests(prev => ({ ...prev, [tab]: null }));
     } catch (err) {
-      if (requestId !== searchRequestRef.current) return;
-      setSearchError(err.message || '課程搜尋失敗');
-    } finally {
-      if (requestId === searchRequestRef.current) setIsSearching(false);
+      if (isCurrent()) {
+        setRequests(prev => ({ ...prev, [tab]: { error: err.message || '課程搜尋失敗' } }));
+      }
     }
-  };
+  }, [userIdentity]);
 
-  const handleCondSearch = async (e) => {
+  useEffect(() => {
+    const saved = initialSearch?.results[activeTab];
+    // 只有過大而未保存結果的查詢才需要重新向 API 取得結果。
+    if (searchResults[activeTab] !== null || requests[activeTab] || !saved?.filters) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void runSearch(activeTab, saved.filters);
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, initialSearch, requests, runSearch, searchResults]);
+
+  const handleDeptSearch = (e) => {
     e.preventDefault();
-    const requestId = ++searchRequestRef.current;
-    setIsSearching(true);
-    setSearchError('');
-    try {
-      const filters = {
-        code: condForm.code,
-        // 「科目名稱」只比對課名與課號；「課程描述」才比對描述等其他欄位（先前兩者都送成 keyword）。
-        name: condForm.keyword,
-        keyword: condForm.description,
-        instructor: condForm.instructor, 
-        dayOfWeek: condForm.dayOfWeek ? parseInt(condForm.dayOfWeek) : null,
-        period: condForm.period, 
-        category: condForm.isGenEd ? '通識' : null, 
-        language: condForm.language
-      };
-      Object.keys(filters).forEach(k => { if (filters[k] === null || filters[k] === '') delete filters[k]; });
-      
-      const data = await coursesAPI.searchCatalog(filters);
-      if (requestId !== searchRequestRef.current) return;
-      setSearchResults(data.courses || []);
-    } catch (err) {
-      if (requestId !== searchRequestRef.current) return;
-      setSearchError(err.message || '課程搜尋失敗');
-    } finally {
-      if (requestId === searchRequestRef.current) setIsSearching(false);
-    }
+    if (!deptForm.category) return;
+    const filters = {
+      department: deptForm.department,
+      gradeLevel: deptForm.gradeLevel ? Number(deptForm.gradeLevel) : undefined,
+      className: deptForm.className,
+      keyword: deptForm.keyword,
+      category: deptForm.category,
+    };
+    void runSearch('dept', filters);
   };
 
-  const handleAddCourse = async (event, course) => {
-    if (event) event.stopPropagation();
-    const id = String(course.id);
-    showCourseFeedback(id, null);
-    const result = await addCourse(course);
-    showCourseFeedback(id, result.success ? { type: 'added' } : { type: 'error', text: result.message });
+  const handleCondSearch = (e) => {
+    e.preventDefault();
+    const filters = {
+      code: condForm.code,
+      // 「科目名稱」只比對課名與課號，「課程描述」才用關鍵字比對。
+      name: condForm.keyword,
+      keyword: condForm.description,
+      instructor: condForm.instructor,
+      dayOfWeek: condForm.dayOfWeek ? Number(condForm.dayOfWeek) : undefined,
+      period: condForm.period,
+      category: condForm.isGenEd ? '通識' : undefined,
+      language: condForm.language,
+    };
+    void runSearch('cond', filters);
   };
 
-  const handleToggleCourse = async (event, course) => {
-    if (event) event.stopPropagation();
-    const isAdded = schedule.some(item => String(item.id) === String(course.id));
-    if (isAdded) {
-      setDetailCourse(null);
-      setRemovalCandidate(course);
-      return;
-    }
-    await handleAddCourse(event, course);
-  };
-  
   const handleOpenDetail = (course) => {
     setDetailCourse(course);
     logCourseViewed(course);
   };
 
-  const handleRemoveConfirmed = async (feedbackReason) => {
-    const course = removalCandidate;
-    const result = await removeCourse(course.id, { feedbackReason });
-    if (result.success) {
-      setRemovalCandidate(null);
-      showCourseFeedback(String(course.id), { type: 'removed', text: '已從課表移除並避開。' });
-    }
-    return result;
-  };
-
-  const handleToggleWatchlist = async (event, course) => {
-    if (event) event.stopPropagation();
-    const id = String(course.id);
-    setWatchlistUpdatingId(id);
-    showCourseFeedback(id, null);
-    const result = await toggleWatchlist(course);
-    setWatchlistUpdatingId('');
-    showCourseFeedback(id, result.success
-      ? (result.watching ? { type: 'watched' } : null)
-      : { type: 'error', text: result.message });
-  };
-
   const handleResetDeptForm = () => {
-    setDeptForm({ department: '資訊工程學系', gradeLevel: '', className: '合', category: '', keyword: '' });
-    setSearchError('');
-    setCourseFeedback({});
+    setDeptForm({ ...DEFAULT_DEPT_FORM, gradeLevel: '' });
+    setRequests(prev => ({ ...prev, dept: null }));
+    setActionReset(value => value + 1);
   };
 
   const handleResetCondForm = () => {
-    setCondForm({ code: '', dayOfWeek: '', period: '', keyword: '', instructor: '', language: '', isGenEd: false, description: '' });
-    setSearchError('');
-    setCourseFeedback({});
+    setCondForm(DEFAULT_COND_FORM);
+    setRequests(prev => ({ ...prev, cond: null }));
+    setActionReset(value => value + 1);
   };
 
-  const displayCourses = activeTab === 'watchlist' ? watchlistCourses : searchResults;
-  const resultError = activeTab === 'watchlist' ? watchlistError : searchError;
+  const showingWatchlist = activeTab === 'watchlist';
+  const courses = searchResults[activeTab];
+  const isSearching = Boolean(requests[activeTab]?.loading);
+  const displayCourses = showingWatchlist ? watchlistCourses : courses ?? [];
+  const resultError = showingWatchlist ? watchlistError : requests[activeTab]?.error;
+  const emptyMessage = showingWatchlist ? '目前沒有關注課程。'
+    : courses ? '找不到符合查詢條件的課程。' : '請設定條件並開始搜尋';
 
   return (
     <div className="layout-container" id="search-page">
@@ -328,9 +317,9 @@ export default function SearchPage() {
         >
           <h2>課程查詢</h2>
           <div className="search-tabs">
-            <button className={`search-tab ${activeTab === 'dept' ? 'active' : ''}`} onClick={() => switchTab('dept')}>查詢本系課程</button>
-            <button className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`} onClick={() => switchTab('cond')}>查詢全校課程</button>
-            <button className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`} onClick={() => switchTab('watchlist')}>❤️ 我的關注</button>
+            <button className={`search-tab ${activeTab === 'dept' ? 'active' : ''}`} onClick={() => setActiveTab('dept')}>查詢本系課程</button>
+            <button className={`search-tab ${activeTab === 'cond' ? 'active' : ''}`} onClick={() => setActiveTab('cond')}>查詢全校課程</button>
+            <button className={`search-tab ${activeTab === 'watchlist' ? 'active' : ''}`} onClick={() => setActiveTab('watchlist')}>❤️ 我的關注</button>
           </div>
 
           {activeTab === 'dept' && (
@@ -366,9 +355,10 @@ export default function SearchPage() {
                 </select>
               </div>
               <div className="form-group">
-                <label>修別 (Category)</label>
-                <select value={deptForm.category} onChange={e => setDeptForm({...deptForm, category: e.target.value})}>
-                  <option value="">全部 (All)</option>
+                <label htmlFor="dept-search-category">修別 (Category)</label>
+                <select id="dept-search-category" required value={deptForm.category}
+                  onChange={e => setDeptForm({...deptForm, category: e.target.value})}>
+                  <option value="" disabled>請選擇修別</option>
                   <option value="必修">必修 (Required)</option>
                   <option value="核心選修">核心選修 (Core Elective)</option>
                   <option value="一般選修">一般選修 (Elective)</option>
@@ -501,21 +491,18 @@ export default function SearchPage() {
 
           {resultError && <div className="search-action-notice error" role="alert">{resultError}</div>}
           
-          {watchlistLoading ? (
+          {showingWatchlist && watchlistLoading ? (
             <div className="no-results" role="status">正在載入關注課程…</div>
+          ) : isSearching && displayCourses.length === 0 ? (
+            <div className="no-results" role="status">正在搜尋課程…</div>
           ) : displayCourses.length === 0 && !resultError ? (
             <div className="no-results" style={{ color: '#64748b' }}>
-              {activeTab === 'watchlist' ? '目前沒有關注課程。' : '請設定條件並開始搜尋'}
+              {emptyMessage}
             </div>
           ) : displayCourses.length > 0 ? (
-            <div className="results-grid">
-              {displayCourses.map(course => {
-                const id = String(course.id);
-                const watched = watchlist.includes(id);
-                const added = schedule.some(item => String(item.id) === id);
-                const feedback = courseFeedback[id];
-                const justAdded = added && feedback?.type === 'added';
-                return (
+            <CourseActionsProvider>
+              <div className="results-grid">
+                {displayCourses.map(course => (
                 <div key={course.id} className="course-card" onClick={() => handleOpenDetail(course)}>
                   <div className="course-card-header">
                     <h4>{course.name}</h4><span className="course-code">{course.code}</span>
@@ -535,49 +522,18 @@ export default function SearchPage() {
                       </span>
                     )}
                   </div>
-                  <div className="course-card-actions">
-                    <button type="button" className={`course-card-action search-watch-action${watched ? ' active' : ''}`} aria-pressed={watched}
-                      onClick={event => handleToggleWatchlist(event, course)} disabled={Boolean(watchlistUpdatingId)}>
-                      <Heart aria-hidden="true" size={15} fill={watched ? 'currentColor' : 'none'}
-                        className={watched && feedback?.type === 'watched' ? 'search-heart-pop' : undefined} />
-                      {watchlistUpdatingId === id ? '更新中…' : (watched ? '已關注' : '關注')}
-                    </button>
-                    <button type="button" className={`course-card-action ${justAdded ? 'search-added-action' : added ? 'danger' : 'primary'}`}
-                      onClick={event => handleToggleCourse(event, course)} disabled={validating && !added}>
-                      {justAdded ? <><Check size={15} aria-hidden="true" className="search-heart-pop" /><span role="status">已加入</span></>
-                        : added ? <><X size={15} aria-hidden="true" /> 取消加選</>
-                          : <><Plus size={15} aria-hidden="true" /> {validating ? '驗證中…' : '加入課表'}</>}
-                    </button>
-                  </div>
-                  {feedback?.text && (
-                    <p className={`search-card-feedback ${feedback.type}`} role={feedback.type === 'error' ? 'alert' : 'status'}>
-                      {feedback.text}
-                    </p>
-                  )}
+                  <CourseActions key={actionReset} course={course} />
                 </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            </CourseActionsProvider>
           ) : null}
         </div>
       </div>
 
-      <RemoveReasonDialog
-        course={removalCandidate}
-        collectReason={personalizationEnabled}
-        onCancel={() => setRemovalCandidate(null)}
-        onConfirm={handleRemoveConfirmed}
-      />
-
       <CourseDetailModal
         course={detailCourse}
         onClose={() => setDetailCourse(null)}
-        isWatched={detailCourse ? watchlist.includes(String(detailCourse.id)) : false}
-        isAdded={detailCourse ? schedule.some(item => String(item.id) === String(detailCourse.id)) : false}
-        onToggleWatchlist={handleToggleWatchlist}
-        onToggleCourse={handleToggleCourse}
-        validating={validating}
-        watchlistUpdating={detailCourse ? watchlistUpdatingId === String(detailCourse.id) : false}
       />
     </div>
   );

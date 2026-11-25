@@ -48,9 +48,9 @@ const WEEKDAY_LABELS = ['', '一', '二', '三', '四', '五', '六', '日'];
 
 // 已存的排課偏好（左側勾選）＋不能上課的時段，給模型看完整的已存設定。
 export function describeSavedPreferences(prefs = {}) {
-  const tags = Array.isArray(prefs.preferenceTags) ? prefs.preferenceTags : [];
+  const tags = prefs.selectedTags ?? prefs.preferenceTags;
   const checked = ALL_TAGS
-    .filter(tag => tags.includes(tag) || prefs[TAG_TO_FLAG.get(tag)] === true)
+    .filter(tag => Array.isArray(tags) ? tags.includes(tag) : prefs[TAG_TO_FLAG.get(tag)] === true)
     .map(tag => tag.replace('#', ''));
   const byDay = new Map();
   for (const entry of Array.isArray(prefs.blockedPeriods) ? prefs.blockedPeriods : []) {
@@ -175,6 +175,7 @@ const SCHEDULER_PARAMETERS = {
 
   noMidterm: { type: 'boolean', description: '偏好沒有期中考的課。' },
   noGroupReport: { type: 'boolean', description: '偏好沒有分組報告的課。' },
+  noRollCall: { type: 'boolean', description: '偏好課程說明明寫不點名的課。' },
   discussion: { type: 'boolean', description: '偏好有討論的課。' },
   learnMore: { type: 'boolean', description: '偏好能學到較多東西的課。' },
   weightDaily: { type: 'boolean', description: '偏好平時成績占比高的課。' },
@@ -777,6 +778,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 
 已存偏好與這次條件（ADR-036）：
 - 下方「目前使用者偏好」是伺服器已存的設定，排課時伺服器會自動套用，不用你重送。
+- 查問目前偏好時，以本回合的「目前使用者偏好」或本回合成功更新的工具結果為準。舊對話與現有課表只反映當時的狀態。課表有週一的課，不能作為「星期一排空」未勾選的證據。只確認或更新偏好時不要呼叫排課工具。
 - 使用者在對話中說出左側偏好裡有的項目（不排早八、星期一排空、午休空出、涼課優先、集中排課、不能上課的時段、學分上限……），
   就直接呼叫 update_preferences 存起來，不用先問；左側勾選會跟著改。要開的放進 check，他說「不要了」「取消」的放進 uncheck，沒提到的偏好都不要放。
 - 使用者說「這次就好」「這學期先」「只這一次」時不要存，只把條件帶進 run_csp_scheduler。
