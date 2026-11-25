@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { AuthContext } from './AuthContextValue';
 import { authAPI, privacyAPI } from '../services/api';
 import { getUserIdentity } from '../utils/userIdentity';
@@ -24,20 +24,26 @@ export function AuthProvider({ children }) {
   });
   const [privacyStatus, setPrivacyStatus] = useState(null);
   const [privacyLoading, setPrivacyLoading] = useState(Boolean(user));
+  const accountVersion = useRef(0);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    const version = accountVersion.current;
     authAPI.getMe()
       .then(current => {
-        if (cancelled) return;
+        if (cancelled || version !== accountVersion.current) return;
         setPrivacyLoading(true);
         setUser(current);
         localStorage.setItem('fcu_user', JSON.stringify(current));
       })
       .catch(() => {
-        if (cancelled) return;
+        if (cancelled || version !== accountVersion.current) return;
         setUser(null);
         localStorage.removeItem('fcu_user');
+      })
+      .finally(() => {
+        if (!cancelled && version === accountVersion.current) setSessionChecked(true);
       });
     return () => { cancelled = true; };
   }, []);
@@ -48,44 +54,53 @@ export function AuthProvider({ children }) {
       setPrivacyLoading(false);
       return null;
     }
+    const version = accountVersion.current;
     setPrivacyLoading(true);
     try {
       const status = await privacyAPI.getConsents();
-      setPrivacyStatus(status);
+      if (version === accountVersion.current) setPrivacyStatus(status);
       return status;
     } finally {
-      setPrivacyLoading(false);
+      if (version === accountVersion.current) setPrivacyLoading(false);
     }
   };
 
   useEffect(() => {
     let cancelled = false;
+    if (!sessionChecked) return undefined;
     if (!user) {
       setPrivacyStatus(null);
       setPrivacyLoading(false);
       return undefined;
     }
+    const version = accountVersion.current;
+    const isCurrent = () => !cancelled && version === accountVersion.current;
     setPrivacyLoading(true);
     privacyAPI.getConsents()
-      .then(status => { if (!cancelled) setPrivacyStatus(status); })
+      .then(status => { if (isCurrent()) setPrivacyStatus(status); })
       .catch(err => {
-        if (!cancelled) setPrivacyStatus({
+        if (isCurrent()) setPrivacyStatus({
           requiresAction: true,
           error: err.message || '無法確認資料使用設定',
           consents: {},
         });
       })
-      .finally(() => { if (!cancelled) setPrivacyLoading(false); });
+      .finally(() => { if (isCurrent()) setPrivacyLoading(false); });
     return () => { cancelled = true; };
-  }, [user]);
+  }, [sessionChecked, user]);
 
   const login = (userData) => {
+    accountVersion.current += 1;
+    setSessionChecked(true);
+    setPrivacyStatus(null);
     setPrivacyLoading(true);
     setUser(userData);
     localStorage.setItem('fcu_user', JSON.stringify(userData));
   };
 
   const logout = () => {
+    accountVersion.current += 1;
+    setSessionChecked(true);
     authAPI.logout().catch(() => {});
     const identity = getUserIdentity(user);
     if (identity !== null) {
@@ -133,9 +148,9 @@ export function AuthProvider({ children }) {
       isLoggedIn: !!user,
       markOnboarded, markSetupDone,
       isOnboarded, isSetupDone,
-      privacyStatus, privacyLoading, refreshPrivacy,
+      privacyStatus, privacyLoading: !sessionChecked || privacyLoading, refreshPrivacy,
     }}>
-      {children}
+      <Fragment key={getUserIdentity(user) ?? 'signed-out'}>{children}</Fragment>
     </AuthContext.Provider>
   );
 }

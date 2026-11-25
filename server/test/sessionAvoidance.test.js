@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { generateSchedule } from '../src/skills/scheduler.js';
 import { buildScheduleConstraints } from '../src/services/constraintService.js';
 import { resolveSessionAvoidances } from '../src/services/scheduleService.js';
+import { readScheduleAvoidances, updateScheduleAvoidances } from '../src/services/memoryService.js';
 import { makeCourse } from './fixtures.js';
 
 // 兩個班次同課號、不同教師與時段；另一門完全無關的課當對照組。
@@ -30,6 +31,62 @@ const NET = makeCourse(104, {
 });
 
 const CANDIDATES = [DS_A, DS_B, OS, NET];
+
+test('避開實習跨班次保存，排課提示未滿足的必修，解除後可再次排入', async () => {
+  const internship = makeCourse(201, {
+    name: '校外專業實習(三)', catalogCourseCode: 'TEST3003', category: '必修',
+    department: '資訊三甲', gradeLevel: 3, dayOfWeek: 5, startPeriod: 3, endPeriod: 4,
+  });
+  const otherSection = { ...internship, id: 202, category: '選修', dayOfWeek: 6 };
+  const otherInternship = makeCourse(203, {
+    name: '校外專業實習(四)', catalogCourseCode: 'TEST3004', dayOfWeek: 5, startPeriod: 6, endPeriod: 7,
+  });
+  const candidates = [...CANDIDATES, internship, otherSection, otherInternship];
+  let preferences = { schemaVersion: 1, values: { preferredTrack: 'test' } };
+  const identity = { canonicalId: 'TEST_A', numericId: 12 };
+  const deps = {
+    loadCourses: async () => candidates,
+    transaction: async run => run({
+      async execute(sql, params) {
+        if (sql.startsWith('SELECT')) {
+          assert.match(sql, /FOR UPDATE$/);
+          assert.deepEqual(params, [12, 'TEST_A']);
+          return [[{ preferences_json: preferences }]];
+        }
+        assert.equal(params[1], 12);
+        preferences = JSON.parse(params[0]);
+        return [{}];
+      },
+    }),
+  };
+  const run = (saved, input = {}) => generateSchedule(candidates, buildScheduleConstraints(
+    input,
+    { department: '資訊工程學系', gradeLevel: 3, className: '資訊三甲' },
+    { scheduleAvoidances: saved }
+  ), { solverMode: 'greedy' });
+
+  assert.ok(run([]).schedule.some(course => course.id === 201));
+  await updateScheduleAvoidances(identity, 201, true, deps);
+  await updateScheduleAvoidances(identity, 202, true, deps);
+  assert.equal(preferences.values.preferredTrack, 'test');
+  const saved = readScheduleAvoidances(JSON.stringify(preferences));
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].catalogCourseCode, 'TEST3003');
+
+  const result = run(saved, { selectedCourseIds: [201, 203] });
+  assert.equal(result.success, true, JSON.stringify({
+    message: result.message, warnings: result.warnings, conflicts: result.conflictSet,
+  }));
+  assert.ok(result.schedule.some(course => course.id === 203));
+  assert.ok(result.plans.every(plan => !plan.schedule.some(course => [201, 202].includes(course.id))));
+  assert.deepEqual(result.excludedCourses.filter(item => item.constraintId === 'USER_EXCLUDED_COURSE')
+    .map(item => item.course.id), [201, 202]);
+  assert.ok(result.unmetRequirements.some(item => item.courseIds.includes(201)));
+
+  await updateScheduleAvoidances(identity, 202, false, deps);
+  assert.deepEqual(readScheduleAvoidances(preferences), []);
+  assert.ok(run(readScheduleAvoidances(preferences)).schedule.some(course => course.id === 201));
+});
 
 // 走 `constraintService` 而不是手捏 constraints，順便確認欄位真的接得上。
 async function scheduleWith(avoidances, extra = {}) {

@@ -381,7 +381,7 @@ export function migrateInteractionEvent(event = {}) {
   throw new RangeError(`不支援的 interaction event schemaVersion：${JSON.stringify(version)}`);
 }
 
-function validateCourseRef(course, path, errors) {
+function validateCourseRef(course, path, errors, { allowMissingSection = false } = {}) {
   if (!course || typeof course !== 'object' || Array.isArray(course)) {
     errors.push(`${path} 必須是課程識別物件`);
     return;
@@ -389,7 +389,8 @@ function validateCourseRef(course, path, errors) {
   if (typeof course.catalogCourseCode !== 'string' || !course.catalogCourseCode.trim()) {
     errors.push(`${path}.catalogCourseCode 必須是非空字串`);
   }
-  if (!Number.isInteger(course.sectionId) || course.sectionId <= 0) {
+  if (!(allowMissingSection && course.sectionId === null)
+    && (!Number.isInteger(course.sectionId) || course.sectionId <= 0)) {
     errors.push(`${path}.sectionId 必須是正整數`);
   }
 }
@@ -474,7 +475,9 @@ export function validateInteractionEvent(input) {
   }
 
   if (COURSE_REQUIRED_EVENTS.has(event.eventType)) {
-    validateCourseRef(event.course, 'course', errors);
+    validateCourseRef(event.course, 'course', errors, {
+      allowMissingSection: event.eventType === INTERACTION_EVENT_TYPES.HISTORY_COURSE_FEEDBACK,
+    });
   } else if (event.course !== null) {
     validateCourseRef(event.course, 'course', errors);
   }

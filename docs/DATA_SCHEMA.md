@@ -58,6 +58,7 @@ SQL 查詢必須使用真實表名與欄位名稱，並用反引號包住大小�
 - `rating` 只用於 `course_rated`（1～5）；`interest_feedback_json` 只用於 `interest_exploration_feedback` 與 `history_course_feedback`，保存回應類型與使用者明確選取的 canonical tag IDs（後者恆為空陣列）。兩者與 server 產生的標籤快照一起保留，讓匯出、冪等比較與重算可重現。
 - 舊事件沒有標籤快照時不回頭依今天的目錄猜測；它們仍是 v2 等既有用途的事件，但不會進入 rag-tag 興趣重算。
 - 歷史修課回饋（2026-10-14 起）使用 `history_course_feedback`，`source` 為 `history_review`，回應為 `liked`／`neutral`／`disliked`，針對使用者本人已通過的選修／通識／系外選修（伺服器依修課歷史核對）。不需改表：`event_type`、`source` 皆為 `VARCHAR(32)`，回應存在 `interest_feedback_json`。
+- 當期無班次的歷史修課回饋以 `catalog_course_code` 辨識課程，`section_id` 為 `NULL`，不建立班次標籤快照。
 - 初始探索事件使用 `interest_exploration_feedback`。新版 `paired_interested` 每門勾選課程一筆，`canonicalTagIds` 放 1～2 個伺服器驗證的代表標籤，快照保留 `feedbackResponse`，讓 S_tag 重算時對每個代表標籤各加 `+1` 後再套衰減。同題的兩門課各自保存。舊 `interested`／`not_interested`／`learn_more` 沿用原持久化與計分方式。`course_rated` 只把 4～5 分視為正向訊號，低分本身不推定為主題反感。
 - `model_version` 與 `profile_schema_version` 由 server 當下的版本填入，不接受呼叫端宣告。
 - **Roadmap #31**：`academic_year`／`semester` 從這輪起不再只是來源標記，也是
@@ -384,6 +385,8 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 未設定 DB 的測試環境才保留 JSON fallback。
 
 興趣偏好沿用 `preferences_json`，沒有新增 `preferred_track` 等平行欄位。
+
+帳號的避開課程保存於 `preferences_json.values.scheduleAvoidances`，每筆包含 `sectionId`、`catalogCourseCode` 和 `courseName`。同課號只保留一筆。課號缺漏時以 `sectionId` 避開該班次。只有排課避開端點會更新這個清單。
 
 `GET /api/profile` 的 `interestSummary` 是以已保存的選擇對照正規化標籤目錄即時組成的顯示欄位，不寫入資料庫。
 

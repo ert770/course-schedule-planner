@@ -1994,6 +1994,11 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   // 本次規劃的避開清單。`rules` 會在迴圈裡被就地更新（`status`／`matchedSectionIds`／
   // `protectedCourses`），最後隨 `prepared` 一起回傳給 `generateSchedule()` 回報前端。
   const sessionAvoidanceRules = buildSessionAvoidanceRules(constraints);
+  const persistentAvoidances = toArray(constraints.scheduleAvoidances);
+  const avoidedCodes = new Set(persistentAvoidances.map(entry => entry.catalogCourseCode).filter(Boolean));
+  const avoidedSections = new Set(persistentAvoidances.map(entry => Number(entry.sectionId)));
+  const avoidedRequired = new Map();
+  const passedCourseCodes = persistentAvoidances.length ? new Set(getPassedCourseCodes(constraints.courseHistory)) : null;
   const protectedCourseIds = collectProtectedCourseIds(constraints);
   const avoidanceProtectedNames = new Set();
   // 有評價卻因資格待確認（#13C）而被排除的課程要單獨統計。使用者看到
@@ -2030,6 +2035,16 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
     annotateCorequisite(course, allCandidateCodes);
     if (deriveBaseCourseCode(course.catalogCourseCode) && course.corequisiteRole === null) {
       orphanedInternshipNames.add(`${course.name}（${course.catalogCourseCode}）`);
+    }
+
+    const catalogCode = String(course.catalogCourseCode ?? '').trim();
+    if (avoidedCodes.has(catalogCode) || avoidedSections.has(Number(course.id))) {
+      if (!passedCourseCodes.has(catalogCode)
+        && (failedRequiredCodes.has(catalogCode) || isRequiredForStudent(course, scope))) {
+        avoidedRequired.set(catalogCode || String(course.id), course);
+      }
+      exclusions.push({ course, reason: '你已設定日後避開這門課', constraintId: 'USER_EXCLUDED_COURSE' });
+      continue;
     }
 
     // 本次規劃的避開清單：使用者剛移除的課，這一次重排就不該再出現。
@@ -2281,6 +2296,14 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
       + '請決定要保留必修，還是取消這項避開條件。'
     );
   }
+  const avoidedRequirements = [...avoidedRequired.values()].map(course => ({
+    type: 'required-course',
+    courseIds: [Number(course.id)],
+    constraintIds: ['USER_EXCLUDED_COURSE'],
+    reason: `必修或重補修尚未滿足：${course.name}已列入避開清單。`,
+    adjustable: true,
+  }));
+  warnings.push(...avoidedRequirements.map(item => item.reason));
 
   if (orphanedInternshipNames.size > 0) {
     warnings.push(
@@ -2291,7 +2314,7 @@ function prepareCandidates(candidateCourses, scope, explicitIds = new Set(), rev
   }
 
   return {
-    courses, exclusions, warnings, scope, explicitIds, neutralEasyScore, sessionAvoidanceRules,
+    courses, exclusions, warnings, scope, explicitIds, neutralEasyScore, sessionAvoidanceRules, avoidedRequirements,
   };
 }
 
@@ -4432,6 +4455,14 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     { index: reviewIndex, prior: reviewPrior },
     constraints
   );
+  const excludedCourseIds = new Set(prepared.exclusions
+    .filter(item => item.constraintId === 'USER_EXCLUDED_COURSE')
+    .map(item => Number(item.course.id)));
+  if (excludedCourseIds.size > 0) {
+    for (const field of ['selectedCourseIds', 'mustTakeCourseIds', 'mustTakeCourses']) {
+      constraints[field] = toArray(constraints[field]).filter(id => !excludedCourseIds.has(Number(id)));
+    }
+  }
 
   const scoringPolicy = resolveScoringPolicy(constraints);
   const strategies = buildPlanStrategies(scoringPolicy);
@@ -4571,9 +4602,10 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   }
   const draftSchedule = repair?.draftSchedule || [];
   const draftUnscheduledCourses = repair?.draftUnscheduledCourses || [];
-  const unmetRequirements = repair?.unmetRequirements || [];
-  const clarification = repair?.clarification
-    || buildClarification(solver.status, unmetRequirements, repair?.conflictSet || []);
+  const unmetRequirements = [...(repair?.unmetRequirements ?? []), ...prepared.avoidedRequirements];
+  const clarification = prepared.avoidedRequirements.length === 0 && repair?.clarification
+    ? repair.clarification
+    : buildClarification(solver.status, unmetRequirements, repair?.conflictSet || []);
 
   if (!primary || !primary.success || (repair && !repair.plan && !baselineCheck.valid)) {
     // roadmap #21：opt-in 放寬階梯，預設不啟用（constraints.allowRelaxation
@@ -4633,7 +4665,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
           draftSchedule: [],
           draftUnscheduledCourses: [],
           isDraft: false,
-          unmetRequirements: [],
+          unmetRequirements: prepared.avoidedRequirements,
           clarification: buildClarification('solved', [], []),
           solver: {
             ...solver,

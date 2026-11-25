@@ -31,7 +31,9 @@ export default function HistoryFeedbackModal({ data, mode = 'initial', onClose, 
   const groups = useMemo(() => (data?.groups ?? [])
     .map(group => ({
       ...group,
-      courses: mode === 'initial' ? group.courses.filter(course => course.response === null) : group.courses,
+      courses: mode === 'initial' ? group.courses.filter(
+        course => course.availableForInitialReview !== false && course.response === null
+      ) : group.courses,
     }))
     .filter(group => group.courses.length > 0), [data, mode]);
   const allCourses = groups.flatMap(group => group.courses);

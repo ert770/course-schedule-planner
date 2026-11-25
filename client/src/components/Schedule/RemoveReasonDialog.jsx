@@ -13,14 +13,18 @@ const CUSTOM_REMOVAL_REASONS = [
   { value: 'other', label: '其他個人因素' },
 ];
 
-export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
+export default function RemoveReasonDialog({ course, onCancel, onConfirm, collectReason = true }) {
   // 支援複選退選原因
   const [selectedReasons, setSelectedReasons] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   if (!course) return null;
 
   const handleCancel = () => {
+    if (busy) return;
     setSelectedReasons([]);
+    setError('');
     onCancel();
   };
 
@@ -33,16 +37,28 @@ export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
     });
   };
 
-  const handleSubmit = () => {
-    if (selectedReasons.length === 0) return; // 防呆安全防線
+  const handleSubmit = async () => {
+    if (!isSubmittable) return;
     const priorityOrder = ['content', 'workload', 'instructor', 'schedule_preference'];
-    const primaryReason = priorityOrder.find(p => selectedReasons.includes(p)) || selectedReasons[0] || null;
-    onConfirm(primaryReason, selectedReasons);
-    setSelectedReasons([]);
+    const primaryReason = collectReason
+      ? priorityOrder.find(p => selectedReasons.includes(p)) || selectedReasons[0] || null
+      : null;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await onConfirm(primaryReason);
+      if (result?.success === false) {
+        setError(result.message);
+        return;
+      }
+      setSelectedReasons([]);
+    } finally {
+      setBusy(false);
+    }
   };
 
   // 防呆狀態判斷：必須至少選一項
-  const isSubmittable = selectedReasons.length > 0;
+  const isSubmittable = !busy && (!collectReason || selectedReasons.length > 0);
 
   return (
     <div
@@ -85,6 +101,11 @@ export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
 
         {/* 內容區：8 個選項與動態防呆提示 */}
         <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '60vh', overflowY: 'auto' }}>
+          <p style={{ margin: 0, color: '#334155', fontSize: '0.88rem' }}>
+            後續排課會避開這門課的所有班次，直到你在個人資料設定解除避開。如果是必修或重補修，修課要求仍待完成。
+          </p>
+          {error && <p role="alert" style={{ margin: 0, color: '#991b1b' }}>{error}</p>}
+          {collectReason && <>
           <div style={{ 
             display: 'flex', alignItems: 'center', gap: '10px', 
             color: isSubmittable ? '#334155' : '#991b1b', 
@@ -131,6 +152,7 @@ export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
               );
             })}
           </div>
+          </>}
         </div>
 
         {/* 底部按鈕區：包含防呆禁用狀態 */}
@@ -158,7 +180,7 @@ export default function RemoveReasonDialog({ course, onCancel, onConfirm }) {
               transition: 'all 0.2s' 
             }}
           >
-            確認移除
+            {busy ? '儲存中…' : '確認移除並避開'}
           </button>
         </div>
       </div>

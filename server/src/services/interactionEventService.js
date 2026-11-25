@@ -234,6 +234,9 @@ const TAG_INTEREST_EVENT_TYPES = new Set([
 
 async function buildServerTagInterestSnapshot(identity, event, options = {}) {
   if (!TAG_INTEREST_EVENT_TYPES.has(event.eventType) || !event.course) return null;
+  // 沒有當期班次的歷史課仍能保存本人評價，不產生班次標籤證據。
+  if (event.eventType === INTERACTION_EVENT_TYPES.HISTORY_COURSE_FEEDBACK
+    && event.course.sectionId === null) return null;
   let course = options.tagInterestContext?.course ?? null;
   let profile = options.tagInterestContext?.profile ?? null;
 
