@@ -230,7 +230,9 @@ function Dashboard({ user, userIdentity }) {
   const [showHistorySyncToast] = useState(() => Boolean(
     historySyncSummary && !historyRescheduleHandled && navigationType !== 'POP'
   ));
-  const importedCount = historySyncSummary?.inserted ?? courseHistoryImported;
+  const importedCount = historySyncSummary
+    ? (historySyncSummary.inserted ?? 0) + (historySyncSummary.updated ?? 0)
+    : courseHistoryImported;
   const needsHistoryReschedule = !historyRescheduleHandled && Number.isInteger(importedCount) && importedCount > 0;
   const refreshingImportedSchedule = needsHistoryReschedule || isReschedulingImportedHistory;
   useEffect(() => {

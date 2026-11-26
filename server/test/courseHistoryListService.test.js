@@ -22,6 +22,8 @@ test('labels missing-term coverage on existing unmatched MyFCU rows without chan
     { history_id:1, source:'myfcu_session', catalog_course_code:null, source_course_code:'OLD1', academic_year:111, semester:2 },
     { history_id:2, source:'myfcu_session', catalog_course_code:null, source_course_code:'ARCH1', academic_year:114, semester:1 },
     { history_id:3, source:'myfcu_session', catalog_course_code:'MATCH1', source_course_code:'MATCH1', academic_year:111, semester:2 },
+    { history_id:4, source:'myfcu_session', catalog_course_code:'OLD2', source_course_code:'OLD2', academic_year:111, semester:2, catalog_match_status:'unmatched' },
+    { history_id:5, source:'myfcu_session', catalog_course_code:'MATCH2', source_course_code:'MATCH2', academic_year:111, semester:2, catalog_match_status:'matched' },
   ];
   const result = await listCourseHistory(identity, async sql => {
     if (sql.includes('FROM User_Course_History')) return rows;
@@ -33,4 +35,9 @@ test('labels missing-term coverage on existing unmatched MyFCU rows without chan
   assert.equal(result[1].matchReason,undefined);
   assert.equal(result[2].catalogCourseCode,'MATCH1');
   assert.equal(result[2].matchReason,undefined);
+  assert.equal(result[3].catalogCourseCode,'OLD2');
+  assert.equal(result[3].catalogMatchStatus,'unmatched');
+  assert.equal(result[3].matchReason,'missing_term_catalog');
+  assert.equal(result[4].catalogMatchStatus,'matched');
+  assert.equal(result[4].matchReason,undefined);
 });
