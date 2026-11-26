@@ -11,6 +11,72 @@ function differsOnlyByOnlineSuffix(firstName, secondName) {
     || second.replace(onlineSuffix, '') === first;
 }
 
+const catalogTermKey = (year, semester) => {
+  const term = { 上: 1, 上學期: 1, 下: 2, 下學期: 2, 暑: 3, 暑期: 3, 暑修: 3 }[String(semester).trim()] ?? Number(semester);
+  return `${Number(year)}:${term}`;
+};
+
+export async function loadHistoryTermCatalog(db, codes = []) {
+  const placeholders = codes.map(() => '?').join(',');
+  const terms = new Map();
+  // NULL code rows represent term coverage even when the requested codes are absent.
+  const offerings = `SELECT DISTINCT year AS academic_year, semester, NULL AS course_code, NULL AS course_name FROM Course_Sections
+    ${codes.length ? `UNION ALL SELECT DISTINCT s.year, s.semester, c.subid3, c.name
+      FROM Course_Sections s JOIN Courses c ON BINARY c.course_id = BINARY s.course_id
+      WHERE BINARY c.subid3 IN (${placeholders})` : ''}`;
+  const syllabi = `SELECT DISTINCT academic_year, semester, NULL AS course_code, NULL AS course_name FROM Course_Syllabi
+    ${codes.length ? `UNION ALL SELECT DISTINCT academic_year, semester, course_code, NULL
+      FROM Course_Syllabi WHERE BINARY course_code IN (${placeholders})` : ''}`;
+  const [offeringRows] = await db.execute(offerings, codes);
+  let syllabusRows;
+  try {
+    [syllabusRows] = await db.execute(syllabi, codes);
+  } catch (error) {
+    if (error.code !== 'ER_NO_SUCH_TABLE') throw error;
+    syllabusRows = [];
+  }
+  for (const row of [...offeringRows, ...syllabusRows]) {
+    const termKey = catalogTermKey(row.academic_year, row.semester);
+    if (!terms.has(termKey)) terms.set(termKey, new Map());
+    if (!row.course_code) continue;
+    const term = terms.get(termKey);
+    if (!term.has(row.course_code)) term.set(row.course_code, new Set());
+    if (row.course_name) term.get(row.course_code).add(row.course_name);
+  }
+  return terms;
+}
+
+export function historyTermHasCatalog(terms, year, semester) {
+  return terms.has(catalogTermKey(year, semester));
+}
+
+function matchHistoryTermCourse(terms, { courseCode, courseName, academicYear, semester }) {
+  if (!courseCode) return { code: null, reason: 'missing_source_code' };
+  const term = terms.get(catalogTermKey(academicYear, semester));
+  if (!term) return { code: null, reason: 'missing_term_catalog' };
+  const names = term.get(courseCode);
+  if (!names) return { code: null, reason: 'not_found' };
+  if (names.size && !names.has(courseName) && ![...names].some(name => differsOnlyByOnlineSuffix(courseName, name))) {
+    return { code: null, reason: 'code_name_conflict' };
+  }
+  return { code: courseCode, reason: null };
+}
+
+// Read-only preview of already imported records. Update authorization is a separate operation.
+export async function previewUnmatchedMyFcuHistory(db, userId) {
+  if (!Number.isSafeInteger(userId) || userId < 1) throw Error('INVALID_USER_ID');
+  const [rows] = await db.execute(`SELECT source_course_code AS courseCode, course_name AS courseName,
+    academic_year AS academicYear, semester FROM User_Course_History
+    WHERE user_id = ? AND source = 'myfcu_session' AND catalog_course_code IS NULL
+    ORDER BY academic_year, semester, history_id`, [userId]);
+  if (rows.length === 0) return [];
+  const terms = await loadHistoryTermCatalog(db, [...new Set(rows.map(row => row.courseCode).filter(Boolean))]);
+  return rows.map(row => ({
+    academicYear: row.academicYear, semester: row.semester, sourceCourseCode: row.courseCode,
+    ...matchHistoryTermCourse(terms, row),
+  }));
+}
+
 function matchesOnlineHistoryAttempt(incoming, stored) {
   if (!incoming.courseCode
     || (incoming.courseCode !== stored.catalog_course_code && incoming.courseCode !== stored.source_course_code)
@@ -37,7 +103,8 @@ export async function importExtractedHistory(identity,rows,transaction=withTrans
   const namePlan = sessionImport ? planHistoryByName(rows) : null;
   if (namePlan) rows = namePlan.candidates;
   const codes=[...new Set(rows.map(r=>r?.courseCode).filter(c=>typeof c==='string'&&/^[A-Z0-9]{1,45}$/.test(c)))];
-  const [catalog]=codes.length?await db.execute('SELECT DISTINCT name, subid3 FROM Courses WHERE BINARY subid3 IN ('+codes.map(()=>'?').join(',')+')',codes):[[]];
+  const termCatalog = sessionImport && codes.length ? await loadHistoryTermCatalog(db, codes) : new Map();
+  const [catalog]=!sessionImport&&codes.length?await db.execute('SELECT DISTINCT name, subid3 FROM Courses WHERE BINARY subid3 IN ('+codes.map(()=>'?').join(',')+')',codes):[[]];
   const byCode=new Map();for(const c of catalog){const list=byCode.get(c.subid3)??new Set();list.add(c.name);byCode.set(c.subid3,list);}
   const [existing]=await db.execute('SELECT catalog_course_code,source_course_code,source_attempt_key,academic_year,semester,course_name,score FROM User_Course_History WHERE user_id=?',[userId]);
   const key=r=>JSON.stringify([r.courseCode,Number(r.academicYear),Number(r.semester)]);
@@ -61,9 +128,10 @@ export async function importExtractedHistory(identity,rows,transaction=withTrans
    const exactCode=byCode.get(row.courseCode)??new Set();
    let code=null,reason=null;
    if(row.conflictingRows?.length)reason='source_conflict';
+   else if(sessionImport) ({code,reason}=matchHistoryTermCourse(termCatalog,row));
    else if(!row.courseCode)reason='missing_source_code';
    else if(!exactCode.size)reason='not_found';
-   else if (!exactCode.has(row.courseName) && !(sessionImport && [...exactCode].some(name => differsOnlyByOnlineSuffix(row.courseName, name)))) reason='code_name_conflict';
+   else if (!exactCode.has(row.courseName)) reason='code_name_conflict';
    else code=row.courseCode;
    const raw=JSON.stringify({sourceCourseCode:row.courseCode??null,courseName:row.courseName,academicYear:row.academicYear,semester:row.semester,credits:row.credits,sourceScore:row.sourceScore??null,sourceNumericScore:row.score??null,sourceCategories:row.sourceCategories??[],sourceClassName:row.sourceClassName??null,sourceGraduationCredits:row.sourceGraduationCredits??null,sourceCreditRecord:row.sourceCreditRecord??null,conflictingRows:row.conflictingRows??[],matchReason:reason,sourceRecord:row,codeLessDuplicates:codeLessDuplicates.get(row)??[],mergedSourceRows:row.mergedSourceRows??[]});
    const attemptKey=createHash('sha256').update(JSON.stringify(row.courseCode?['code',row.courseCode]:['name_class',row.courseName,row.sourceClassName])).digest('hex');

@@ -20,7 +20,7 @@ export default function CourseHistoryPage() {
     {records?.length > 0 && <section className="history-card"><div className="history-card-heading"><div><h2>修課列表</h2><p>未匹配的課程會顯示來源課號，未知資料以「未知」標示。</p></div></div><div className="history-table-wrap"><table className="history-table">
       <thead><tr><th>課號</th><th>課程名稱</th><th>學年</th><th>學期</th><th>學分</th><th>成績</th><th>等第</th><th>通過狀態</th></tr></thead>
       <tbody>{records.map(row => <tr key={row.id}>
-        <td><span className="history-code">{row.catalogCourseCode ?? row.sourceCourseCode ?? '未提供課號'}</span>{row.catalogCourseCode == null && <span className="history-badge">未匹配</span>}</td>
+        <td><span className="history-code">{row.catalogCourseCode ?? row.sourceCourseCode ?? '未提供課號'}</span>{row.catalogCourseCode == null && <span className="history-badge">{row.matchReason === 'missing_term_catalog' ? '缺少該學期比對資料' : '未匹配'}</span>}</td>
         <td>{row.courseName ?? '未知'}</td><td>{row.academicYear ?? '未知'}</td><td>{row.semester ?? '未知'}</td><td>{row.credits ?? '未知'}</td>
         <td>{row.score ?? '未知'}</td><td>{row.letterGrade ?? '未知'}</td><td>{row.passed == null ? '未知' : row.passed ? '通過' : '未通過'}</td>
       </tr>)}</tbody>

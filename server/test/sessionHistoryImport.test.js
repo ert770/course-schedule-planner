@@ -8,7 +8,7 @@ test('session import requires Windows local Aiven mode and rejects test flags',(
  for(const patch of [{NODE_ENV:'production'},{DB_HOST:'127.0.0.1'},{DB_HOST:'example.aivencloud.com.evil'},{DB_SSL_CA_PATH:''},{ISOLATED_HISTORY_MYSQL_E2E:'true'},{CONTROLLED_BROWSER_MOCK:'true'},{LOCAL_MYFCU_SELF_ATTESTED_IMPORT:'true'}]) assert.equal(Boolean(isSessionHistoryImport({...env,...patch})),false);
 });
 test('session import uses resolved identity and rejects mismatched profile',async()=>{
- const writes=[];let student='TEST_A';const db={execute:async(sql,p)=>{if(sql.startsWith('SELECT student_id'))return [[{student_id:student}]];if(sql.startsWith('SELECT DISTINCT name')||sql.includes('FROM User_Course_History')||sql.includes('FROM Unmatched_Course_History'))return [[]];writes.push([sql,p]);return [{}];}};
+ const writes=[];let student='TEST_A';const db={execute:async(sql,p)=>{if(sql.startsWith('SELECT student_id'))return [[{student_id:student}]];if(sql.startsWith('SELECT'))return [[]];writes.push([sql,p]);return [{}];}};
  const identity={found:true,source:'mysql',canWriteMysqlProfile:true,numericId:2,canonicalId:'TEST_A'};
  const rows=[{user_id:999,courseCode:'TEST1',courseName:'虛構',academicYear:112,semester:1,credits:3,score:60,sourceCreditRecord:'60'}];
  await importExtractedHistory(identity,rows,fn=>fn(db),{sessionImport:true});
@@ -33,7 +33,8 @@ test('SessionImport 同一筆修課的課名只差 (Online) 時跳過', async (t
       async execute(sql, params) {
         if (sql.startsWith('SELECT student_id')) return [[{ student_id: identity.canonicalId }]];
         if (sql.includes('FROM Unmatched_Course_History')) return [[]];
-        if (sql.includes('FROM Courses')) return [[{ subid3: params[0], name: '程式設計' }]];
+        if (sql.includes('FROM Course_Sections')) return [[{ academic_year: 114, semester: '上學期', course_code: params[0], course_name: '程式設計' }]];
+        if (sql.includes('FROM Course_Syllabi')) return [[]];
         if (sql.includes('FROM User_Course_History')) return [[prior]];
         writes += 1;
         return [{}];
