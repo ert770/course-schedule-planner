@@ -1,6 +1,7 @@
 import { formatCourseTime } from '../../utils/courseTime';
 import { formatCourseGradeLevel } from '../../utils/courseGradeLevel';
 import { formatCoursePrerequisites } from '../../utils/coursePrerequisites';
+import { withoutRepeatedCourseTitle } from '../../utils/courseDescription';
 
 const SELECTION_LABELS = {
   REQUIRED_COURSE: '這是你的必修課',
@@ -136,6 +137,7 @@ const getCategoryStyle = (category) => {
 
 export default function CourseDetailModal({ course, onClose, onRemove, showTime = true }) {
   if (!course) return null;
+  const description = withoutRepeatedCourseTitle(course.description, course.name);
 
   const catStyle = getCategoryStyle(course.category);
 
@@ -175,14 +177,14 @@ export default function CourseDetailModal({ course, onClose, onRemove, showTime 
         <ReasonSection reason={course.recommendationReason} />
 
         <div className="detail-desc">
-          <div className="detail-desc-label">先修條件</div>
+          <div className="detail-desc-label"><strong>先修條件</strong></div>
           <p>{formatCoursePrerequisites(course.prerequisites)}</p>
         </div>
 
-        {course.description && (
+        {description && (
           <div className="detail-desc">
-            <div className="detail-desc-label">課程說明</div>
-            <p>{course.description}</p>
+            <div className="detail-desc-label"><strong>課程說明</strong></div>
+            <p>{description}</p>
           </div>
         )}
 

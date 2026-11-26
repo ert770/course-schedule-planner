@@ -133,9 +133,14 @@ export function validateProfile(profile) {
 // 新使用者存完設定仍可能沒有，所以不列為條件。前端據此決定登入後要不要走引導流程，
 // 取代原本只存在瀏覽器、登出就被清掉的 `setupDone` 標記（2026-10-16）。
 export function isProfileSetupComplete(profile) {
+  if (['history', 'schedule'].includes(readInitialSetupStage(profile))) return false;
   return Boolean(profile?.department) && Number.isFinite(Number(profile?.gradeLevel)) && Number(profile.gradeLevel) > 0;
 }
 
+export function readInitialSetupStage(profile) {
+  const stage = normalizePreferencesJson(profile?.preferencesJson).values.initialSetupStage;
+  return ['history', 'schedule', 'completed'].includes(stage) ? stage : null;
+}
 export default {
   PROFILE_SCHEMA_VERSION,
   normalizeProfile,

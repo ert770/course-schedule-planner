@@ -1,5 +1,5 @@
 .preference-journey { margin: 16px 0 24px; }
-.preference-journey ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.preference-journey ol { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; margin: 0; padding: 0; list-style: none; }
 .preference-journey li { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 4px; border-radius: 8px; color: var(--text-secondary); font-size: .85rem; }
 .preference-journey li[aria-current="step"] { background: var(--bg-secondary); color: var(--accent-blue); font-weight: 700; }
 .preference-journey-number { display: grid; place-items: center; width: 23px; height: 23px; flex: 0 0 23px; border: 1px solid var(--border-color); border-radius: 50%; font-size: .76rem; }

@@ -254,9 +254,10 @@ Response:
 查無 Profile 列、或該列的 `displayName` 只是排課引擎內部用的合成佔位字串（`User ${user_id}`）
 時，回應不含 `name` 欄位。
 
-`user.setupComplete`（2026-10-16 新增，boolean）：`User_Profiles` 是否已有系所與年級
-（`isProfileSetupComplete()`）。前端據此判斷登入後要不要走「同意頁 → 設定頁」的引導流程，
-登出或換裝置後不必重走。Profile 讀取失敗（例如未接 MySQL）時不含此欄位，前端退回瀏覽器的
+`user.setupComplete`（boolean）：舊帳號以系所及年級判定，新註冊帳號須完成首次排課。
+`user.initialSetupStage` 在有進度的帳號上回傳 `history`、`schedule` 或 `completed`。
+前端先檢查隱私同意，再讀取歷史修課。已有資料直接進入偏好設定；未完成首次排課的帳號可接續排課。
+完成的引導在登出或換裝置後仍有效。Profile 讀取失敗時省略 `setupComplete`，前端退回瀏覽器的
 `fcu:<studentId>:setupDone` 標記。隱私同意是否需要重新確認仍由 `GET /api/privacy/consents` 的
 `requiresAction` 判斷，與此欄位無關。
 
@@ -1774,6 +1775,9 @@ topics: [{ group, categoryId, tagId, name, duplicate }] }`；`available: false` 
 ```
 
 `preferredTrack` 必須是字串或 `null`，持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
+
+首次設定用 `initialSetupStage` 更新進度。偏好保存時送 `schedule`；首次課表成功生成並保存後送
+`completed`。新註冊由伺服器初始化為 `history`。
 
 `GET /api/profile` 回傳已存的 `scheduleOptions`。更新時只合併送到的鍵，陣列可使用空陣列清除，
 選填數值可用 `null` 恢復預設。單次排課可用 `POST /api/schedule/generate` 的

@@ -1,9 +1,11 @@
 import { ArrowLeft, Check } from 'lucide-react';
 import './PreferenceJourneySteps.css';
 
-const steps = ['資料使用', '排課偏好', '課程探索'];
+const setupSteps = ['資料使用', '修課紀錄', '排課偏好', '完成排課'];
+const explorationSteps = ['資料使用', '排課偏好', '課程探索'];
 
-export default function PreferenceJourneySteps({ current }) {
+export default function PreferenceJourneySteps({ current, exploration = false }) {
+  const steps = exploration ? explorationSteps : setupSteps;
   return (
     <nav className="preference-journey" aria-label="首次設定進度">
       <ol>

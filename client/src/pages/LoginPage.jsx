@@ -28,7 +28,7 @@ export default function LoginPage() {
       const res = await authAPI.login(studentId, password);
       if (res.success) {
         login(res.user);
-        navigate('/onboarding');
+        navigate('/', { replace: true });
       }
     } catch (err) {
       setError(err.message || '登入失敗，請確認帳號密碼是否正確');

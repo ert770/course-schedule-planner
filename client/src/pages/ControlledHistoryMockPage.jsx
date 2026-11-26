@@ -4,8 +4,9 @@ import { controlledBrowserAPI, courseHistoryImportAPI } from '../services/api';
 import { buildHistoryPreview } from '../utils/controlledBrowserPreview';
 import { planHistoryByName } from '../utils/historyNameDedup';
 import { useAuth } from '../contexts/useAuth';
+import PreferenceJourneySteps from '../components/Layout/PreferenceJourneySteps';
 
-export default function ControlledHistoryMockPage() {
+export default function ControlledHistoryMockPage({ onboarding = false }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [consent, setConsent] = useState(false);
@@ -117,6 +118,11 @@ export default function ControlledHistoryMockPage() {
     setSession(null); setFrame(''); setStatus('idle'); setSystemSession({ status: 'unknown', numericId: null }); setResult(null);
     if (id) { try { await controlledBrowserAPI.cancel(id); } catch { /* TTL still closes the context. */ } }
   };
+  const finishImport = summary => {
+    handoff.current = true;
+    if (onboarding) navigate('/setup', { replace: true, state: { historyImported: true } });
+    else navigate('/', { replace: true, state: { historySyncSummary: summary } });
+  };
   const click = e => {
     const box = e.currentTarget.getBoundingClientRect();
     // Focus synchronously in the click gesture so mobile browsers can open the keyboard.
@@ -126,7 +132,9 @@ export default function ControlledHistoryMockPage() {
   const namePlan = planHistoryByName([...(result?.records ?? []), ...(result?.pendingRecords ?? [])]);
   const previewRows = sessionImport ? namePlan.candidates : buildHistoryPreview(result);
   return <main className="history-page history-sync-page">
-    <Link className="history-back" to="/">← 返回首頁</Link><header className="history-heading"><div><span className="history-eyebrow">MYFCU SYNC</span><h1>{localPreview ? 'MyFCU 本機修課紀錄預覽' : realPublic ? 'MyFCU 公開登入頁：唯讀測試' : mode === 'mock' ? '歷年修課紀錄匯入：本機模擬' : '受控瀏覽器：確認模式中'}</h1><p>依照以下步驟完成本次修課紀錄同步。</p></div></header>
+    {onboarding ? <PreferenceJourneySteps current={2} /> : <Link className="history-back" to="/">← 返回首頁</Link>}
+    <header className="history-heading"><div><span className="history-eyebrow">MYFCU SYNC</span><h1>{localPreview ? 'MyFCU 本機修課紀錄預覽' : realPublic ? 'MyFCU 公開登入頁：唯讀測試' : mode === 'mock' ? '歷年修課紀錄匯入：本機模擬' : '受控瀏覽器：確認模式中'}</h1><p>依照以下步驟完成本次修課紀錄同步。</p></div></header>
+    {onboarding && !importing && <p className="history-actions"><Link className="history-button" to="/setup" replace>略過匯入，先設定偏好</Link></p>}
     <ol className="history-steps" aria-label="同步流程"><li className={!id ? 'is-active' : 'is-done'}><span>1</span>閱讀說明</li><li className={id && !result ? 'is-active' : result ? 'is-done' : ''}><span>2</span>登入與擷取</li><li className={result ? 'is-active' : ''}><span>3</span>查看結果</li></ol>
     <section className="history-card history-sync-card"><div className="history-card-heading"><div><h2>同步說明</h2><p>開始前請先閱讀資料使用方式。</p></div></div>
     {localPreview ? <><p>將在本機開啟官方 MyFCU 視窗，請由本人自行登入。程式與本機瀏覽器在技術上可能接觸登入工作階段；不記錄帳密、Cookie 或修課資料，瀏覽器與作業系統可能產生暫存。</p><p>{sessionImport ? "匯入資料將儲存至目前登入的系統帳號；系統不核對 MyFCU 學號，請務必登入本人帳號。" : localSelfAttested ? "本機測試可由本人聲明資料來源並匯入隔離測試庫；這不是官方身分驗證。" : "僅供本機預覽；尚未核對校務身分，無法匯入。"}取消、登出或逾時會關閉工作階段。</p></> : <><p>僅供本機測試。公開頁模式只能檢視，不能操作或登入；請勿輸入真實校務帳號或密碼。受控瀏覽器由伺服器操作，伺服器有能力接觸輸入內容。</p><p>畫面及虛構修課資料僅在本次工作階段記憶體中處理，不寫入資料庫；取消、登出或五分鐘逾時後會銷毀。</p></>}
@@ -166,7 +174,7 @@ export default function ControlledHistoryMockPage() {
         <p>此階段僅供預覽，尚未寫入或匯入資料庫。</p>
         {sessionImport && snapshotMeta && <p>快照保存在伺服器記憶體，重啟後失效；有效至 {new Date(snapshotMeta.expiresAt).toLocaleString()}。</p>}
         {sessionImport && preflight && <p>目標：{preflight.studentId}（user_id={preflight.numericId}）；預計新增 {preflight.summary.inserted}、跳過 {preflight.summary.skipped}、衝突 {preflight.summary.conflicts}。</p>}
-        {(sessionImport || localSelfAttested) && result.allCategoriesComplete && (!sessionImport || namePlan.candidates.length > 0) && <button className="history-button history-button-primary" type="button" disabled={importing || (sessionImport ? (!snapshotMeta || !preflight || preflight.summary.conflicts > 0 || preflight.hash !== snapshotMeta.hash) : status !== 'ready') || systemSession.status !== 'valid' || !Number.isSafeInteger(systemSession.numericId)} onClick={async()=>{setImporting(true);setMessage('');try{const summary=await courseHistoryImportAPI.auto(sessionImport ? snapshotMeta?.hash : undefined);handoff.current=true;navigate('/',{replace:true,state:{historySyncSummary:summary}});}catch(error){setMessage(error.message||'匯入失敗，請稍後重試。');setImporting(false);}}}>確認匯入目前帳號</button>}
+        {(sessionImport || localSelfAttested) && result.allCategoriesComplete && (!sessionImport || namePlan.candidates.length > 0) && <button className="history-button history-button-primary" type="button" disabled={importing || (sessionImport ? (!snapshotMeta || !preflight || preflight.summary.conflicts > 0 || preflight.hash !== snapshotMeta.hash) : status !== 'ready') || systemSession.status !== 'valid' || !Number.isSafeInteger(systemSession.numericId)} onClick={async()=>{setImporting(true);setMessage('');try{const summary=await courseHistoryImportAPI.auto(sessionImport ? snapshotMeta?.hash : undefined);finishImport(summary);}catch(error){setMessage(error.message||'匯入失敗，請稍後重試。');setImporting(false);}}}>確認匯入目前帳號</button>}
         {!realPublic && !localPreview && result.allCategoriesComplete && <button className="history-button history-button-primary" type="button" onClick={()=>{handoff.current=isolatedMysqlE2E;navigate('/history-import',{state:{mockHistory:result}});}}>使用虛構資料測試匯入</button>}</section>}
     </>}
   </main>;

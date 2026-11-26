@@ -14,7 +14,7 @@ import { isIsolatedHistoryMysqlE2E } from '../services/isolatedHistoryE2E.js';
 import { registerStudent, findMysqlAccount, verifyPassword } from '../services/accountService.js';
 import { DEPARTMENT_TO_ABBREVIATIONS } from '../data/departmentMapping.js';
 import { getUserPreferences } from '../services/memoryService.js';
-import { isProfileSetupComplete } from '../data/profileSchema.js';
+import { isProfileSetupComplete, readInitialSetupStage } from '../data/profileSchema.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -53,7 +53,8 @@ async function withProfileDisplayName(userProfile, users, identityRawId) {
     const identity = typeof identityRawId === 'object' ? identityRawId : resolveIdentityFrom(users, identityRawId);
     if (!identity.found) return userProfile;
     const prefs = await getUserPreferences(identity);
-    userProfile = { ...userProfile, setupComplete: isProfileSetupComplete(prefs) };
+    const initialSetupStage = readInitialSetupStage(prefs);
+    userProfile = { ...userProfile, setupComplete: isProfileSetupComplete(prefs), ...(initialSetupStage ? { initialSetupStage } : {}) };
     // `getUserPreferences()` 在 `User_Profiles.name` 還沒有值時，會退回
     // `User ${user_id}` 這種合成佔位字串（給排課引擎內部用，不是拿來顯示的）。
     // 這裡要嚴格排除合成值——顯示出「User 1」比什麼都不顯示、讓前端退回

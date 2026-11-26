@@ -53,6 +53,14 @@ function missingManualCourses(schedule, manualCourses) {
   return manualCourses.filter(course => !present.has(courseId(course)));
 }
 
+function generatedCourses(result, manualCourses) {
+  const schedule = Array.isArray(result.schedule) ? result.schedule : [];
+  const manualIds = new Set(manualCourses.map(courseId));
+  const manuallyAddedUnscheduled = (result.unscheduledCourses ?? []).filter(course => manualIds.has(courseId(course)));
+  const next = [...schedule, ...missingManualCourses(schedule, manuallyAddedUnscheduled)];
+  return missingManualCourses(next, manualCourses).length ? null : next;
+}
+
 async function validateManualSelection(courses) {
   const credits = courses.reduce((sum, course) => sum + (Number(course?.credits) || 0), 0);
   if (credits > 30) {
@@ -340,16 +348,26 @@ export function ScheduleProvider({ children }) {
   }, [replaceSchedule]);
 
   const applyGeneratedSchedule = useCallback((result, recommendation) => {
-    const schedule = Array.isArray(result.schedule) ? result.schedule : [];
-    const manuallyAddedIds = new Set(userAddedCourseIds());
-    const manuallyAddedUnscheduled = (result.unscheduledCourses ?? [])
-      .filter(course => manuallyAddedIds.has(courseId(course)));
-    const next = [...schedule, ...missingManualCourses(schedule, manuallyAddedUnscheduled)];
-    if (missingManualCourses(next, manualCoursesRef.current).length) return false;
+    const next = generatedCourses(result, manualCoursesRef.current);
+    if (!next) return false;
     replaceSchedule(next, recommendation, result.plans, result.planDiversity);
     setScheduleToSave(scheduleRef.current);
     return true;
-  }, [replaceSchedule, userAddedCourseIds]);
+  }, [replaceSchedule]);
+
+  const saveFirstSchedule = useCallback(async (result, recommendation, isLatest) => {
+    const next = generatedCourses(result, manualCoursesRef.current)
+      ?.filter(course => !courseIsAvoided(course, savedAvoidancesRef.current));
+    if (!next || missingManualCourses(next, manualCoursesRef.current).length || !isLatest()) return false;
+    const credits = next.reduce((sum, course) => sum + (Number(course.credits) || 0), 0);
+    await scheduleAPI.save('我的課表', next, credits, userIdentity);
+    if (!isLatest()) return false;
+    replaceSchedule(next, recommendation, result.plans, result.planDiversity);
+    savedScheduleKeyRef.current = JSON.stringify(scheduleRef.current);
+    setHasSavedSchedule(true);
+    setScheduleSaveError('');
+    return true;
+  }, [replaceSchedule, userIdentity]);
 
   const selectPlan = useCallback(variantId => {
     const generation = accountGenerationRef.current;
@@ -916,6 +934,7 @@ export function ScheduleProvider({ children }) {
     validating,
     personalizationEnabled,
     applyGeneratedSchedule,
+    saveFirstSchedule,
     beginScheduleGeneration,
     clearGeneratedSchedule,
     // 本次規劃的避開清單
@@ -951,7 +970,7 @@ export function ScheduleProvider({ children }) {
     hasSavedSchedule, loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, planDiversity, plans,
     clearGeneratedSchedule, removeCourse, restoreAvoidedCourse, savedAvoidances, schedule, scheduleSaveError, sessionAvoidances,
-    recommendedPlanId, selectedPlanId, selectPlan, setCourseAvoidance, setCourseLocked, toggleWatchlist, validating, watchlist,
+    recommendedPlanId, saveFirstSchedule, selectedPlanId, selectPlan, setCourseAvoidance, setCourseLocked, toggleWatchlist, validating, watchlist,
   ]);
 
   return <ScheduleContext.Provider value={value}>{children}</ScheduleContext.Provider>;

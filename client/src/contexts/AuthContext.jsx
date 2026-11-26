@@ -26,6 +26,7 @@ export function AuthProvider({ children }) {
   const [privacyLoading, setPrivacyLoading] = useState(Boolean(user));
   const accountVersion = useRef(0);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const userIdentity = getUserIdentity(user);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +69,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     if (!sessionChecked) return undefined;
-    if (!user) {
+    if (userIdentity === null) {
       setPrivacyStatus(null);
       setPrivacyLoading(false);
       return undefined;
@@ -87,7 +88,7 @@ export function AuthProvider({ children }) {
       })
       .finally(() => { if (isCurrent()) setPrivacyLoading(false); });
     return () => { cancelled = true; };
-  }, [sessionChecked, user]);
+  }, [sessionChecked, userIdentity]);
 
   const login = (userData) => {
     accountVersion.current += 1;
@@ -122,10 +123,17 @@ export function AuthProvider({ children }) {
     if (identity !== null) localStorage.setItem(userKey(identity, 'setupDone'), 'true');
     // 伺服器下次回傳 /auth/me 前，先同步本地的 setupComplete，避免剛存完設定又被導回引導流程。
     if (user && user.setupComplete !== true) {
-      const next = { ...user, setupComplete: true };
+      const next = { ...user, setupComplete: true, initialSetupStage: 'completed' };
       setUser(next);
       localStorage.setItem('fcu_user', JSON.stringify(next));
     }
+  };
+
+  const markInitialSchedulePending = () => {
+    if (!user) return;
+    const next = { ...user, setupComplete: false, initialSetupStage: 'schedule' };
+    setUser(next);
+    localStorage.setItem('fcu_user', JSON.stringify(next));
   };
 
   const isOnboarded = () => {
@@ -146,7 +154,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user, login, logout,
       isLoggedIn: !!user,
-      markOnboarded, markSetupDone,
+      markOnboarded, markSetupDone, markInitialSchedulePending,
       isOnboarded, isSetupDone,
       privacyStatus, privacyLoading: !sessionChecked || privacyLoading, refreshPrivacy,
     }}>

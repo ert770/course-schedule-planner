@@ -8,7 +8,8 @@ import ControlledHistoryMockPage from './pages/ControlledHistoryMockPage';
 import RegisterPage from './pages/RegisterPage';
 import CourseHistoryImportPage from './pages/CourseHistoryImportPage';
 import CourseHistoryPage from './pages/CourseHistoryPage';
-import OnboardingPage from './pages/OnboardingPage';
+import HistoryOnboardingPage from './pages/HistoryOnboardingPage';
+import FirstSchedulePage from './pages/FirstSchedulePage';
 import SetupPage from './pages/SetupPage';
 import InterestExplorationPage from './pages/InterestExplorationPage';
 import DashboardPage from './pages/DashboardPage';
@@ -21,7 +22,7 @@ import './App.css';
 import { useLocation } from 'react-router-dom';
 
 function ProtectedRoute({ children }) {
-  const { isLoggedIn, isSetupDone, privacyStatus, privacyLoading } = useAuth();
+  const { user, isLoggedIn, isSetupDone, privacyStatus, privacyLoading } = useAuth();
   const location = useLocation();
 
   if (!isLoggedIn) return <Navigate to="/login" replace />;
@@ -32,15 +33,15 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/privacy" replace />;
   }
 
-  if (!isSetupDone() && !['/privacy', '/onboarding', '/setup'].includes(location.pathname)) {
-    return <Navigate to="/onboarding" replace />;
+  if (!isSetupDone() && !['/privacy', '/onboarding', '/setup', '/onboarding/myfcu', '/onboarding/schedule'].includes(location.pathname)) {
+    return <Navigate to={user?.initialSetupStage === 'schedule' ? '/onboarding/schedule' : '/onboarding'} replace />;
   }
 
   return children;
 }
 
 function AppRoutes() {
-  const { isLoggedIn, isSetupDone, privacyStatus } = useAuth();
+  const { isLoggedIn, privacyStatus } = useAuth();
 
   return (
     <Routes>
@@ -52,7 +53,7 @@ function AppRoutes() {
         path="/login"
         element={
           isLoggedIn ? (
-            <Navigate to={privacyStatus?.requiresAction ? '/privacy' : (isSetupDone() ? '/' : '/onboarding')} replace />
+            <Navigate to={privacyStatus?.requiresAction ? '/privacy' : '/'} replace />
           ) : (
             <LoginPage />
           )
@@ -70,10 +71,14 @@ function AppRoutes() {
         path="/onboarding"
         element={
           <ProtectedRoute>
-            <OnboardingPage />
+            <HistoryOnboardingPage />
           </ProtectedRoute>
         }
       />
+      {import.meta.env.DEV && (
+        <Route path="/onboarding/myfcu" element={<ProtectedRoute><ControlledHistoryMockPage onboarding /></ProtectedRoute>} />
+      )}
+      <Route path="/onboarding/schedule" element={<ProtectedRoute><FirstSchedulePage /></ProtectedRoute>} />
       <Route
         path="/setup"
         element={

@@ -361,6 +361,12 @@ function Dashboard({ user, userIdentity }) {
   
   useEffect(() => {
     if (scheduleLoading || userIdentity === null) return;
+    if (location.state?.firstScheduleReady === userIdentity && initialGenerationUserRef.current !== userIdentity) {
+      initialGenerationUserRef.current = userIdentity;
+      markPreferencesPending(false);
+      navigate(location.pathname + location.search + location.hash, { replace: true, state: null });
+      return;
+    }
     if (location.state?.preferencesSavedFor === userIdentity) {
       if (preferencesLocationRef.current === location.key) return;
       preferencesLocationRef.current = location.key;

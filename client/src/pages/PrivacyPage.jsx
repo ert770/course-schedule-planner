@@ -4,6 +4,7 @@ import { ShieldCheck, Download, Trash2, RotateCcw, ArrowLeft } from 'lucide-reac
 import { privacyAPI } from '../services/api';
 import { useAuth } from '../contexts/useAuth';
 import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
+import PreferenceJourneySteps from '../components/Layout/PreferenceJourneySteps';
 
 const SERVICE = 'service_processing';
 const PERSONALIZATION = 'personalization_learning';
@@ -64,7 +65,7 @@ export default function PrivacyPage() {
       setMessage('資料使用設定已儲存。');
       loadPersonalization();
       if (status && !status.requiresAction) {
-        setTimeout(() => navigate(isSetupDone() ? '/' : '/onboarding'), 350);
+        navigate('/', { replace: true });
       }
     } catch (err) { setMessage(err.message); }
     finally { setSaving(false); }
@@ -145,6 +146,7 @@ export default function PrivacyPage() {
           </button>
         )}
 
+        {!isSetupDone() && <PreferenceJourneySteps current={1} />}
         <div className="privacy-heading" style={{ paddingLeft: !privacyStatus?.requiresAction ? '40px' : '0' }}>
           <ShieldCheck size={34} />
           <div>

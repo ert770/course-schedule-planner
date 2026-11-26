@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useSchedule } from '../contexts/useSchedule';
 import { profileAPI, historyFeedbackAPI } from '../services/api';
@@ -52,7 +52,9 @@ function scheduleOptionLines(options = {}) {
 
 export default function SetupPage() {
   const navigate = useNavigate();
-  const { user, markSetupDone, isSetupDone, privacyStatus } = useAuth();
+  const { state: navigationState } = useLocation();
+  const navigationType = useNavigationType();
+  const { user, markInitialSchedulePending, isSetupDone, privacyStatus } = useAuth();
   const { savedAvoidances, restoreAvoidedCourse } = useSchedule();
   const [restoringCourse, setRestoringCourse] = useState(null);
   const [restoreError, setRestoreError] = useState('');
@@ -86,7 +88,7 @@ export default function SetupPage() {
     }
   };
   const userIdentity = getUserIdentity(user);
-  const editing = isSetupDone();
+  const editing = isSetupDone() && !navigationState?.finishOnboarding;
   const exploration = getInterestExplorationState(userIdentity);
   
   // 保留狀態以供 API 使用，但前端隱藏不顯示
@@ -202,13 +204,7 @@ export default function SetupPage() {
 
   const finishAfterSave = (wasSetupDone) => {
     if (!wasSetupDone) {
-      const exploration = getInterestExplorationState(userIdentity);
-      if (exploration.status !== 'completed' && exploration.status !== 'skipped') {
-        if (exploration.status !== 'in_progress') startInterestExploration(userIdentity);
-        navigate('/interest-exploration', { replace: true });
-        return;
-      }
-      navigate('/', { replace: true });
+      navigate('/onboarding/schedule', { replace: true });
       return;
     }
     if (exploration.status === 'in_progress') navigate('/interest-exploration');
@@ -216,7 +212,7 @@ export default function SetupPage() {
   };
 
   const persist = async (selections) => {
-    const wasSetupDone = isSetupDone();
+    const wasSetupDone = editing;
     setSaveError('');
     setGenerating(true);
     try {
@@ -230,6 +226,7 @@ export default function SetupPage() {
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
+        ...(!wasSetupDone ? { initialSetupStage: 'schedule' } : {}),
         // 長期興趣只由課程主題問答保存（ADR-032）；舊的文字興趣欄位已移除。
         ...(selections !== savedTopicSelections ? {
           interestSelections: selections.map(({ group, categoryId, level, mode, tagIds }) => ({
@@ -240,7 +237,7 @@ export default function SetupPage() {
       // 1. 儲存個人偏好設定（回應帶課程主題選擇的驗證狀態，下面據此決定要不要顯示提示）
       const result = await profileAPI.update(prefData);
 
-      markSetupDone();
+      if (!wasSetupDone) markInitialSchedulePending();
       const warnings = result?.interestSelectionWarnings ?? [];
       if (result?.interestSelectionsStatus === 'unverified') {
         setSaveNotice({
@@ -277,9 +274,10 @@ export default function SetupPage() {
         <PreferenceBackButton onClick={() => navigate(editing
           ? (exploration.status === 'in_progress' ? '/interest-exploration' : '/')
           : '/onboarding')}>
-          {editing ? (exploration.status === 'in_progress' ? '返回探索' : '返回首頁') : '返回資料使用設定'}
+          {editing ? (exploration.status === 'in_progress' ? '返回探索' : '返回首頁') : '返回修課紀錄'}
         </PreferenceBackButton>
-        {!editing && <PreferenceJourneySteps current={2} />}
+        {!editing && <PreferenceJourneySteps current={3} />}
+        {navigationState?.historyImported && navigationType !== 'POP' && <p role="status">修課紀錄同步完成</p>}
 
         <header className="preference-page-header">
           <h1>{editing ? '調整排課偏好' : '設定你的排課偏好'}</h1>
@@ -434,7 +432,7 @@ export default function SetupPage() {
                 </button>
               ) : (
                 <button type="button" className="course-card-action primary" onClick={handleSubmit} disabled={!profileLoaded || Boolean(profileError)}>
-                  {editing ? (exploration.status === 'in_progress' ? '保存並繼續探索' : '保存變更') : '保存並前往探索'} <ArrowRight size={17} />
+                  {editing ? (exploration.status === 'in_progress' ? '保存並繼續探索' : '保存變更') : '保存並開始排課'} <ArrowRight size={17} />
                 </button>
               )}
             </div>

@@ -23,6 +23,9 @@ const ARRAY_FIELDS = Object.freeze([
  * @returns `null` 代表通過；否則回傳要直接送給呼叫端的錯誤訊息字串。
  */
 export function validateProfileUpdate(updates = {}) {
+  if (updates.initialSetupStage !== undefined && !['schedule', 'completed'].includes(updates.initialSetupStage)) {
+    return 'initialSetupStage 必須是 schedule 或 completed';
+  }
   if (updates.scheduleOptions !== undefined) {
     const options = updates.scheduleOptions;
     if (!options || typeof options !== 'object' || Array.isArray(options)
