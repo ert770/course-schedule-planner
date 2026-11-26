@@ -46,7 +46,7 @@ export const AGENT_TOOL_REGISTRY = Object.freeze([
     // 只是確認訊息；讓它覆蓋 data 會把畫面上已顯示的課表洗掉。
     renderable: false,
     writes: true,
-    // ADR-036：使用者在聊天中說出的偏好直接寫入，不再兩段式確認。
+    // 期間由對話入口核對。只有使用者明確選擇日後沿用時，才執行帳號寫入。
     confirmation: null,
   }),
   Object.freeze({
@@ -76,6 +76,12 @@ export const AGENT_TOOL_REGISTRY = Object.freeze([
     renderable: true,
     // 伺服器端不寫入；課表由前端更新。
     writes: false,
+    confirmation: null,
+  }),
+  Object.freeze({
+    name: 'manage_schedule',
+    renderable: true,
+    writes: true,
     confirmation: null,
   }),
   Object.freeze({

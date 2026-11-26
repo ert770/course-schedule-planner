@@ -19,6 +19,7 @@ import { generateSchedule } from '../skills/scheduler.js';
 import { searchCoursesForSchedule } from '../skills/courseQuery.js';
 import { getUserPreferences, readScheduleAvoidances } from './memoryService.js';
 import { buildScheduleConstraints } from './constraintService.js';
+import { readTemporaryPreference, consumeTemporaryPreference } from './chatPreferenceService.js';
 import { buildStudentScope } from '../skills/courseScope.js';
 import { getAll } from '../db/database.js';
 import { getFailedRequiredCourseCodes } from '../data/courseHistory.js';
@@ -468,7 +469,7 @@ async function prepareGenerationInputs(identity, input = {}, options = {}) {
 
   // 使用者自己加入課表的班次（前端以 selectedCourseIds 送來）必須在候選池裡，排課引擎才能保留它們；
   // 系外選修、通識等可能不在依學生範圍查出的候選中（2026-10-15 Persona UX 測試發現）。
-  const pinnedIds = (Array.isArray(constraints.selectedCourseIds) ? constraints.selectedCourseIds : []).map(String);
+  const pinnedIds = [...mergedConstraints.selectedCourseIds, ...mergedConstraints.mustTakeCourseIds].map(String);
   if (pinnedIds.length > 0) {
     const present = new Set(candidates.map(course => String(course.id)));
     const missing = pinnedIds.filter(id => !present.has(id));
@@ -642,10 +643,11 @@ export async function generateForUser(identity, input = {}, options = {}) {
   const requestId = options.requestId || crypto.randomUUID();
 
   const prefs = options.prefs ?? await getUserPreferences(identity);
+  const temporary = options.useTemporaryPreference ? readTemporaryPreference(identity, prefs) : null;
 
   const { candidates, mergedConstraints, reviewDataLoaded, externalInterestReservation } = await prepareGenerationInputs(
     identity,
-    { courseIds, filters, constraints },
+    { courseIds, filters, constraints: { ...constraints, ...temporary?.constraints } },
     { ...options, prefs }
   );
 
@@ -702,6 +704,7 @@ export async function generateForUser(identity, input = {}, options = {}) {
   }
   const result = annotateScheduleIdentifiers(scheduled, requestId);
   await recordExposureSafely(identity, result, requestId, { surface, trigger });
+  if (result.success) consumeTemporaryPreference(identity, temporary);
   return result;
 }
 

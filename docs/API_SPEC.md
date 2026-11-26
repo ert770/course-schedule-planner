@@ -1507,6 +1507,9 @@ Request:
     "activePlanId": "…",
     "activeVariantId": "…",
     "currentCourses": [{ "sectionId": 101 }],
+    "selectedCourses": [{ "sectionId": 101 }],
+    "plans": [{ "id": "personalized", "title": "個人化綜合方案" }],
+    "selectedVariantId": "personalized",
     "removedCourses": [{ "sectionId": 102, "reason": "workload" }]
   }
 }
@@ -1514,6 +1517,13 @@ Request:
 
 `planningContext` 是選用的：使用者畫面上目前留著哪些課、本次移除了哪些課、原因是什麼。
 少了它，Agent 只能反問它其實問得到的資料。
+`selectedCourses` 是選用的手動加選班次清單，每筆只含 `sectionId`，必須同時出現在 `currentCourses`。
+若提供清單，Agent 重排使用此清單作為手動保留班次。範圍不明的偏好會先回覆問題，既有課表和帳號偏好維持原狀。
+由首頁明確使用 `preference_regenerate` 執行「套用偏好排課」時，排課會使用帳號目前尚有效的聊天單次條件，成功後清除。
+`plans` 可帶本次畫面至多八個可切換方案，每筆為唯一的 `id` 和 `title`。
+`selectedVariantId` 對應目前選中的方案，供聊天中的比較與切換使用。
+Agent 操作準備成功時，`intent` 會是 `manage_schedule`，`data.scheduleAction` 帶操作代號及核對過的班次或方案。
+前端複查課表仍是同一份，再套用操作並依實際結果顯示成功或衝突。
 
 **只收 ID 與原因代號。** 課名、課號、教師一律由伺服器從 `Courses` 重查
 （`services/planningContextService.js`）——那些字串會進 system prompt，
@@ -1764,6 +1774,10 @@ topics: [{ group, categoryId, tagId, name, duplicate }] }`；`available: false` 
 ```
 
 `preferredTrack` 必須是字串或 `null`，持久化於既有的 `User_Profiles.preferences_json.values`，不新增資料庫欄位。
+
+`GET /api/profile` 回傳已存的 `scheduleOptions`。更新時只合併送到的鍵，陣列可使用空陣列清除，
+選填數值可用 `null` 恢復預設。單次排課可用 `POST /api/schedule/generate` 的
+`constraints.scheduleOptions` 覆蓋本次使用的鍵。欄位與 Agent 工具共用，詳見 `PROMPT_DESIGN.md`。
 想學的主題改由下方的 `interestSelections`（課程主題問答）保存。
 
 **2026-11-23 起（ADR-032）不再接受 `interests`、`preferredKeywords`**：帶了任一個（含空陣列）都回 `400`，

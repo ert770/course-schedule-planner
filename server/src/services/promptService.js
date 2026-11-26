@@ -15,6 +15,8 @@
 import { resolveInterestSelections } from '../data/interestSelections.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
 import { ALL_TAGS, TAG_TO_FLAG } from '../data/preferenceTags.js';
+import { SCHEDULE_CATEGORIES } from '../data/scheduleOptions.js';
+import { SCHEDULE_ACTIONS } from './scheduleActionService.js';
 
 // 課程主題問答勾選的標籤名稱（長期興趣的唯一來源，ADR-032）。
 function selectedTopicNames(prefs = {}) {
@@ -31,7 +33,9 @@ function formatList(...sources) {
   return values.length > 0 ? [...new Set(values)].join('、') : '未設定';
 }
 
-const COURSE_CATEGORIES = ['必修', '核心選修', '一般選修', '通識', '系外選修'];
+const COURSE_CATEGORIES = SCHEDULE_CATEGORIES;
+const SCHEDULE_CATEGORY_LIST = { type: 'array', items: { type: 'string', enum: COURSE_CATEGORIES } };
+const NAME_LIST = { type: 'array', items: { type: 'string' } };
 
 // 左側偏好勾選的旗標（`preferenceTags.js` 的唯一來源）：update_preferences 用 check／uncheck
 // 兩個清單改這些。**不用 15 個布林欄位**：2026-11-24 重跑時模型把 15 個欄位全部填滿，
@@ -142,8 +146,8 @@ const SCHEDULER_PARAMETERS = {
     items: {
       type: 'object',
       properties: {
-        day: { type: 'integer', description: '星期幾，1=週一 … 5=週五。' },
-        period: { type: 'integer', description: '第幾節。' },
+        day: { type: 'integer', description: '星期幾，1=週一 … 7=週日。' },
+        period: { type: 'integer', description: '第幾節，1～14。' },
       },
       required: ['day', 'period'],
     },
@@ -183,7 +187,7 @@ const SCHEDULER_PARAMETERS = {
   finalReport: { type: 'boolean', description: '偏好以期末報告評分的課。' },
   englishTaught: { type: 'boolean', description: '偏好英語授課。' },
 
-  preferredTrack: { type: 'string', description: '修課路徑，例如「網路安全類」。' },
+  preferredTrack: { type: ['string', 'null'], description: '修課路徑，例如「網路安全類」；null 表示清除。' },
   preferredKeywords: {
     type: 'array',
     items: { type: 'string' },
@@ -223,6 +227,50 @@ const SCHEDULER_PARAMETERS = {
       + '用來表達使用者語氣特別強硬的那一項，例如「絕對不排早八，但午休可以彈性」'
       + '就填 ["NO_MORNING_CLASSES"]。只作用於這一次請求，不會變成永久設定。',
   },
+};
+
+const SCHEDULE_OPTIONS_SCHEMA = {
+  type: 'object',
+  properties: {
+    minCredits: { type: ['integer', 'null'], description: '最低目標。剛好 N 學分時上下限都填 N。null 恢復預設。' },
+    maxCredits: { type: ['integer', 'null'], description: '總學分上限。' },
+    maxCoursesPerDay: { type: ['integer', 'null'], description: '每天最多幾門。' },
+    noEveningClasses: { type: ['boolean', 'null'], description: '不排晚課。' },
+    allowedPeriods: { ...SCHEDULER_PARAMETERS.blockedPeriods, description: '能上課的節次。所有上課時段都須在這些節次內。空陣列解除。' },
+    preferredPeriods: { ...SCHEDULER_PARAMETERS.blockedPeriods, description: '希望安排的時段。超出時段仍可排。' },
+    courseCredits: { type: ['integer', 'null'], description: '每門可選課要幾學分。' },
+    preferredCourseCredits: { type: ['integer', 'null'], description: '偏好的單門課程學分。' },
+    avoidInstructors: { ...NAME_LIST, description: '希望避開的教師完整姓名。' },
+    preferredInstructors: { ...NAME_LIST, description: '希望多修的教師完整姓名。' },
+    includeInstructors: { ...NAME_LIST, description: '可選課只排這些教師。' },
+    includeCategories: { ...SCHEDULE_CATEGORY_LIST, description: '可選課只安排的修別。本人必修優先依正式規則處理。' },
+    excludeCategories: { ...SCHEDULE_CATEGORY_LIST, description: '使用者明確不排的修別。' },
+    preferCategories: { ...SCHEDULE_CATEGORY_LIST, description: '希望多修的修別。' },
+    categoryQuotas: {
+      type: 'array', description: '某類課的門數或學分限制。「通識兩門」表示最低和最高都是 2 門。',
+      items: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', enum: COURSE_CATEGORIES },
+          minCourses: { type: 'integer' }, maxCourses: { type: 'integer' },
+          minCredits: { type: 'integer' }, maxCredits: { type: 'integer' },
+        },
+        required: ['category'], additionalProperties: false,
+      },
+    },
+    requiredSectionIds: { ...COURSE_ID_ARRAY, description: '必須排入的班次 ID。先查課並在有多個班次時確認。' },
+    excludedSectionIds: { ...COURSE_ID_ARRAY, description: '明確不排的班次 ID。' },
+    language: { type: ['string', 'null'], enum: ['English', '中文 (Chinese)', null], description: '限定可選課授課語言。' },
+    timePreferencePriority: { type: 'array', items: { type: 'string', enum: RELAXABLE_PREFERENCE_IDS }, description: '允許放寬時的順序。' },
+  },
+  additionalProperties: false,
+};
+
+const COURSE_QUERY_DETAILS = {
+  code: { type: 'string', description: '課號或選課代碼。' },
+  instructor: { type: 'string', description: '授課教師姓名。' },
+  period: { type: 'integer', description: '第幾節。' },
+  credits: { type: 'integer', description: '單門課學分。' },
 };
 
 // Roadmap #24 的「結構化需求模型」。
@@ -366,6 +414,7 @@ export function getAgentTools() {
         type: 'object',
         properties: {
           keyword: { type: 'string', description: '課程名稱或關鍵字。' },
+          ...COURSE_QUERY_DETAILS,
           category: { type: 'string', enum: COURSE_CATEGORIES, description: '課程類別。' },
           dayOfWeek: { type: 'integer', description: '星期幾，1=週一 … 5=週五。' },
           language: {
@@ -408,12 +457,11 @@ export function getAgentTools() {
       type: 'function',
       name: 'update_preferences',
       description:
-        '更新使用者已存的排課偏好（左側偏好勾選、學分上限、不能上課的時段、修課路徑），**呼叫後立即寫入**，'
-        + '左側勾選會跟著改，之後的排課都會沿用。'
-        + '使用者在對話中說出這些偏好（例如「星期一排空」「不要早八」「涼課優先」）就呼叫；'
-        + '使用者說「這次就好」「這學期先」「只這一次」時**不要呼叫**，直接把條件帶進 run_csp_scheduler。'
+        '將使用者表達的排課偏好整理成結構化條件（左側勾選、學分上限、不能上課的時段、修課路徑）。'
+        + '這項工具也可用於尚未說明「這次」或「以後」的條件。伺服器會先問使用者適用範圍。'
+        + '已有明確範圍時，伺服器會保存到帳號或保留到下一次排課。只改偏好時課表保持原樣。'
         + '只送這次真的要改的欄位，沒提到的不要送。'
-        + '不排晚間課與最低學分沒有地方存，只能當單次條件帶進 run_csp_scheduler。'
+        + '不排晚課、最低學分和其他進階條件放進 scheduleOptions。'
         + '想學的主題（例如「以後都想排資安」）不用這個工具，改用 update_topic_interests。',
       parameters: {
         type: 'object',
@@ -428,7 +476,10 @@ export function getAgentTools() {
           },
           targetCreditsMax: { type: 'integer' },
           blockedPeriods: SCHEDULER_PARAMETERS.blockedPeriods,
+          addBlockedPeriods: { ...SCHEDULER_PARAMETERS.blockedPeriods, description: '新增不能上課的節次，其餘時段設定保持原樣。' },
+          removeBlockedPeriods: { ...SCHEDULER_PARAMETERS.blockedPeriods, description: '解除指定節次的封鎖，其餘時段設定保持原樣。' },
           preferredTrack: SCHEDULER_PARAMETERS.preferredTrack,
+          scheduleOptions: SCHEDULE_OPTIONS_SCHEMA,
           // 長期興趣只能透過設定頁的課程主題問答設定（ADR-032），這裡不再接受 interests／preferredKeywords。
         },
         additionalProperties: false,
@@ -454,10 +505,10 @@ export function getAgentTools() {
       type: 'function',
       name: 'update_topic_interests',
       description:
-        '修改使用者長期的課程主題偏好（主題問答的勾選），**呼叫後立即寫入**，之後的排課與探索都會沿用。'
+        '整理使用者想學的主題。明說要長期保存才寫入，範圍不明由伺服器追問。'
         + '使用者說「我對 X 有興趣」「以後想多排 X」時放進 addTerms；說「不想再排 X」「X 不要了」時放進 removeTerms，'
         + '伺服器會拿掉勾選並記一筆「沒興趣」讓相關課降分（只想拿掉勾選、不是討厭時把 recordNotInterested 設為 false）。'
-        + '使用者說「這次想排 X」時**不要呼叫**，把 X 帶進 run_csp_scheduler 的 interests。'
+        + '使用者只說「這次想排 X」而未要求重排時，用 addTerms 提交待套用主題。'
         + '回傳 needsChoice 時代表有詞對不到唯一主題、什麼都沒寫入：把候選念給使用者選，再用 addTagIds／removeTagIds 呼叫一次。'
         + 'tooCommon 列出的主題（例如 Python、人工智慧）太常見、不能長期保存，請改成每次排課帶進 interests。',
       parameters: {
@@ -490,6 +541,8 @@ export function getAgentTools() {
           category: { type: 'string', enum: COURSE_CATEGORIES, description: '新課要屬於哪一類，使用者沒說就不要填。' },
           dayOfWeek: { type: 'integer', description: '新課要在星期幾上，1=週一 … 5=週五；使用者沒說就不要填。' },
           keyword: { type: 'string', description: '課名、教師或主題字；不要填分類用語。' },
+          ...COURSE_QUERY_DETAILS,
+          language: { type: 'string', enum: ['English', '中文 (Chinese)'] },
         },
         required: ['replaceSectionId'],
         additionalProperties: false,
@@ -509,6 +562,29 @@ export function getAgentTools() {
         },
         required: ['removeSectionId', 'addSectionId'],
         additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'manage_schedule',
+      description: '按使用者明確要求操作目前課表。課名、課號或班次皆可，伺服器在有多個候選時會追問。'
+        + '支援新增、移除、換班、鎖定、解鎖、避開、解除、關注、取消關注、比較與切換方案、檢查與回饋。'
+        + '一次提交一個操作，畫面會重新核對再執行。使用者只在詢問操作方式或假設結果時，請先回答。',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: SCHEDULE_ACTIONS },
+          sectionId: { type: 'integer', description: '已知的班次 ID，和 courseQuery 擇一。' },
+          courseQuery: { type: 'string', description: '課名、課號或選課代碼。' },
+          targetSectionId: { type: 'integer', description: '替換後的班次 ID。' },
+          targetQuery: { type: 'string', description: '替換後的課名、課號或選課代碼。' },
+          scope: { type: 'string', enum: ['temporary', 'saved'], description: '避開的作用範圍。沒有說明就省略，工具會追問。' },
+          variantId: { type: 'string', description: '要切換的方案 ID。只使用伺服器提供的 ID。' },
+          planQuery: { type: 'string', description: '使用者想用的方案名稱或第幾個。' },
+          feedback: { type: 'string', enum: ['accept', 'adjust'] },
+          reason: { type: 'string', enum: ['time', 'content', 'instructor', 'workload', 'full', 'eligibility', 'other'] },
+        },
+        required: ['action'], additionalProperties: false,
       },
     },
     {
@@ -559,6 +635,7 @@ export function getAgentTools() {
         type: 'object',
         properties: {
           ...SCHEDULER_PARAMETERS,
+          scheduleOptions: SCHEDULE_OPTIONS_SCHEMA,
           interpretation: INTERPRETATION_SCHEMA,
           removalReasonResolutions: REMOVAL_REASON_RESOLUTION_SCHEMA,
         },
@@ -658,6 +735,12 @@ function buildPlanningStateBlock(planning) {
     }
   } else {
     lines.push('- 使用者目前的課表是空的。');
+  }
+  if (planning.plans?.length) {
+    lines.push('- 目前可切換的方案：');
+    for (const plan of planning.plans) {
+      lines.push(`  - ${JSON.stringify({ variantId: plan.id, title: plan.title, current: plan.id === planning.selectedVariantId })}`);
+    }
   }
 
   if (planning.removedCourses.length > 0) {
@@ -769,21 +852,29 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 排課偏好使用說明：
 - preferredKeywords、interests、preferCompact、preferEasyCourses、preferChallengingCourses 會影響單門課挑選及多個方案的主推排序。
 - 使用者要求個人化推薦，但目前使用者偏好中的「課程主題」與「修課路徑」都未設定，且這一輪也沒有說明興趣時，先用一個簡短問題詢問方向；可舉「技術應用、網路與安全、嵌入式系統」或目前課程主題為例，不要替使用者選。若使用者只要一般排課或明確表示沒有特定方向，直接排課，不得強迫回答。
-- 使用者說「這次想排資安相關」時，把方向放進單次 run_csp_scheduler 的 interests 或 preferredKeywords；它們只影響這一次排課。
-- 使用者說「我對 X 有興趣」「以後想多排 X」時，呼叫 update_topic_interests 的 addTerms 直接存進課程主題（ADR-037）；
-  說「不想再排 X」時放進 removeTerms。存好後講清楚加了或拿掉了哪些主題；要排課就接著呼叫 run_csp_scheduler，
-  而且最後一個呼叫要是它。修課路徑仍用 update_preferences 的 preferredTrack 保存。
+- 使用者說想學某主題，呼叫 update_topic_interests 的 addTerms；明確取消放進 removeTerms。
+  伺服器依「這次／以後」處理。修課路徑用 update_preferences 的 preferredTrack。
 - 使用者問「為什麼推薦這門課」「系統覺得我對什麼有興趣」時，呼叫 get_topic_interests（要問某門課就帶 sectionId），
   只轉述結果裡的主題與分數；s_cf 目前沒有資料時照實說。
 
 已存偏好與這次條件（ADR-036）：
 - 下方「目前使用者偏好」是伺服器已存的設定，排課時伺服器會自動套用，不用你重送。
 - 查問目前偏好時，以本回合的「目前使用者偏好」或本回合成功更新的工具結果為準。舊對話與現有課表只反映當時的狀態。課表有週一的課，不能作為「星期一排空」未勾選的證據。只確認或更新偏好時不要呼叫排課工具。
-- 使用者在對話中說出左側偏好裡有的項目（不排早八、星期一排空、午休空出、涼課優先、集中排課、不能上課的時段、學分上限……），
-  就直接呼叫 update_preferences 存起來，不用先問；左側勾選會跟著改。要開的放進 check，他說「不要了」「取消」的放進 uncheck，沒提到的偏好都不要放。
-- 使用者說「這次就好」「這學期先」「只這一次」時不要存，只把條件帶進 run_csp_scheduler。
-- 同一回合要存偏好又要排課時，先 update_preferences，**最後一個工具呼叫要是 run_csp_scheduler**，畫面才會顯示新課表。
-- 存好之後在回覆裡講清楚改了哪幾項偏好（例如「已幫你把『星期一排空』存進偏好」）。
+- 使用者會直接給條件，例如「週三下午要打工」「週三下午有空比較好」「18 學分」。從語意區分不能上課、希望留空、學分目標和上限。
+- 只確認不清楚的部分。使用者說「18 學分」時，若上下文無法區分目標或上限，先問「想排到 18 學分，還是最多 18？」。
+- 可明確結構化的左側偏好、封鎖時段、學分上限與修課路徑用 update_preferences 提交。只放這次要改的欄位。
+  用 addBlockedPeriods 或 removeBlockedPeriods 編輯部分時段。「週三下午」對應週三第 6–10 節。
+- 上課範圍、教師、指定班次、學分目標或課程類別填入 scheduleOptions。用 update_preferences 提交可保存或本次的條件，讓伺服器處理適用範圍。
+  「通識兩門」填通識的門數限額。「想上王小明老師的課」可列為教師偏好。「王小明老師的課」若上下文無法判斷要查課或排課，只問用途。
+  使用者指定課名、課號或教師而符合多個班次時，列出候選並請他選；不得猜班次 ID。
+- 伺服器會處理期間未明的偏好追問、接續短答、保存或暫存。只改偏好時不要呼叫排課工具；
+  使用者明確要一份課表、要重排，或同意你剛提出的重排時，才進行排課。
+- 對可保存的偏好，若同時要更新條件和重排，交給 update_preferences 處理。至多執行一次排課。
+
+直接操作目前課表：
+- 使用者要加課、移除、換班、鎖定、解鎖、避開、解除避開、關注或取消關注時，呼叫 manage_schedule。比較、切換、檢查目前課表也用此工具，不必重排。
+- 僅在使用者確實表達接受或需要調整時送 feedback。若使用者指出某門課和原因，一併提供，伺服器核對實際推薦。
+- 課名、課號或第幾個方案已夠清楚時直接交給工具。若有多個候選，讓使用者選；若只有「這門」而上下文對不到班次，再追問課名。
 
 換課：
 - 使用者要把課表上的某門課換成別的（「把 A 換成一門星期一的通識課」「A 換掉」），先呼叫 find_replacement_courses，

@@ -27,6 +27,15 @@ function courseIsAvoided(course, avoidances) {
     || (code && entry.catalogCourseCode === code));
 }
 
+function matchesTemporaryAvoidance(course, entry) {
+  if (String(entry.sectionId) === courseId(course)) return true;
+  if (entry.scope === 'catalog_course' && entry.catalogCourseCode) return entry.catalogCourseCode === course.catalogCourseCode;
+  if (entry.scope === 'instructor' && entry.instructor) {
+    return entry.instructor.trim().toLowerCase() === String(course.instructor ?? course.teacher ?? '').trim().toLowerCase();
+  }
+  return false;
+}
+
 const manualCoursesKey = identity => `fcu:${identity}:manualScheduleCourses`;
 
 function readManualCourses(identity) {
@@ -195,6 +204,8 @@ export function ScheduleProvider({ children }) {
   const userIdentity = getUserIdentity(user);
   const [schedule, setSchedule] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
+  const watchlistRef = useRef([]);
+  const watchQueueRef = useRef(Promise.resolve());
   const [loading, setLoading] = useState(Boolean(user));
   const [hasSavedSchedule, setHasSavedSchedule] = useState(false);
   const [scheduleSaveError, setScheduleSaveError] = useState('');
@@ -214,6 +225,13 @@ export function ScheduleProvider({ children }) {
   // 目前畫面上這份課表來自哪一次推薦。從 saved_schedules 載回時為 null——
   // 那份課表確實不屬於任何一次推薦曝光，不偽造關聯。
   const recommendationRef = useRef(null);
+  const captureScheduleState = useCallback(() => {
+    const generation = accountGenerationRef.current;
+    const courses = scheduleRef.current;
+    const recommendation = recommendationRef.current;
+    return () => generation === accountGenerationRef.current && courses === scheduleRef.current
+      && recommendation === recommendationRef.current;
+  }, []);
   const privacyRef = useRef(privacyStatus);
   privacyRef.current = privacyStatus;
 
@@ -343,7 +361,8 @@ export function ScheduleProvider({ children }) {
         return { success: false, message: '可切換的方案已更新，請再試一次。' };
       }
 
-      const available = course => !courseIsAvoided(course, savedAvoidancesRef.current);
+      const available = course => !courseIsAvoided(course, savedAvoidancesRef.current)
+        && (course.formallyRequired || !avoidancesRef.current.some(entry => matchesTemporaryAvoidance(course, entry)));
       const scheduled = target.schedule.filter(available);
       const unscheduled = (target.unscheduledCourses ?? []).filter(available);
       const missing = missingManualCourses(scheduled, manualCoursesRef.current);
@@ -396,7 +415,8 @@ export function ScheduleProvider({ children }) {
     manualCoursesRef.current = readManualCourses(userIdentity);
     replaceSchedule([]);
     commitSavedAvoidances([]);
-    setWatchlist(normalizeWatchlist(user?.watchlist));
+    watchlistRef.current = normalizeWatchlist(user?.watchlist);
+    setWatchlist(watchlistRef.current);
     // 避開清單是「這個人這一次規劃」的狀態。換帳號時換成那個帳號自己的那一份，
     // 不能讓上一位使用者移除的課繼續影響下一位。
     const storedAvoidances = readStoredAvoidances(userIdentity);
@@ -487,7 +507,8 @@ export function ScheduleProvider({ children }) {
       }
       const id = courseId(course);
       if (!id) return { success: false, code: 'COURSE_ID_REQUIRED', message: '課程缺少班次識別碼。' };
-      if (courseIsAvoided(course, savedAvoidancesRef.current)) {
+      if (courseIsAvoided(course, savedAvoidancesRef.current)
+        || avoidancesRef.current.some(entry => matchesTemporaryAvoidance(course, entry))) {
         return { success: false, message: '這門課已在避開清單中，請先到個人資料設定解除避開。' };
       }
       if (scheduleRef.current.some(item => courseId(item) === id)) {
@@ -559,17 +580,28 @@ export function ScheduleProvider({ children }) {
     }));
   }, [commitAvoidances, emit, requestIdForAction]);
 
-  const changeSavedAvoidance = useCallback((id, avoid, feedbackReason = null) => {
+  const changeSavedAvoidance = useCallback((id, avoid, feedbackReason = null, requestedCourse = null) => {
     const generation = accountGenerationRef.current;
     const operation = addQueueRef.current.then(async () => {
       if (generation !== accountGenerationRef.current || userIdentity === null) {
         return { success: false, message: '登入帳號已變更，請再試一次。' };
       }
-      const removed = avoid ? scheduleRef.current.find(course => courseId(course) === String(id)) : null;
-      if (avoid && !removed) return { success: false, message: '課程已不在目前課表。' };
-      const restored = avoid ? null : savedAvoidancesRef.current.find(item => item.sectionId === Number(id));
+      const matchesTarget = course => courseId(course) === String(id)
+        || (requestedCourse?.catalogCourseCode && course.catalogCourseCode === requestedCourse.catalogCourseCode);
+      const removed = avoid ? scheduleRef.current.find(matchesTarget) : null;
+      if (avoid && !removed && !requestedCourse) return { success: false, message: '課程已不在目前課表。' };
+      const restored = avoid ? null : savedAvoidancesRef.current.find(item =>
+        item.sectionId === Number(id) || (requestedCourse?.catalogCourseCode && item.catalogCourseCode === requestedCourse.catalogCourseCode));
+      const matchingTemporary = item => item.sectionId === Number(id) || (
+        item.scope === 'catalog_course' && item.catalogCourseCode
+        && item.catalogCourseCode === (restored?.catalogCourseCode ?? requestedCourse?.catalogCourseCode)
+      );
       try {
-        const result = await scheduleAPI.updateAvoidance(userIdentity, id, avoid);
+        if (!avoid && !restored && avoidancesRef.current.some(matchingTemporary)) {
+          commitAvoidances(avoidancesRef.current.filter(item => !matchingTemporary(item)));
+          return { success: true };
+        }
+        const result = await scheduleAPI.updateAvoidance(userIdentity, restored?.sectionId ?? id, avoid);
         if (generation !== accountGenerationRef.current) {
           return { success: false, message: '登入帳號已變更。' };
         }
@@ -578,10 +610,7 @@ export function ScheduleProvider({ children }) {
           setScheduleToSave(scheduleRef.current);
           recordWithdrawal(removed, feedbackReason, false);
         }
-        if (restored) {
-          commitAvoidances(avoidancesRef.current.filter(item => item.sectionId !== restored.sectionId
-            && (!restored.catalogCourseCode || item.catalogCourseCode !== restored.catalogCourseCode)));
-        }
+        if (!avoid) commitAvoidances(avoidancesRef.current.filter(item => !matchingTemporary(item)));
         return { success: true };
       } catch (err) {
         return { success: false, message: err.message || '無法儲存避開課程，請再試一次。' };
@@ -597,6 +626,63 @@ export function ScheduleProvider({ children }) {
 
   const restoreAvoidedCourse = useCallback(id => changeSavedAvoidance(id, false), [changeSavedAvoidance]);
 
+  const setCourseAvoidance = useCallback((course, { avoid, scope, reason }) => {
+    if (scope !== 'temporary') return changeSavedAvoidance(courseId(course), avoid, reason, course);
+    const generation = accountGenerationRef.current;
+    const operation = addQueueRef.current.then(() => {
+      if (generation !== accountGenerationRef.current || userIdentity === null) {
+        return { success: false, message: '登入帳號已變更，請再試一次。' };
+      }
+      const entry = buildAvoidanceEntry(course, reason ?? 'other');
+      if (!avoid) {
+        commitAvoidances(avoidancesRef.current.filter(item => !matchesTemporaryAvoidance(course, item)));
+        return { success: true };
+      }
+      const match = item => matchesTemporaryAvoidance(item, entry);
+      const protectedCourse = manualCoursesRef.current.find(item => courseId(item) !== courseId(course) && match(item));
+      if (protectedCourse) return {
+        success: false, message: `避開條件也會影響已保留的「${protectedCourse.name}」，請先確認要保留哪一項。`,
+      };
+      const removed = scheduleRef.current.filter(match);
+      if (removed.length) {
+        const next = scheduleRef.current.filter(item => !match(item));
+        scheduleRef.current = next;
+        setSchedule(next);
+        setScheduleToSave(next);
+        commitManualCourses(manualCoursesRef.current.filter(item => !match(item)));
+        removed.forEach(item => recordWithdrawal(item, reason, false));
+      }
+      commitAvoidances([...avoidancesRef.current.filter(item => item.sectionId !== entry.sectionId), entry]);
+      return { success: true };
+    });
+    addQueueRef.current = operation.catch(() => undefined);
+    return operation;
+  }, [changeSavedAvoidance, commitAvoidances, commitManualCourses, recordWithdrawal, userIdentity]);
+
+  const setCourseLocked = useCallback((id, locked) => {
+    const generation = accountGenerationRef.current;
+    const operation = addQueueRef.current.then(() => {
+      const course = scheduleRef.current.find(item => courseId(item) === String(id));
+      if (!course || generation !== accountGenerationRef.current || userIdentity === null) {
+        return { success: false, message: '課程已不在目前課表，請重新指定班次。' };
+      }
+      const existing = manualCoursesRef.current.find(item => courseId(item) === String(id));
+      if (Boolean(existing?.planningLocked) === locked) return { success: true };
+      const next = manualCoursesRef.current.filter(item => courseId(item) !== String(id));
+      if (locked) next.push({ ...course, planningLocked: true, preserveManualAdd: Boolean(existing) });
+      else if (existing.preserveManualAdd) {
+        const manual = { ...existing };
+        delete manual.planningLocked;
+        delete manual.preserveManualAdd;
+        next.push(manual);
+      }
+      commitManualCourses(next);
+      return { success: true };
+    });
+    addQueueRef.current = operation.catch(() => undefined);
+    return operation;
+  }, [commitManualCourses, userIdentity]);
+
   // Agent 的換課（ADR-036）：伺服器已挑好不衝堂、符合偏好的新課，這裡先驗證
   // 「拿掉舊課＋加入新課」整份課表，通過才真的移除與加入——驗證失敗時課表完全不動，
   // 不會出現舊課被拿掉、新課卻加不進去的半套狀態。
@@ -611,19 +697,14 @@ export function ScheduleProvider({ children }) {
       if (account !== accountGenerationRef.current || !removed || !incomingId || current.some(course => courseId(course) === incomingId)) {
         return { success: false, message: '目前課表與換課時的狀態不同，請重新選擇替代課。' };
       }
-      if (courseIsAvoided(incoming, savedAvoidancesRef.current)) {
+      if (courseIsAvoided(incoming, savedAvoidancesRef.current)
+        || avoidancesRef.current.some(entry => matchesTemporaryAvoidance(incoming, entry))) {
         return { success: false, message: '替代課在避開清單中，請先到個人資料設定解除避開。' };
       }
       const proposed = [...current.filter(course => courseId(course) !== removeId), incoming];
-      const credits = proposed.reduce((sum, course) => sum + Number(course?.credits || 0), 0);
-      if (credits > 30) {
-        return { success: false, message: `替換後共 ${credits} 學分，超過上限 30 學分。` };
-      }
       try {
-        const result = await scheduleAPI.validate(proposed);
-        if (result?.valid !== true || result?.hardConstraintsValid !== true) {
-          return { success: false, ...describeValidationFailure(result) };
-        }
+        const result = await validateManualSelection(proposed);
+        if (!result.success) return result;
       } catch (err) {
         return { success: false, message: `無法驗證課表：${err.message}` };
       }
@@ -633,7 +714,9 @@ export function ScheduleProvider({ children }) {
       scheduleRef.current = proposed;
       setSchedule(proposed);
       setScheduleToSave(proposed);
-      commitManualCourses([...manualCoursesRef.current.filter(course => courseId(course) !== removeId), incoming]);
+      const previous = manualCoursesRef.current.find(course => courseId(course) === removeId);
+      const added = previous?.planningLocked ? { ...incoming, planningLocked: true, preserveManualAdd: true } : incoming;
+      commitManualCourses([...manualCoursesRef.current.filter(course => courseId(course) !== removeId), added]);
       recordWithdrawal(removed, null);
       emit(buildCourseEvent(INTERACTION_EVENT_TYPES.COURSE_SELECTED, incoming, {
         requestId: requestIdForAction(),
@@ -700,44 +783,55 @@ export function ScheduleProvider({ children }) {
     currentCourses: scheduleRef.current
       .map(course => ({ sectionId: Number(courseId(course)) }))
       .filter(entry => Number.isInteger(entry.sectionId) && entry.sectionId > 0),
+    selectedCourses: manualCoursesRef.current
+      .map(course => ({ sectionId: Number(courseId(course)) }))
+      .filter(entry => Number.isInteger(entry.sectionId) && entry.sectionId > 0),
     removedCourses: avoidancesRef.current
       .map(entry => ({ sectionId: entry.sectionId, reason: entry.reason })),
-  }), []);
+    plans: plans.map(plan => ({ id: String(plan.id), title: plan.title || String(plan.id) })),
+    selectedVariantId: recommendationRef.current?.variantId ?? null,
+  }), [plans]);
 
-  const toggleWatchlist = useCallback(async (course) => {
+  const toggleWatchlist = useCallback((course, desiredState) => {
     const requestedGeneration = accountGenerationRef.current;
     const id = courseId(course);
-    if (!id) return { success: false, message: '課程缺少班次識別碼。' };
-    const previous = watchlist;
-    const next = previous.includes(id)
-      ? previous.filter(item => item !== id)
-      : [...previous, id];
-
-    try {
-      const persistedIds = next.map(value => (/^\d+$/.test(value) ? Number(value) : value));
-      const result = await authAPI.updateWatchlist(persistedIds);
+    if (!id) return Promise.resolve({ success: false, message: '課程缺少班次識別碼。' });
+    const operation = watchQueueRef.current.then(async () => {
       if (requestedGeneration !== accountGenerationRef.current) {
-        return { success: false, message: '登入帳號已變更，未更新畫面上的關注清單。' };
+        return { success: false, message: '登入帳號已變更，未更新關注清單。' };
       }
-      setWatchlist(normalizeWatchlist(result?.watchlist ?? next));
-      const watching = next.includes(id);
-      emit(buildCourseEvent(
-        watching
-          ? INTERACTION_EVENT_TYPES.COURSE_FAVORITED
-          : INTERACTION_EVENT_TYPES.COURSE_UNFAVORITED,
-        course,
-        {
-          requestId: requestIdForAction(),
-          source: courseSource(course, {
-            systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
-          }),
+      const previous = watchlistRef.current;
+      const watching = desiredState ?? !previous.includes(id);
+      if (watching === previous.includes(id)) return { success: true, watching };
+      const next = watching ? [...previous, id] : previous.filter(item => item !== id);
+      try {
+        const persistedIds = next.map(value => (/^\d+$/.test(value) ? Number(value) : value));
+        const result = await authAPI.updateWatchlist(persistedIds);
+        if (requestedGeneration !== accountGenerationRef.current) {
+          return { success: false, message: '登入帳號已變更，未更新畫面上的關注清單。' };
         }
-      ));
-      return { success: true, watching };
-    } catch (err) {
-      return { success: false, message: `關注清單更新失敗：${err.message}` };
-    }
-  }, [emit, requestIdForAction, watchlist]);
+        watchlistRef.current = normalizeWatchlist(result?.watchlist ?? next);
+        setWatchlist(watchlistRef.current);
+        emit(buildCourseEvent(
+          watching
+            ? INTERACTION_EVENT_TYPES.COURSE_FAVORITED
+            : INTERACTION_EVENT_TYPES.COURSE_UNFAVORITED,
+          course,
+          {
+            requestId: requestIdForAction(),
+            source: courseSource(course, {
+              systemRecommendedIds: recommendationRef.current?.systemRecommendedIds,
+            }),
+          }
+        ));
+        return { success: true, watching };
+      } catch (err) {
+        return { success: false, message: `關注清單更新失敗：${err.message}` };
+      }
+    });
+    watchQueueRef.current = operation.catch(() => undefined);
+    return operation;
+  }, [emit, requestIdForAction]);
 
   // 開啟課程詳情。放在 context 而不是各頁自己送，兩個頁面才不會各記一套。
   const logCourseViewed = useCallback((course) => {
@@ -832,9 +926,12 @@ export function ScheduleProvider({ children }) {
     applyResolvedAvoidances,
     buildAvoidanceConstraints,
     buildPlanningContext,
+    captureScheduleState,
     userAddedCourseIds,
     addCourse,
     removeCourse,
+    setCourseAvoidance,
+    setCourseLocked,
     applyCourseSwap,
     toggleWatchlist,
     buildRecommendation,
@@ -850,11 +947,11 @@ export function ScheduleProvider({ children }) {
     selectPlan,
   }), [
     acceptRecommendation, activePlan, addCourse, applyCourseSwap, applyGeneratedSchedule, applyResolvedAvoidances,
-    beginScheduleGeneration, buildAvoidanceConstraints, buildPlanningContext, clearSessionAvoidances, userAddedCourseIds,
+    beginScheduleGeneration, buildAvoidanceConstraints, buildPlanningContext, captureScheduleState, clearSessionAvoidances, userAddedCourseIds,
     hasSavedSchedule, loading, logCourseViewed,
     logScheduleRegenerated, personalizationEnabled, planDiversity, plans,
     clearGeneratedSchedule, removeCourse, restoreAvoidedCourse, savedAvoidances, schedule, scheduleSaveError, sessionAvoidances,
-    recommendedPlanId, selectedPlanId, selectPlan, toggleWatchlist, validating, watchlist,
+    recommendedPlanId, selectedPlanId, selectPlan, setCourseAvoidance, setCourseLocked, toggleWatchlist, validating, watchlist,
   ]);
 
   return <ScheduleContext.Provider value={value}>{children}</ScheduleContext.Provider>;

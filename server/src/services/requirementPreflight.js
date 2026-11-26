@@ -19,6 +19,8 @@
 import { normalizeBlockedPeriods, PERIODS_PER_DAY } from '../utils/periods.js';
 import { isActiveTermCourse } from '../data/activeTerm.js';
 import { isRequiredForStudent } from '../skills/courseScope.js';
+import { annotateCourseCategory } from '../skills/courseCategory.js';
+import { scheduleOptionCourseViolation } from '../data/scheduleOptions.js';
 
 // 取出一門課的所有上課時段。
 //
@@ -150,11 +152,42 @@ export function checkPreflightContradictions({
   // (3) 學分區間本身自相矛盾。目前 `constraintService.js` 只是把兩個值直通，
   // 排課引擎也沒有互相比對，因此「最少 20 但最多 15」會一路排到底。
   const { minCredits, maxCredits, maxCoursesPerDay } = constraints;
+  const options = constraints.scheduleOptions;
+  if (options) {
+    const impossibleQuota = options.categoryQuotas?.find(quota =>
+      quota.minCourses > quota.maxCourses || quota.minCredits > quota.maxCredits
+      || ((quota.minCourses > 0 || quota.minCredits > 0) && quota.category !== '必修'
+        && (options.excludeCategories?.includes(quota.category)
+          || (options.includeCategories?.length && !options.includeCategories.includes(quota.category)))));
+    if (impossibleQuota) {
+      questions.push({
+        id: 'confirm-category-quota', type: 'contradiction',
+        prompt: `「${impossibleQuota.category}」的類別限制和要求的門數或學分無法同時成立，要調整哪個條件？`,
+        courseIds: [], constraintIds: ['CATEGORY_QUOTA'],
+      });
+    }
+    const fixedIds = new Set([...(constraints.selectedCourseIds ?? []), ...(constraints.mustTakeCourseIds ?? [])].map(Number));
+    for (const id of fixedIds) {
+      const course = courseById.get(id);
+      if (!course) continue;
+      const violation = scheduleOptionCourseViolation(
+        annotateCourseCategory(course, studentScope), options, timeBlocksOf(course), isRequiredForStudent(course, studentScope)
+      );
+      if (violation) questions.push({
+        id: 'confirm-fixed-section-option', type: 'course-priority',
+        prompt: `「${course.name}」${violation}。要保留這個班次，還是調整條件？`,
+        courseIds: [id], constraintIds: ['SCHEDULE_OPTION'],
+      });
+    }
+  }
   if (Number.isFinite(minCredits) && Number.isFinite(maxCredits) && minCredits > maxCredits) {
+    const belowProfileFloor = Number.isInteger(options?.minCredits) && options.minCredits < minCredits;
     questions.push({
       id: 'confirm-credit-range',
       type: 'contradiction',
-      prompt: `你說最少要 ${minCredits} 學分、最多只能 ${maxCredits} 學分，這兩個條件無法同時成立。`
+      prompt: (belowProfileFloor
+        ? `這個帳號的目前學分下限為 ${minCredits}，高於目標上限 ${maxCredits}。`
+        : `最少要 ${minCredits} 學分、最多只能 ${maxCredits} 學分，這兩個條件無法同時成立。`)
         + '請確認學分範圍。',
       courseIds: [],
       constraintIds: ['CREDIT_FLOOR', 'CREDIT_CEILING'],

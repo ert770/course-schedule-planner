@@ -38,7 +38,9 @@ router.post('/generate', requireIdentity, requireServiceConsent, async (req, res
     // （見 `services/scheduleService.js`），避免兩條路徑各自漂移。
     // `surface`／`trigger` 是哪個畫面、哪個動作觸發了這次排課——只用來標記
     // 曝光事件（roadmap #2），不影響候選池或排課結果。
-    const result = await generateForUser(req.identity, { courseIds, filters, constraints, surface, trigger });
+    const result = await generateForUser(req.identity, { courseIds, filters, constraints, surface, trigger }, {
+      useTemporaryPreference: surface === 'dashboard' && trigger === 'preference_regenerate',
+    });
     res.json(result);
   } catch (err) {
     if (!err.status) console.error('Schedule error:', err);

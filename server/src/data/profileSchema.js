@@ -5,6 +5,7 @@ import { normalizeAdmissionYear } from './graduationRuleVersions.js';
 import { readInterestPreferences, normalizePreferencesJson, REMOVED_INTEREST_FIELDS } from './interestPreferences.js';
 import { readPersonalizationPreferences } from './personalizationPreferences.js';
 import { readSemesterPlanningPreferences } from './semesterPlanningPreferences.js';
+import { readScheduleOptions } from './scheduleOptions.js';
 
 // Profile 的 canonical shape 永遠標記為這個版本。
 //
@@ -54,6 +55,7 @@ export function normalizeProfile(profile = {}) {
     // 形狀的物件當 profile 正規化」這條沒人走的路，constraints 那邊完全不受影響。
     targetCreditsMax: toFiniteNumber(profile.targetCreditsMax, 25),
     blockedPeriods: normalizeBlockedPeriods(profile.blockedPeriods ?? []),
+    scheduleOptions: readScheduleOptions(profile),
     preferenceTags: tags,
     selectedTags: tags,
     preferredCategories: tags,

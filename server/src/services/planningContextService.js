@@ -118,6 +118,10 @@ export async function resolvePlanningContext(identity, context, deps = {}) {
       activePlanId,
       activeVariantId: exposure ? context.activeVariantId : null,
       currentCourses,
+      ...(currentCourses.length < context.currentCourses.length
+        ? { unresolvedCurrentCourses: context.currentCourses.length - currentCourses.length } : {}),
+      ...(context.plans ? { plans: context.plans, selectedVariantId: context.selectedVariantId } : {}),
+      ...(context.selectedCourses ? { selectedCourseIds: context.selectedCourses.map(course => course.sectionId) } : {}),
       removedCourses,
       // 有曝光佐證時才能說「這是系統推薦給你的課表」。沒有的時候只能說
       // 「畫面目前的課程」——措辭的差別就是這個布林的全部用途。

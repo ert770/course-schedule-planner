@@ -17,6 +17,8 @@ import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
+import { applyAgentScheduleAction } from '../utils/applyAgentScheduleAction';
+import { describeAcceptOutcome, wasRecorded } from '../services/interactionLog';
 import { getUserIdentity } from '../utils/userIdentity';
 import { Send, Search, Loader2, Calendar, LayoutDashboard, Settings, Moon, Sun, CheckCircle2, Sparkles, Compass } from 'lucide-react';
 
@@ -148,8 +150,12 @@ function Dashboard({ user, userIdentity }) {
     applyGeneratedSchedule,
     beginScheduleGeneration,
     clearGeneratedSchedule,
+    addCourse,
     removeCourse,
     applyCourseSwap,
+    setCourseAvoidance,
+    setCourseLocked,
+    toggleWatchlist,
     buildRecommendation,
     logCourseViewed,
     logScheduleRegenerated,
@@ -168,6 +174,7 @@ function Dashboard({ user, userIdentity }) {
     buildAvoidanceConstraints,
     userAddedCourseIds,
     buildPlanningContext,
+    captureScheduleState,
   } = useSchedule();
   const [scheduleNotice, setScheduleNotice] = useState(null);
   const [switchingPlan, setSwitchingPlan] = useState(false);
@@ -536,6 +543,7 @@ function Dashboard({ user, userIdentity }) {
     chatSendingRef.current = true;
     setChatLoading(true);
     const planningContext = buildPlanningContext();
+    const isSameSchedule = captureScheduleState();
     const courseCount = planningContext.currentCourses.length;
     const avoidedCount = planningContext.removedCourses.length;
     const submittedContext = {
@@ -586,7 +594,36 @@ function Dashboard({ user, userIdentity }) {
         await loadSavedPreferences();
       }
 
-      if (res.data?.success && res.data?.swap) {
+      if (res.data?.scheduleAction) {
+        if (!isSameSchedule()) {
+          appendReply('送出指令後課表已變更，請再說一次要執行的操作。');
+          return;
+        }
+        updateActivity({ id: 'schedule-action', title: '核對目前課表並執行', state: 'running' });
+        const outcome = await applyAgentScheduleAction(res.data.scheduleAction, {
+          addCourse, removeCourse, applyCourseSwap, setCourseAvoidance, setCourseLocked, toggleWatchlist,
+          plans, selectedPlanId, selectPlan: handleSelectPlan,
+          applyFeedback: async action => {
+            if (action.feedback === 'accept') {
+              const outcome = await handleConfirmFit();
+              return { success: true, message: describeAcceptOutcome(outcome) };
+            }
+            setConfirmation({ state: 'adjusting' });
+            if (wasRecorded(action.feedbackResult)) return { success: true, message: '已記錄這門課需要調整的原因。' };
+            if (action.feedbackResult) return { success: true, message: '已標記需要調整。這次沒有可保存的學習紀錄。' };
+            return { success: true, message: '已標記需要調整。你想調整哪一門課，原因是什麼？' };
+          },
+        });
+        updateActivity({
+          id: 'schedule-action', title: outcome.success ? '課表指令已處理' : '未套用課表操作',
+          state: outcome.success ? 'done' : 'failed',
+        });
+        appendReply(outcome.success ? outcome.message : `已保留目前課表。${outcome.message}`);
+      } else if (res.data?.success && res.data?.swap) {
+        if (!isSameSchedule()) {
+          appendReply('送出指令後課表已變更，請再指定要換的班次。');
+          return;
+        }
         // Agent 換課：伺服器已挑好新課，前端驗證整份課表後移除舊課、加入新課。
         const { swap } = res.data;
         const incoming = swap.addCourse;
@@ -641,6 +678,7 @@ function Dashboard({ user, userIdentity }) {
   const handleConfirmFit = async () => {
     const outcome = await acceptRecommendation();
     setConfirmation(current => current === confirmation ? { state: 'accepted', outcome } : current);
+    return outcome;
   };
   const dismissConfirmation = useCallback(() => setConfirmation(null), []);
 
@@ -668,7 +706,8 @@ function Dashboard({ user, userIdentity }) {
   // 選中方案自己的，不是繼續顯示前一個方案的——否則畫面上的課表已經換了，
   // 底下的「有 N 門課未被排入」卻還是舊方案的數字。
   const handleSelectPlan = async (variantId) => {
-    if (switchingPlan || schedulingRef.current || variantId === selectedPlanId) return;
+    if (variantId === selectedPlanId) return { success: true };
+    if (switchingPlan || schedulingRef.current) return { success: false, message: '課表正在更新，請稍後再切換。' };
     const target = plans.find(plan => plan.id === variantId);
     setSwitchingPlan(true);
     try {
@@ -678,9 +717,10 @@ function Dashboard({ user, userIdentity }) {
           level: 'error',
           message: `已保留目前方案。${result.message}`,
         }));
-        return;
+        return result;
       }
       setScheduleNotice(buildScheduleNoticeForPlan({ success: true }, target));
+      return result;
     } finally {
       setSwitchingPlan(false);
     }

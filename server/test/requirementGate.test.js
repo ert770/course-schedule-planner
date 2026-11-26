@@ -172,7 +172,7 @@ describe('AG11 排課前的矛盾與資料不足偵測', () => {
     await executeAgentTool(
       'run_csp_scheduler',
       { mustTakeCourseIds: [55], blockedPeriods: [{ day: 2, period: 3 }], interpretation: validInterpretation },
-      { ...ctx, studentScope: { resolved: true } },
+      { ...ctx, prefs: {}, studentScope: { resolved: true } },
       {
         generateSchedule: () => { scheduled = true; return { success: true }; },
         lookupCourses: async () => new Map([[55, course]]),

@@ -52,6 +52,10 @@ import {
   DEFAULT_SOLVER_SEED,
 } from './scheduleSolver.js';
 import { resolveMinCredits } from '../data/creditPolicy.js';
+import {
+  scheduleOptionCourseViolation, scheduleOptionScore, scheduleOptionRankingCount, SCHEDULE_OPTION_SCORE,
+  categoryQuotaStatus, categoryQuotaViolations, scheduleCategory,
+} from '../data/scheduleOptions.js';
 import { generateDiverseCandidates } from './optimization/diversePlanSolver.js';
 import { selectDiverseSubset, SUBSET_BASE_ID, SUBSET_SELECTION_METHOD } from './optimization/diverseSubsetSelector.js';
 import { checkMilpPlan } from './optimization/milpPlanChecks.js';
@@ -558,6 +562,14 @@ const HARD_REASON_TO_CONSTRAINT_ID = {
   '位於封鎖時段': 'BLOCKED_PERIODS',
   '不符合午休保留偏好': 'LUNCH_BREAK_FREE',
   '不符合避開教師限制': 'AVOID_INSTRUCTOR',
+  '該班次已指定不排': 'SCHEDULE_OPTION',
+  '上課時間不在指定時段': 'SCHEDULE_OPTION',
+  '課程類別不在指定範圍': 'SCHEDULE_OPTION',
+  '課程類別已指定不排': 'SCHEDULE_OPTION',
+  '必修課與指定避開的類別衝突': 'SCHEDULE_OPTION',
+  '授課教師不在指定範圍': 'SCHEDULE_OPTION',
+  '課程學分不符': 'SCHEDULE_OPTION',
+  '課程授課語言不符': 'SCHEDULE_OPTION',
 };
 
 function constraintIdForHardReason(reason) {
@@ -674,6 +686,8 @@ function hardConstraintReason(course, constraints, options = {}) {
   // 只涵蓋內容偏好關鍵字判定，不含這 4 項）。
   const blocks = getTimeBlocks(course);
   const skipTimePreferences = options.skipTimePreferences === true;
+  const optionViolation = scheduleOptionCourseViolation(course, constraints.scheduleOptions, blocks, skipTimePreferences);
+  if (optionViolation) return optionViolation;
 
   // 真實 Course_Sections.teacher 目前 1,248 個相異值都只有單一教師，沒有
   // 逗號、頓號、斜線等多人分隔格式，因此採去除前後空白後的完整名稱比對。
@@ -1213,6 +1227,14 @@ export function evaluatePreference(plan, constraints, profile) {
     { value: breakdown.compact, weight: profile.compact },
     { value: breakdown.easy, weight: profile.easy },
   ].filter(axis => Math.abs(axis.weight) > 0 && axis.value !== null);
+  const rankingCount = scheduleOptionRankingCount(constraints.scheduleOptions);
+  if (rankingCount) {
+    const optional = scheduledCourses(plan).filter(course => !course.formallyRequired);
+    breakdown.explicit = optional.reduce((sum, course) =>
+      sum + scheduleOptionScore(course, constraints.scheduleOptions, getTimeBlocks(course)), 0
+    ) / (SCHEDULE_OPTION_SCORE * rankingCount * Math.max(1, optional.length));
+    axes.push({ value: breakdown.explicit, weight: 2 });
+  }
 
   const weightSum = axes.reduce((sum, axis) => sum + Math.abs(axis.weight), 0);
   const score = weightSum === 0
@@ -1259,6 +1281,9 @@ function computeScoreComponents(
     category: -categoryPriority * CATEGORY_WEIGHT * policy.categoryCoefficient,
     credits: (course.credits || 0) * 12 * policy.creditCoefficient,
     contentPreference: getContentPreferenceScore(course, constraints),
+    ...(constraints.scheduleOptions ? {
+      explicitPreference: scheduleOptionScore(course, constraints.scheduleOptions, getTimeBlocks(course)),
+    } : {}),
     ...computePreferenceComponents(features, policy),
   };
 
@@ -1639,6 +1664,14 @@ function evaluateCoursePlacement(plan, course, constraints, options = {}) {
       message: hardReason,
       constraintId: constraintIdForHardReason(hardReason),
     };
+  }
+  const categoryQuotas = constraints.scheduleOptions?.categoryQuotas;
+  if (categoryQuotas?.length) {
+    const violations = categoryQuotaViolations(
+      [...scheduledCourses(plan), course], categoryQuotas.filter(quota => quota.category === scheduleCategory(course)),
+      { checkMinimum: false }
+    );
+    if (violations.length) return { allowed: false, message: violations[0], constraintId: 'CATEGORY_QUOTA' };
   }
 
   // 豁免只在課程真的被排入時才揭露——若稍後因衝堂或學分上限等其他原因
@@ -2704,7 +2737,7 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
     && hasScheduledTime(course)
     && course.corequisiteRole !== 'internship'
   ));
-  const graduationAllocation = createGraduationAllocationState(
+  const graduationAllocation = constraints.scheduleOptions?.categoryQuotas?.length ? null : createGraduationAllocationState(
     plan, constraints, scope, remaining, diagnosticOptions.externalInterestReservation
   );
 
@@ -2758,6 +2791,7 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
         minCredits: plan.minCredits,
         maxCredits: plan.maxCredits,
         maxCoursesPerDay: plan.maxCoursesPerDay,
+        categoryQuotas: constraints.scheduleOptions?.categoryQuotas,
         explicitIds: [...collectExplicitCourseIds(constraints)],
         graduationPlanning: plan.graduationPlanning ?? null,
         fixedGraduationBuckets: graduationBucketSummary(plan, scope),
@@ -2877,7 +2911,14 @@ function buildPlan(prepared, constraints, variant, diagnosticOptions = {}) {
       }
     }
 
+    const quotas = constraints.scheduleOptions?.categoryQuotas;
+    const unmetCategories = new Set(quotas?.length
+      ? categoryQuotaStatus(scheduledCourses(plan), quotas)
+        .filter(quota => quota.courses < quota.minCourses || quota.credits < quota.minCredits).map(quota => quota.category)
+      : []);
     phaseCandidates.sort((a, b) => (
+      Number(unmetCategories.has(scheduleCategory(b))) - Number(unmetCategories.has(scheduleCategory(a)))
+      ||
       (!toppingUp && phase === GRADUATION_BUCKET.EXTERNAL && graduationAllocation?.reserveExternal
         ? (graduationAllocation.preferred.find(item => item.courseCode === b.catalogCourseCode)?.score ?? 0)
           - (graduationAllocation.preferred.find(item => item.courseCode === a.catalogCourseCode)?.score ?? 0)
@@ -3259,6 +3300,12 @@ function compareSolverObjectives(left, right, constraints, preferenceProfile, re
   const leftMeetsMin = left.plan.totalCredits >= left.plan.minCredits ? 1 : 0;
   const rightMeetsMin = right.plan.totalCredits >= right.plan.minCredits ? 1 : 0;
   if (leftMeetsMin !== rightMeetsMin) return leftMeetsMin - rightMeetsMin;
+  const quotas = constraints.scheduleOptions?.categoryQuotas;
+  if (quotas?.length) {
+    const leftUnmet = categoryQuotaViolations(scheduledCourses(left.plan), quotas).length;
+    const rightUnmet = categoryQuotaViolations(scheduledCourses(right.plan), quotas).length;
+    if (leftUnmet !== rightUnmet) return rightUnmet - leftUnmet;
+  }
 
   const leftPreference = evaluatePreference(left.plan, constraints, preferenceProfile).score;
   const rightPreference = evaluatePreference(right.plan, constraints, preferenceProfile).score;
@@ -3342,6 +3389,12 @@ function buildClarification(status, unmetRequirements, conflictSet) {
         prompt: '請確認哪些具體課程或班次一定要排入；若必要課程互相衝突，請指出優先保留哪一門。',
         courseIds: unmet.courseIds,
         constraintIds: unmet.constraintIds,
+      });
+    } else if (unmet.type === 'schedule-option') {
+      questions.push({
+        id: 'confirm-schedule-option', type: 'course-priority',
+        prompt: `${unmet.reason}。這個條件可以調整嗎？`,
+        courseIds: unmet.courseIds, constraintIds: unmet.constraintIds,
       });
     } else if (unmet.type === 'credit-floor') {
       questions.push({
@@ -4426,7 +4479,7 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   const preferenceProfile = buildPreferenceProfile(constraints);
   // roadmap #5B：權重可能為負（挑戰難課），`> 0` 會把「明確表態要挑戰難課」
   // 誤判成「沒表達偏好」——判定改用絕對值，正負都算「有表達」。
-  const hasExpressedPreference = Object.values(preferenceProfile)
+  const hasExpressedPreference = scheduleOptionRankingCount(constraints.scheduleOptions) > 0 || Object.values(preferenceProfile)
     .some(weight => Number.isFinite(weight) && Math.abs(weight) > 0);
 
   // roadmap #5B：附加式的可觀察欄位，讓「學到的權重是否真的套用」不必解讀
@@ -4525,7 +4578,12 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
     : null;
   const collapsedVariantWarning = describePlanCollapse(planDiversity);
 
-  const baselinePrimary = basePlan;
+  const satisfiesCustomTargets = plan => plan?.success && validateScheduleAgainstConstraints(
+    scheduledCourses(plan), constraints, { excludedCourses: plan.excludedCourses }
+  ).valid;
+  const hasCustomTargets = Boolean(constraints.scheduleOptions?.categoryQuotas?.length)
+    || Number.isInteger(constraints.scheduleOptions?.minCredits);
+  const baselinePrimary = hasCustomTargets ? (plans.find(satisfiesCustomTargets) ?? basePlan) : basePlan;
   const baselineCheck = baselinePrimary?.success
     ? validateScheduleAgainstConstraints(
       [...baselinePrimary.schedule, ...baselinePrimary.unscheduledCourses],
@@ -4581,6 +4639,10 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   for (const shadow of interestShadows) {
     updatePlanVectorInterestShadowStats(plans, shadow.context, constraints, prepared.scope, shadow.stats);
   }
+  if (hasCustomTargets) {
+    const eligiblePlans = plans.filter(satisfiesCustomTargets);
+    if (eligiblePlans.length) plans = eligiblePlans;
+  }
   let primary = plans[0];
   const solver = repair?.solver || {
     status: primary?.success && baselineCheck.valid ? 'solved' : 'infeasible',
@@ -4603,7 +4665,13 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
   }
   const draftSchedule = repair?.draftSchedule || [];
   const draftUnscheduledCourses = repair?.draftUnscheduledCourses || [];
-  const unmetRequirements = [...(repair?.unmetRequirements ?? []), ...prepared.avoidedRequirements];
+  const optionRequirements = repair?.plan ? [] : (baselineCheck.violations ?? [])
+    .filter(({ constraintId }) => ['CATEGORY_QUOTA', 'CREDIT_TARGET', 'SCHEDULE_OPTION'].includes(constraintId))
+    .map(({ constraintId, reason, courses }) => ({
+      type: 'schedule-option', courseIds: courses.map(course => course.id),
+      constraintIds: [constraintId], reason, adjustable: true,
+    }));
+  const unmetRequirements = [...(repair?.unmetRequirements ?? []), ...prepared.avoidedRequirements, ...optionRequirements];
   const clarification = prepared.avoidedRequirements.length === 0 && repair?.clarification
     ? repair.clarification
     : buildClarification(solver.status, unmetRequirements, repair?.conflictSet || []);
@@ -4615,7 +4683,9 @@ export function generateSchedule(candidateCourses, rawConstraints = {}, runtimeO
       const requiredFirstVariant = strategies[0];
       const relaxed = tryRelaxationLadder(prepared, constraints, requiredFirstVariant, runtimeOptions);
 
-      if (relaxed) {
+      if (relaxed && validateScheduleAgainstConstraints(scheduledCourses(relaxed.plan), relaxed.relaxedFlags, {
+        excludedCourses: relaxed.plan.excludedCourses,
+      }).valid) {
         const { score, breakdown } = evaluatePreference(
           relaxed.plan, relaxed.relaxedFlags, buildPreferenceProfile(relaxed.relaxedFlags)
         );

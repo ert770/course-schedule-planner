@@ -9,6 +9,7 @@
 // 瀏覽器實測作為證據（見 2026-09-20 的任務 3A 變更報告）。
 import { isDepartmentInput } from '../utils/text.js';
 import { INTEREST_SELECTION_GROUPS, REMOVED_INTEREST_FIELDS } from './interestPreferences.js';
+import { normalizeScheduleOptions } from './scheduleOptions.js';
 
 // 三組選單、每組每次最多 8 個類別，另留餘裕給之後調整；超過一定是異常請求。
 const MAX_INTEREST_SELECTIONS = 48;
@@ -22,6 +23,13 @@ const ARRAY_FIELDS = Object.freeze([
  * @returns `null` 代表通過；否則回傳要直接送給呼叫端的錯誤訊息字串。
  */
 export function validateProfileUpdate(updates = {}) {
+  if (updates.scheduleOptions !== undefined) {
+    const options = updates.scheduleOptions;
+    if (!options || typeof options !== 'object' || Array.isArray(options)
+      || Object.keys(normalizeScheduleOptions(options)).length !== Object.keys(options).length) {
+      return 'scheduleOptions 包含無效的排課條件';
+    }
+  }
   // 型別錯誤的 department 必須在邊界擋下，不能靠正規化「救回來」。物件、陣列、數字
   // 經字串轉換後會變成看起來正常的值寫進資料庫，之後所有系所比對都會失敗且無從察覺。
   if (updates.department !== undefined && !isDepartmentInput(updates.department)) {

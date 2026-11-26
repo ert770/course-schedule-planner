@@ -51,6 +51,16 @@ import {
   createEvidenceLedger, recordToolEvidence, recordContextCourseEvidence, enforceFaithfulReply,
 } from './explanationFaithfulness.js';
 import { sha256Hex } from '../utils/hash.js';
+import {
+  SCOPE_PROMPT, TEMPORARY_REPLY, SAVED_REPLY, preferenceScope, isScopeAnswer, requestsReplan,
+  parseSimplePreference, creditGoalQuestion, cleanPreferenceArgs, mergeBlockedPeriodChanges,
+  deferPreferenceScope, resolvePreferenceScope, stageTemporaryPreference,
+  readTemporaryPreference, consumeTemporaryPreference,
+  askSavedTopicChoice, resolveSavedTopicChoice,
+} from './chatPreferenceService.js';
+import {
+  parseScheduleAction, prepareScheduleAction, rememberScheduleActionChoice, resumeScheduleAction,
+} from './scheduleActionService.js';
 
 let ai = null;
 
@@ -785,6 +795,9 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         };
       }
 
+      case 'manage_schedule':
+        return await prepareScheduleAction(args, ctx, { lookupCourses, searchCourses, recordFeedback });
+
       case 'search_dcard_reviews': {
         const courses = await searchCourses({ keyword: args.keyword }, studentScope);
         if (courses.length === 0) return { error: '找不到該課程的評價', errorCode: 'REVIEWS_NOT_FOUND' };
@@ -806,8 +819,17 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // 照排），或使用者指名必修的課正好落在他自己設的封鎖時段裡。
         // `interpretation` 是給使用者看的理解回講，不是排課條件——要從送進排課
         // 引擎的 constraints 裡拆出來，否則會被當成一個不認得的限制欄位。
-        const { interpretation = null, removalReasonResolutions = null, ...schedulingArgs } = args;
+        const { interpretation = null, removalReasonResolutions = null, ...directArgs } = args;
         const watchingIds = args.watchingCourseIds ?? [];
+        const temporary = readTemporaryPreference(identity, prefs);
+        const schedulingArgs = { ...temporary?.constraints, ...directArgs };
+        if (temporary?.constraints.scheduleOptions || directArgs.scheduleOptions) {
+          schedulingArgs.scheduleOptions = {
+            ...temporary?.constraints.scheduleOptions, ...directArgs.scheduleOptions,
+          };
+        }
+        const manualIds = ctx.planningContext?.selectedCourseIds;
+        if (manualIds !== undefined) schedulingArgs.selectedCourseIds = manualIds;
 
         // 本次避開清單由**伺服器**合併，不依賴模型把它重送一次。
         //
@@ -827,15 +849,20 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         // 濾掉查無對應課程的 id，見 Roadmap #25。
         // 避開的班次也要載入，否則 preflight 的「避開課與必修衝突」檢查在
         // `courseById` 裡查不到課程、永遠不會觸發。
+        const effective = buildScheduleConstraints(schedulingArgs, prefs);
         const courseById = await lookupCourses([
-          ...(args.mustTakeCourseIds ?? []),
-          ...(args.selectedCourseIds ?? []),
+          ...effective.mustTakeCourseIds,
+          ...(schedulingArgs.selectedCourseIds ?? []),
           ...watchingIds,
           ...sessionAvoidances.map(entry => entry.sectionId),
         ]);
 
         const contradiction = preflight({
-          constraints: { ...args, sessionAvoidances },
+          constraints: {
+            ...schedulingArgs,
+            ...effective,
+            interpretation,
+          },
           studentScope,
           // chat 這條路一定要有理解回講——schema 的巢狀 required 在非 strict
           // 模式下不被 API 強制，實測模型會送空物件過來。
@@ -870,6 +897,7 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         const scheduled = await generateSchedule(
           identity, { constraints: schedulingArgs, surface: 'chat', trigger: 'chat_tool' }, { prefs }
         );
+        if (scheduled.success) consumeTemporaryPreference(identity, temporary);
 
         if (droppedWatchingIds.length > 0) {
           scheduled.warnings = [
@@ -903,8 +931,23 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
         const { interests: _interests, preferredKeywords: _keywords, ...preferenceArgs } = args;
         const droppedInterest = _interests !== undefined || _keywords !== undefined;
         const { confirmationToken: _token, ...rawChanges } = preferenceArgs;
-        const requested = expandPreferenceChecklist(rawChanges);
+        const { addBlockedPeriods, removeBlockedPeriods, ...fields } = rawChanges;
+        const requested = expandPreferenceChecklist(fields);
+        const sectionIds = [
+          ...(requested.scheduleOptions?.requiredSectionIds ?? []),
+          ...(requested.scheduleOptions?.excludedSectionIds ?? []),
+        ];
+        if (sectionIds.length) {
+          const matched = await lookupCourses(sectionIds);
+          if (sectionIds.some(id => !matched.has(id))) {
+            return { error: '查不到指定班次，請確認班次編號。', errorCode: 'SECTION_NOT_FOUND' };
+          }
+        }
+        if (addBlockedPeriods?.length || removeBlockedPeriods?.length) {
+          requested.blockedPeriods = mergeBlockedPeriodChanges(rawChanges, prefs?.blockedPeriods);
+        }
         const changes = dropNoopPreferenceChanges(requested, prefs ?? {});
+        if (removeBlockedPeriods?.length && requested.blockedPeriods?.length === 0) changes.blockedPeriods = [];
         if (droppedInterest && Object.keys(changes).length === 0 && !preferenceArgs.confirmationToken) {
           return {
             noChange: true,
@@ -1016,6 +1059,93 @@ function followsPreferenceQuestion(history) {
   return /排課偏好|偏好設定/u.test(lastQuestion) || ALL_TAGS.some(tag => lastQuestion.includes(tag.slice(1)));
 }
 
+async function replyToScheduleAction(identity, message, args, options, ctx) {
+  const save = options.saveExchange ?? saveChatExchange;
+  const run = options.executeTool ?? executeAgentTool;
+  const result = options.invalidPlanningContext
+    ? { error: '無法核對目前課表，請重新整理後再試。' }
+    : await run('manage_schedule', args, { ...ctx, userMessage: message });
+  if (result.choice) {
+    rememberScheduleActionChoice(identity, {
+      ...args, ...(result.resolvedSectionId ? { sectionId: result.resolvedSectionId } : {}),
+    }, result.choice);
+  }
+  const reply = result.message ?? result.error ?? '已將操作交給目前課表處理。';
+  await save(identity, message, reply);
+  return { reply, intent: 'manage_schedule', data: result.scheduleAction ? result : null };
+}
+
+async function applyChatPreference(identity, action, options) {
+  const saveExchange = options.saveExchange ?? saveChatExchange;
+  const loadPreferences = options.loadPreferences ?? getUserPreferences;
+  const runTool = options.executeTool ?? executeAgentTool;
+  const { message, planningContext, invalidPlanningContext } = options;
+  const { scope, replan, toolName, args } = action;
+  const replyWith = async (reply, extra = {}) => {
+    await saveExchange(identity, message, reply);
+    return { reply, intent: 'general_chat', data: null, ...extra };
+  };
+
+  if (toolName && !scope) {
+    deferPreferenceScope(identity, toolName, args, replan);
+    return replyWith(SCOPE_PROMPT);
+  }
+
+  const prefs = await loadPreferences(identity);
+  const ctx = { identity, prefs, studentScope: buildStudentScope(prefs) };
+  let saved = false;
+  if (scope === 'saved') {
+    const result = await runTool(toolName, args, ctx);
+    if (result?.needsChoice?.length) return replyWith(askSavedTopicChoice(identity, result.needsChoice, replan));
+    if (!result?.success && !result?.noChange) {
+      return replyWith(result?.message ?? result?.error ?? '這項偏好暫時無法保存，請再試一次。');
+    }
+    if (result.tooCommon?.length && !result.success) {
+      const terms = result.tooCommon.map(item => item.term);
+      deferPreferenceScope(identity, toolName, { addTerms: terms }, replan);
+      return replyWith(`「${terms.join('、')}」目前只能做本次排課的主題。回覆「這次」即可採用。`);
+    }
+    saved = result.success === true;
+  } else if (toolName && scope === 'temporary') {
+    if (toolName === 'update_topic_interests' && !args.addTerms?.length) {
+      return replyWith('請告訴我這次想排的課程主題，我可以依照主題重排。');
+    }
+    stageTemporaryPreference(identity, args, { topic: toolName === 'update_topic_interests' });
+  }
+
+  const updated = saved ? { preferencesUpdated: true } : {};
+  const acknowledgment = scope === 'temporary' ? TEMPORARY_REPLY
+    : saved ? SAVED_REPLY : '這項偏好和目前保存的設定相同。';
+  if (!replan) return replyWith(acknowledgment, updated);
+
+  const resolvePlanning = options.resolvePlanning ?? resolvePlanningContext;
+  const resolved = await resolvePlanning(identity, planningContext);
+  if (invalidPlanningContext || resolved.status !== PLANNING_CONTEXT_STATUS.ACCEPTED) {
+    return replyWith('目前無法核對課表，請重新整理後再重排。', updated);
+  }
+  ctx.planningContext = resolved.value;
+  const interpretation = {
+    nonNegotiable: [], flexible: [],
+    creditGoal: { min: args.scheduleOptions?.minCredits ?? null, max: args.scheduleOptions?.maxCredits ?? args.targetCreditsMax ?? null },
+    notMentioned: [],
+  };
+  const result = await runTool('run_csp_scheduler', { interpretation }, ctx);
+  if (!result?.success) {
+    const reason = result?.clarification?.questions?.[0]?.prompt ?? result?.unmetRequirements?.[0]?.reason
+      ?? result?.message ?? result?.error;
+    const reply = [scope === 'saved' ? '偏好已同步，課表保留原樣。' : '這次未能重排，課表保留原樣。', reason].filter(Boolean).join('');
+    return replyWith(reply, updated);
+  }
+  const requiredNotes = (result.warnings ?? []).filter(warning => /必修優先/u.test(warning)).slice(0, 2);
+  if (args.scheduleOptions?.includeCategories?.length
+    && result.schedule.some(course => course.formallyRequired && !args.scheduleOptions.includeCategories.includes(course.category))) {
+    requiredNotes.push('本人必修仍保留，課程類別條件已用於可選課。');
+  }
+  return replyWith(['已依你剛才的條件重新排課。', ...requiredNotes].join(''), {
+    ...updated, intent: 'run_csp_scheduler', data: result,
+  });
+}
+
 export async function handleChat(identity, message, planningContext = null, options = {}) {
   logger.info('收到已驗證的聊天請求', { label: 'AgentCore', messageLength: message.length });
 
@@ -1023,6 +1153,41 @@ export async function handleChat(identity, message, planningContext = null, opti
   const loadPreferences = options.loadPreferences ?? getUserPreferences;
   const saveExchange = options.saveExchange ?? saveChatExchange;
   const text = message.trim().replace(/[。？！?!]+$/u, '');
+  const scheduleAction = resumeScheduleAction(identity, message) ?? parseScheduleAction(message);
+  if (scheduleAction) {
+    const prefs = await loadPreferences(identity);
+    const resolvePlanning = options.resolvePlanning ?? resolvePlanningContext;
+    const resolved = options.invalidPlanningContext ? null : await resolvePlanning(identity, planningContext);
+    return replyToScheduleAction(identity, message, scheduleAction, options, {
+      identity, prefs, studentScope: buildStudentScope(prefs), planningContext: resolved?.value ?? null,
+    });
+  }
+  const isQuestion = /[?？]$/u.test(message.trim());
+  const scopedAction = !isQuestion && resolvePreferenceScope(identity, text);
+  const creditGoal = !isQuestion && !scopedAction && creditGoalQuestion(identity, text);
+  const simplePreference = !isQuestion && parseSimplePreference(text);
+  const scope = preferenceScope(text);
+  const replan = requestsReplan(text);
+  const actionOptions = { ...options, message, planningContext };
+  if (creditGoal?.reply) {
+    await saveExchange(identity, message, creditGoal.reply);
+    return { reply: creditGoal.reply, intent: 'general_chat', data: null };
+  }
+  if (creditGoal?.args) return applyChatPreference(identity, creditGoal, actionOptions);
+  if (scopedAction || simplePreference) {
+    return applyChatPreference(identity, scopedAction ?? {
+      scope, replan, toolName: 'update_preferences', args: simplePreference,
+    }, actionOptions);
+  }
+  if (!isQuestion && isScopeAnswer(text)) {
+    const reply = '目前沒有待確認的條件，請告訴我你想調整哪一項。';
+    await saveExchange(identity, message, reply);
+    return { reply, intent: 'general_chat', data: null };
+  }
+  const bareReplan = /^(?:(?:請|再)?幫我)?(?:重排|重新排課|套用偏好排課|照這樣排|照這些條件排)(?:一下)?$/u.test(text);
+  if (bareReplan && readTemporaryPreference(identity, {})) {
+    return applyChatPreference(identity, { scope: 'temporary', replan: true, args: {} }, actionOptions);
+  }
   const explicitStatusQuestion = /^(?:請問)?(?:現在|目前)(?:的)?(?:已存|已保存|已儲存)?(?:排課偏好|偏好設定)(?:有哪些|是什麼|是哪些)?$/u.test(text);
   const shortFollowUp = /^(?:那[， ]*)?(?:現在|目前)呢$/u.test(text);
   const earlierMessages = shortFollowUp ? await loadHistory(identity, 20) : null;
@@ -1033,7 +1198,7 @@ export async function handleChat(identity, message, planningContext = null, opti
     return { reply, intent: 'general_chat', data: null };
   }
 
-  const client = getAIClient();
+  const client = options.aiClient ?? getAIClient();
   if (!client) {
     const errorMsg = '系統發生錯誤：伺服器未設定 OPENAI_API_KEY。';
     logger.error('遺失 OPENAI_API_KEY', { label: 'AgentCore' });
@@ -1065,7 +1230,7 @@ export async function handleChat(identity, message, planningContext = null, opti
   let planningContextStatus = PLANNING_CONTEXT_STATUS.ACCEPTED;
   let resolvedPlanning = null;
   try {
-    const outcome = await resolvePlanningContext(identity, planningContext);
+    const outcome = await (options.resolvePlanning ?? resolvePlanningContext)(identity, planningContext);
     planningContextStatus = outcome.status;
     resolvedPlanning = outcome.value;
   } catch (err) {
@@ -1097,7 +1262,7 @@ export async function handleChat(identity, message, planningContext = null, opti
   // 不因為 prompt 裡有規劃狀態就放寬。
   const hasPlanningState = Boolean(
     resolvedPlanning
-    && (resolvedPlanning.currentCourses.length > 0 || resolvedPlanning.removedCourses.length > 0)
+    && (resolvedPlanning.currentCourses.length > 0 || resolvedPlanning.removedCourses.length > 0 || resolvedPlanning.plans?.length > 0)
   );
   const systemInstruction = buildSystemPrompt(prefs, {
     latestExposure,
@@ -1131,6 +1296,9 @@ export async function handleChat(identity, message, planningContext = null, opti
   // 每次都丟掉最近一則助理回覆——那是 Gemini `chats.create` 的 history 形狀
   // 限制留下的痕跡，在這裡只會弄壞對話連續性，因此不保留。
   const history = earlierMessages ?? await loadHistory(identity, 20);
+  const lastReply = history.findLast(entry => entry.role === 'assistant')?.content ?? '';
+  const approvedReplan = /^(?:好|可以|要|對|是|好啊|可以啊|那就排)$/u.test(text)
+    && /(?:要我|要不要|是否|要不).{0,16}(?:重排|排課)/u.test(lastReply);
   const input = [
     ...history.map(m => ({
       role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -1146,7 +1314,7 @@ export async function handleChat(identity, message, planningContext = null, opti
   // 不依賴模型記得重送（與同一個分支既有的 `watchingCourseIds` 過濾同一個理由）。
   const ctx = {
     identity, prefs, studentScope, turnId,
-    planningContext: hasPlanningState ? resolvedPlanning : null,
+    planningContext: resolvedPlanning,
   };
   const publish = (id, activity) => {
     if (activity) options.onProgress?.({ id, ...activity });
@@ -1200,6 +1368,22 @@ export async function handleChat(identity, message, planningContext = null, opti
         break;
       }
 
+      // Interpret a preference change before considering a simultaneous solver call.
+      const preferenceDraft = toolCalls.find(call => call.name === 'update_preferences'
+        || call.name === 'update_topic_interests');
+      if (preferenceDraft) {
+        const submitted = parseToolArguments(preferenceDraft.arguments);
+        const changes = submitted && (preferenceDraft.name === 'update_preferences' ? cleanPreferenceArgs(submitted) : submitted);
+        if (changes && Object.keys(changes).length) {
+          const topicChoice = preferenceDraft.name === 'update_topic_interests' && !scope
+            ? resolveSavedTopicChoice(identity, changes) : null;
+          return await applyChatPreference(identity, {
+            scope: topicChoice ? 'saved' : scope,
+            replan: replan || topicChoice?.replan,
+            toolName: preferenceDraft.name, args: changes,
+          }, actionOptions);
+        }
+      }
       for (const call of toolCalls) {
         logger.info(`LLM 請求呼叫工具：\`${call.name}\``, { label: 'ToolCall' });
 
@@ -1224,8 +1408,24 @@ export async function handleChat(identity, message, planningContext = null, opti
           result = { error: '工具參數不是合法的 JSON 物件，請重新產生。', errorCode: 'MALFORMED_ARGUMENTS' };
         } else {
           logger.debug('工具參數已解析（內容不記錄）', { label: 'ToolCall' });
+          if (call.name === 'update_preferences' || call.name === 'update_topic_interests') {
+            finalReply = '請告訴我你想調整哪一項排課偏好。';
+            break;
+          }
+          if (call.name === 'manage_schedule') {
+            return await replyToScheduleAction(identity, message, args, options, ctx);
+          }
+          if (call.name === 'run_csp_scheduler' && !replan && !approvedReplan) {
+            finalReply = '要我現在重新排課嗎？';
+            break;
+          }
+          if (call.name === 'run_csp_scheduler'
+            && (options.invalidPlanningContext || planningContextStatus !== PLANNING_CONTEXT_STATUS.ACCEPTED)) {
+            finalReply = '目前無法核對課表，請重新整理後再重排。';
+            break;
+          }
           if (options.onProgress) publish(call.call_id, describeChatTool(call.name, args, ctx));
-          result = await executeAgentTool(call.name, args, ctx);
+          result = await (options.executeTool ?? executeAgentTool)(call.name, args, ctx);
           if (options.onProgress) publish(call.call_id, describeChatTool(call.name, args, ctx, result));
         }
 
@@ -1268,6 +1468,7 @@ export async function handleChat(identity, message, planningContext = null, opti
 
         input.push({ type: 'function_call_output', call_id: call.call_id, output: outputStr });
       }
+      if (finalReply) break;
     }
 
     if (!finalReply) {

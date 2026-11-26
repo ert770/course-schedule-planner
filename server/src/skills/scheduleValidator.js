@@ -27,6 +27,7 @@ import { getFailedRequiredCourseCodes, getPassedCourseCodes } from '../data/cour
 import { CONSTRAINTS } from '../data/constraintSchema.js';
 import { courseGradeLevelLabel, isCourseGradeEligible } from '../data/courseGradeLevel.js';
 import { buildStudentScope, isOwnDepartmentElective } from './courseScope.js';
+import { categoryQuotaViolations } from '../data/scheduleOptions.js';
 
 function courseRef(course) {
   return { id: course.id, name: course.name };
@@ -346,6 +347,14 @@ export function validateScheduleAgainstConstraints(schedule = [], constraints = 
   const { violations: corequisiteViolations, checked: corequisiteChecked } = checkCorequisitePairs(
     schedule
   );
+  const scheduleOptions = constraints.scheduleOptions ?? {};
+  const optionViolations = categoryQuotaViolations(schedule, scheduleOptions.categoryQuotas)
+    .map(reason => buildViolation('CATEGORY_QUOTA', [], reason));
+  if (Number.isInteger(scheduleOptions.minCredits)) {
+    const min = constraints.minCredits ?? scheduleOptions.minCredits;
+    const total = schedule.reduce((sum, course) => sum + (Number(course.credits) || 0), 0);
+    if (total < min) optionViolations.push(buildViolation('CREDIT_TARGET', [], `目標至少 ${min} 學分，目前只有 ${total} 學分`));
+  }
 
   const violations = [
     ...checkTimeConflictsAndDuplicates(schedule),
@@ -355,6 +364,7 @@ export function validateScheduleAgainstConstraints(schedule = [], constraints = 
     ...checkTimePreferences(schedule, constraints),
     ...corequisiteViolations,
     ...coverageViolations,
+    ...optionViolations,
   ];
 
   // 先修／共修完全沒有資料來源可查（見 `constraintSchema.js` 的說明），
