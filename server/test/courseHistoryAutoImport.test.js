@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {importExtractedHistory} from '../src/services/courseHistoryAutoImport.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {importExtractedHistory,previewUnmatchedMyFcuHistory} from '../src/services/courseHistoryAutoImport.js';
 const identity={found:true,source:'mysql',canWriteMysqlProfile:true,numericId:1,canonicalId:'TEST'};
 const row=(code,name,year=112)=>({courseCode:code,courseName:name,sourceClassName:'其他班',academicYear:year,semester:1,credits:3,score:null,sourceCreditRecord:'X'});
 test('unmatched source records are written to history, with passed based only on verified scores',async()=>{
@@ -34,7 +34,8 @@ test('MyFCU session preview and import accept only an Online suffix difference f
     const writes = [];
     const db = { execute: async (sql, params) => {
       if (sql.startsWith('SELECT student_id')) return [[{ student_id: 'TEST' }]];
-      if (sql.startsWith('SELECT DISTINCT name')) return [catalog];
+      if (sql.includes('FROM Course_Sections')) return [catalog.map(course => ({ academic_year: 114, semester: '上學期', course_code: course.subid3, course_name: course.name }))];
+      if (sql.includes('FROM Course_Syllabi')) return [[]];
       if (sql.includes('FROM User_Course_History')) return [[...existing]];
       if (sql.includes('FROM Unmatched_Course_History')) return [[]];
       assert.ok(sql.startsWith('INSERT INTO User_Course_History'));
@@ -71,4 +72,39 @@ test('MyFCU session preview and import accept only an Online suffix difference f
   const conflict = makeScenario(catalog);
   assert.deepEqual(await conflict.run('Python進階 (Online)', true), { inserted: 1, skipped: 0, unmatched: 1, conflicts: 1 });
   assert.equal(conflict.writes.length, 0);
+});
+
+test('MyFCU import and read-only rematch require the exact term and course code', async () => {
+  const attempts = [
+    row('ARCH1', '歷年課程', 113), row('ARCH1', '相同課號舊學期', 111),
+    { ...row('ARCH1', '同年不同學期', 113), semester: 2 },
+    { ...row('NOW1', '當期課程', 114), semester: 2 },
+  ];
+  const writes = [];
+  const db = { async execute(sql, params) {
+    if (sql.startsWith('SELECT source_course_code')) {
+      assert.match(sql, /user_id = \? AND source = 'myfcu_session' AND catalog_course_code IS NULL/);
+      assert.deepEqual(params, [1]);
+      return [attempts];
+    }
+    if (sql.startsWith('SELECT student_id')) return [[{ student_id: 'TEST' }]];
+    if (sql.includes('FROM Course_Sections')) return [[
+      { academic_year: 114, semester: '下學期', course_code: 'NOW1', course_name: '當期課程' },
+    ]];
+    if (sql.includes('FROM Course_Syllabi')) return [[
+      { academic_year: 113, semester: 1, course_code: 'ARCH1' },
+      { academic_year: 113, semester: 2, course_code: null },
+    ]];
+    if (sql.startsWith('SELECT')) return [[]];
+    assert.ok(sql.startsWith('INSERT INTO User_Course_History'));
+    writes.push(params);
+    return [{}];
+  } };
+  const expected = [['ARCH1', null], [null, 'missing_term_catalog'], [null, 'not_found'], ['NOW1', null]];
+  const preview = await previewUnmatchedMyFcuHistory(db, 1);
+  assert.deepEqual(preview.map(item => [item.code, item.reason]), expected);
+  assert.equal(writes.length, 0);
+  const imported = await importExtractedHistory(identity, attempts, fn => fn(db), {sessionImport: true});
+  assert.deepEqual(imported, {inserted: 4, skipped: 0, unmatched: 2, conflicts: 0});
+  assert.deepEqual(writes.map(params => [params[1], JSON.parse(params[13]).matchReason]), expected);
 });

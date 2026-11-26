@@ -2303,6 +2303,8 @@ Chrome 背景網路行為及異常退出時作業系統暫存尚未完整驗證�
 
 Windows 本機 SessionImport 模式的快照預檢與確認匯入共用去重規則。已存紀錄的目錄課號或來源課號、學年、學期和已知數字成績均相同，且課名只差結尾的 `(Online)` 時，該筆計入 `skipped`，不產生衝突或寫入。
 
+SessionImport 以修課學年、學期及來源課號查詢 `Course_Syllabi` 與同學期開課資料。當學期開課資料含該課號的名稱時，也需一致或只差結尾 `(Online)`。缺少整個學期資料的未匹配紀錄，仍保留原始修課資訊；`GET /api/course-history` 對此類 MyFCU 紀錄回傳 `matchReason: "missing_term_catalog"`。
+
 `POST /api/course-history-import/auto` 僅限受限制的本機自行聲明模式，使用目前 Session 並從伺服器端已完成的擷取工作階段取得資料，不接受使用者或課程資料。以來源課號及課名精確對照 `Courses.subid3` 與 `Courses.name`，不以班級或學期匹配；同一課號、課名的不同班次視為同一代碼。缺課號、目錄缺課或課名不符時，完整來源紀錄保存於歷史表且 catalog 為 NULL，不覆蓋既有紀錄。回傳新增、重複跳過、未匹配及其中衝突筆數；此聲明不是官方身分驗證。
 
 使用 migration 015 後，新匯入的未匹配紀錄改為保存在歷史表，`catalog_course_code` 為 NULL，原始課號保存在 `source_course_code`。明確數字成績依 `score > 60` 計算通過，其餘未知為 NULL；原有待查表資料保留。正式身分驗證限制不變。

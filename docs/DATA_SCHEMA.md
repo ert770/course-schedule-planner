@@ -1112,6 +1112,8 @@ migration 檔自 `feature/myfcu-session-import` 移植到 `server/migrations/`�
 
 **匯入的列**：MyFCU 自動匯入寫入 `source`=`myfcu_session` 或 `myfcu_self_attested`，修別與畢業分類為 NULL；對不到目錄課號時 `catalog_course_code` 為 NULL、原始課號在 `source_course_code`。
 
+`myfcu_session` 比對同修課學期的 `Course_Syllabi.course_code` 或 `Course_Sections` 與 `Courses` 的開課資料。兩個來源都沒有該學期時，`source_payload.matchReason` 記為 `missing_term_catalog`。歷史修課列表亦會依照目前的學期覆蓋範圍顯示舊紀錄是否缺少比對資料。
+
 **讀取規則**（`getUserCourseHistory()`，2026-11-23 團隊決定）：
 - `catalog_course_code` 或 `passed` 為 NULL 的列不進推薦、排課與畢業計算（仍可在歷史修課列表看到）。
 - 修別或畢業分類為 NULL 時，只在讀取時依序補分類，不寫回資料庫（2026-11-24 擴充）：
