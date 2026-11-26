@@ -26,3 +26,49 @@ test('incomplete legacy pending data remains pending and is reported',async()=>{
  const db={execute:async(q)=>{if(q.startsWith('SELECT student_id'))return [[{student_id:'TEST'}]];if(q.includes('FROM Unmatched_Course_History'))return [[{catalog_course_code:'OLD',academic_year:112,semester:1,source_payload:{courseName:'舊紀錄'}}]];if(q.includes('FROM User_Course_History'))return [[]];throw Error('unexpected');}};
  const result=await importExtractedHistory(identity,[],fn=>fn(db));assert.deepEqual(result,{inserted:0,skipped:0,unmatched:0,conflicts:0,legacyUnusable:1});
 });
+
+test('MyFCU session preview and import accept only an Online suffix difference for the same catalog code', async () => {
+  const catalogName = 'Python程式設計';
+  const incomingName = `${catalogName} (Online)`;
+  const makeScenario = (catalog, existing = []) => {
+    const writes = [];
+    const db = { execute: async (sql, params) => {
+      if (sql.startsWith('SELECT student_id')) return [[{ student_id: 'TEST' }]];
+      if (sql.startsWith('SELECT DISTINCT name')) return [catalog];
+      if (sql.includes('FROM User_Course_History')) return [[...existing]];
+      if (sql.includes('FROM Unmatched_Course_History')) return [[]];
+      assert.ok(sql.startsWith('INSERT INTO User_Course_History'));
+      writes.push(params);
+      return [{}];
+    } };
+    const run = (courseName, dryRun) => importExtractedHistory(
+      identity, [{ ...row('IEE3017', courseName, 114), score: 92 }],
+      fn => fn(db), { sessionImport: true, dryRun },
+    );
+    return { run, writes };
+  };
+
+  const catalog = [{ subid3: 'IEE3017', name: catalogName }];
+  const fresh = makeScenario(catalog);
+  const success = { inserted: 1, skipped: 0, unmatched: 0, conflicts: 0 };
+  assert.deepEqual(await fresh.run(incomingName, true), success);
+  assert.equal(fresh.writes.length, 0);
+  assert.deepEqual(await fresh.run(incomingName, false), success);
+  assert.equal(fresh.writes.length, 1);
+  assert.equal(fresh.writes[0][1], 'IEE3017');
+  assert.equal(fresh.writes[0][6], incomingName);
+
+  const suffixInCatalog = makeScenario([{ subid3: 'IEE3017', name: incomingName }]);
+  assert.deepEqual(await suffixInCatalog.run(catalogName, true), success);
+
+  const repeat = makeScenario(catalog, [{
+    catalog_course_code: 'IEE3017', course_name: catalogName,
+    academic_year: 114, semester: 1, score: 92,
+  }]);
+  assert.deepEqual(await repeat.run(incomingName, false), { inserted: 0, skipped: 1, unmatched: 0, conflicts: 0 });
+  assert.equal(repeat.writes.length, 0);
+
+  const conflict = makeScenario(catalog);
+  assert.deepEqual(await conflict.run('Python進階 (Online)', true), { inserted: 1, skipped: 0, unmatched: 1, conflicts: 1 });
+  assert.equal(conflict.writes.length, 0);
+});
