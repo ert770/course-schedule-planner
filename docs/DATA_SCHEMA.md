@@ -1112,6 +1112,8 @@ migration 檔自 `feature/myfcu-session-import` 移植到 `server/migrations/`�
 
 MyFCU 自動匯入寫入 `source`=`myfcu_session` 或 `myfcu_self_attested`，修別與畢業分類為 NULL。原始課號以 `source_course_code` 保存；`myfcu_self_attested` 保留未匹配時 `catalog_course_code` 為 NULL 的規則。
 
+已存的 `myfcu_session` 紀錄若兩個課號欄均為 NULL，重匯時可依同帳號、同學期的來源資料唯一確認同一次修課，再填入 `source_course_code` 和 `catalog_course_code`。更新保留 `history_id`、`source_attempt_key` 和原始修課事實，並在 `source_payload` 保存來源課號及獨立的目錄比對結果。
+
 `myfcu_session` 將合法來源課號保存至 `catalog_course_code`，比對結果獨立保存至 `source_payload.catalogMatchStatus`（`matched`／`unmatched`）。比對順序為原學期班次、原學期課綱、其他學期班次、其他學期課綱。班次比對需同課號、同課名，允許只差結尾 `(Online)`。無課名可核對的課綱可用同課號作為證據。可核對的班次名稱明確衝突時列入預檢衝突。
 
 `source_payload.catalogMatchEvidence` 保存匹配證據的 `term`（`學年:學期`）和 `source`（`section`／`syllabus`），未匹配時為 null。`matchReason` 保留匹配失敗原因。重匯只更新本人同一次修課的空白正式課號，或將新取得證據的狀態更新為已匹配。原始修課學期與成績等資料沿用既有值。

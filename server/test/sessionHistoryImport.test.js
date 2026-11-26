@@ -116,3 +116,101 @@ test('SessionImport 預檢唯讀，補號及後續匹配更新都留在同一筆
   assert.equal((await sync(true, [{ ...row, score: 91 }])).conflicts, 1);
   assert.equal(writes, 2);
 });
+
+function sessionHistoryFixture(initialHistory = []) {
+  const identity = { found: true, source: 'mysql', canWriteMysqlProfile: true, numericId: 1, canonicalId: 'TEST' };
+  const history = structuredClone(initialHistory);
+  const writes = [];
+  const db = { async execute(sql, params) {
+    if (sql.startsWith('SELECT student_id')) return [[{ student_id: identity.canonicalId }]];
+    if (sql.includes('FROM User_Course_History')) return [history.filter(entry => entry.user_id === params[0])];
+    if (sql.startsWith('SELECT')) return [[]];
+    writes.push([sql, params]);
+    if (sql.startsWith('UPDATE')) {
+      assert.match(sql, /catalog_course_code IS NULL AND source_course_code IS NULL/);
+      const [catalog_course_code, source_course_code, payload, historyId, userId, source] = params;
+      const entry = history.find(row => row.history_id === historyId && row.user_id === userId && row.source === source);
+      assert.ok(entry);
+      Object.assign(entry, { catalog_course_code, source_course_code, source_payload: JSON.parse(payload) });
+      return [{ affectedRows: 1 }];
+    }
+    const [user_id, catalog_course_code, source_course_code, source_attempt_key, academic_year, semester,
+      course_name, credits, score, letter_grade, passed, source, , payload] = params;
+    history.push({ user_id, catalog_course_code, source_course_code, source_attempt_key, academic_year, semester,
+      course_name, credits, score, letter_grade, passed, source, source_payload: JSON.parse(payload) });
+    return [{}];
+  } };
+  const run = (rows, dryRun = true) => importExtractedHistory(identity, rows, fn => fn(db), { sessionImport: true, dryRun });
+  return { history, writes, run };
+}
+
+const codedAttempt = {
+  courseCode: 'NEW1', courseName: '虛構科目', sourceClassName: '資工一甲',
+  academicYear: 113, semester: 1, credits: 3, score: 80,
+};
+
+test('SessionImport fills both codes on the original code-less history row only with unique evidence', async () => {
+  const stored = {
+    history_id: 12, user_id: 1, source: 'myfcu_session', catalog_course_code: null, source_course_code: null,
+    source_attempt_key: 'original', course_name: codedAttempt.courseName, academic_year: 113, semester: 1,
+    credits: '3.0', score: '80.00', passed: 1, source_payload: { sourceRecord: { ...codedAttempt, courseCode: '' } },
+  };
+  const otherAccount = { ...stored, history_id: 13, user_id: 2 };
+  const { run, writes, history } = sessionHistoryFixture([stored, otherAccount]);
+  const update = { inserted: 0, updated: 1, skipped: 0, unmatched: 0, conflicts: 0 };
+  assert.deepEqual(await run([codedAttempt]), update);
+  assert.equal(writes.length, 0);
+  assert.deepEqual(history, [stored, otherAccount]);
+  assert.deepEqual(await run([codedAttempt], false), update);
+  assert.deepEqual(history, [{
+    ...stored, catalog_course_code: 'NEW1', source_course_code: 'NEW1', source_payload: {
+      ...stored.source_payload, sourceCourseCode: 'NEW1', catalogMatchStatus: 'unmatched',
+      catalogMatchEvidence: null, matchReason: 'missing_term_catalog',
+    },
+  }, otherAccount]);
+  assert.deepEqual(await run([codedAttempt], false), { inserted: 0, skipped: 1, unmatched: 0, conflicts: 0 });
+  assert.equal(writes.length, 1);
+
+  const occupied = { ...stored, history_id: 14, course_name: '另一科目', catalog_course_code: 'NEW1' };
+  const ambiguous = { ...stored, history_id: 15 };
+  for (const [initial, incoming] of [
+    [[stored, occupied], codedAttempt], [[stored, ambiguous], codedAttempt],
+    [[stored], { ...codedAttempt, sourceClassName: '資工一乙' }],
+    [[stored], { ...codedAttempt, score: 79 }], [[stored], { ...codedAttempt, credits: 2 }],
+  ]) {
+    const fixture = sessionHistoryFixture(initial);
+    assert.deepEqual(await fixture.run([incoming], false), { inserted: 0, skipped: 0, unmatched: 0, conflicts: 1 });
+    assert.equal(fixture.writes.length, 0);
+  }
+});
+
+test('SessionImport keeps equal or different grades on same-name attempts in different terms', async () => {
+  for (const priorScore of [50, 80]) {
+    const oldAttempt = { ...codedAttempt, courseCode: 'OLD1', academicYear: 112, score: priorScore };
+    for (const split of [false, true]) {
+      const { history, run, writes } = sessionHistoryFixture();
+      if (split) assert.equal((await run([oldAttempt], false)).inserted, 1);
+      const records = split ? [codedAttempt] : [oldAttempt, codedAttempt];
+      const preflight = await run(records);
+      assert.equal(preflight.conflicts, 0);
+      assert.equal(preflight.inserted, records.length);
+      assert.deepEqual(await run(records, false), preflight);
+      assert.deepEqual(history.map(row => [row.academic_year, row.source_course_code, row.score]), [[112, 'OLD1', priorScore], [113, 'NEW1', 80]]);
+      assert.equal((await run([{ ...codedAttempt, courseCode: 'NEW2', score: 79 }], false)).conflicts, 1);
+      assert.equal(writes.length, 2);
+    }
+  }
+});
+
+test('SessionImport writes the unique code and records the merged source in either input order', async () => {
+  const codeLess = { ...codedAttempt, courseCode: '' };
+  for (const rows of [[codeLess, codedAttempt], [codedAttempt, codeLess]]) {
+    const { history, run } = sessionHistoryFixture();
+    const expected = { inserted: 1, skipped: 1, unmatched: 1, conflicts: 0 };
+    assert.deepEqual(await run(rows), expected);
+    assert.deepEqual(await run(rows, false), expected);
+    assert.equal(history[0].catalog_course_code, codedAttempt.courseCode);
+    assert.equal(history[0].source_course_code, codedAttempt.courseCode);
+    assert.deepEqual(history[0].source_payload.mergedSourceRows, [codeLess]);
+  }
+});

@@ -110,6 +110,22 @@ function matchesOnlineHistoryAttempt(incoming, stored) {
   return differsOnlyByOnlineSuffix(incoming.courseName, stored.course_name);
 }
 
+const historyNameKey = (name, year, semester) => JSON.stringify([name.trim(), Number(year), Number(semester)]);
+
+function matchesCodeLessHistoryAttempt(row, prior, payload) {
+  const source = payload?.sourceRecord;
+  const className = payload?.sourceClassName ?? source?.sourceClassName;
+  const sameScore = prior.score != null && Number.isFinite(row.score) && Number(prior.score) === row.score;
+  const sameLetter = prior.score == null && row.score == null && typeof row.letterGrade === 'string'
+    && row.letterGrade.trim() !== '' && prior.letter_grade === row.letterGrade;
+  return typeof className === 'string' && className.trim() !== ''
+    && typeof row.sourceClassName === 'string' && className.trim() === row.sourceClassName.trim()
+    && prior.credits != null && Number(prior.credits) === row.credits && (sameScore || sameLetter)
+    && (!prior.letter_grade || !row.letterGrade || prior.letter_grade === row.letterGrade)
+    && !payload?.sourceCourseCode && !source?.courseCode && payload?.matchReason !== 'source_conflict'
+    && !payload?.conflictingRows?.length && !source?.conflictingRows?.length;
+}
+
 // All input comes from the server-owned extraction session, never from the client.
 export async function importExtractedHistory(identity,rows,transaction=withTransaction,{sessionImport=false,dryRun=false}={}){
  const userId=Number(identity?.numericId);
@@ -128,7 +144,8 @@ export async function importExtractedHistory(identity,rows,transaction=withTrans
   const termCatalog = sessionImport && codes.length ? await loadHistoryTermCatalog(db, codes) : new Map();
   const [catalog]=!sessionImport&&codes.length?await db.execute('SELECT DISTINCT name, subid3 FROM Courses WHERE BINARY subid3 IN ('+codes.map(()=>'?').join(',')+')',codes):[[]];
   const byCode=new Map();for(const c of catalog){const list=byCode.get(c.subid3)??new Set();list.add(c.name);byCode.set(c.subid3,list);}
-  const [existing]=await db.execute('SELECT history_id,catalog_course_code,source_course_code,source_attempt_key,academic_year,semester,course_name,score,source,source_payload FROM User_Course_History WHERE user_id=?',[userId]);
+  const [storedHistory]=await db.execute('SELECT history_id,catalog_course_code,source_course_code,source_attempt_key,academic_year,semester,course_name,score,credits,letter_grade,source,source_payload FROM User_Course_History WHERE user_id=?',[userId]);
+  const existing = storedHistory.map(entry => ({ ...entry }));
   const key=r=>JSON.stringify([r.courseCode,Number(r.academicYear),Number(r.semester)]);
   const seen=new Set(existing.flatMap(r=>[r.catalog_course_code,r.source_course_code].filter(Boolean).map(courseCode=>key({courseCode,academicYear:r.academic_year,semester:r.semester}))));
   const attemptSeen=new Set(existing.filter(r=>r.source_attempt_key).map(r=>key({courseCode:r.source_attempt_key,academicYear:r.academic_year,semester:r.semester})));
@@ -138,11 +155,45 @@ export async function importExtractedHistory(identity,rows,transaction=withTrans
   for(const candidate of rows){if(!candidate||candidate.courseCode)continue;const matches=rows.filter(other=>other?.courseCode&&!other.conflictingRows?.length&&!candidate.conflictingRows?.length&&sameAttempt(candidate,other));const distinct=new Set(matches.map(r=>r.courseCode));if(distinct.size===1){const target=matches[0];skipCodeLess.add(candidate);const list=codeLessDuplicates.get(target)??[];list.push(candidate);codeLessDuplicates.set(target,list);}}
   let inserted=0,updated=0,skipped=namePlan?.mergedCount ?? 0,unmatched=0,conflicts=namePlan?.conflicts.length ?? 0;
   const existingNames = new Map();
-  if (sessionImport) for (const entry of existing) { const name = typeof entry.course_name === 'string' ? entry.course_name.trim() : ''; if (name) { const list = existingNames.get(name) ?? []; list.push(entry); existingNames.set(name, list); } }
+  if (sessionImport) for (const entry of existing) {
+    if (typeof entry.course_name !== 'string' || !entry.course_name.trim()) continue;
+    const name = historyNameKey(entry.course_name, entry.academic_year, entry.semester);
+    const list = existingNames.get(name) ?? [];
+    list.push(entry);
+    existingNames.set(name, list);
+  }
   for(const row of rows){
    if(!row||(row.courseCode!=null && row.courseCode!=='' && (typeof row.courseCode!=='string'||!/^[A-Z0-9]{1,45}$/.test(row.courseCode)))||typeof row.courseName!=='string'||!row.courseName.trim()||row.courseName.length>255||(!row.courseCode && (typeof row.sourceClassName!=='string'||!row.sourceClassName.trim()))||!Number.isInteger(row.academicYear)||row.academicYear<1||row.academicYear>65535||![1,2,3].includes(row.semester)||typeof row.credits!=='number'||!Number.isFinite(row.credits)||row.credits<0||row.credits>999.9)throw Error('INVALID_RECORD');
    if(skipCodeLess.has(row)){skipped++;continue;}
    const catalogMatch = sessionImport ? matchHistoryCourse(termCatalog, row) : null;
+   const name = historyNameKey(row.courseName, row.academicYear, row.semester);
+   const sameNameTerm = existingNames.get(name) ?? [];
+   if (sessionImport && row.courseCode) {
+     const codeLess = sameNameTerm.filter(entry => entry.source === 'myfcu_session'
+       && entry.catalog_course_code == null && entry.source_course_code == null);
+     if (codeLess.length) {
+       const [prior] = codeLess;
+       const storedPayload = typeof prior.source_payload === 'string' ? JSON.parse(prior.source_payload) : prior.source_payload;
+       if (sameNameTerm.length !== 1 || !prior.history_id || seen.has(key(row))
+         || catalogMatch.reason === 'code_name_conflict' || !matchesCodeLessHistoryAttempt(row, prior, storedPayload)) {
+         conflicts++;
+         continue;
+       }
+       const payload = { ...storedPayload, sourceCourseCode: row.courseCode, ...describeCatalogMatch(catalogMatch) };
+       if (!dryRun) {
+         const [result] = await db.execute(`UPDATE User_Course_History SET catalog_course_code=?,source_course_code=?,source_payload=?
+           WHERE history_id=? AND user_id=? AND source=? AND catalog_course_code IS NULL AND source_course_code IS NULL`,
+         [row.courseCode, row.courseCode, JSON.stringify(payload), prior.history_id, userId, 'myfcu_session']);
+         if (result.affectedRows !== 1) throw Error('HISTORY_CHANGED');
+       }
+       prior.catalog_course_code = row.courseCode;
+       prior.source_course_code = row.courseCode;
+       prior.source_payload = payload;
+       seen.add(key(row));
+       updated++;
+       continue;
+     }
+   }
    if (sessionImport && row.courseCode && seen.has(key(row))) {
      const sameTermCode = existing.filter(entry => Number(entry.academic_year) === row.academicYear
        && Number(entry.semester) === row.semester
@@ -176,16 +227,11 @@ export async function importExtractedHistory(identity,rows,transaction=withTrans
      skipped++;
      continue;
    }
-   if (sessionImport) {
-     const entries = (existingNames.get(row.courseName.trim()) ?? []).filter(entry =>
-       !row.courseCode || (entry.source_course_code !== row.courseCode && entry.catalog_course_code !== row.courseCode)
-       || (Number(entry.academic_year) === row.academicYear && Number(entry.semester) === row.semester));
-     if (entries.length > 0) {
-       const incoming = typeof row.score === 'number' ? row.score : null;
-       if (incoming !== null && entries.some(entry => entry.score != null && Number(entry.score) !== incoming)) conflicts++;
-       else skipped++;
-       continue;
-     }
+   if (sessionImport && sameNameTerm.length > 0) {
+     const incoming = typeof row.score === 'number' ? row.score : null;
+     if (incoming !== null && sameNameTerm.some(entry => entry.score != null && Number(entry.score) !== incoming)) conflicts++;
+     else skipped++;
+     continue;
    }
    const exactCode=byCode.get(row.courseCode)??new Set();
    let code=null,reason=null;
@@ -212,7 +258,6 @@ export async function importExtractedHistory(identity,rows,transaction=withTrans
    if(!dryRun && !sessionImport) await db.execute('INSERT INTO Local_History_Attestations (user_id,course_code,academic_year,semester,trust_level,statement_version,confirmed_at) VALUES (?,?,?,?,?,?,UTC_TIMESTAMP(3))',[userId,row.courseCode||code||null,row.academicYear,row.semester,'local_self_attested','local-history-v1']);
    if (sessionImport) {
      const entry = { course_name:row.courseName, source_course_code:row.courseCode, source_attempt_key:attemptKey, academic_year:row.academicYear, semester:row.semester, score };
-     const name = row.courseName.trim();
      existingNames.set(name, [...(existingNames.get(name) ?? []), entry]);
      existing.push(entry);
    }
