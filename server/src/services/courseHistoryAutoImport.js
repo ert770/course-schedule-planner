@@ -2,6 +2,15 @@ import { withTransaction } from '../db/mysql.js';
 import { createHash } from 'node:crypto';
 import { planHistoryByName } from '../../../client/src/utils/historyNameDedup.js';
 
+function differsOnlyByOnlineSuffix(firstName, secondName) {
+  const first = firstName?.trim();
+  const second = secondName?.trim();
+  if (!first || !second || first === second) return false;
+  const onlineSuffix = /\s*\(Online\)$/;
+  return first.replace(onlineSuffix, '') === second
+    || second.replace(onlineSuffix, '') === first;
+}
+
 function matchesOnlineHistoryAttempt(incoming, stored) {
   if (!incoming.courseCode
     || (incoming.courseCode !== stored.catalog_course_code && incoming.courseCode !== stored.source_course_code)
@@ -10,12 +19,7 @@ function matchesOnlineHistoryAttempt(incoming, stored) {
     || !Number.isFinite(incoming.score) || stored.score == null
     || incoming.score !== Number(stored.score)) return false;
 
-  const incomingName = incoming.courseName.trim();
-  const storedName = stored.course_name?.trim();
-  if (!storedName || incomingName === storedName) return false;
-  const onlineSuffix = /\s*\(Online\)$/;
-  return incomingName.replace(onlineSuffix, '') === storedName
-    || storedName.replace(onlineSuffix, '') === incomingName;
+  return differsOnlyByOnlineSuffix(incoming.courseName, stored.course_name);
 }
 
 // All input comes from the server-owned extraction session, never from the client.
@@ -59,7 +63,7 @@ export async function importExtractedHistory(identity,rows,transaction=withTrans
    if(row.conflictingRows?.length)reason='source_conflict';
    else if(!row.courseCode)reason='missing_source_code';
    else if(!exactCode.size)reason='not_found';
-   else if(!exactCode.has(row.courseName))reason='code_name_conflict';
+   else if (!exactCode.has(row.courseName) && !(sessionImport && [...exactCode].some(name => differsOnlyByOnlineSuffix(row.courseName, name)))) reason='code_name_conflict';
    else code=row.courseCode;
    const raw=JSON.stringify({sourceCourseCode:row.courseCode??null,courseName:row.courseName,academicYear:row.academicYear,semester:row.semester,credits:row.credits,sourceScore:row.sourceScore??null,sourceNumericScore:row.score??null,sourceCategories:row.sourceCategories??[],sourceClassName:row.sourceClassName??null,sourceGraduationCredits:row.sourceGraduationCredits??null,sourceCreditRecord:row.sourceCreditRecord??null,conflictingRows:row.conflictingRows??[],matchReason:reason,sourceRecord:row,codeLessDuplicates:codeLessDuplicates.get(row)??[],mergedSourceRows:row.mergedSourceRows??[]});
    const attemptKey=createHash('sha256').update(JSON.stringify(row.courseCode?['code',row.courseCode]:['name_class',row.courseName,row.sourceClassName])).digest('hex');
