@@ -197,7 +197,7 @@ export default function InterestExplorationPage() {
     <main className="interest-exploration-page">
       <section className="interest-exploration-shell" aria-labelledby="interest-exploration-title">
         <PreferenceBackButton onClick={() => { if (!busy) navigate('/setup'); }}>返回偏好設定</PreferenceBackButton>
-        <PreferenceJourneySteps current={3} />
+        <PreferenceJourneySteps current={3} exploration />
         <header className="preference-page-header">
           <h1 id="interest-exploration-title">探索你可能想修的課</h1>
           <p>點選你想接觸的課程內容。每題可以選一張、兩張，或先略過。</p>

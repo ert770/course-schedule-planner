@@ -80,7 +80,7 @@ function validateCourseList(raw, field) {
     if (seen.has(sectionId)) continue;
     seen.add(sectionId);
 
-    if (field === 'currentCourses') {
+    if (field !== 'removedCourses') {
       value.push({ sectionId });
       continue;
     }
@@ -101,6 +101,19 @@ function validateCourseList(raw, field) {
 
 function isOptionalString(value) {
   return value === undefined || value === null || (typeof value === 'string' && value.length <= 200);
+}
+
+function validatePlans(plans) {
+  if (!Array.isArray(plans) || plans.length > 8) return null;
+  const ids = new Set();
+  const output = [];
+  for (const plan of plans) {
+    if (typeof plan?.id !== 'string' || !plan.id || plan.id.length > 200 || ids.has(plan.id)
+      || typeof plan.title !== 'string' || !plan.title.trim() || plan.title.length > 100) return null;
+    ids.add(plan.id);
+    output.push({ id: plan.id, title: plan.title });
+  }
+  return output;
 }
 
 /**
@@ -126,6 +139,14 @@ export function validatePlanningContext(input) {
   if (current.error) return { error: current.error };
   const removed = validateCourseList(input.removedCourses, 'removedCourses');
   if (removed.error) return { error: removed.error };
+  const selected = validateCourseList(input.selectedCourses, 'selectedCourses');
+  if (selected.error) return { error: selected.error };
+  const currentIds = new Set(current.value.map(course => course.sectionId));
+  if (selected.value.some(course => !currentIds.has(course.sectionId))) {
+    return { error: 'planningContext.selectedCourses 必須屬於目前課表' };
+  }
+  const plans = input.plans === undefined ? undefined : validatePlans(input.plans);
+  if (plans === null) return { error: 'planningContext.plans 格式不符' };
 
   return {
     error: null,
@@ -134,6 +155,11 @@ export function validatePlanningContext(input) {
       activePlanId: input.activePlanId ?? null,
       activeVariantId: input.activeVariantId ?? null,
       currentCourses: current.value,
+      ...(input.selectedCourses !== undefined ? { selectedCourses: selected.value } : {}),
+      ...(plans ? { plans } : {}),
+      ...(plans ? {
+        selectedVariantId: plans.some(plan => plan.id === input.selectedVariantId) ? input.selectedVariantId : null,
+      } : {}),
       removedCourses: removed.value,
     },
   };

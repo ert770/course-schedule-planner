@@ -143,3 +143,13 @@ describe('Step A：interestSelections 進入 Profile 的 canonical shape', () =>
     assert.ok(result.errors.some(error => /interestSelections 必須是陣列/u.test(error)));
   });
 });
+test('首次引導未完成時，即使已有系所與年級，也要接續設定', async () => {
+  const { isProfileSetupComplete, readInitialSetupStage } = await import('../src/data/profileSchema.js');
+  const base = { department: '資訊工程學系', gradeLevel: 3 };
+  for (const stage of ['history', 'schedule', 'completed']) {
+    const profile = { ...base, preferencesJson: { schemaVersion: 1, values: { initialSetupStage: stage } } };
+    assert.equal(readInitialSetupStage(profile), stage);
+    assert.equal(isProfileSetupComplete(profile), stage === 'completed');
+  }
+  assert.equal(isProfileSetupComplete(base), true);
+});

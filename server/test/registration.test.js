@@ -52,7 +52,8 @@ test('registration inserts a new profile in the supplied transaction and reserve
   };
   assert.deepEqual(await registerStudent(valid, deps), { success: true });
   assert.equal(transactions, 2); assert.equal(rollbacks, 1); assert.equal(inserted[0], 6); assert.equal(inserted[1], valid.studentId);
-  assert.equal(inserted.at(-1), 'encoded-hash-placeholder');
+  assert.equal(inserted.at(-2), 'encoded-hash-placeholder');
+  assert.equal(JSON.parse(inserted.at(-1)).values.initialSetupStage, 'history');
   assert.equal((await registerStudent({ ...valid, studentId: 'D8800003' }, deps)).status, 409);
   assert.equal(transactions, 2);
 });

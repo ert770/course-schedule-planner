@@ -386,7 +386,19 @@ Migration 目標新增 `Saved_Schedules`，以 numeric `user_id` 連到
 
 興趣偏好沿用 `preferences_json`，沒有新增 `preferred_track` 等平行欄位。
 
+首次設定使用 `preferences_json.values.initialSetupStage`。註冊後為 `history`，保存偏好後為
+`schedule`，首次課表保存後為 `completed`。沒有進度欄位的舊帳號仍以已存的系所及年級判定。
+
+長期排課進階條件保存於 `preferences_json.values.scheduleOptions`，讀取時映射到 profile 的同名欄位。
+它可保存可上課／偏好時段、課程門數及學分、教師、類別、授課語言、班次及放寬順序。
+類別配額以 `category` 識別，`minCourses`、`maxCourses`、`minCredits`、`maxCredits` 為可選整數。
+指定或排除班次保存正整數 `sectionId`。一樣使用原有 JSON 欄位。
+
 帳號的避開課程保存於 `preferences_json.values.scheduleAvoidances`，每筆包含 `sectionId`、`catalogCourseCode` 和 `courseName`。同課號只保留一筆。課號缺漏時以 `sectionId` 避開該班次。只有排課避開端點會更新這個清單。
+
+手動加選及鎖定班次沿用帳號在瀏覽器的 `manualScheduleCourses`。鎖定班次以
+`planningLocked` 標示，可用 `preserveManualAdd` 區別鎖定前已手動加入的班次。
+解鎖時保留原有手動加選，這兩個標示由前端保留清單管理。
 
 `GET /api/profile` 的 `interestSummary` 是以已保存的選擇對照正規化標籤目錄即時組成的顯示欄位，不寫入資料庫。
 

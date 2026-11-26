@@ -48,7 +48,10 @@ export async function registerStudent(input, deps = {}) {
       // Never attach a freshly registered account to a legacy JSON identity.
       if (legacy.some(u => String(u.id) === String(id))) throw new UserIdCollisionError();
       try {
-        await connection.execute('INSERT INTO `User_Profiles` (`user_id`, `student_id`, `name`, `department`, `grade_level`, `class_name`, `password_hash`) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, studentId, input.name.trim(), department, Number(input.gradeLevel), className, hash]);
+        await connection.execute('INSERT INTO `User_Profiles` (`user_id`, `student_id`, `name`, `department`, `grade_level`, `class_name`, `password_hash`, `preferences_json`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+          id, studentId, input.name.trim(), department, Number(input.gradeLevel), className, hash,
+          JSON.stringify({ schemaVersion: 1, values: { initialSetupStage: 'history' } }),
+        ]);
       } catch (e) {
         if (e.code === 'ER_DUP_ENTRY' && /(?:for key|for constraint)\s+['`"]?(?:User_Profiles\.)?PRIMARY/i.test(e.message ?? '')) throw new UserIdCollisionError({ cause: e });
         throw e;

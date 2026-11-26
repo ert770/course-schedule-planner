@@ -13,6 +13,26 @@
 // 用途是量測速度與正確性，不是正式的方案目標。
 
 import { getTimeBlocks } from '../scheduler.js';
+import { categoryQuotaStatus, scheduleCategory } from '../../data/scheduleOptions.js';
+
+function quotaRows(inputs, sections) {
+  const fixed = [...(inputs.fixedSchedule ?? []), ...(inputs.fixedUnscheduled ?? [])];
+  return categoryQuotaStatus(fixed, inputs.categoryQuotas).flatMap((quota, index) => {
+    const matching = sections.filter(section => scheduleCategory(section.course) === quota.category);
+    return [
+      ['minCourses', '>=', quota.courses, false],
+      ['maxCourses', '<=', quota.courses, false],
+      ['minCredits', '>=', quota.credits, true],
+      ['maxCredits', '<=', quota.credits, true],
+    ].filter(([key]) => Number.isInteger(quota[key])).map(([key, sense, count, countCredits]) => ({
+      name: `quota_${index}_${key}`,
+      terms: matching.map(section => ({ name: section.name, coef: countCredits ? Number(section.course.credits) || 0 : 1 }))
+        .filter(term => term.coef !== 0),
+      sense,
+      rhs: quota[key] - count,
+    }));
+  });
+}
 
 function formatCoefficient(value) {
   const rounded = Math.round(value * 1e6) / 1e6;
@@ -147,6 +167,12 @@ export function buildScheduleMip(inputs) {
   addRow(creditTerms, '<=', inputs.maxCredits - inputs.fixedCredits);
   if (inputs.minCredits > inputs.fixedCredits) {
     addRow(creditTerms, '>=', inputs.minCredits - inputs.fixedCredits);
+  }
+  for (const row of quotaRows(inputs, sections)) {
+    if (!row.terms.length && (row.sense === '>=' ? row.rhs > 0 : row.rhs < 0)) {
+      return { status: 'infeasible', reason: 'category-quota-infeasible', lpText: null };
+    }
+    addRow(row.terms, row.sense, row.rhs);
   }
 
   // 每日課程數上限（預設 Infinity 時不建）。
@@ -325,6 +351,10 @@ export function buildDiverseScheduleMip(inputs, options = {}) {
   }
   addRow('credit_ceiling', creditTerms, '<=', creditCeiling,
     { type: 'credit-ceiling', bound: inputs.maxCredits });
+  for (const row of quotaRows(inputs, sections)) {
+    const failure = addRow(row.name, row.terms, row.sense, row.rhs, { type: 'category-quota' });
+    if (failure) return { status: 'infeasible', reason: 'category-quota-infeasible', detail: failure.reason };
+  }
 
   if (Number.isFinite(inputs.maxCoursesPerDay)) {
     const fixedPerDay = new Map();

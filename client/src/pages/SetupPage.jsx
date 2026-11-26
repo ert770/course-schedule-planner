@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { useAuth } from '../contexts/useAuth';
 import { useSchedule } from '../contexts/useSchedule';
 import { profileAPI, historyFeedbackAPI } from '../services/api';
@@ -15,9 +15,46 @@ import {
 
 const sections = ['基本資料', '課程興趣', '排課條件'];
 
+function scheduleOptionLines(options = {}) {
+  const lines = [
+    [options.minCredits, value => `學分目標至少 ${value} 學分`],
+    [options.maxCoursesPerDay, value => `每天最多 ${value} 門課`],
+    [options.courseCredits, value => `可選課每門 ${value} 學分`],
+    [options.preferredCourseCredits, value => `偏好每門 ${value} 學分`],
+    [options.noEveningClasses ? true : null, () => '不排晚課'],
+    [options.language, value => `可選課授課語言 ${value === 'English' ? '英文' : '中文'}`],
+  ].filter(([value]) => value != null).map(([value, label]) => label(value));
+  for (const [key, label] of [
+    ['avoidInstructors', '避開教師'], ['preferredInstructors', '偏好教師'], ['includeInstructors', '指定教師'],
+    ['includeCategories', '可選課類別'], ['excludeCategories', '避開類別'], ['preferCategories', '偏好類別'],
+    ['requiredSectionIds', '指定班次'], ['excludedSectionIds', '排除班次'],
+  ]) {
+    if (options[key]?.length) lines.push(`${label} ${options[key].join('、')}`);
+  }
+  for (const [key, label] of [['allowedPeriods', '可上課時段'], ['preferredPeriods', '偏好時段']]) {
+    if (!options[key]?.length) continue;
+    const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+    const entries = days.flatMap((day, index) => {
+      const periods = options[key].filter(slot => slot.day === index + 1).map(slot => slot.period);
+      return periods.length ? [`${day}第 ${periods.join('、')} 節`] : [];
+    });
+    lines.push(`${label} ${entries.join('；')}`);
+  }
+  for (const quota of options.categoryQuotas ?? []) {
+    const bounds = [
+      [quota.minCourses, '至少', '門'], [quota.maxCourses, '最多', '門'],
+      [quota.minCredits, '至少', '學分'], [quota.maxCredits, '最多', '學分'],
+    ].filter(([value]) => value != null).map(([value, label, unit]) => `${label} ${value} ${unit}`);
+    lines.push(`${quota.category} ${bounds.join('、')}`);
+  }
+  return lines;
+}
+
 export default function SetupPage() {
   const navigate = useNavigate();
-  const { user, markSetupDone, isSetupDone, privacyStatus } = useAuth();
+  const { state: navigationState } = useLocation();
+  const navigationType = useNavigationType();
+  const { user, markInitialSchedulePending, isSetupDone, privacyStatus } = useAuth();
   const { savedAvoidances, restoreAvoidedCourse } = useSchedule();
   const [restoringCourse, setRestoringCourse] = useState(null);
   const [restoreError, setRestoreError] = useState('');
@@ -51,7 +88,7 @@ export default function SetupPage() {
     }
   };
   const userIdentity = getUserIdentity(user);
-  const editing = isSetupDone();
+  const editing = isSetupDone() && !navigationState?.finishOnboarding;
   const exploration = getInterestExplorationState(userIdentity);
   
   // 保留狀態以供 API 使用，但前端隱藏不顯示
@@ -66,6 +103,9 @@ export default function SetupPage() {
   // 前端會顯示的選項
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [profileError, setProfileError] = useState('');
+  const [savedTimePreferences, setSavedTimePreferences] = useState([]);
+  const [savedCreditMax, setSavedCreditMax] = useState(null);
+  const [savedOptions, setSavedOptions] = useState([]);
 
   const [selectedTags, setSelectedTags] = useState(new Set());
   const [tagGroups, setTagGroups] = useState([]);
@@ -114,6 +154,9 @@ export default function SetupPage() {
         setCollege(profile.college || '');
         setEnrolledPrograms((profile.enrolledPrograms || []).join('、'));
         setAvoidInstructors((profile.avoidInstructors || []).join('、'));
+        setSavedTimePreferences(Array.isArray(profile.blockedPeriods) ? profile.blockedPeriods : []);
+        setSavedCreditMax(profile.scheduleOptions?.maxCredits ?? profile.targetCreditsMax ?? null);
+        setSavedOptions(scheduleOptionLines(profile.scheduleOptions));
 
         if (Array.isArray(profile.selectedTags)) {
           setSelectedTags(new Set(profile.selectedTags));
@@ -161,13 +204,7 @@ export default function SetupPage() {
 
   const finishAfterSave = (wasSetupDone) => {
     if (!wasSetupDone) {
-      const exploration = getInterestExplorationState(userIdentity);
-      if (exploration.status !== 'completed' && exploration.status !== 'skipped') {
-        if (exploration.status !== 'in_progress') startInterestExploration(userIdentity);
-        navigate('/interest-exploration', { replace: true });
-        return;
-      }
-      navigate('/', { replace: true });
+      navigate('/onboarding/schedule', { replace: true });
       return;
     }
     if (exploration.status === 'in_progress') navigate('/interest-exploration');
@@ -175,7 +212,7 @@ export default function SetupPage() {
   };
 
   const persist = async (selections) => {
-    const wasSetupDone = isSetupDone();
+    const wasSetupDone = editing;
     setSaveError('');
     setGenerating(true);
     try {
@@ -189,6 +226,7 @@ export default function SetupPage() {
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
+        ...(!wasSetupDone ? { initialSetupStage: 'schedule' } : {}),
         // 長期興趣只由課程主題問答保存（ADR-032）；舊的文字興趣欄位已移除。
         ...(selections !== savedTopicSelections ? {
           interestSelections: selections.map(({ group, categoryId, level, mode, tagIds }) => ({
@@ -199,7 +237,7 @@ export default function SetupPage() {
       // 1. 儲存個人偏好設定（回應帶課程主題選擇的驗證狀態，下面據此決定要不要顯示提示）
       const result = await profileAPI.update(prefData);
 
-      markSetupDone();
+      if (!wasSetupDone) markInitialSchedulePending();
       const warnings = result?.interestSelectionWarnings ?? [];
       if (result?.interestSelectionsStatus === 'unverified') {
         setSaveNotice({
@@ -236,9 +274,10 @@ export default function SetupPage() {
         <PreferenceBackButton onClick={() => navigate(editing
           ? (exploration.status === 'in_progress' ? '/interest-exploration' : '/')
           : '/onboarding')}>
-          {editing ? (exploration.status === 'in_progress' ? '返回探索' : '返回首頁') : '返回資料使用設定'}
+          {editing ? (exploration.status === 'in_progress' ? '返回探索' : '返回首頁') : '返回修課紀錄'}
         </PreferenceBackButton>
-        {!editing && <PreferenceJourneySteps current={2} />}
+        {!editing && <PreferenceJourneySteps current={3} />}
+        {navigationState?.historyImported && navigationType !== 'POP' && <p role="status">修課紀錄同步完成</p>}
 
         <header className="preference-page-header">
           <h1>{editing ? '調整排課偏好' : '設定你的排課偏好'}</h1>
@@ -323,6 +362,18 @@ export default function SetupPage() {
               <section className="setup-section-box" aria-labelledby="setup-scheduling-title">
                 <h2 id="setup-scheduling-title" className="setup-section-title">設定排課條件</h2>
                 <p className="setup-journey-summary">選擇你希望課表符合的時段、集中程度與其他安排。</p>
+                {editing && (savedTimePreferences.length > 0 || savedCreditMax !== null || savedOptions.length > 0) && (
+                  <div className="setup-pref-group">
+                    <h3 className="setup-pref-category">已保存的時段與學分</h3>
+                    {savedCreditMax !== null && <p>學分上限 {savedCreditMax} 學分</p>}
+                    {savedOptions.map(line => <p key={line}>{line}</p>)}
+                    {['週一', '週二', '週三', '週四', '週五', '週六', '週日'].map((day, index) => {
+                      const periods = savedTimePreferences.filter(entry => entry.day === index + 1)
+                        .map(entry => entry.period).sort((a, b) => a - b);
+                      return periods.length > 0 && <p key={day}>{day}第 {periods.join('、')} 節不排課</p>;
+                    })}
+                  </div>
+                )}
                 {editing && (savedAvoidances.length > 0 || restoreError) && (
                   <div className="setup-pref-group">
                     <h3 className="setup-pref-category">避開的課程</h3>
@@ -381,7 +432,7 @@ export default function SetupPage() {
                 </button>
               ) : (
                 <button type="button" className="course-card-action primary" onClick={handleSubmit} disabled={!profileLoaded || Boolean(profileError)}>
-                  {editing ? (exploration.status === 'in_progress' ? '保存並繼續探索' : '保存變更') : '保存並前往探索'} <ArrowRight size={17} />
+                  {editing ? (exploration.status === 'in_progress' ? '保存並繼續探索' : '保存變更') : '保存並開始排課'} <ArrowRight size={17} />
                 </button>
               )}
             </div>

@@ -6,6 +6,7 @@ import { isMysqlConfigured, queryRows, withTransaction } from '../db/mysql.js';
 import { DEFAULT_MIN_CREDITS } from '../data/creditPolicy.js';
 import { mergeInterestPreferences, normalizePreferencesJson } from '../data/interestPreferences.js';
 import { getCachedCourseCatalog } from './courseCatalogCache.js';
+import { mergeScheduleOptions } from '../data/scheduleOptions.js';
 import {
   mergeSemesterPlanningPreferences,
   SEMESTER_PLANNING_PREFERENCE_FIELDS,
@@ -110,7 +111,8 @@ export async function updateUserPreferences(identity, updates) {
   // 興趣是 preferences_json 裡的可擴充偏好。寫入前先與既有 values 合併，
   // 避免 Setup 只改興趣時把其他個人化資料整包覆蓋。
   const jsonFields = [
-    'preferredTrack', 'interestSelections',
+    'preferredTrack', 'interestSelections', 'initialSetupStage',
+    'scheduleOptions',
     ...PERSONALIZATION_PREFERENCE_FIELDS,
     ...SEMESTER_PLANNING_PREFERENCE_FIELDS,
   ];
@@ -130,6 +132,12 @@ export async function updateUserPreferences(identity, updates) {
         updates
       ),
     };
+    if (Object.hasOwn(updates, 'scheduleOptions')) {
+      writeUpdates.preferencesJson = mergeScheduleOptions(writeUpdates.preferencesJson, updates.scheduleOptions);
+    }
+    if (Object.hasOwn(updates, 'initialSetupStage')) {
+      writeUpdates.preferencesJson.values.initialSetupStage = updates.initialSetupStage;
+    }
   }
 
   await upsertByField('user_preferences', 'userId', canonicalId, {

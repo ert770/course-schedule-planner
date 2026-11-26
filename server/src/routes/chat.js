@@ -60,6 +60,7 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
     }
     const result = await handleChat(req.identity, message.trim(), validation.error ? null : validation.value, {
       onProgress: streaming ? data => sendEvent('progress', data) : undefined,
+      invalidPlanningContext: Boolean(validation.error),
     });
     if (validation.error) result.planningContextStatus = PLANNING_CONTEXT_STATUS.REJECTED_INVALID;
     if (!streaming) return res.json(result);

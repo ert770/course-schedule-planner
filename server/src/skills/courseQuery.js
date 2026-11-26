@@ -65,6 +65,7 @@ function applyCommonFilters(courseList, filters = {}, { filterCategory = true } 
     courses = courses.filter(course =>
       textIncludes(course.name, keyword)
       || textIncludes(course.code, keyword)
+      || textIncludes(course.catalogCourseCode, keyword)
       || textIncludes(course.courseId, keyword)
       || textIncludes(course.instructor, keyword)
       || textIncludes(course.department, keyword)

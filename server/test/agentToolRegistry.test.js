@@ -44,9 +44,9 @@ describe('AR1 三處工具名稱集合必須一致', () => {
     );
   });
 
-  test('AR1 不多不少剛好十一個工具（改動時請一併確認這個數字）', () => {
+  test('AR1 不多不少剛好十二個工具（改動時請一併確認這個數字）', () => {
     // ADR-036 新增 find_replacement_courses、swap_course；ADR-037 新增 get_topic_interests、update_topic_interests。
-    assert.equal(listToolNames().length, 11);
+    assert.equal(listToolNames().length, 12);
   });
 });
 

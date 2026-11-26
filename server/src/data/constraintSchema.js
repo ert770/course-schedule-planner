@@ -69,6 +69,21 @@ export const DEFAULT_TIME_PREFERENCE_PRIORITY = [
 // - enforced：false 代表 validator 完全不檢查這項——目前只有先修／共修，
 //   因為專案裡沒有任何資料來源可查（見 change report）。
 export const CONSTRAINTS = Object.freeze({
+  SCHEDULE_OPTION: {
+    id: 'SCHEDULE_OPTION', category: CONSTRAINT_CATEGORY.HARD, relaxable: false,
+    source: CONSTRAINT_SOURCE.USER_EXPLICIT_SELECTION, confidence: 1, weight: null, enforced: true,
+    exemptForRequiredCourses: false,
+  },
+  CATEGORY_QUOTA: {
+    id: 'CATEGORY_QUOTA', category: CONSTRAINT_CATEGORY.HARD, relaxable: false,
+    source: CONSTRAINT_SOURCE.USER_NUMERIC_LIMIT, confidence: 1, weight: null, enforced: true,
+    exemptForRequiredCourses: false,
+  },
+  CREDIT_TARGET: {
+    id: 'CREDIT_TARGET', category: CONSTRAINT_CATEGORY.HARD, relaxable: false,
+    source: CONSTRAINT_SOURCE.USER_NUMERIC_LIMIT, confidence: 1, weight: null, enforced: true,
+    exemptForRequiredCourses: false,
+  },
   TIME_CONFLICT: {
     id: 'TIME_CONFLICT',
     category: CONSTRAINT_CATEGORY.HARD,

@@ -208,10 +208,11 @@ describe('P4 系所年級班別兩段式確認；排課偏好直接寫入（ADR-
     }
   });
 
-  test('prompt 說明聊天中的偏好直接存、這次就好不存、沒提到的沿用已存偏好', () => {
+  test('prompt 要求自然短句只確認缺的資訊，保存與重排分開', () => {
     const prompt = buildSystemPrompt({ preferenceTags: ['#不排早八', '#涼課優先'] });
-    assert.ok(prompt.includes('就直接呼叫 update_preferences 存起來'));
-    assert.ok(prompt.includes('「這次就好」'));
+    assert.ok(prompt.includes('短答、保存或暫存'));
+    assert.ok(prompt.includes('只確認不清楚的部分'));
+    assert.ok(prompt.includes('只改偏好時不要呼叫排課工具'));
     assert.ok(prompt.includes('沿用你已存的偏好'));
     assert.ok(prompt.includes('左側已勾選的偏好：不排早八、涼課優先'));
     assert.equal(prompt.includes('明說沒提到的項目'), false, '舊規則「沒提到就說沒替他決定」已移除');
@@ -405,10 +406,10 @@ describe('P20 Agent 讀寫課程主題偏好（ADR-037）', () => {
     assert.equal(Object.keys(props).some(field => /cf/i.test(field)), false);
   });
 
-  test('prompt 區分長期主題（存）與這次想排（interests），並要求照實轉述分數', () => {
+  test('prompt 由伺服器判斷主題的適用範圍，並要求照實轉述分數', () => {
     const prompt = buildSystemPrompt({});
-    assert.ok(prompt.includes('呼叫 update_topic_interests 的 addTerms 直接存進課程主題'));
+    assert.ok(prompt.includes('呼叫 update_topic_interests 的 addTerms'));
     assert.ok(prompt.includes('呼叫 get_topic_interests'));
-    assert.ok(prompt.includes('把方向放進單次 run_csp_scheduler 的 interests'));
+    assert.ok(prompt.includes('伺服器依「這次／以後」處理'));
   });
 });

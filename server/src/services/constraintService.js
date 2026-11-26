@@ -4,6 +4,7 @@
 import { PERIODS_PER_DAY, normalizeBlockedPeriods } from '../utils/periods.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
 import { resolveInterestSelections } from '../data/interestSelections.js';
+import { normalizeScheduleOptions, readScheduleOptions } from '../data/scheduleOptions.js';
 
 const MONDAY = 1;
 
@@ -51,7 +52,9 @@ function buildBlockedPeriods(input, prefs) {
   // request 與已儲存偏好都可能帶時間字串（例如 "08:00"），一律先正規化成
   // 排課引擎認得的 { day, period }，否則比對時 bp.day 為 undefined 會靜默失效。
   const blockedPeriods = normalizeBlockedPeriods(
-    pickList(input.blockedPeriods, prefs.blockedPeriods)
+    input.overrideBlockedPeriods === true
+      ? input.blockedPeriods
+      : pickList(input.blockedPeriods, prefs.blockedPeriods)
   );
 
   if (pickFlag(input.mondayFree, prefs.mondayFree)) {
@@ -66,7 +69,14 @@ function buildBlockedPeriods(input, prefs) {
 }
 
 export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
+  const scheduleOptions = { ...readScheduleOptions(prefs), ...normalizeScheduleOptions(input.scheduleOptions) };
+  const requestedMax = input.maxCredits ?? scheduleOptions.maxCredits ?? prefs.targetCreditsMax;
+  const requestedMin = scheduleOptions.minCredits == null
+    ? prefs.targetCreditsMin
+    : Math.max(scheduleOptions.minCredits, prefs.targetCreditsMin ?? 0);
+  const overload = pickFlag(input.allowCreditOverload, prefs.allowCreditOverload);
   return {
+    ...(Object.keys(scheduleOptions).length ? { scheduleOptions } : {}),
     // #13：必修範圍必須依學生的系所與年級收斂，否則全校 2094 筆必修都會被
     // 當成這位學生的必修。這兩個值先前沒有帶進排課限制，排課引擎無從判定。
     department: input.department || prefs.department || null,
@@ -78,15 +88,15 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
 
     // 校規：上限 25、下限 12（四年級 9），超修申請後 30。
     // 見 `docs/COURSE_SELECTION_RULES.md`；未指定時交由排課引擎依年級與超修選擇決定。
-    maxCredits: input.maxCredits ?? prefs.targetCreditsMax ?? undefined,
-    minCredits: input.minCredits ?? prefs.targetCreditsMin ?? undefined,
-    allowCreditOverload: pickFlag(input.allowCreditOverload, prefs.allowCreditOverload),
+    maxCredits: requestedMax == null ? undefined : Math.min(requestedMax, overload ? 30 : 25),
+    minCredits: input.minCredits ?? requestedMin ?? undefined,
+    allowCreditOverload: overload,
     // 每日課程數上限沒有校方依據，不再預設 4 門。
-    maxCoursesPerDay: input.maxCoursesPerDay ?? undefined,
+    maxCoursesPerDay: input.maxCoursesPerDay ?? scheduleOptions.maxCoursesPerDay ?? undefined,
     blockedPeriods: buildBlockedPeriods(input, prefs),
 
     noMorningClasses: pickFlag(input.noMorningClasses, prefs.noMorningClasses),
-    noEveningClasses: pickFlag(input.noEveningClasses, prefs.noEveningClasses),
+    noEveningClasses: pickFlag(input.noEveningClasses, scheduleOptions.noEveningClasses ?? prefs.noEveningClasses),
     lunchBreakFree: pickFlag(input.lunchBreakFree, prefs.lunchBreakFree),
 
     noMidterm: pickFlag(input.noMidterm, prefs.noMidterm),
@@ -100,8 +110,12 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     finalReport: pickFlag(input.finalReport, prefs.finalReport),
     englishTaught: pickFlag(input.englishTaught, prefs.englishTaught),
 
-    mustTakeCourseIds: pickList(input.mustTakeCourseIds, prefs.mustTakeCourses),
-    avoidInstructors: pickList(input.avoidInstructors, prefs.avoidInstructors),
+    mustTakeCourseIds: [...new Set([
+      ...pickList(input.mustTakeCourseIds, prefs.mustTakeCourses), ...(scheduleOptions.requiredSectionIds ?? []),
+    ])],
+    avoidInstructors: hasItems(input.avoidInstructors)
+      ? input.avoidInstructors
+      : scheduleOptions.avoidInstructors ?? pickList(undefined, prefs.avoidInstructors),
     // 修課歷史直通，**不做 request／偏好合併**。
     //
     // `pickList()` 的用途是「request 可以覆蓋已儲存偏好」，但修課歷史沒有任何
@@ -166,7 +180,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
       input.preferChallengingCourses,
       prefs.preferChallengingCourses
     ),
-    preferredTrack: input.preferredTrack || prefs.preferredTrack || null,
+    preferredTrack: Object.hasOwn(input, 'preferredTrack') ? input.preferredTrack : prefs.preferredTrack || null,
     // 興趣關鍵字只來自這次請求（AI 聊天單次排課「這次想排資安」）。
     // 已存的文字興趣欄位已移除（ADR-032，2026-11-23），長期興趣改由下方的 interestTagIds 表達。
     preferredKeywords: pickRequestList(input.preferredKeywords),
@@ -195,7 +209,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
     // 放寬階梯的順序，使用者可自訂（constraintId 陣列，例如
     // `['LUNCH_BREAK_FREE', 'NO_MORNING_CLASSES', 'NO_EVENING_CLASSES']`）；
     // 未提供時 `scheduler.js` 會退回 `constraintSchema.js` 的預設順序。
-    timePreferencePriority: pickList(input.timePreferencePriority, prefs.timePreferencePriority),
+    timePreferencePriority: pickList(input.timePreferencePriority, scheduleOptions.timePreferencePriority ?? prefs.timePreferencePriority),
     // Roadmap #24：這次請求中絕對不可被自動放寬的偏好。
     //
     // **純 request、不從 prefs 回填**——「這次絕對不行」是當下這句話的語氣，

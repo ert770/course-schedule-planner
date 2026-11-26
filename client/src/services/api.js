@@ -94,7 +94,7 @@ export const graduationAPI = { get: () => request('/graduation/me') };
 export const chatAPI = {
   getHistory: () => request('/chat/history'),
   // `planningContext` 是「使用者畫面上現在是什麼狀況」：目前留著哪些課、
-  // 本次移除了哪些課、原因是什麼。少了它，Agent 只能反問它其實問得到的資料。
+  // 哪些課是手動加選、本次移除了哪些課、原因是什麼。
   //
   // 只送 ID 與原因代號，**不送課名、課號或教師**——那些字串會進 system prompt，
   // 由伺服器從 Courses 重查才是唯一能保證對上的做法（見 planningContextService.js）。

@@ -5,6 +5,7 @@ import { normalizeAdmissionYear } from './graduationRuleVersions.js';
 import { readInterestPreferences, normalizePreferencesJson, REMOVED_INTEREST_FIELDS } from './interestPreferences.js';
 import { readPersonalizationPreferences } from './personalizationPreferences.js';
 import { readSemesterPlanningPreferences } from './semesterPlanningPreferences.js';
+import { readScheduleOptions } from './scheduleOptions.js';
 
 // Profile 的 canonical shape 永遠標記為這個版本。
 //
@@ -54,6 +55,7 @@ export function normalizeProfile(profile = {}) {
     // 形狀的物件當 profile 正規化」這條沒人走的路，constraints 那邊完全不受影響。
     targetCreditsMax: toFiniteNumber(profile.targetCreditsMax, 25),
     blockedPeriods: normalizeBlockedPeriods(profile.blockedPeriods ?? []),
+    scheduleOptions: readScheduleOptions(profile),
     preferenceTags: tags,
     selectedTags: tags,
     preferredCategories: tags,
@@ -131,9 +133,14 @@ export function validateProfile(profile) {
 // 新使用者存完設定仍可能沒有，所以不列為條件。前端據此決定登入後要不要走引導流程，
 // 取代原本只存在瀏覽器、登出就被清掉的 `setupDone` 標記（2026-10-16）。
 export function isProfileSetupComplete(profile) {
+  if (['history', 'schedule'].includes(readInitialSetupStage(profile))) return false;
   return Boolean(profile?.department) && Number.isFinite(Number(profile?.gradeLevel)) && Number(profile.gradeLevel) > 0;
 }
 
+export function readInitialSetupStage(profile) {
+  const stage = normalizePreferencesJson(profile?.preferencesJson).values.initialSetupStage;
+  return ['history', 'schedule', 'completed'].includes(stage) ? stage : null;
+}
 export default {
   PROFILE_SCHEMA_VERSION,
   normalizeProfile,
