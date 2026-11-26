@@ -91,7 +91,8 @@ export function getPassedCourseCodes(courseHistory = []) {
 export const INTEREST_HISTORY_CATEGORIES = Object.freeze(['elective', 'general', 'external']);
 export function getPassedNonRequiredAttempts(courseHistory = []) {
   const categories = new Set(INTEREST_HISTORY_CATEGORIES);
-  return [...getLatestAttemptsByCourseCode(courseHistory).values()]
+  const matchedHistory = toArray(courseHistory).filter(entry => entry?.catalogMatchStatus !== 'unmatched');
+  return [...getLatestAttemptsByCourseCode(matchedHistory).values()]
     .filter(entry => entry?.passed && categories.has(entry.graduationCategory));
 }
 

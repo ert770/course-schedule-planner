@@ -356,6 +356,7 @@ export function mapCourseHistoryRow(row) {
       `歷史修課資料格式不完整（history_id=${row.history_id ?? 'unknown'}）：缺少 ${missingColumns.join('、')}`
     );
   }
+  const matchStatus = row.catalog_match_status;
   const entry = {
     academicYear: normalizeNumber(row.academic_year),
     semester: normalizeNumber(row.semester),
@@ -368,6 +369,7 @@ export function mapCourseHistoryRow(row) {
     requirementType: row.requirement_type,
     generalEducationCategory: row.general_education_category ?? null,
     graduationCategory: row.graduation_category,
+    ...(matchStatus === 'matched' || matchStatus === 'unmatched' ? { catalogMatchStatus: matchStatus } : {}),
   };
   const validation = validateCourseHistoryEntry(entry);
   if (!validation.valid) {
@@ -379,8 +381,9 @@ export function mapCourseHistoryRow(row) {
 }
 
 // MyFCU 匯入的修課紀錄（migration 013 起欄位可為 NULL）：
-//   - 沒有對到課號（`catalog_course_code` NULL）或成績無法判讀（`passed` NULL）的列不進推薦與畢業計算；
+//   - 沒有課號（`catalog_course_code` NULL）或成績無法判讀（`passed` NULL）的列不進推薦與畢業計算；
 //     它們仍留在資料庫，歷史修課列表（courseHistoryListService）看得到。
+//   - MyFCU 原課號可保存但尚未匹配。個人化學習另外檢查 catalogMatchStatus。
 //   - 修別與畢業分類為 NULL 的列，讀取時補分類，不寫回資料庫。依序（2026-11-23 團隊決定）：
 //       1. 體育、國防科技、班級活動 → nonGraduation（getNonGraduationCategory，與排課的校規相同）
 //       2. 資工必選修、通識基礎必修 → classifyHistoryEntryByCurriculum
@@ -484,7 +487,10 @@ export async function getUserCourseHistory(identity) {
       SELECT
         \`history_id\`, \`academic_year\`, \`semester\`, \`catalog_course_code\`,
         \`course_name\`, \`score\`, \`letter_grade\`, \`credits\`, \`passed\`,
-        \`requirement_type\`, \`general_education_category\`, \`graduation_category\`
+        \`requirement_type\`, \`general_education_category\`, \`graduation_category\`,
+        CASE WHEN source = 'myfcu_session'
+             THEN JSON_UNQUOTE(JSON_EXTRACT(source_payload, '$.catalogMatchStatus'))
+        END AS catalog_match_status
       FROM \`User_Course_History\`
       WHERE \`user_id\` = ?
       ORDER BY \`academic_year\`, \`semester\`, \`history_id\`

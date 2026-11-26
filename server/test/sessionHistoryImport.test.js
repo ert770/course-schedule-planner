@@ -71,3 +71,48 @@ test('SessionImport 同一筆修課的課名只差 (Online) 時跳過', async (t
     });
   }
 });
+
+test('SessionImport 預檢唯讀，補號及後續匹配更新都留在同一筆紀錄', async () => {
+  const stored = {
+    history_id: 12, source: 'myfcu_session', catalog_course_code: null, source_course_code: 'OLD1',
+    course_name: '過往課程', academic_year: 112, semester: 1, credits: 3, score: '92.00',
+    source_payload: { matchReason: 'missing_term_catalog', sourceNumericScore: 92 },
+  };
+  const identity = { found: true, source: 'mysql', canWriteMysqlProfile: true, numericId: 1, canonicalId: 'TEST' };
+  const row = { courseCode: 'OLD1', courseName: stored.course_name, academicYear: 112, semester: 1, credits: 3, score: 92 };
+  let syllabus = [];
+  let writes = 0;
+  const db = { async execute(sql, params) {
+    if (sql.startsWith('SELECT student_id')) return [[{ student_id: identity.canonicalId }]];
+    if (sql.includes('FROM Course_Syllabi')) return [syllabus];
+    if (sql.includes('FROM User_Course_History')) return [[stored]];
+    if (sql.startsWith('SELECT')) return [[]];
+    assert.match(sql, /^UPDATE User_Course_History SET catalog_course_code=\?,source_payload=\? WHERE history_id=\? AND user_id=\? AND source=\? AND catalog_course_code <=> \?/);
+    assert.deepEqual(params.slice(2), [12, 1, 'myfcu_session', stored.catalog_course_code]);
+    stored.catalog_course_code = params[0];
+    stored.source_payload = JSON.parse(params[1]);
+    writes++;
+    return [{ affectedRows: 1 }];
+  } };
+  const sync = (dryRun = false, rows = [row]) => importExtractedHistory(identity, rows, fn => fn(db), { sessionImport: true, dryRun });
+  const update = { inserted: 0, updated: 1, skipped: 0, unmatched: 0, conflicts: 0 };
+  const skip = { inserted: 0, skipped: 1, unmatched: 0, conflicts: 0 };
+
+  assert.deepEqual(await sync(true), update);
+  assert.equal(writes, 0);
+  assert.deepEqual(await sync(), update);
+  assert.equal(stored.catalog_course_code, 'OLD1');
+  assert.equal(stored.source_payload.catalogMatchStatus, 'unmatched');
+  assert.equal(stored.source_payload.sourceNumericScore, 92);
+  assert.deepEqual(await sync(), skip);
+
+  syllabus = [{ academic_year: 114, semester: 1, course_code: 'OLD1' }];
+  assert.deepEqual(await sync(true), update);
+  assert.deepEqual(await sync(), update);
+  assert.equal(stored.source_payload.catalogMatchStatus, 'matched');
+  assert.deepEqual(stored.source_payload.catalogMatchEvidence, { term: '114:1', source: 'syllabus' });
+  assert.equal(stored.score, '92.00');
+  assert.deepEqual(await sync(), skip);
+  assert.equal((await sync(true, [{ ...row, score: 91 }])).conflicts, 1);
+  assert.equal(writes, 2);
+});

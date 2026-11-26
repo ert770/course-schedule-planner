@@ -46,6 +46,14 @@ describe('H8 User_Course_History 資料庫契約', () => {
     assert.equal(mapCourseHistoryRow(row({ passed: 0 })).passed, false);
   });
 
+  test('MyFCU 的課號與目錄匹配狀態分開映射', () => {
+    const history = mapCourseHistoryRow(row({ catalog_course_code: 'OLD1', catalog_match_status: 'unmatched' }));
+    assert.equal(history.courseCode, 'OLD1');
+    assert.equal(history.catalogMatchStatus, 'unmatched');
+    assert.equal(mapCourseHistoryRow(row({ catalog_match_status: 'matched' })).catalogMatchStatus, 'matched');
+    assert.ok(!Object.hasOwn(mapCourseHistoryRow(row()), 'catalogMatchStatus'));
+  });
+
   test('H8 必要 DB 欄位缺漏時明確回報 503', () => {
     assert.throws(
       () => mapCourseHistoryRow(row({ course_name: null })),

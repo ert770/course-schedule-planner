@@ -74,11 +74,15 @@ test('MyFCU session preview and import accept only an Online suffix difference f
   assert.equal(conflict.writes.length, 0);
 });
 
-test('MyFCU import and read-only rematch require the exact term and course code', async () => {
+test('MyFCU import keeps the original code and records match evidence in term order', async () => {
   const attempts = [
-    row('ARCH1', '歷年課程', 113), row('ARCH1', '相同課號舊學期', 111),
-    { ...row('ARCH1', '同年不同學期', 113), semester: 2 },
     { ...row('NOW1', '當期課程', 114), semester: 2 },
+    row('ARCH1', '歷年課程', 113),
+    row('NOW1', '當期課程', 112),
+    { ...row('ARCH1', '歷年課程', 113), semester: 2 },
+    row('MISS1', '無比對資料', 111),
+    row('', '沒有課號', 111),
+    row('CONFLICT1', '課名不同', 113),
   ];
   const writes = [];
   const db = { async execute(sql, params) {
@@ -90,6 +94,8 @@ test('MyFCU import and read-only rematch require the exact term and course code'
     if (sql.startsWith('SELECT student_id')) return [[{ student_id: 'TEST' }]];
     if (sql.includes('FROM Course_Sections')) return [[
       { academic_year: 114, semester: '下學期', course_code: 'NOW1', course_name: '當期課程' },
+      { academic_year: 113, semester: 1, course_code: 'CONFLICT1', course_name: '原學期課名' },
+      { academic_year: 114, semester: '下學期', course_code: 'CONFLICT1', course_name: '課名不同' },
     ]];
     if (sql.includes('FROM Course_Syllabi')) return [[
       { academic_year: 113, semester: 1, course_code: 'ARCH1' },
@@ -100,11 +106,24 @@ test('MyFCU import and read-only rematch require the exact term and course code'
     writes.push(params);
     return [{}];
   } };
-  const expected = [['ARCH1', null], [null, 'missing_term_catalog'], [null, 'not_found'], ['NOW1', null]];
+  const expected = [
+    ['NOW1', null, { term: '114:2', source: 'section' }],
+    ['ARCH1', null, { term: '113:1', source: 'syllabus' }],
+    ['NOW1', null, { term: '114:2', source: 'section' }],
+    ['ARCH1', null, { term: '113:1', source: 'syllabus' }],
+    [null, 'missing_term_catalog', null],
+    [null, 'missing_source_code', null],
+    [null, 'code_name_conflict', null],
+  ];
   const preview = await previewUnmatchedMyFcuHistory(db, 1);
-  assert.deepEqual(preview.map(item => [item.code, item.reason]), expected);
+  assert.deepEqual(preview.map(item => [item.code, item.reason, item.evidence ?? null]), expected);
   assert.equal(writes.length, 0);
   const imported = await importExtractedHistory(identity, attempts, fn => fn(db), {sessionImport: true});
-  assert.deepEqual(imported, {inserted: 4, skipped: 0, unmatched: 2, conflicts: 0});
-  assert.deepEqual(writes.map(params => [params[1], JSON.parse(params[13]).matchReason]), expected);
+  assert.deepEqual(imported, {inserted: 7, skipped: 0, unmatched: 3, conflicts: 1});
+  assert.deepEqual(writes.map(params => params[1]), attempts.map(item => item.courseCode || null));
+  assert.deepEqual(writes.map(params => {
+    const payload = JSON.parse(params[13]);
+    return [payload.catalogMatchStatus, payload.matchReason, payload.catalogMatchEvidence];
+  }), expected.map(([code, reason, evidence]) => [code ? 'matched' : 'unmatched', reason, evidence]));
+  assert.deepEqual(writes.map(params => params.slice(4, 6)), attempts.map(item => [item.academicYear, item.semester]));
 });

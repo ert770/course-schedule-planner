@@ -1110,9 +1110,13 @@ migration 檔自 `feature/myfcu-session-import` 移植到 `server/migrations/`�
 
 **帳號**：註冊流程建立的帳號在 `User_Profiles.password_hash` 存 argon2id 雜湊（Node 內建 `crypto.argon2`，需 Node ≥ 24.7）。demo 與 Persona 帳號有 `student_id` 但沒有雜湊，非 production 登入時退回 `users.json`（見 API_SPEC）。
 
-**匯入的列**：MyFCU 自動匯入寫入 `source`=`myfcu_session` 或 `myfcu_self_attested`，修別與畢業分類為 NULL；對不到目錄課號時 `catalog_course_code` 為 NULL、原始課號在 `source_course_code`。
+MyFCU 自動匯入寫入 `source`=`myfcu_session` 或 `myfcu_self_attested`，修別與畢業分類為 NULL。原始課號以 `source_course_code` 保存；`myfcu_self_attested` 保留未匹配時 `catalog_course_code` 為 NULL 的規則。
 
-`myfcu_session` 比對同修課學期的 `Course_Syllabi.course_code` 或 `Course_Sections` 與 `Courses` 的開課資料。兩個來源都沒有該學期時，`source_payload.matchReason` 記為 `missing_term_catalog`。歷史修課列表亦會依照目前的學期覆蓋範圍顯示舊紀錄是否缺少比對資料。
+`myfcu_session` 將合法來源課號保存至 `catalog_course_code`，比對結果獨立保存至 `source_payload.catalogMatchStatus`（`matched`／`unmatched`）。比對順序為原學期班次、原學期課綱、其他學期班次、其他學期課綱。班次比對需同課號、同課名，允許只差結尾 `(Online)`。無課名可核對的課綱可用同課號作為證據。可核對的班次名稱明確衝突時列入預檢衝突。
+
+`source_payload.catalogMatchEvidence` 保存匹配證據的 `term`（`學年:學期`）和 `source`（`section`／`syllabus`），未匹配時為 null。`matchReason` 保留匹配失敗原因。重匯只更新本人同一次修課的空白正式課號，或將新取得證據的狀態更新為已匹配。原始修課學期與成績等資料沿用既有值。
+
+歷史列表會依比對狀態與學期覆蓋顯示既有提示。讀取 Profile 時，缺新狀態的既有資料沿用原規則。明確為 `unmatched` 的紀錄不加入非必修歷史興趣證據，亦不列入歷史喜好回饋資格。
 
 **讀取規則**（`getUserCourseHistory()`，2026-11-23 團隊決定）：
 - `catalog_course_code` 或 `passed` 為 NULL 的列不進推薦、排課與畢業計算（仍可在歷史修課列表看到）。

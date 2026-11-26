@@ -14,6 +14,7 @@ import {
   getFailedRequiredCourseCodes,
   getLatestAttemptsByCourseCode,
   getPassedCourseCodes,
+  getPassedNonRequiredAttempts,
   getEarnedCredits,
   getTotalEarnedCredits,
   validateCourseHistoryEntry,
@@ -35,6 +36,17 @@ function entry(overrides = {}) {
     ...overrides,
   };
 }
+
+test('未匹配的 MyFCU 課號保留已修事實，但不作為歷史興趣證據', () => {
+  const elective = { requirementType: '選修', graduationCategory: 'elective' };
+  const unmatched = entry({ ...elective, courseCode: 'OLD1', catalogMatchStatus: 'unmatched' });
+  const matched = entry({ ...elective, courseCode: 'NEW1', catalogMatchStatus: 'matched' });
+  const legacy = entry({ ...elective, courseCode: 'LEGACY1' });
+  const laterUnmatched = { ...matched, academicYear: 114, catalogMatchStatus: 'unmatched' };
+  const history = [unmatched, matched, legacy, laterUnmatched];
+  assert.deepEqual(getPassedCourseCodes(history), ['OLD1', 'NEW1', 'LEGACY1']);
+  assert.deepEqual(getPassedNonRequiredAttempts(history), [matched, legacy]);
+});
 
 function regressionHistory() {
   const groups = [
