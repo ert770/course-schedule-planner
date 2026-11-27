@@ -4,6 +4,22 @@
 [cite_start]本系統旨在解決大學生排課耗時且容易衝突的問題 [cite: 16][cite_start]，並整合分散的課程評價資訊 [cite: 17]。
 [cite_start]透過建立一個個人化課表規劃推薦系統 Agent [cite: 55][cite_start]，系統能根據使用者的個人限制條件（如不排早八等）[cite: 16][cite_start]，運用演算法自動生成無衝突的最佳化課表 [cite: 19]。
 
+## 從乾淨的 Git checkout 啟動
+
+1. 安裝 Node.js 24。在專案根目錄執行 `npm ci`，接著執行 `npm ci --prefix client` 與 `npm ci --prefix server`。
+2. 參考 `.env.example` 設定 `server/.env`。課程與歷史修課功能需要團隊提供的 MySQL 連線設定與 TLS CA。可把 CA 放在 `server/ca.pem`，並依範例設定 `DB_SSL_CA_PATH`。Agent 呼叫模型時需要自己的 `OPENAI_API_KEY`。
+3. 在專案根目錄執行 `npm run dev`。Windows 本機 MyFCU 同步需要安裝 Google Chrome，並使用 `npm run dev:myfcu`。詳細步驟見 [MyFCU 操作文件](docs/AIVEN_HISTORY_MIGRATION_RUNBOOK.md)。
+
+「從一門課出發」會直接讀取隨版本提供的 `server/simulation-runs/course-exploration-embeddings/index.json`。需要指定其他索引時，可設定 `COURSE_EXPLORATION_EMBEDDINGS_PATH`，建議使用絕對路徑。下列指令均從專案根目錄執行。
+
+| 指令 | 用途 |
+| --- | --- |
+| `npm --prefix server run exploration:index:check` | 載入索引，以隔離修課及班次驗證已修課能選取並完成比較。無須 MySQL 或模型金鑰 |
+| `npm --prefix server run exploration:index:audit` | 唯讀盤點 MySQL 課程範圍與缺少快取的文字 |
+| `npm --prefix server run exploration:index:build` | 由維護者更新索引，僅對快取未命中的課程文字呼叫向量 API |
+
+更新後先檢查課程來源和涵蓋範圍，再執行檢查指令。`simulation-runs/` 只交付索引，向量快取和其他產物留在本機。
+
 ## 系統架構規劃
 本專案採用四層式架構進行開發：
 

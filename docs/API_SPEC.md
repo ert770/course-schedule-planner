@@ -2080,8 +2080,9 @@ Query：
 錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課，或是被排除的課）、`400 INVALID_EXPLORATION_REPRESENTATION`、
 `400 CLASS_NAME_REQUIRED`。
 
-向量為離線產物 `server/simulation-runs/course-exploration-embeddings/index.json`（git-ignored），由
-`node server/scripts/courseExplorationEmbeddings.js --apply` 產生；請求當下不呼叫外部 API、不寫入 MySQL。
+Git checkout 隨附離線向量索引 `server/simulation-runs/course-exploration-embeddings/index.json`。
+後端可用 `COURSE_EXPLORATION_EMBEDDINGS_PATH` 指定另一份索引。維護者可從專案根目錄執行
+`npm --prefix server run exploration:index:build` 更新索引。請求當下不呼叫外部 API、不寫入 MySQL。
 
 #### `GET /api/exploration?mode=profile`（協同過濾與 User Embedding 構想階段 4）
 
