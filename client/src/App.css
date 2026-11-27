@@ -1440,6 +1440,7 @@
 .history-code { font-weight: 600; white-space: nowrap; }
 .history-badge { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 5px; background: rgba(217,119,6,.1); color: #b45309; font-size: .7rem; font-weight: 600; white-space: nowrap; }
 [data-theme="dark"] .history-badge { color: #fbbf24; }
+[data-theme="dark"] .grad-progress-bar { background: var(--bg-card-hover) !important; }
 .history-steps { display: flex; gap: 12px; list-style: none; padding: 0; margin: 0 0 22px; }
 .history-steps li { display: flex; align-items: center; gap: 9px; flex: 1; padding: 13px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-muted); font-size: .85rem; font-weight: 600; background: var(--bg-card); }
 .history-steps li span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--bg-primary); font-size: .75rem; }

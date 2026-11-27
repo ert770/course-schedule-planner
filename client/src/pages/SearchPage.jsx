@@ -329,7 +329,7 @@ export default function SearchPage() {
                 <select 
                   value="資訊工程學系" 
                   disabled 
-                  style={{ backgroundColor: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }}
+                  style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-muted)', cursor: 'not-allowed' }}
                 >
                   <option value="資訊工程學系">資訊工程學系</option>
                 </select>
@@ -474,8 +474,8 @@ export default function SearchPage() {
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               style={{ 
-                background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', 
-                color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', cursor: 'pointer', 
+                color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 padding: '8px', borderRadius: '8px', transition: 'all 0.2s'
               }}
               onMouseOver={(e) => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#3b82f6'; }}
@@ -496,7 +496,7 @@ export default function SearchPage() {
           ) : isSearching && displayCourses.length === 0 ? (
             <div className="no-results" role="status">正在搜尋課程…</div>
           ) : displayCourses.length === 0 && !resultError ? (
-            <div className="no-results" style={{ color: '#64748b' }}>
+            <div className="no-results" style={{ color: 'var(--text-secondary)' }}>
               {emptyMessage}
             </div>
           ) : displayCourses.length > 0 ? (

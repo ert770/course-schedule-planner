@@ -142,8 +142,8 @@ export default function GraduationPage() {
             onClick={() => toggleCategoryExpand(category)}
             style={{
               width: '100%',
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
+              background: 'var(--bg-card-hover)',
+              border: '1px solid var(--border-color)',
               borderRadius: '8px',
               cursor: 'pointer',
               display: 'flex',
@@ -164,15 +164,15 @@ export default function GraduationPage() {
             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px', animation: 'fadeIn 0.25s ease' }}>
               {/* 如果是通識類別，在展開後顯示基礎必修與通識選修的細節 */}
               {isGeneral && data?.generalEducation && (
-                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontWeight: '700', color: '#1e293b' }}>通識細節拆解：</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                <div style={{ background: 'var(--bg-card-hover)', padding: '10px', borderRadius: '8px', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>通識細節拆解：</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                     <span>基礎必修</span>
                     <span style={{ fontWeight: '600', color: data.generalEducation.basic.gap === 0 ? '#10b981' : '#ef4444' }}>
                       {data.generalEducation.basic.earned}/{data.generalEducation.basic.required}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                     <span>通識選修</span>
                     <span style={{ fontWeight: '600', color: data.generalEducation.elective.gap === 0 ? '#10b981' : '#ef4444' }}>
                       {data.generalEducation.elective.earned}/{data.generalEducation.elective.required}
@@ -183,7 +183,7 @@ export default function GraduationPage() {
 
               {/* 已修課程清單 */}
               {earnedCourses.length > 0 && (
-                <ul className="grad-attribution-list" style={{ margin: 0, paddingLeft: '16px', fontSize: '0.8rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
+                <ul className="grad-attribution-list" style={{ margin: 0, paddingLeft: '16px', fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
                   {earnedCourses.map(item => (
                     <li key={`${item.courseCode}-${item.academicYear}-${item.semester}`}>
                       <span className="grad-attribution-term" style={{ color: '#94a3b8', marginRight: '6px' }}>
@@ -327,7 +327,7 @@ export default function GraduationPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: '4px' }}>
               {(data?.recommendations || []).length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '0.9rem', background: '#f8fafc', borderRadius: '10px' }}>
+                <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '0.9rem', background: 'var(--bg-card-hover)', borderRadius: '10px' }}>
                   目前沒有 AI 補救建議
                 </div>
               ) : (
@@ -350,7 +350,7 @@ export default function GraduationPage() {
                             : `💡 ${rec.gapLabel || '課程'}推薦：`}
                         </span>
                       </div>
-                      <p className="grad-rec-message" style={{ margin: 0, fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>{rec.message}</p>
+                      <p className="grad-rec-message" style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: '1.5' }}>{rec.message}</p>
                       {hasSection && (
                         <div className="grad-course-controls">
                           <button type="button" className="course-card-action grad-course-detail" onClick={() => setSelectedCourse(course)}>

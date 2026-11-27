@@ -422,3 +422,21 @@ input, textarea, select {
   line-height: 1.6;
 }
 
+
+/* 深色主題：上面這些元件的背景寫死成淺色，文字卻跟著主題變成淺色，
+ * 深色模式下會變成「淺底白字」看不見。這裡統一改用主題變數。 */
+[data-theme='dark'] ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+[data-theme='dark'] .btn-secondary,
+[data-theme='dark'] .input-field,
+[data-theme='dark'] .modal-content { background: var(--bg-card); }
+[data-theme='dark'] .btn-secondary:hover,
+[data-theme='dark'] .modal-close,
+[data-theme='dark'] .detail-code,
+[data-theme='dark'] .detail-desc { background: var(--bg-card-hover); }
+[data-theme='dark'] .modal-close:hover { background: var(--border-color); }
+[data-theme='dark'] .detail-code { color: var(--text-secondary); }
+[data-theme='dark'] .detail-reason { background: rgba(74, 124, 247, 0.12); }
+[data-theme='dark'] .reason-confidence-high { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }
+[data-theme='dark'] .reason-confidence-medium { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
+[data-theme='dark'] .reason-confidence-low { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+[data-theme='dark'] .reason-tradeoff { color: #fcd34d; }

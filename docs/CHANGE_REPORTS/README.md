@@ -2,6 +2,10 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-11-27
+
+- [MyFCU 部分匯入擴及六個分類、欄位格式與擷取診斷；深色主題對比修正](./2026-11-27-myfcu-all-category-partial-import-and-dark-theme.md)
+
 ## 2026-11-24
 
 - [Agent 讀取並修改課程主題偏好（ADR-037）](./2026-11-24-agent-topic-interests.md)

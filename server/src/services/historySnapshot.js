@@ -4,7 +4,6 @@ const lifetimeMs = 30 * 60 * 1000;
 const maxSnapshots = 3;
 const version = 1;
 const categories = ['#/courseXd', '#/courseKind1', '#/courseXc', '#/courseKind23', '#/courseSelP', '#/courseSelPno'];
-const reviewableCategories = new Set(['#/courseKind1', '#/courseKind23']);
 function owner(identity) {
  const id = Number(identity?.numericId);
  if (!identity?.found || identity.source !== 'mysql' || !identity.canWriteMysqlProfile || !Number.isSafeInteger(id) || id < 1 || !identity.canonicalId) throw new Error('SNAPSHOT_IDENTITY');
@@ -17,7 +16,7 @@ export function canSnapshotHistory(result) {
  if (result.allCategoriesComplete === true) return true;
  if (!Array.isArray(result.categories) || result.categories.length !== categories.length) return false;
  return categories.every(hash => result.categories.some(category => category?.hash === hash && (
-  category.status === 'complete' || (reviewableCategories.has(hash) && category.status === 'incomplete' &&
+  category.status === 'complete' || (category.status === 'incomplete' &&
    category.rowReviewOnly === true && category.rowSummary?.invalidRows > 0)
  )));
 }
