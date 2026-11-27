@@ -14,16 +14,11 @@ import { explorationAPI } from '../services/api';
 import { EXPLORATION_SOURCE } from '../services/selectionSource';
 import CourseActions, { CourseActionsProvider } from '../components/CourseCard/CourseActions';
 import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
+import { formatCourseGradeLevel } from '../utils/courseGradeLevel';
 import { formatCourseTime } from '../utils/courseTime';
 import '../App.css';
 
 import TopNav from '../components/Layout/TopNav';
-// 認列狀態的文字。通過機械條件不等於已確認可抵畢業學分，所以不寫「可計入畢業學分」。
-const RECOGNITION_TEXT = {
-  'needs-office-confirmation': '符合系外選修條件，仍須向系辦確認是否認列',
-  unchecked: '尚無法判定是否認列為系外選修，請向系辦確認',
-};
-
 const EMPTY_REASON_TEXT = {
   'no-course-history': '目前沒有你的修課紀錄，無法從已修課程出發探索。',
   'no-available-favorite': '你修過的課目前都沒有可比較的課程資料，暫時無法當作探索起點。',
@@ -74,67 +69,93 @@ const EVIDENCE_SOURCE_TEXT = {
 
 const MODE = { PROFILE: 'profile', FAVORITE: 'favorite' };
 
-function ProfileReasons({ reasons }) {
-  if (!reasons) return null;
-  const tags = reasons.tags.map(tag => (
-    tag.viaNeighbor ? `${tag.courseTag}（近似你的「${tag.userTag}」）` : tag.courseTag
-  ));
-  const evidence = reasons.closestEvidence;
+function ExploreReasons({ tags, evidence }) {
+  if (tags.length === 0 && !evidence) return null;
   return (
-    <p className="explore-shared-terms">
-      {tags.length > 0 && <>共同主題：{tags.join('、')}</>}
-      {evidence?.name && (
-        <>{tags.length > 0 ? '。' : ''}和你{EVIDENCE_SOURCE_TEXT[evidence.source] || '互動過'}的「{evidence.name}」相近</>
+    <div className="explore-shared-terms">
+      {tags.length > 0 && (
+        <>
+          <p className="explore-topics-label">共同主題</p>
+          <ul className="explore-topic-tags" aria-label="共同主題">
+            {tags.map((tag, index) => <li key={`${tag}-${index}`}>{tag}</li>)}
+          </ul>
+        </>
       )}
-    </p>
+      {evidence && <p className="explore-reason-evidence">{evidence}</p>}
+    </div>
   );
 }
 
-function ExploreCard({ item, favoriteName, onOpenDetail }) {
-  const domainLabel = item.recognition?.status === 'general-education'
-    ? (item.recognition.domain || '不分領域')
-    : item.unit;
+function ProfileReasons({ reasons }) {
+  if (!reasons) return null;
+  const tags = (reasons.tags ?? []).map(tag => (
+    tag.viaNeighbor ? `${tag.courseTag}（近似你的「${tag.userTag}」）` : tag.courseTag
+  ));
+  const evidence = reasons.closestEvidence;
+  return <ExploreReasons tags={tags} evidence={evidence?.name
+    ? `和你${EVIDENCE_SOURCE_TEXT[evidence.source] || '互動過'}的「${evidence.name}」相近。` : null} />;
+}
+
+function FavoriteReasons({ match, favoriteName }) {
+  const similarities = [
+    ['課名', match.parts?.name],
+    ['課程說明', match.parts?.description],
+    ['主題', match.parts?.topic],
+  ].filter(([, value]) => percent(value)).map(([label, value]) => `${label} ${percent(value)}`);
+
+  const evidence = `與「${favoriteName}」相近${similarities.length > 0 ? `（${similarities.join('、')}）` : ''}。`;
+  return <ExploreReasons tags={match.commonTags ?? []} evidence={evidence} />;
+}
+
+function ExploreSection({ section, item, category, onOpenDetail }) {
+  const time = formatCourseTime(section);
+  const teacher = section.instructor || '教師未定';
+  const credits = section.credits ?? item.credits;
+  const multipleSections = item.sections.length > 1;
 
   return (
-    <div className="course-card explore-card">
+    <div className="explore-section-row" onClick={event => {
+      event.stopPropagation();
+      onOpenDetail(section);
+    }}>
+      <button type="button" className="explore-section-info" aria-label={`查看${section.name}班次，${teacher}，${time}`}>
+        {multipleSections && (
+          <span className="explore-section-class">
+            {section.name !== item.name ? `${section.name} · ` : ''}{section.department}
+          </span>
+        )}
+        <span className="explore-section-fields">
+          <span>💡 {category}</span>
+          <span>📍 {section.location || '地點未定'}</span>
+          <span>👤 {teacher}</span>
+          <span>📚 {credits == null ? '學分資料未知' : `${credits} 學分`}</span>
+          <span>🎓 {section.gradeLevel == null ? '年級資料未知' : formatCourseGradeLevel(section.gradeLevel)}</span>
+          <span>⏰ {time}</span>
+        </span>
+      </button>
+      <CourseActions course={section} source={EXPLORATION_SOURCE} />
+    </div>
+  );
+}
+
+function ExploreCard({ item, category, favoriteName, onOpenDetail }) {
+  const primarySection = item.sections.find(section => section.catalogCourseCode === item.courseCode) ?? item.sections[0];
+
+  return (
+    <article className="course-card explore-card" onClick={() => onOpenDetail(primarySection)}>
       <div className="course-card-header">
-        <h4>{item.name}</h4>
+        <h4><button type="button" className="explore-course-title">{item.name}</button></h4>
         <span className="course-code">{item.courseCode}</span>
       </div>
-      <div className="course-card-footer">
-        <span className="tag">{domainLabel}</span>
-        <span className="tag">{item.credits} 學分</span>
-        {RECOGNITION_TEXT[item.recognition?.status] && (
-          <span className="tag">{RECOGNITION_TEXT[item.recognition.status]}</span>
-        )}
-      </div>
       {item.semanticMatch ? (
-        <p className="explore-shared-terms">
-          與「{favoriteName}」相近：
-          {[
-            ['課名', item.semanticMatch.parts?.name],
-            ['課程說明', item.semanticMatch.parts?.description],
-            ['主題', item.semanticMatch.parts?.topic],
-          ].filter(([, value]) => percent(value)).map(([label, value]) => `${label} ${percent(value)}`).join('、')}。
-          {item.semanticMatch.commonTags?.length > 0 && <>兩門課都有的主題：{item.semanticMatch.commonTags.join('、')}。</>}
-        </p>
-      ) : item.reasons && <ProfileReasons reasons={item.reasons} />}
+        <FavoriteReasons match={item.semanticMatch} favoriteName={favoriteName} />
+      ) : <ProfileReasons reasons={item.reasons} />}
       <div className="explore-sections">
-        <p className="explore-sections-title">本學期可選的班次</p>
         {item.sections.map(section => (
-          <div key={section.id} className="explore-section-row">
-            <div className="explore-section-info">
-              <span>班級：{section.department}｜老師：{section.instructor || '未定'}</span>
-              <span className="explore-section-time">時間：{formatCourseTime(section)}</span>
-            </div>
-            <button type="button" className="course-card-action explore-section-detail" onClick={() => onOpenDetail(section)}>
-              詳情
-            </button>
-            <CourseActions course={section} source={EXPLORATION_SOURCE} />
-          </div>
+          <ExploreSection key={section.id} section={section} item={item} category={category} onOpenDetail={onOpenDetail} />
         ))}
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -293,6 +314,7 @@ export default function ExplorePage() {
           <CourseActionsProvider>
             <ExploreGroup
               title="跨系探索"
+              category="系外選修"
               hint={`每個系所只列與${startName}最相近的一門。系外選修是否認列為畢業學分，仍須向系辦確認。`}
               group={data.outside}
               emptyText={profileMode
@@ -302,6 +324,7 @@ export default function ExplorePage() {
             />
             <ExploreGroup
               title="通識探索"
+              category="通識"
               hint={data.general.diversification === 'domain'
                 ? `每個通識領域只列與${startName}最相近的一門。`
                 : `依與${startName}的相近程度排列。`}

@@ -3,6 +3,31 @@ import { formatCourseGradeLevel } from '../../utils/courseGradeLevel';
 import { formatCoursePrerequisites } from '../../utils/coursePrerequisites';
 import { withoutRepeatedCourseTitle } from '../../utils/courseDescription';
 
+const descriptionSegmenter = typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter('zh-Hant', { granularity: 'sentence' })
+  : null;
+
+function CourseDescription({ description }) {
+  const text = typeof description === 'string' ? description.trim() : '';
+  if (!text) return null;
+
+  const paragraphs = text.split(/\r\n?|\n/u).flatMap(line => {
+    const paragraph = line.trim();
+    if (!paragraph) return [];
+    if (paragraph.length < 100 || !descriptionSegmenter) return [paragraph];
+    return Array.from(descriptionSegmenter.segment(paragraph), ({ segment }) => segment.trim()).filter(Boolean);
+  });
+
+  return (
+    <div className="detail-desc">
+      <div className="detail-desc-label"><strong>課程說明</strong></div>
+      <div className="course-description">
+        {paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+      </div>
+    </div>
+  );
+}
+
 const SELECTION_LABELS = {
   REQUIRED_COURSE: '這是你的必修課',
   RETAKE_REQUIRED: '這是需要重補修的必修',
@@ -137,7 +162,6 @@ const getCategoryStyle = (category) => {
 
 export default function CourseDetailModal({ course, onClose, onRemove, showTime = true }) {
   if (!course) return null;
-  const description = withoutRepeatedCourseTitle(course.description, course.name);
 
   const catStyle = getCategoryStyle(course.category);
 
@@ -181,12 +205,7 @@ export default function CourseDetailModal({ course, onClose, onRemove, showTime 
           <p>{formatCoursePrerequisites(course.prerequisites)}</p>
         </div>
 
-        {description && (
-          <div className="detail-desc">
-            <div className="detail-desc-label"><strong>課程說明</strong></div>
-            <p>{description}</p>
-          </div>
-        )}
+        <CourseDescription description={withoutRepeatedCourseTitle(course.description, course.name)} />
 
         {onRemove && (
           <button
