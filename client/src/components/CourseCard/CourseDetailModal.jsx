@@ -187,15 +187,15 @@ export default function CourseDetailModal({ course, onClose, onRemove, showTime 
           
           {/* 加入明確的地點標籤 */}
           {showTime && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569', fontWeight: '500' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '500' }}>
               📍 {course.location || '地點待排'}
             </span>
           )}
 
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569' }}>👤 {course.instructor}</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569' }}>📚 {course.credits} 學分</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569' }}>🎓 {formatCourseGradeLevel(course.gradeLevel)}</span>
-          {showTime && <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: '#475569' }}>⏰ {formatCourseTime(course)}</span>}
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>👤 {course.instructor}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>📚 {course.credits} 學分</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>🎓 {formatCourseGradeLevel(course.gradeLevel)}</span>
+          {showTime && <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>⏰ {formatCourseTime(course)}</span>}
         </div>
 
         <ReasonSection reason={course.recommendationReason} />

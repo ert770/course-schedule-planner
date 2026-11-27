@@ -23,9 +23,11 @@
       const cell = key => String(row[indexes[key]] ?? '').trim();
       const meta = table.rowMeta?.[index] ?? {};
       const merged = Boolean(meta.colspan || meta.rowspan);
-      const semester = ({ '1': 1, '2': 2, '3': 3, '上': 1, '下': 2, '暑': 3, '上學期': 1, '下學期': 2, '暑期': 3 })[cell('semester')] ?? null;
-      const number = value => value && Number.isFinite(Number(value)) ? Number(value) : null;
-      const year = number(cell('academicYear')), credits = number(cell('credits'));
+      const semester = ({ '1': 1, '2': 2, '3': 3, '上': 1, '下': 2, '暑': 3, '上學期': 1, '下學期': 2, '暑期': 3,
+        '暑修': 3, '暑修班': 3, '第1學期': 1, '第2學期': 2, '第一學期': 1, '第二學期': 2, '一': 1, '二': 2 })[clean(cell('semester')).normalize('NFKC')] ?? null;
+      // MyFCU 有時會在數字後加單位（「114學年度」「3學分」「3.0」），只剝掉這些明確的單位。
+      const unitNumber = (value, unit) => { const m = clean(value).normalize('NFKC').match(new RegExp(`^(\\d+(?:\\.\\d+)?)(?:${unit})?$`)); return m ? Number(m[1]) : null; };
+      const year = unitNumber(cell('academicYear'), '學年度|學年'), credits = unitNumber(cell('credits'), '學分');
       const code = cell('courseCode'), name = cell('courseName'), scoreText = cell('score');
       const tokens = row.map(clean).filter(Boolean);
       const emptyNotice = tokens.length === 1 && /^(無資料|查無資料|沒有資料|暫無資料|無修課資料)$/.test(tokens[0]);
@@ -77,7 +79,7 @@
       if (credits === null || credits < 0) reasons.push(cell('credits') ? 'credits_unrecognized' : 'credits_empty');
       if (reasons.length) {
         invalid++;
-        rowDiagnostics.push({ rowIndex: index + 1, kind: 'unresolved', reasons, merged, colspan: Boolean(meta.colspan), rowspan: Boolean(meta.rowspan), cellCount: row.length });
+        rowDiagnostics.push({ rowIndex: index + 1, kind: 'unresolved', reasons, ...(!semester && cell('semester') ? { semesterText: clean(cell('semester')).slice(0, 10) } : {}), merged, colspan: Boolean(meta.colspan), rowspan: Boolean(meta.rowspan), cellCount: row.length });
         if (options.includeTrace) unresolvedDetails.push({ courseName: name, rowIndex: index + 1, reasons });
         continue;
       }
@@ -135,7 +137,9 @@
             }
           }
         }
-        const rowReviewOnly = incomplete && !unreadableTable && REVIEWABLE_TABS.has(hash);
+        // 六個分類都一樣：表格讀得到、只有個別列無法辨識時，只略過那幾列（列入待核對），其餘照常匯入。
+        // 交換、校際課程的學期或欄位寫法常不在解析規則內，若整類擋下，使用者就完全無法匯入。
+        const rowReviewOnly = incomplete && !unreadableTable;
         categories.push({ hash, status: incomplete ? 'incomplete' : 'complete', rowReviewOnly, rowCount: count, rowSummary, elapsedMs: Date.now() - categoryStarted, verification: result.verification, diagnostics: result.diagnostics });
       } catch (error) {
         categories.push({ hash, status: 'incomplete', elapsedMs: Date.now() - categoryStarted, reason: String(error?.message || '載入失敗'), diagnostics: error?.diagnostics });

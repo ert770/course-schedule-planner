@@ -2314,7 +2314,7 @@ SessionImport 以 MyFCU 原課號先找原修課學期的同課號班次，再�
 
 `GET /api/course-history` 在有新比對狀態的紀錄回傳 `catalogMatchStatus`（`matched`／`unmatched`）。若原學期目錄未覆蓋且該紀錄未匹配，仍回傳 `matchReason: "missing_term_catalog"` 供既有畫面顯示。
 
-六個分類皆成功讀取表格，且未完成原因限於 `#/courseKind1` 或 `#/courseKind23` 的個別待核對列時，Windows 本機 SessionImport 會產生可確認的部分匯入快照。`result.unresolvedDetails` 保留待核對列的分類、表格與列序、科目名稱和欄位原因。預檢與確認匯入使用 `records` 和 `pendingRecords`；待核對列不會寫入歷史修課。符合未修課條件的占位列出現在 `excludedDetails`。表格未載入、必要表頭缺漏或資料庫比對有衝突時，確認匯入仍會被阻擋。
+六個分類皆成功讀取表格，且未完成原因限於任一分類的個別待核對列時（2026-11-27 起不再只限 `#/courseKind1`、`#/courseKind23`；交換與校際課程常出現在其他分類），Windows 本機 SessionImport 會產生可確認的部分匯入快照。學期另接受「暑修」「暑修班」「第一／第二學期」「第1／第2學期」「一／二」，學年與學分接受「學年度／學年」「學分」單位及「3.0」寫法。擷取未完成時，後端以 `[MyFCU 擷取] 失敗：` 輸出原因碼、各分類狀態、無法辨識欄位的代碼與筆數，以及無法辨識的學期文字，不輸出課名或成績。`result.unresolvedDetails` 保留待核對列的分類、表格與列序、科目名稱和欄位原因。預檢與確認匯入使用 `records` 和 `pendingRecords`；待核對列不會寫入歷史修課。符合未修課條件的占位列出現在 `excludedDetails`。表格未載入、必要表頭缺漏或資料庫比對有衝突時，確認匯入仍會被阻擋。
 
 `POST /api/course-history-import/auto` 只接受受限制的本機 SessionImport 或本機自行聲明模式。使用目前 Session 與伺服器端已完成的擷取資料。本機自行聲明模式仍以來源課號及課名對照 `Courses.subid3` 與 `Courses.name`，未匹配時正式課號為 NULL，重覆不覆蓋既有紀錄。該模式回傳新增、重複跳過、未匹配與衝突筆數。
 

@@ -11,6 +11,16 @@ export function localBrowserEnvironment(env=process.env){
  return Object.fromEntries(Object.entries(env).filter(([key,value])=>allowed.has(key.toUpperCase()) && typeof value==='string'));
 }
 const safeError=(message,status=400)=>Object.assign(new Error(message),{status,safeLocalPreviewError:true});
+// 擷取失敗時畫面只顯示「擷取失敗」，原因碼原本會被丟掉。只印代碼與筆數，不印課名、成績或任何修課內容。
+export function captureFailureSummary(report,hasResult){
+ const categories=report?.categories?.categories??[];
+ return {status:report?.status??null,reason:report?.reason??null,historyReached:report?.historyReached??null,hasResult,
+  lastStages:(report?.stages??[]).slice(-4).map(x=>`${x?.name??'?'}:${x?.status??'?'}`),
+  extractionError:report?.extractionError?{stage:report.extractionError.stage??null,code:report.extractionError.code??null,failedCheck:report.extractionError.failedCheck??null}:null,
+  categories:categories.map(c=>({category:c.category??null,status:c.status??null,reason:c.reason??null,rowReviewOnly:c.rowReviewOnly??null,rawRows:c.rawRows??null,invalidRows:c.invalidRows??null,unresolvedReasons:c.unresolvedReasons??null,unrecognizedSemesters:c.unrecognizedSemesters??null})),
+  blockedRequests:typeof report?.blockedRequests==='number'?report.blockedRequests:null};
+}
+function logCaptureFailure(report,hasResult){console.warn(`[MyFCU 擷取] 失敗：${JSON.stringify(captureFailureSummary(report,hasResult))}`);}
 function ownerFor(identity,cookie){
  const session=readSession(cookie),token=parseCookies(cookie)[SESSION_COOKIE_NAME];
  if(!session||!token||!identity?.found||session.studentId!==identity.canonicalId)throw safeError('登入狀態已失效',401);
@@ -53,8 +63,12 @@ export function createLocalMyFcuPreview({observer=observeMyFcu,getChromium=()=>r
     if (completed && s.result) {
      if (sessionImport) s.snapshot = saveHistorySnapshot(identity, s.result);
      s.status = 'ready';
-    } else s.status = 'error';
-   } catch {
+    } else {
+     s.status = 'error';
+     logCaptureFailure(report, Boolean(s.result));
+    }
+   } catch (error) {
+    console.warn(`[MyFCU 擷取] 例外：${error?.name ?? 'Error'}：${String(error?.message ?? '').split('\n')[0].replace(/https?:\/\/\S+/g, '<url>').slice(0, 200)}`);
     if (sessions.get(id) === s) s.status = 'error';
    }
   })();

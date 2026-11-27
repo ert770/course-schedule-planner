@@ -58,6 +58,8 @@ test('MyFCU row warnings remain in the snapshot while only usable attempts reach
  assert.throws(() => saveHistorySnapshot(identity,noTable),{message:'SNAPSHOT_INCOMPLETE'});
  const noHeaders = await collectFixture('#/courseKind23',{tables:[{headers:['科目'],rows:[]}]});
  assert.throws(() => saveHistorySnapshot(identity,noHeaders),{message:'SNAPSHOT_INCOMPLETE'});
- const unrelatedInvalidRows = await collectFixture(TABS[0],{tables:[{headers,rows:[['','異常資料','','','','','80']]}]});
- assert.throws(() => saveHistorySnapshot(identity,unrelatedInvalidRows),{message:'SNAPSHOT_INCOMPLETE'});
+ // 2026-11-27 起六個分類一致：表格與表頭讀得到時，個別無法辨識的列只列入待核對，不擋下整批匯入。
+ const otherCategoryInvalidRows = await collectFixture(TABS[0],{tables:[{headers,rows:[['','異常資料','','','','','80']]}]});
+ assert.ok(saveHistorySnapshot(identity,otherCategoryInvalidRows).hash);
+ releaseHistorySnapshot(identity,true);
 });
