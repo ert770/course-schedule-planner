@@ -3,6 +3,8 @@ const snapshots = new Map();
 const lifetimeMs = 30 * 60 * 1000;
 const maxSnapshots = 3;
 const version = 1;
+const categories = ['#/courseXd', '#/courseKind1', '#/courseXc', '#/courseKind23', '#/courseSelP', '#/courseSelPno'];
+const reviewableCategories = new Set(['#/courseKind1', '#/courseKind23']);
 function owner(identity) {
  const id = Number(identity?.numericId);
  if (!identity?.found || identity.source !== 'mysql' || !identity.canWriteMysqlProfile || !Number.isSafeInteger(id) || id < 1 || !identity.canonicalId) throw new Error('SNAPSHOT_IDENTITY');
@@ -10,9 +12,18 @@ function owner(identity) {
 }
 function digest(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function cleanup() { const now=Date.now(); for(const [key,s] of snapshots) if(s.expiresAt<=now) snapshots.delete(key); }
+export function canSnapshotHistory(result) {
+ if (!Array.isArray(result?.records) || !Array.isArray(result.pendingRecords)) return false;
+ if (result.allCategoriesComplete === true) return true;
+ if (!Array.isArray(result.categories) || result.categories.length !== categories.length) return false;
+ return categories.every(hash => result.categories.some(category => category?.hash === hash && (
+  category.status === 'complete' || (reviewableCategories.has(hash) && category.status === 'incomplete' &&
+   category.rowReviewOnly === true && category.rowSummary?.invalidRows > 0)
+ )));
+}
 export function saveHistorySnapshot(identity,result) {
  cleanup();const key=owner(identity);
- if(!result?.allCategoriesComplete || !Array.isArray(result.records) || !Array.isArray(result.pendingRecords))throw new Error('SNAPSHOT_INCOMPLETE');
+ if(!canSnapshotHistory(result))throw new Error('SNAPSHOT_INCOMPLETE');
  const payload=JSON.stringify(result);if(Buffer.byteLength(payload)>4*1024*1024)throw new Error('SNAPSHOT_TOO_LARGE');
  const hash=digest(payload);const old=snapshots.get(key);
  if(old && old.hash===hash && old.status==='ready')return {createdAt:old.createdAt,expiresAt:old.expiresAt,version,hash};

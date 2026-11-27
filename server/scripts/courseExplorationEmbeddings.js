@@ -1,10 +1,11 @@
 // 探索頁三種相近程度的向量產生器（2026-11-24）。課名、課程說明、課程主題各一個向量。
-// 只讀公開課程資料與修課紀錄裡的課號／課名（不含使用者、成績）；只寫 git-ignored 的 simulation-runs。
+// 只讀公開課程資料與修課紀錄裡的課號／課名，不讀使用者或成績。
+// simulation-runs 中只交付 index.json；向量快取留在本機。
 // 預設 dry-run；--apply 才送文字到 OpenAI。快取以「模型＋維度＋文字」雜湊為鍵，重跑只送變動的文字。
 //
 // 用法：
-//   node scripts/courseExplorationEmbeddings.js            # 盤點
-//   node scripts/courseExplorationEmbeddings.js --apply    # 產生 simulation-runs/course-exploration-embeddings/index.json
+//   npm --prefix server run exploration:index:audit       # 從專案根目錄盤點
+//   npm --prefix server run exploration:index:build       # 產生索引，僅為快取未命中的課程文字呼叫 API
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

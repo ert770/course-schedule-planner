@@ -1029,9 +1029,10 @@ conflict，不靜默覆寫。`resolveIdempotentAppend()` 目前只對傳入陣�
 
 ## 探索三種相近程度向量產物（2026-11-24，ADR-035）
 
-`server/simulation-runs/course-exploration-embeddings/index.json`（git-ignored）。由
-`node server/scripts/courseExplorationEmbeddings.js --apply` 產生；預設 dry-run，加 `--apply` 才呼叫 OpenAI。
-同目錄的 `text-embedding-3-large-512-cache.json` 以「模型＋維度＋文字」雜湊快取，重跑只送變動的文字。
+Git checkout 隨附 `server/simulation-runs/course-exploration-embeddings/index.json`。
+在專案根目錄執行 `npm --prefix server run exploration:index:audit` 可唯讀盤點，
+`npm --prefix server run exploration:index:build` 會更新索引並為缺少快取的課程文字呼叫 OpenAI。
+同目錄的 `text-embedding-3-large-512-cache.json` 以「模型＋維度＋文字」雜湊快取，留在本機。
 
 ```json
 { "schemaVersion": 1, "version": "course-exploration-vectors-v1", "model": "text-embedding-3-large",

@@ -22,13 +22,13 @@ test('endpoint report never includes sensitive values or query strings',()=>{
 
 import {EventEmitter} from 'node:events';
 import {observeMyFcu} from '../scripts/observeMyFcuCompatibility.mjs';
-function fixture({failStage=0,partial=false,closeEarly=false}={}) {
+function fixture({failStage=0,partial=false,closeEarly=false,result}={}) {
  let closed=false,count=0,contextClosed=false,browserClosed=false; const page=new EventEmitter();
  const frame={url:()=>history};
  page.mainFrame=()=>frame;page.url=()=>history;page.isClosed=()=>closed;
  page.routeWebSocket=async()=>{};page.waitForLoadState=async()=>{};
  page.waitForFunction=async()=>{count++;await new Promise(r=>setTimeout(r,5));if(count===failStage)throw Error('private');};
- page.evaluate=async()=>({ok:true,result:{allCategoriesComplete:!partial,totalElapsedMs:100,summary:{rawRows:3},categories:[{hash:'#/courseXd',status:partial?'incomplete':'complete',elapsedMs:partial?15000:50,diagnostics:partial?{reason:'timeout',completionBasis:null}: {completionBasis:'stable'},rowSummary:{rawRows:3}}]}});
+ page.evaluate=async()=>({ok:true,result:result ?? {allCategoriesComplete:!partial,totalElapsedMs:100,summary:{rawRows:3},categories:[{hash:'#/courseXd',status:partial?'incomplete':'complete',elapsedMs:partial?15000:50,diagnostics:partial?{reason:'timeout',completionBasis:null}: {completionBasis:'stable'},rowSummary:{rawRows:3}}]}});
  page.goto=async()=>{setTimeout(()=>{if(closeEarly){closed=true;page.emit('close');}else page.emit('framenavigated',frame);},5);return {};};
  const ctx=new EventEmitter();ctx.newPage=async()=>page;ctx.route=async()=>{};ctx.close=async()=>{contextClosed=true;closed=true;page.emit('close');};
  const browser={newContext:async()=>ctx,close:async()=>{browserClosed=true;}};
@@ -41,4 +41,20 @@ test('observation waits for delayed initialization and retains partial category 
 test('observation distinguishes tabs timeout and early context closure',async()=>{
  const f=fixture({failStage:2});const out=await observeMyFcu({chromium:f.chromium,timeoutMs:2000});assert.equal(out.reason,'TABS_NOT_READY');assert.equal(f.cleaned,true);
  const g=fixture({closeEarly:true});const closed=await observeMyFcu({chromium:g.chromium,timeoutMs:2000});assert.equal(closed.reason,'CONTEXT_CLOSED');assert.equal(g.cleaned,true);
+});
+
+test('observer delivers supported row warnings only when partial import is enabled', async () => {
+ const categories=['#/courseXd','#/courseKind1','#/courseXc','#/courseKind23','#/courseSelP','#/courseSelPno'].map(hash => ({hash,status:'complete'}));
+ categories[1]={hash:'#/courseKind1',status:'incomplete',rowReviewOnly:true,rowSummary:{invalidRows:1},diagnostics:{completionBasis:'stable'}};
+ const result={allCategoriesComplete:false,records:[{courseName:'正常紀錄'}],pendingRecords:[],categories};
+ const received=[];
+ const off=await observeMyFcu({chromium:fixture({result}).chromium,timeoutMs:2000,onResult:value=>received.push(value)});
+ assert.equal(off.status,'INCOMPLETE');
+ assert.equal(off.reason,'CATEGORY_INCOMPLETE');
+ assert.equal(received.length,0);
+ const on=await observeMyFcu({chromium:fixture({result}).chromium,timeoutMs:2000,allowPartialRows:true,onResult:value=>received.push(value)});
+ assert.equal(on.status,'PARTIAL');
+ assert.equal(on.reason,'PARTIAL_ROWS');
+ assert.equal(received.length,1);
+ assert.equal(received[0].categories[1].rowSummary.invalidRows,1);
 });

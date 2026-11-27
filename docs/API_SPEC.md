@@ -2080,8 +2080,9 @@ Query：
 錯誤：`400 FAVORITE_NOT_IN_HISTORY`（不是已通過的課，或是被排除的課）、`400 INVALID_EXPLORATION_REPRESENTATION`、
 `400 CLASS_NAME_REQUIRED`。
 
-向量為離線產物 `server/simulation-runs/course-exploration-embeddings/index.json`（git-ignored），由
-`node server/scripts/courseExplorationEmbeddings.js --apply` 產生；請求當下不呼叫外部 API、不寫入 MySQL。
+Git checkout 隨附離線向量索引 `server/simulation-runs/course-exploration-embeddings/index.json`。
+後端可用 `COURSE_EXPLORATION_EMBEDDINGS_PATH` 指定另一份索引。維護者可從專案根目錄執行
+`npm --prefix server run exploration:index:build` 更新索引。請求當下不呼叫外部 API、不寫入 MySQL。
 
 #### `GET /api/exploration?mode=profile`（協同過濾與 User Embedding 構想階段 4）
 
@@ -2312,6 +2313,8 @@ SessionImport 以 MyFCU 原課號先找原修課學期的同課號班次，再�
 兩個課號欄均空白的既有 `myfcu_session` 紀錄，須在同一帳號內以課名、學年、學期、班級、學分與成績唯一確認同一次修課，且該學期無其他紀錄使用新課號，才會更新原紀錄。候選不唯一、來源資料無法核對或課號已被其他紀錄使用時，預檢計入衝突。
 
 `GET /api/course-history` 在有新比對狀態的紀錄回傳 `catalogMatchStatus`（`matched`／`unmatched`）。若原學期目錄未覆蓋且該紀錄未匹配，仍回傳 `matchReason: "missing_term_catalog"` 供既有畫面顯示。
+
+六個分類皆成功讀取表格，且未完成原因限於 `#/courseKind1` 或 `#/courseKind23` 的個別待核對列時，Windows 本機 SessionImport 會產生可確認的部分匯入快照。`result.unresolvedDetails` 保留待核對列的分類、表格與列序、科目名稱和欄位原因。預檢與確認匯入使用 `records` 和 `pendingRecords`；待核對列不會寫入歷史修課。符合未修課條件的占位列出現在 `excludedDetails`。表格未載入、必要表頭缺漏或資料庫比對有衝突時，確認匯入仍會被阻擋。
 
 `POST /api/course-history-import/auto` 只接受受限制的本機 SessionImport 或本機自行聲明模式。使用目前 Session 與伺服器端已完成的擷取資料。本機自行聲明模式仍以來源課號及課名對照 `Courses.subid3` 與 `Courses.name`，未匹配時正式課號為 NULL，重覆不覆蓋既有紀錄。該模式回傳新增、重複跳過、未匹配與衝突筆數。
 

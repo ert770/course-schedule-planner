@@ -32,7 +32,32 @@ export function createLocalMyFcuPreview({observer=observeMyFcu,getChromium=()=>r
   const owner=ownerFor(identity,cookie);if([...sessions.values()].some(s=>s.owner===owner.key))throw safeError('已有進行中的工作階段',409);if(sessions.size>=maxSessions)throw safeError('工作階段已滿',503);
   const id=crypto.randomUUID(),grant=crypto.randomBytes(32).toString('hex'),expires=Math.min(Date.now()+ttl,owner.deadline);if(expires<=Date.now())throw safeError('登入狀態已逾時',401);
   const s={owner:owner.key,grant:crypto.createHash('sha256').update(grant).digest(),expires,status:'starting',result:null,abort:new AbortController()};sessions.set(id,s);s.timer=setTimeout(()=>close(id),expires-Date.now());s.timer.unref?.();
-  void (async()=>{try{const chromium=getChromium();const synthetic=isIsolatedHistoryMysqlE2E() && process.env.LOCAL_MYFCU_SYNTHETIC_E2E==='true';const run=synthetic?(await import('../../test/syntheticLocalMyFcuObserver.js')).observeSyntheticLocal:observer;const report=await run({chromium,signal:s.abort.signal,strictFrames:true,launchEnv:localBrowserEnvironment(),onResult:result=>{if(sessions.get(id)!==s)return;if(synthetic && (!isSyntheticHistoryIdentity(identity) || result.syntheticSubject!==identity.canonicalId))return;const {syntheticSubject:_,...safe}=result;s.result=safe;s.syntheticProof=synthetic;}});if(sessions.get(id)!==s)return;s.status=report.status==='COMPLETE'&&s.result?'ready':'error';if(s.status==='ready' && isSessionHistoryImport())s.snapshot=saveHistorySnapshot(identity,s.result);}catch{if(sessions.get(id)===s)s.status='error';}})();
+  void (async () => {
+   try {
+    const sessionImport = isSessionHistoryImport();
+    const synthetic = isIsolatedHistoryMysqlE2E() && process.env.LOCAL_MYFCU_SYNTHETIC_E2E === 'true';
+    const run = synthetic ? (await import('../../test/syntheticLocalMyFcuObserver.js')).observeSyntheticLocal : observer;
+    const report = await run({
+     chromium: getChromium(), signal: s.abort.signal, strictFrames: true, launchEnv: localBrowserEnvironment(),
+     allowPartialRows: sessionImport,
+     onResult: result => {
+      if (sessions.get(id) !== s) return;
+      if (synthetic && (!isSyntheticHistoryIdentity(identity) || result.syntheticSubject !== identity.canonicalId)) return;
+      const { syntheticSubject: _, ...safe } = result;
+      s.result = safe;
+      s.syntheticProof = synthetic;
+     },
+    });
+    if (sessions.get(id) !== s) return;
+    const completed = report.status === 'COMPLETE' || (sessionImport && report.status === 'PARTIAL');
+    if (completed && s.result) {
+     if (sessionImport) s.snapshot = saveHistorySnapshot(identity, s.result);
+     s.status = 'ready';
+    } else s.status = 'error';
+   } catch {
+    if (sessions.get(id) === s) s.status = 'error';
+   }
+  })();
   return {id,grant,expiresAt:expires,status:'starting'};
  },
  state(id,identity,cookie,grant){const s=get(id,identity,cookie,grant);return {status:s.status,result:s.result,snapshot:s.snapshot ?? null,systemIdentity:{numericId:Number.isSafeInteger(Number(identity.numericId)) && Number(identity.numericId)>0 ? Number(identity.numericId) : null},identityVerification:s.syntheticProof?{verified:true,source:'synthetic'}:{verified:false,reason:'未驗證 MyFCU 身分，請確認由本人登入'}};},
