@@ -2313,6 +2313,8 @@ SessionImport 以 MyFCU 原課號先找原修課學期的同課號班次，再�
 
 `GET /api/course-history` 在有新比對狀態的紀錄回傳 `catalogMatchStatus`（`matched`／`unmatched`）。若原學期目錄未覆蓋且該紀錄未匹配，仍回傳 `matchReason: "missing_term_catalog"` 供既有畫面顯示。
 
+六個分類皆成功讀取表格，且未完成原因限於 `#/courseKind1` 或 `#/courseKind23` 的個別待核對列時，Windows 本機 SessionImport 會產生可確認的部分匯入快照。`result.unresolvedDetails` 保留待核對列的分類、表格與列序、科目名稱和欄位原因。預檢與確認匯入使用 `records` 和 `pendingRecords`；待核對列不會寫入歷史修課。符合未修課條件的占位列出現在 `excludedDetails`。表格未載入、必要表頭缺漏或資料庫比對有衝突時，確認匯入仍會被阻擋。
+
 `POST /api/course-history-import/auto` 只接受受限制的本機 SessionImport 或本機自行聲明模式。使用目前 Session 與伺服器端已完成的擷取資料。本機自行聲明模式仍以來源課號及課名對照 `Courses.subid3` 與 `Courses.name`，未匹配時正式課號為 NULL，重覆不覆蓋既有紀錄。該模式回傳新增、重複跳過、未匹配與衝突筆數。
 
 使用 migration 015 後，匯入的未匹配紀錄也保存於歷史表，原始課號保存在 `source_course_code`。明確數字成績依 `score >= 60` 計算通過，其餘未知為 NULL。原有待查表資料保留，原有身分驗證限制繼續生效。

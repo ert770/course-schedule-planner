@@ -11,11 +11,12 @@
   };
   const clean = x => String(x ?? '').replace(/\s+/g, '').trim();
   const REQUIRED_FIELDS = ['courseName', 'academicYear', 'semester', 'credits'];
+  const REVIEWABLE_TABS = new Set(['#/courseKind1', '#/courseKind23']);
   function parseTable(table, category, options = {}) {
     const names = table.headers.map(clean);
     const indexes = Object.fromEntries(Object.entries(HEADERS).map(([field, aliases]) => [field, names.findIndex(name => aliases.includes(name))]));
     if (REQUIRED_FIELDS.some(field => indexes[field] < 0) || (indexes.courseCode < 0 && indexes.className < 0)) return { ok: false, records: [], reason: '缺少必要表頭' };
-    const records = [], pendingRecords = [], rowDiagnostics = [], excludedDetails = [];
+    const records = [], pendingRecords = [], rowDiagnostics = [], excludedDetails = [], unresolvedDetails = [];
     const preserveExcluded = (row, reason) => { if (options.includeTrace) excludedDetails.push({ courseName: String(row[indexes.courseName] ?? '').trim(), category, reason, headers: [...table.headers], values: [...row] }); };
     let invalid = 0, nonCourse = 0, excludedRows = 0;
     for (const [index, row] of table.rows.entries()) {
@@ -43,19 +44,25 @@
       const blank = value => /^(|[-—–]|X)$/i.test(value.trim());
       const knownName = clean(name).normalize('NFKC');
       const noActualTerm = blank(cell('academicYear')) && blank(cell('semester'));
+      const noGradeEvidence = blank(scoreText) && blank(cell('creditRecord')) && blank(cell('graduationCredits'));
       const knownEnglishRequirement = options.tabHash === '#/courseKind1' &&
-        /^大學基礎英文\([一二]\)$/.test(knownName) && blank(code) && noActualTerm;
+        /^大學基礎英文\([一二]\)$/.test(knownName) && blank(code) && blank(cell('className')) && noActualTerm && noGradeEvidence;
       const unfinishedProject = options.tabHash === '#/courseKind23' &&
-        /^專題研究\(二\)$/.test(knownName) && noActualTerm && blank(scoreText) && blank(cell('creditRecord'));
-      if (!merged && (knownEnglishRequirement || unfinishedProject)) {
+        /^專題研究\(二\)$/.test(knownName) && blank(cell('className')) && noActualTerm && noGradeEvidence;
+      const unattemptedRequirement = REVIEWABLE_TABS.has(options.tabHash) && name && blank(code) &&
+        blank(cell('className')) && noActualTerm && blank(scoreText) &&
+        /^X$/i.test(cell('creditRecord')) && blank(cell('graduationCredits'));
+      if (!merged && (knownEnglishRequirement || unfinishedProject || unattemptedRequirement)) {
+        const reason = knownEnglishRequirement ? 'excluded_known_requirement'
+          : unfinishedProject ? 'excluded_unfinished_project' : 'excluded_unattempted_requirement';
         excludedRows++;
-        preserveExcluded(row, knownEnglishRequirement ? 'excluded_known_requirement' : 'excluded_unfinished_project');
-        rowDiagnostics.push({ rowIndex: index + 1, kind: knownEnglishRequirement ? 'excluded_known_requirement' : 'excluded_unfinished_project', merged, cellCount: row.length });
+        preserveExcluded(row, reason);
+        rowDiagnostics.push({ rowIndex: index + 1, kind: reason, merged, cellCount: row.length });
         continue;
       }
       // Only explicit missing values are excluded. Merged cells and unrecognized
       // representations remain unresolved because they may contain real attempts.
-      if (code && name && !merged && actualFields.some(missingValue)
+      if (!REVIEWABLE_TABS.has(options.tabHash) && code && name && !merged && actualFields.some(missingValue)
           && actualFields.every(value => missingValue(value) || Number.isFinite(Number(value)) || /^(上|下|暑|上學期|下學期|暑期)$/.test(value))) {
         excludedRows++;
         preserveExcluded(row, 'excluded_missing_actual_study');
@@ -71,6 +78,7 @@
       if (reasons.length) {
         invalid++;
         rowDiagnostics.push({ rowIndex: index + 1, kind: 'unresolved', reasons, merged, colspan: Boolean(meta.colspan), rowspan: Boolean(meta.rowspan), cellCount: row.length });
+        if (options.includeTrace) unresolvedDetails.push({ courseName: name, rowIndex: index + 1, reasons });
         continue;
       }
       const rawCreditRecord = cell('creditRecord');
@@ -87,10 +95,10 @@
         rowDiagnostics.push({ rowIndex: index + 1, kind: 'pending_grade_confirmation', merged, cellCount: row.length });
       }
     }
-    return { ok: invalid === 0, records, pendingRecords, validRows: records.length, pendingRows: pendingRecords.length, rawRows: table.rows.length, nonCourseRows: nonCourse, excludedRows, invalidRows: invalid, rowDiagnostics, ...(options.includeTrace ? { excludedDetails } : {}), reason: invalid ? `${invalid} 筆欄位缺漏或格式無法解析` : null };
+    return { ok: invalid === 0, records, pendingRecords, validRows: records.length, pendingRows: pendingRecords.length, rawRows: table.rows.length, nonCourseRows: nonCourse, excludedRows, invalidRows: invalid, rowDiagnostics, ...(options.includeTrace ? { excludedDetails, unresolvedDetails } : {}), reason: invalid ? `${invalid} 筆欄位缺漏或格式無法解析` : null };
   }
   async function collect(driver, options = {}) {
-    const categories = [], records = new Map(), excludedDetails = [], duplicateDetails = [], rawCategories = [];
+    const categories = [], records = new Map(), excludedDetails = [], unresolvedDetails = [], duplicateDetails = [], rawCategories = [];
     let duplicates = 0, conflicts = 0;
     const totalStarted = Date.now();
     for (const hash of TABS) {
@@ -99,12 +107,14 @@
         const result = await driver.load(hash);
         if (!result || !Array.isArray(result.tables) || !result.tables.length) throw new Error('找不到可讀取的表格');
         if (options.includeTrace) rawCategories.push({ hash, category: result.category || hash, tables: result.tables });
-        let count = 0, incomplete = false;
+        let count = 0, incomplete = false, unreadableTable = false;
         const rowSummary = { rawRows: 0, validRows: 0, pendingRows: 0, nonCourseRows: 0, excludedRows: 0, invalidRows: 0, details: [] };
-        for (const table of result.tables) {
+        for (const [tableIndex, table] of result.tables.entries()) {
           const parsed = parseTable(table, result.category || hash, { ...options, tabHash: hash });
           if (!parsed.ok) incomplete = true;
+          if (!parsed.ok && !parsed.invalidRows) unreadableTable = true;
           if (options.includeTrace) excludedDetails.push(...(parsed.excludedDetails ?? []));
+          if (options.includeTrace) unresolvedDetails.push(...(parsed.unresolvedDetails ?? []).map(row => ({ ...row, hash, category: result.category || hash, tableIndex: tableIndex + 1 })));
           rowSummary.validRows += parsed.validRows ?? 0;
           rowSummary.pendingRows += parsed.pendingRows ?? 0;
           rowSummary.rawRows += parsed.rawRows ?? 0;
@@ -125,7 +135,8 @@
             }
           }
         }
-        categories.push({ hash, status: incomplete ? 'incomplete' : 'complete', rowCount: count, rowSummary, elapsedMs: Date.now() - categoryStarted, verification: result.verification, diagnostics: result.diagnostics });
+        const rowReviewOnly = incomplete && !unreadableTable && REVIEWABLE_TABS.has(hash);
+        categories.push({ hash, status: incomplete ? 'incomplete' : 'complete', rowReviewOnly, rowCount: count, rowSummary, elapsedMs: Date.now() - categoryStarted, verification: result.verification, diagnostics: result.diagnostics });
       } catch (error) {
         categories.push({ hash, status: 'incomplete', elapsedMs: Date.now() - categoryStarted, reason: String(error?.message || '載入失敗'), diagnostics: error?.diagnostics });
       }
@@ -137,7 +148,7 @@
       excludedRows: categories.reduce((n, c) => n + (c.rowSummary?.excludedRows ?? 0), 0),
       pendingRows: pendingRecords.length, anomalyRows: categories.reduce((n, c) => n + (c.rowSummary?.invalidRows ?? 0), 0), candidateRows: candidates.length };
     return { allCategoriesComplete: categories.every(c => c.status === 'complete'), categories, records: candidates, pendingRecords, summary, totalElapsedMs: Date.now() - totalStarted,
-      duplicateRows: duplicates, conflicts, ...(options.includeTrace ? { excludedDetails, duplicateDetails, rawCategories } : {}), importReady: false,
+      duplicateRows: duplicates, conflicts, ...(options.includeTrace ? { excludedDetails, unresolvedDetails, duplicateDetails, rawCategories } : {}), importReady: false,
       notice: '僅供人工核對；通過狀態、修習別、畢業分類未推測，尚不可直接匯入。' };
   }
   function candidateReady(state) {

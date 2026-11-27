@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { MYFCU_START_URL, validateMyFcuHistoryPage } from '../src/services/myfcuCompatibility.js';
 import { collectRealMyFcuHistory, waitForMyFcuHistoryReady } from '../src/services/myfcuRealHistory.js';
+import { canSnapshotHistory } from '../src/services/historySnapshot.js';
 import { describeHistoryEndpoint } from './diagnoseMyFcuIntegrated.mjs';
 
 const origin='https://myfcu.fcu.edu.tw';
@@ -30,7 +31,7 @@ export function safeObservationPath(raw, sourceUrl, resourceType, salt) {
     return {...endpoint,endpointId:crypto.createHmac('sha256',salt).update(u.origin).update('\0').update(u.pathname).digest('hex').slice(0,24)};
   }catch{return null;}
 }
-export async function observeMyFcu({chromium,timeoutMs=300000,keepOnFailure=false,inspectionMs=120000,initTimeoutMs=45000,signal=null,onResult=null,strictFrames=false,launchEnv=null}) {
+export async function observeMyFcu({chromium,timeoutMs=300000,keepOnFailure=false,inspectionMs=120000,initTimeoutMs=45000,signal=null,onResult=null,strictFrames=false,launchEnv=null,allowPartialRows=false}) {
   let browser,context,page,timer,abortHandler,done=false,phase='login',lastTab=null, blocked=0, historyReached=false, result=null, reason=null, resolveWait=null, extractionError=null, historyArrivalUrl=null;
   const salt=crypto.randomBytes(32),requests=new WeakMap(),summary=new Map(),startedAt=Date.now(),stages=[];
   const stage=(name,status)=>stages.push({name,status,elapsedMs:Date.now()-startedAt});
@@ -81,9 +82,13 @@ export async function observeMyFcu({chromium,timeoutMs=300000,keepOnFailure=fals
           try {await waitForMyFcuHistoryReady(page,{timeout:initTimeoutMs,onStage:(name,status)=>{phase=name;stage(name,status);}});}
           catch(error){phase=error?.stage??'page_init';fail(error?.code??'PAGE_INIT_FAILED');return;}
           try {phase='extracting';stage(phase,'STARTED');const collected=await collectRealMyFcuHistory(page);
-            if(!signal?.aborted && collected.allCategoriesComplete && onResult)await onResult(collected);
-            result={status:collected.allCategoriesComplete?'COMPLETE':'INCOMPLETE',elapsedMs:collected.totalElapsedMs,summary:{rawRows:collected.summary?.rawRows??0,duplicateRows:collected.duplicateRows??0,excludedRows:collected.summary?.excludedRows??0,anomalyRows:collected.summary?.anomalyRows??0,pendingRows:collected.summary?.pendingRows??0,candidateRows:collected.summary?.candidateRows??0,conflicts:collected.conflicts??0},categories:collected.categories.map(c=>({category:c.hash,status:c.status,elapsedMs:c.elapsedMs,reason:c.status==='complete'?null:(c.elapsedMs>=14000?'CATEGORY_TIMEOUT':'CATEGORY_INCOMPLETE'),completionBasis:c.diagnostics?.completionBasis??null,dataState:c.diagnostics?.dataState??null,rawRows:c.rowSummary?.rawRows??null,validRows:c.rowSummary?.validRows??null,excludedRows:c.rowSummary?.excludedRows??null,invalidRows:c.rowSummary?.invalidRows??null}))};
-            stage(phase,result.status);finish(resolve,result.status==='COMPLETE'?'EXTRACTION_FINISHED':'CATEGORY_TIMEOUT');
+            const partial = !collected.allCategoriesComplete && allowPartialRows && canSnapshotHistory(collected);
+            const status = collected.allCategoriesComplete ? 'COMPLETE' : partial ? 'PARTIAL' : 'INCOMPLETE';
+            if (!signal?.aborted && status !== 'INCOMPLETE' && onResult) await onResult(collected);
+            result={status,elapsedMs:collected.totalElapsedMs,summary:{rawRows:collected.summary?.rawRows??0,duplicateRows:collected.duplicateRows??0,excludedRows:collected.summary?.excludedRows??0,anomalyRows:collected.summary?.anomalyRows??0,pendingRows:collected.summary?.pendingRows??0,candidateRows:collected.summary?.candidateRows??0,conflicts:collected.conflicts??0},categories:collected.categories.map(c=>({category:c.hash,status:c.status,elapsedMs:c.elapsedMs,reason:c.status==='complete'?null:(!c.diagnostics?.completionBasis && c.elapsedMs>=14000?'CATEGORY_TIMEOUT':'CATEGORY_INCOMPLETE'),completionBasis:c.diagnostics?.completionBasis??null,dataState:c.diagnostics?.dataState??null,rawRows:c.rowSummary?.rawRows??null,validRows:c.rowSummary?.validRows??null,excludedRows:c.rowSummary?.excludedRows??null,invalidRows:c.rowSummary?.invalidRows??null}))};
+            const endReason = status === 'COMPLETE' ? 'EXTRACTION_FINISHED' : partial ? 'PARTIAL_ROWS'
+              : result.categories.some(category => category.reason === 'CATEGORY_TIMEOUT') ? 'CATEGORY_TIMEOUT' : 'CATEGORY_INCOMPLETE';
+            stage(phase,status);finish(resolve,endReason);
           } catch(error) {extractionError={stage:error?.stage??'unknown',code:error?.code??'UNEXPECTED_FAILURE',...(error?.errorType?{errorType:error.errorType}:{}),...(error?.position?{position:error.position}:{}),...(error?.failedCheck?{failedCheck:error.failedCheck}:{}),...(error?.routeNormalization?{routeNormalization:error.routeNormalization}:{}),...(error?.failedCheck==='HASH_REJECTED'?{hashShape:(()=>{try{const h=new URL(page.url()).hash;return {empty:!h,rootSlash:h==='#/',bangRoot:h==='#!'||h==='#!/',hasQuery:h.includes('?'),startsSlash:h.startsWith('#/'),startsBang:h.startsWith('#!'),lengthBucket:h.length===0?'zero':h.length<=3?'short':h.length<=32?'medium':'long'};}catch{return {unavailable:true};}})()}:{}),urlChangedSinceArrival:historyArrivalUrl!==page.mainFrame().url(),pageMatchesMainFrame:page.url()===page.mainFrame().url()};fail('EXTRACTION_FAILED');}
         })();
       });
