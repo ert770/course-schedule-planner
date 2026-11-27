@@ -8,7 +8,17 @@
 
 1. 安裝 Node.js 24。在專案根目錄執行 `npm ci`，接著執行 `npm ci --prefix client` 與 `npm ci --prefix server`。
 2. 參考 `.env.example` 設定 `server/.env`。課程與歷史修課功能需要團隊提供的 MySQL 連線設定與 TLS CA。可把 CA 放在 `server/ca.pem`，並依範例設定 `DB_SSL_CA_PATH`。Agent 呼叫模型時需要自己的 `OPENAI_API_KEY`。
-3. 在專案根目錄執行 `npm run dev`。Windows 本機 MyFCU 同步需要安裝 Google Chrome，並使用 `npm run dev:myfcu`。詳細步驟見 [MyFCU 操作文件](docs/AIVEN_HISTORY_MIGRATION_RUNBOOK.md)。
+3. 一般開發在專案根目錄執行 `npm run dev`。前端送往相對路徑 `/api` 的請求由 Vite 代理到後端，後端預設使用 `3001`。
+
+### Windows 本機 MyFCU 同步
+
+1. 安裝 Google Chrome，確認 `server/.env` 已填妥 Aiven MySQL 連線與 TLS CA 設定，並先停止占用 `5173` 或 `27151` 的開發服務。
+2. 讓前端使用相對路徑 `/api`。如果有 `client/.env.local`，可設定 `VITE_API_BASE=/api`，也可以省略這個設定以使用預設值。若固定為 `http://localhost:3001/api`，瀏覽器會直接打到 `3001`，繞過 MyFCU 的代理。
+3. 在專案根目錄執行 `npm run dev:myfcu`，並開啟 [本機前端](http://localhost:5173/)。此指令將 MyFCU 後端啟動於 `127.0.0.1:27151`，並將 Vite 的 `/api` 代理目標設為 `http://127.0.0.1:27151`。
+
+匯入及核對步驟見 [MyFCU 操作文件](docs/AIVEN_HISTORY_MIGRATION_RUNBOOK.md)。資料庫連線與金鑰放在後端本機設定，前端只需 API 路徑。
+
+### 探索向量索引
 
 「從一門課出發」會直接讀取隨版本提供的 `server/simulation-runs/course-exploration-embeddings/index.json`。需要指定其他索引時，可設定 `COURSE_EXPLORATION_EMBEDDINGS_PATH`，建議使用絕對路徑。下列指令均從專案根目錄執行。
 
