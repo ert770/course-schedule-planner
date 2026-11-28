@@ -320,7 +320,7 @@ export default function SetupPage() {
                     ? [department, gradeLevel ? gradeLevel + ' 年級' : '', className].filter(Boolean).join(' · ') || '尚無基本資料'
                     : '正在讀取基本資料…'}</p>
 
-                  {profileLoaded && !className && <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: '12px 0 0 0' }}>目前沒有班別資料，課程主題選項可能無法顯示。</p>}
+                  {profileLoaded && !className && <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '12px 0 0 0' }}>目前沒有班別資料，課程主題選項可能無法顯示。</p>}
                 </div>
                 <div className="setup-section-box history-feedback-setup" id="history-feedback">
                   <div>

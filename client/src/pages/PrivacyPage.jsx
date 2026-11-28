@@ -135,7 +135,7 @@ export default function PrivacyPage() {
             style={{
               position: 'absolute', top: '16px', left: '16px',
               background: 'none', border: 'none', cursor: 'pointer',
-              color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
               padding: '8px', borderRadius: '50%', transition: 'background 0.2s', zIndex: 10
             }}
             onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}

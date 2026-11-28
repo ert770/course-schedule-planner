@@ -6,6 +6,10 @@
 
 - [首頁、Agent、查詢、探索與設定頁的 10 項修改](./2026-11-28-dashboard-agent-ux.md)
 
+## 2026-11-27
+
+- [MyFCU 部分匯入擴及六個分類、欄位格式與擷取診斷；深色主題對比修正](./2026-11-27-myfcu-all-category-partial-import-and-dark-theme.md)
+
 ## 2026-11-24
 
 - [Agent 讀取並修改課程主題偏好（ADR-037）](./2026-11-24-agent-topic-interests.md)
