@@ -3,6 +3,7 @@ import { validateSchedule } from '../skills/scheduler.js';
 import { validateScheduleAgainstConstraints } from '../skills/scheduleValidator.js';
 import { saveSchedule, getSavedSchedules, getScheduleAvoidances, updateScheduleAvoidances } from '../services/memoryService.js';
 import { generateForUser, counterfactualForUser } from '../services/scheduleService.js';
+import { listAlternatives } from '../services/replacementService.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
 import { requireServiceConsent } from '../middleware/requireConsent.js';
 
@@ -27,6 +28,22 @@ router.put('/avoidances/:sectionId', requireIdentity, requireServiceConsent, asy
     return res.json({ avoidances: await updateScheduleAvoidances(req.identity, sectionId, avoid) });
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.status ? err.message : '無法儲存避開課程，請再試一次。' });
+  }
+});
+
+// 課程格「備選」：某一門課可以直接換上的非必修課（依排課分數排序）。
+router.get('/alternatives', requireIdentity, requireServiceConsent, async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  const sectionId = Number(req.query.sectionId);
+  const currentIds = String(req.query.current ?? '').split(',').filter(Boolean).map(Number);
+  const valid = value => Number.isSafeInteger(value) && value > 0;
+  if (!valid(sectionId) || currentIds.length === 0 || currentIds.length > 30 || !currentIds.every(valid)) {
+    return res.status(400).json({ error: '班次識別碼無效。' });
+  }
+  try {
+    return res.json(await listAlternatives(req.identity, { sectionId, currentIds }));
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.status ? err.message : '無法查詢備選課程，請再試一次。' });
   }
 });
 

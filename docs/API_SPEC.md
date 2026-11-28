@@ -1465,6 +1465,19 @@ Constraint Schema（Roadmap #21）」與「共同必修（Co-requisite，Roadmap
 只回傳登入帳號的已存課表。可附 `?userId=學號` 核對前端身分，與 session 不符時回傳 `403`。
 成功回應帶 `Cache-Control: private, no-store`。
 
+### `GET /api/schedule/alternatives?sectionId=<id>&current=<id,id,...>`
+
+首頁課程格的「備選」（2026-11-28）。需要登入及服務處理同意。`sectionId` 是要換掉的班次，`current` 是目前課表
+全部班次（1～30 個）。伺服器以其他課的時間、已存偏好、避開清單、修課紀錄、資格與學分上限篩選，**排除必修與資格
+待確認**，依排課分數（含 s_tag、啟用中的 s_vec／s_cf）排序，同一門課只列一班，最多 8 門。
+
+回應 `{ "sectionId": 123, "alternatives": [{ "sectionId": 456, "name": "課名", "course": {完整班次物件} }] }`。
+`current` 沒有 `sectionId` 或參數格式錯誤回 `400`。前端以 `course` 呼叫換課（先驗證整份課表再套用）。
+
+學分設定（同日）：`POST /api/profile` 以 `targetCreditsMax` 與
+`scheduleOptions.{minCredits, maxCredits, allowCreditOverload}` 保存；前端限制最低不低於年級下限（12，大四 9）、
+最高 25（超修 30）。
+
 ### `GET /api/schedule/avoidances`、`PUT /api/schedule/avoidances/:sectionId`
 
 需要登入及服務處理同意。GET 讀取目前登入帳號的避開課程，PUT 以 `{ "avoid": true }` 加入，或以 `{ "avoid": false }` 解除。回傳 `{ "avoidances": [{ "sectionId": 123, "catalogCourseCode": "COURSE1", "courseName": "課名" }] }`。新增時由伺服器查班次取得課號及名稱，排課依已存設定排除，無課號時僅避開該班次。
@@ -2066,7 +2079,7 @@ Query：
   "general": { "diversification": "domain", "items": [] },
   "method": {
     "representation": "course-exploration-vectors-v1", "fields": ["name", "description", "topic"],
-    "combine": "mean-of-available-fields", "selection": "one-per-unit-cosine", "k": 5, "minSimilarity": 0.55,
+    "combine": "mean-of-available-fields", "selection": "one-per-unit-cosine", "k": 5, "minSimilarity": 0.52,
     "embeddingModel": "text-embedding-3-large", "dimension": 512, "generatedAt": "…"
   },
   "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
@@ -2074,7 +2087,7 @@ Query：
 ```
 
 - **分數**（ADR-035）：課名、課程說明、課程主題三個向量各算 cosine，取**兩邊都有的欄位**的平均；
-  ≥ 0.55 才列出。本學期課程表沒有的已修課（例：離散數學）只有課名向量，只比課名。
+  ≥ 0.52 才列出（2026-11-27 由 0.55 下調）。本學期課程表沒有的已修課（例：離散數學）只有課名向量，只比課名。
   `outside`／`general` 各**最多** 5 門，可能少於 5 門或為空。
 - `semanticMatch.parts`：三種相近程度（無法比較時為 `null`）。`commonTags` 是兩門課都有的主題標籤
   （工具軟體、上課方式不列），只是附加說明。

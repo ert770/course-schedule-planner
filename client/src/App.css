@@ -954,6 +954,9 @@
 .form-group input.error-input { border-color: var(--accent-red); }
 .error-text { color: var(--accent-red); font-size: 0.75rem; }
 .checkbox-group label { display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; }
+/* 查詢頁「只看通識課程」：獨立一列，外框與上方輸入框對齊 */
+.search-gened-label { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+.search-gened-label input[type="checkbox"] { width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--accent-blue); }
 .search-submit-btn { margin-top: 8px; padding: 12px; background: var(--accent-blue); color: white; border: none; border-radius: var(--radius-md); font-weight: 600; font-size: 1rem; transition: background var(--transition-fast); }
 .search-submit-btn:hover { background: var(--accent-blue-light); }
 .search-submit-btn:disabled { opacity: 0.7; cursor: not-allowed; }
@@ -1355,7 +1358,8 @@
 .history-feedback-setup h3 { margin: 0 0 6px; font-size: 1.05rem; font-weight: 600; }
 .history-feedback-setup p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; }
 .history-feedback-hint { margin-top: 6px !important; color: var(--text-muted) !important; }
-.history-feedback-setup > button { flex-shrink: 0; white-space: nowrap; }
+.history-feedback-setup > button { flex: 0 0 auto; width: auto; white-space: nowrap; }
+.history-feedback-setup h3 { margin-bottom: 0; }
 
 /* 儲存課表的短暫提示（2026-10-15） */
 .save-toast {
@@ -1510,3 +1514,70 @@
 [data-theme="dark"] .history-sync-toast svg { color: #78e0a9; }
 .action-btn.history-entry { color: var(--accent-blue); border-color: rgba(74,124,247,.35); }
 .register-field-error { display: block; margin-top: 4px; color: var(--accent-red, #dc2626); font-size: 0.75rem; }
+
+/* Agent 對話框範例 */
+.agent-examples { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.agent-example-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.agent-example-chip {
+  padding: 7px 14px; border-radius: 100px; border: 1px solid var(--border-color);
+  background: var(--bg-card); color: var(--accent-blue); font-size: 0.82rem; text-align: left;
+  box-shadow: var(--shadow-sm); cursor: pointer;
+}
+.agent-example-chip:hover { border-color: var(--accent-blue); }
+.agent-example-toggle { background: none; border: none; padding: 2px 0; color: var(--text-secondary); font-size: 0.82rem; cursor: pointer; }
+.agent-example-groups { display: flex; flex-direction: column; gap: 10px; }
+.agent-example-groups h4 { margin: 0 0 6px; font-size: 0.8rem; color: var(--text-primary); }
+.agent-examples-compact { margin-bottom: 8px; }
+.agent-examples-compact .agent-example-groups { max-height: 220px; overflow-y: auto; width: 100%; }
+
+/* 學分範圍 */
+.credit-range { display: flex; flex-direction: column; gap: 8px; }
+.credit-range-fields { display: flex; flex-wrap: wrap; gap: 12px; }
+.credit-field { display: flex; flex-direction: column; gap: 4px; }
+.credit-field label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
+.credit-field-controls { display: flex; gap: 6px; }
+.credit-field-controls input, .credit-field-controls select {
+  padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);
+  background: var(--bg-primary); color: var(--text-primary); font-size: 0.9rem;
+}
+.credit-field-controls input { width: 64px; }
+.credit-overload { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer; }
+.credit-range-hint { margin: 0; font-size: 0.75rem; color: var(--text-muted); }
+.credit-range-error { margin: 0; font-size: 0.8rem; color: var(--accent-red); }
+.credit-edit { position: relative; display: inline-flex; }
+.credit-edit-button { cursor: pointer; border: none; }
+.credit-popover {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: 300px; padding: 14px;
+  background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm); white-space: normal; text-align: left;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.credit-popover-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* 課程格備選 */
+.course-alternatives-button {
+  position: absolute; right: 2px; bottom: 2px; padding: 1px 6px; border: none; border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92); color: #1d4ed8; font-size: 0.65rem; font-weight: 700; cursor: pointer;
+}
+.course-alternatives-button:hover { background: #fff; }
+.unscheduled-course { display: inline-flex; gap: 4px; margin: 0 8px 8px 0; }
+.alternatives-overlay {
+  position: fixed; inset: 0; z-index: 1050; background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: center; justify-content: center;
+}
+.alternatives-dialog {
+  width: 360px; max-width: 90vw; max-height: 70vh; overflow-y: auto; padding: 18px;
+  background: var(--bg-card); color: var(--text-primary); border-radius: var(--radius-lg);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.alternatives-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.alternatives-header h3 { margin: 0; font-size: 1rem; }
+.alternatives-close { background: none; border: none; color: var(--text-muted); font-size: 1rem; cursor: pointer; }
+.alternatives-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.alternatives-list button {
+  width: 100%; text-align: left; padding: 10px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); cursor: pointer;
+}
+.alternatives-list button:hover { border-color: var(--accent-blue); }
+
+.credit-popover button:disabled { opacity: 0.5; cursor: not-allowed; }

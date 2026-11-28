@@ -30,6 +30,9 @@ export function normalizeScheduleOptions(source) {
   if (source.noEveningClasses === null || typeof source.noEveningClasses === 'boolean') {
     options.noEveningClasses = source.noEveningClasses;
   }
+  if (source.allowCreditOverload === null || typeof source.allowCreditOverload === 'boolean') {
+    options.allowCreditOverload = source.allowCreditOverload;
+  }
   if ([null, 'English', '中文 (Chinese)'].includes(source.language)) options.language = source.language;
   for (const [key, normalize] of Object.entries(listRules)) {
     if (!Array.isArray(source[key])) continue;
@@ -54,6 +57,17 @@ export function normalizeScheduleOptions(source) {
 export function readScheduleOptions(profile = {}) {
   const { values } = normalizePreferencesJson(profile?.preferencesJson);
   return normalizeScheduleOptions(profile?.scheduleOptions ?? values.scheduleOptions);
+}
+
+// 學分上限只有一個意義，但有兩個存放位置：欄位 `targetCreditsMax` 與 `scheduleOptions.maxCredits`
+// （後者優先）。寫入時讓兩邊一致，避免設定頁與聊天改的值互相蓋不掉。
+export function syncCreditLimit(updates = {}) {
+  const optionMax = updates.scheduleOptions?.maxCredits;
+  if (Number.isInteger(optionMax)) return { ...updates, targetCreditsMax: optionMax };
+  if (Number.isInteger(updates.targetCreditsMax)) {
+    return { ...updates, scheduleOptions: { ...updates.scheduleOptions, maxCredits: null } };
+  }
+  return updates;
 }
 
 export function mergeScheduleOptions(preferencesJson, updates) {

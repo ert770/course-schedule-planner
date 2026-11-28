@@ -15,7 +15,7 @@ const COURSE_COLORS = [
   '#4a7cf7', '#6b93f7',
 ];
 
-export default function ScheduleGrid({ courses = [], onCourseClick }) {
+export default function ScheduleGrid({ courses = [], onCourseClick, onAlternativesClick }) {
   const colorMap = useMemo(() => {
     const map = {};
     const uniqueCourses = [...new Set(courses.map(c => c.id))];
@@ -88,6 +88,13 @@ export default function ScheduleGrid({ courses = [], onCourseClick }) {
                     <span className="course-name">{slot.course.name}</span>
                     <span className="course-info">({slot.course.instructor})</span>
                     <span className="course-info">{slot.course.location}</span>
+                    {onAlternativesClick && (
+                      <button type="button" className="course-alternatives-button"
+                        aria-label={`查看${slot.course.name}的備選課程`}
+                        onClick={event => { event.stopPropagation(); onAlternativesClick(slot.course); }}>
+                        備選
+                      </button>
+                    )}
                   </div>
                 </div>
               );

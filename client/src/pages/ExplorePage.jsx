@@ -163,7 +163,7 @@ function ExploreGroup({ title, hint, group, emptyText, ...cardProps }) {
   return (
     <section className="explore-group">
       <h3>{title}</h3>
-      <p className="explore-group-hint">{hint}</p>
+      {hint && <p className="explore-group-hint">{hint}</p>}
       {group.items.length === 0 ? (
         <div className="no-results explore-empty">{emptyText}</div>
       ) : (
@@ -231,7 +231,6 @@ export default function ExplorePage() {
   const profileMode = mode === MODE.PROFILE;
   const favorite = data?.favorite ?? null;
   const hasStart = profileMode ? Boolean(data && !data.emptyReason) : Boolean(favorite);
-  const startName = profileMode ? '你的修課與興趣' : '起點';
   const cardProps = {
     favoriteName: favorite?.name ?? '',
     onOpenDetail: setDetailCourse,
@@ -315,7 +314,6 @@ export default function ExplorePage() {
             <ExploreGroup
               title="跨系探索"
               category="系外選修"
-              hint={`每個系所只列與${startName}最相近的一門。系外選修是否認列為畢業學分，仍須向系辦確認。`}
               group={data.outside}
               emptyText={profileMode
                 ? '本學期沒有與你的修課與興趣主題相同、且你可以修的系外選修。'
@@ -325,9 +323,6 @@ export default function ExplorePage() {
             <ExploreGroup
               title="通識探索"
               category="通識"
-              hint={data.general.diversification === 'domain'
-                ? `每個通識領域只列與${startName}最相近的一門。`
-                : `依與${startName}的相近程度排列。`}
               group={data.general}
               emptyText={profileMode
                 ? '本學期沒有與你的修課與興趣主題相同、且你可以修的通識課。'

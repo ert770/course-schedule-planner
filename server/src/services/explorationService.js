@@ -37,7 +37,7 @@ export const EXPLORATION_RESULT_LIMIT = 5;
 export const EXPLORATION_CACHE_TTL_MS = 10 * 60 * 1000;
 export const EXPLORATION_REPRESENTATION = 'embedding';
 // 三種相近程度平均的門檻（2026-11-24 使用者依 11 個帳號的試算與抽樣決定）。
-export const EXPLORATION_MIN_SIMILARITY = 0.55;
+export const EXPLORATION_MIN_SIMILARITY = 0.52;
 
 // 不進探索的課：不計入畢業學分（體育、國防科技、班級活動）、全校共同必修
 // （中文思辨與表達、大學基礎／精進英文、核心必修）與實習課。

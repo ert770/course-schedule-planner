@@ -6,6 +6,7 @@
 
 - [畢業學分頁深色主題修正](./2026-11-28-graduation-dark-theme.md)
 - [設定頁可修改系所、年級、班級](./2026-11-28-edit-student-scope.md)
+- [首頁、Agent、查詢、探索與設定頁的 10 項修改](./2026-11-28-dashboard-agent-ux.md)
 
 ## 2026-11-27
 

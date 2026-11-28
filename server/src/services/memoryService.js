@@ -6,7 +6,7 @@ import { isMysqlConfigured, queryRows, withTransaction } from '../db/mysql.js';
 import { DEFAULT_MIN_CREDITS } from '../data/creditPolicy.js';
 import { mergeInterestPreferences, normalizePreferencesJson } from '../data/interestPreferences.js';
 import { getCachedCourseCatalog } from './courseCatalogCache.js';
-import { mergeScheduleOptions } from '../data/scheduleOptions.js';
+import { mergeScheduleOptions, syncCreditLimit } from '../data/scheduleOptions.js';
 import {
   mergeSemesterPlanningPreferences,
   SEMESTER_PLANNING_PREFERENCE_FIELDS,
@@ -105,7 +105,8 @@ export async function getUserPreferences(identity) {
 // 寫入走 canonical ID（學號），由 `db/database.js` 在 MySQL 邊界換成
 // `User_Profiles.user_id`。先前對非數字 userId 直接 return null 再靜默落到
 // 本機 JSON，前端送學號時每一次寫入都被跳過而毫無跡象；現在寫不進去會拋錯。
-export async function updateUserPreferences(identity, updates) {
+export async function updateUserPreferences(identity, rawUpdates) {
+  const updates = syncCreditLimit(rawUpdates);
   const canonicalId = String(identity.canonicalId);
 
   // 興趣是 preferences_json 裡的可擴充偏好。寫入前先與既有 values 合併，
