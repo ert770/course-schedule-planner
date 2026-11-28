@@ -2,6 +2,11 @@
 
 本清單依變更報告新增時間排序，從新到舊排列。
 
+## 2026-11-28
+
+- [畢業學分頁深色主題修正](./2026-11-28-graduation-dark-theme.md)
+- [設定頁可修改系所、年級、班級](./2026-11-28-edit-student-scope.md)
+
 ## 2026-11-27
 
 - [MyFCU 部分匯入擴及六個分類、欄位格式與擷取診斷；深色主題對比修正](./2026-11-27-myfcu-all-category-partial-import-and-dark-theme.md)

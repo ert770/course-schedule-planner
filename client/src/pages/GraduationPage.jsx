@@ -78,7 +78,7 @@ export default function GraduationPage() {
 
   if (loading) {
     return (
-      <div className="layout-container" id="graduation-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-main, #f8fafc)', color: 'var(--text-secondary, #64748b)', fontSize: '1.1rem' }}>
+      <div className="layout-container" id="graduation-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-primary)', color: 'var(--text-secondary, #64748b)', fontSize: '1.1rem' }}>
         載入中...
       </div>
     );
@@ -86,10 +86,10 @@ export default function GraduationPage() {
 
   if (loadError) {
     return (
-      <div className="layout-container" id="graduation-page" style={{ minHeight: '100vh', backgroundColor: 'var(--bg-main, #f8fafc)' }}>
+      <div className="layout-container" id="graduation-page" style={{ minHeight: '100vh', backgroundColor: 'var(--bg-primary)' }}>
         <div style={{ maxWidth: '560px', margin: '18vh auto', padding: '32px', textAlign: 'center', background: 'var(--bg-card, #fff)', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
           <AlertTriangle size={48} style={{ color: '#ef4444', marginBottom: '16px' }} />
-          <h2 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-main, #1e293b)' }}>畢業進度暫時無法載入</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-primary)' }}>畢業進度暫時無法載入</h2>
           <p style={{ color: 'var(--text-secondary, #64748b)', margin: '12px 0 24px', fontSize: '0.95rem' }}>{loadError}</p>
           <button className="btn-primary" type="button" onClick={loadGraduationData} style={{ padding: '10px 24px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>重新載入</button>
         </div>
@@ -136,7 +136,7 @@ export default function GraduationPage() {
         </div>
 
         {/* 點擊向下展開的詳細內容按鈕 */}
-        <div style={{ marginTop: 'auto', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+        <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
           <button
             type="button"
             onClick={() => toggleCategoryExpand(category)}
@@ -253,7 +253,7 @@ export default function GraduationPage() {
               <div className="grad-card grad-total" style={{ background: 'var(--bg-card, #ffffff)', padding: '24px 28px', borderRadius: '16px', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02)' }}>
                 <div className="grad-card-label" style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-secondary, #64748b)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>已修學分總覽</div>
                 <div className="grad-card-big-number" style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '16px' }}>
-                  <span className="grad-number-main" style={{ fontSize: '2.5rem', fontWeight: '800', color: 'var(--text-main, #1e293b)', lineHeight: 1 }}>{data?.totalEarned || 0}</span>
+                  <span className="grad-number-main" style={{ fontSize: '2.5rem', fontWeight: '800', color: 'var(--text-primary)', lineHeight: 1 }}>{data?.totalEarned || 0}</span>
                   <span className="grad-number-divider" style={{ fontSize: '1.5rem', fontWeight: '500', color: '#94a3b8' }}>/</span>
                   <span className="grad-number-total" style={{ fontSize: '1.5rem', fontWeight: '600', color: 'var(--text-secondary, #64748b)' }}>{data?.totalRequired ?? '—'}</span>
                   <span style={{ marginLeft: 'auto', fontSize: '1.1rem', fontWeight: '700', color: progressPercent >= 100 ? '#10b981' : '#3b82f6' }}>{progressPercent}%</span>
@@ -282,7 +282,7 @@ export default function GraduationPage() {
 
           {/* Watchlist - 候選課程口袋名單 */}
           <div className="grad-watchlist" style={{ background: 'var(--bg-card, #ffffff)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02)' }}>
-            <h3 className="grad-watchlist-title" style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-main, #1e293b)', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 4px 0' }}>
+            <h3 className="grad-watchlist-title" style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 4px 0' }}>
               我的關注課程
             </h3>
             <p className="grad-watchlist-desc" style={{ fontSize: '0.88rem', color: 'var(--text-secondary, #64748b)', margin: '0 0 16px 0' }}>
@@ -321,7 +321,7 @@ export default function GraduationPage() {
         {/* Right Column: AI recommendations */}
         <div className="graduation-right">
           <div className="grad-ai-card" style={{ background: 'var(--bg-card, #ffffff)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02)', position: 'sticky', top: '88px' }}>
-            <h3 className="grad-ai-title" style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-main, #1e293b)', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 20px 0', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>
+            <h3 className="grad-ai-title" style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 20px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px' }}>
               🤖 AI 缺漏學分補救建議
             </h3>
 
@@ -350,7 +350,7 @@ export default function GraduationPage() {
                             : `💡 ${rec.gapLabel || '課程'}推薦：`}
                         </span>
                       </div>
-                      <p className="grad-rec-message" style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: '1.5' }}>{rec.message}</p>
+                      <p className="grad-rec-message" style={{ margin: 0, fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>{rec.message}</p>
                       {hasSection && (
                         <div className="grad-course-controls">
                           <button type="button" className="course-card-action grad-course-detail" onClick={() => setSelectedCourse(course)}>

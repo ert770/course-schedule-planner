@@ -3,8 +3,7 @@ import { promisify } from 'node:util';
 import { getAll } from '../db/database.js';
 import { queryRows, withTransaction } from '../db/mysql.js';
 import { createWithAllocatedUserId, UserIdCollisionError } from '../db/userIdAllocator.js';
-import { parseClassName } from '../skills/courseScope.js';
-import { isKnownDepartment } from '../data/departmentMapping.js';
+import { validateStudentScope } from '../data/studentScopeValidation.js';
 
 const derive = promisify(argon2);
 const params = { parallelism: 1, tagLength: 32, memory: 19456, passes: 2 };
@@ -25,12 +24,8 @@ export function validateRegistration(input) {
   const { studentId, name, department, gradeLevel, className, password, confirmPassword } = input ?? {};
   if (typeof studentId !== 'string' || !/^D[0-9]{7}$/.test(studentId)) return '學號須為大寫 D 加上 7 位數字';
   if (typeof name !== 'string' || !name.trim() || name.trim().length > 45) return '請輸入姓名（最多 45 字）';
-  if (typeof department !== 'string' || !isKnownDepartment(department)) return '請選擇有效系所';
-  if (!Number.isInteger(Number(gradeLevel)) || Number(gradeLevel) < 1 || Number(gradeLevel) > 5) return '請選擇有效年級';
-  if (typeof className !== 'string' || !className.trim() || className.length > 45) return '請選擇班級';
-  const parsed = parseClassName(className);
-  const allowed = Number(gradeLevel) === 1 ? ['甲', '乙', '丙'] : ['甲', '乙', '丙', '丁'];
-  if (!parsed.isDepartmentClass || parsed.department !== department || parsed.degree !== 'bachelor' || parsed.grade !== Number(gradeLevel) || !allowed.includes(parsed.classSuffix)) return '班級與系所或年級不符';
+  const scopeError = validateStudentScope({ department, gradeLevel, className });
+  if (scopeError) return scopeError;
   if (typeof password !== 'string' || !/^[A-Za-z0-9]{8,}$/.test(password) || password.length > 1024) return '密碼至少 8 位字元，僅限英文字母及數字';
   if (password !== confirmPassword) return '兩次密碼不一致';
   return null;

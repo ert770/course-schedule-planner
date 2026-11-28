@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getUserPreferences, updateUserPreferences } from '../services/memoryService.js';
 import { validateProfileUpdate } from '../data/profileUpdateValidation.js';
+import { validateStudentScopeChange } from '../data/studentScopeValidation.js';
 import { buildCourseSearchScope } from '../skills/courseScope.js';
 import { PREFERENCE_TAG_GROUPS } from '../data/preferenceTags.js';
 import { requireIdentity } from '../middleware/requireIdentity.js';
@@ -156,6 +157,12 @@ router.post('/', requireIdentity, requireServiceConsent, async (req, res) => {
     // 輸入驗證抽在 `data/profileUpdateValidation.js`，可以不起 HTTP server 就測（見該檔說明）。
     const validationError = validateProfileUpdate(updates);
     if (validationError) return res.status(400).json({ error: validationError });
+
+    // 修改系所、年級或班級時，三者必須互相對得上（與註冊同一套規則）。
+    if (['department', 'gradeLevel', 'className'].some(field => updates[field] !== undefined)) {
+      const scopeError = validateStudentScopeChange(updates, await getUserPreferences(req.identity));
+      if (scopeError) return res.status(400).json({ error: scopeError });
+    }
 
     // 避開時段接受第 1～14 節。先前這裡會在含第 1 節時回 400，要求改用
     // 「#不排早八」標籤（舊決策 C）——但那兩者不是同一件事：標籤是「每天的

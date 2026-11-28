@@ -5,6 +5,7 @@ import { useSchedule } from '../contexts/useSchedule';
 import { profileAPI, historyFeedbackAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
+import StudentScopeEditor from '../components/Profile/StudentScopeEditor';
 import PreferenceJourneySteps, { PreferenceBackButton } from '../components/Layout/PreferenceJourneySteps';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { getUserIdentity } from '../utils/userIdentity';
@@ -99,6 +100,9 @@ export default function SetupPage() {
   const [college, setCollege] = useState('');
   const [enrolledPrograms, setEnrolledPrograms] = useState('');
   const [avoidInstructors, setAvoidInstructors] = useState('');
+  // 載入時的系所、年級、班級；只有使用者改過才送出，不把頁面預設值寫進資料庫。
+  const [loadedScope, setLoadedScope] = useState(null);
+  const [scopeEditing, setScopeEditing] = useState(false);
   
   // 前端會顯示的選項
   const [profileLoaded, setProfileLoaded] = useState(false);
@@ -150,6 +154,11 @@ export default function SetupPage() {
         const savedGrade = profile.gradeLevel;
         if (savedGrade) setGradeLevel(String(savedGrade));
         if (profile.className) setClassName(profile.className);
+        setLoadedScope({
+          department: profile.department || '資訊工程學系',
+          gradeLevel: savedGrade ? String(savedGrade) : '1',
+          className: profile.className || '',
+        });
         setProgramType(profile.programType || '');
         setCollege(profile.college || '');
         setEnrolledPrograms((profile.enrolledPrograms || []).join('、'));
@@ -211,6 +220,12 @@ export default function SetupPage() {
     else navigate('/', { state: { preferencesSavedFor: userIdentity } });
   };
 
+  const scopeChanged = Boolean(loadedScope) && (
+    department !== loadedScope.department
+    || gradeLevel !== loadedScope.gradeLevel
+    || className !== loadedScope.className
+  );
+
   const persist = async (selections) => {
     const wasSetupDone = editing;
     setSaveError('');
@@ -218,9 +233,7 @@ export default function SetupPage() {
     try {
       const prefData = {
         userId: userIdentity,
-        department,
-        gradeLevel: Number(gradeLevel),
-        className,
+        ...(scopeChanged ? { department, gradeLevel: Number(gradeLevel), className } : {}),
         programType: programType || null,
         college: college || null,
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
@@ -239,18 +252,26 @@ export default function SetupPage() {
 
       if (!wasSetupDone) markInitialSchedulePending();
       const warnings = result?.interestSelectionWarnings ?? [];
+      // 改了系所或班級後，首頁已存的課表仍是依舊資料排的，要提醒重新套用。
+      const scopeMessage = scopeChanged && wasSetupDone
+        ? '基本資料已更新。首頁的課表仍是依原本的系所與班級排的，請回首頁按「套用偏好排課」更新課表。'
+        : '';
       if (result?.interestSelectionsStatus === 'unverified') {
         setSaveNotice({
           wasSetupDone,
-          message: '其他設定都已保存。目前無法確認課程主題的標籤是否適用，這次只保存了你選的類別，之後可以再回來補選具體主題。',
+          message: [scopeMessage, '其他設定都已保存。目前無法確認課程主題的標籤是否適用，這次只保存了你選的類別，之後可以再回來補選具體主題。'].filter(Boolean).join(' '),
         });
         return;
       }
       if (warnings.length > 0) {
         setSaveNotice({
           wasSetupDone,
-          message: '其他設定都已保存。有部分主題標籤不在你目前的候選課程裡，已略過，沒有保存。',
+          message: [scopeMessage, '其他設定都已保存。有部分主題標籤不在你目前的候選課程裡，已略過，沒有保存。'].filter(Boolean).join(' '),
         });
+        return;
+      }
+      if (scopeMessage) {
+        setSaveNotice({ wasSetupDone, message: scopeMessage });
         return;
       }
       finishAfterSave(wasSetupDone);
@@ -311,7 +332,27 @@ export default function SetupPage() {
                     ? [department, gradeLevel ? gradeLevel + ' 年級' : '', className].filter(Boolean).join(' · ') || '尚無基本資料'
                     : '正在讀取基本資料…'}</p>
 
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '12px 0 0 0' }}>系所、年級與班級由登入資料帶入。{profileLoaded && !className && '目前沒有班別資料，課程主題選項可能無法顯示。'}</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '12px 0 0 0' }}>系所、年級與班級由註冊資料帶入，填錯可以在這裡修改。{profileLoaded && !className && '目前沒有班別資料，課程主題選項可能無法顯示。'}</p>
+                  {profileLoaded && !profileError && !scopeEditing && (
+                    <button type="button" className="course-card-action" style={{ marginTop: '12px' }} onClick={() => setScopeEditing(true)}>
+                      修改基本資料
+                    </button>
+                  )}
+                  {scopeEditing && (
+                    <StudentScopeEditor
+                      initial={{ department, gradeLevel, className }}
+                      onCancel={() => setScopeEditing(false)}
+                      onApply={next => {
+                        setDepartment(next.department);
+                        setGradeLevel(next.gradeLevel);
+                        setClassName(next.className);
+                        setScopeEditing(false);
+                      }}
+                    />
+                  )}
+                  {scopeChanged && !scopeEditing && (
+                    <p role="status" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '8px 0 0 0' }}>基本資料已修改，保存偏好後才會生效。</p>
+                  )}
                 </div>
                 <div className="setup-section-box history-feedback-setup" id="history-feedback">
                   <div>
