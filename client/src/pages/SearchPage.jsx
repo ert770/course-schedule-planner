@@ -337,7 +337,7 @@ export default function SearchPage() {
               <div className="form-group">
                 <label>年級 (Grade)</label>
                 <select value={deptForm.gradeLevel} onChange={handleGradeChange}>
-                  <option value="">全部 (All)</option>
+                  <option value="">全部</option>
                   <option value="1">大一</option>
                   <option value="2">大二</option>
                   <option value="3">大三</option>
@@ -381,13 +381,13 @@ export default function SearchPage() {
             <form className="search-form" onSubmit={handleCondSearch}>
               <div className="form-group">
                 <label>選課代號 (Course ID)</label>
-                <input type="text" placeholder="[請輸入代號]" value={condForm.code} onChange={e => setCondForm({...condForm, code: e.target.value})} />
+                <input type="text" placeholder="請輸入代號..." value={condForm.code} onChange={e => setCondForm({...condForm, code: e.target.value})} />
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label>星期 (Day)</label>
                   <select value={condForm.dayOfWeek} onChange={e => setCondForm({...condForm, dayOfWeek: e.target.value})}>
-                    <option value="">全部 (All)</option>
+                    <option value="">全部</option>
                     <option value="1">星期一</option>
                     <option value="2">星期二</option>
                     <option value="3">星期三</option>
@@ -398,36 +398,36 @@ export default function SearchPage() {
                 <div className="form-group">
                   <label>節次 (Period)</label>
                   <select value={condForm.period} onChange={e => setCondForm({...condForm, period: e.target.value})}>
-                    <option value="">全部 (All)</option>
+                    <option value="">全部</option>
                     {[...Array(14)].map((_, i) => (<option key={i+1} value={i+1}>第 {i+1} 節</option>))}
                   </select>
                 </div>
               </div>
               <div className="form-group">
                 <label>科目名稱 (Course Title)</label>
-                <input type="text" placeholder="[請輸入關鍵字]" value={condForm.keyword} onChange={e => setCondForm({...condForm, keyword: e.target.value})} />
+                <input type="text" placeholder="請輸入關鍵字..." value={condForm.keyword} onChange={e => setCondForm({...condForm, keyword: e.target.value})} />
               </div>
               <div className="form-group">
                 <label>開課教師姓名 (Instructor)</label>
-                <input type="text" placeholder="[請輸入姓名]" value={condForm.instructor} onChange={e => setCondForm({...condForm, instructor: e.target.value})} />
+                <input type="text" placeholder="請輸入姓名..." value={condForm.instructor} onChange={e => setCondForm({...condForm, instructor: e.target.value})} />
               </div>
               <div className="form-group">
                 <label>授課語言 (Language)</label>
                 <select value={condForm.language} onChange={e => setCondForm({...condForm, language: e.target.value})}>
-                  <option value="">全部 (All)</option>
+                  <option value="">全部</option>
                   <option value="中文 (Chinese)">中文 (Chinese)</option>
                   <option value="English">English</option>
                 </select>
               </div>
-              <div className="form-group checkbox-group" style={{ marginTop: '4px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={condForm.isGenEd} onChange={e => setCondForm({...condForm, isGenEd: e.target.checked})} style={{ marginRight: '8px' }} />
-                  特定科目類別：通識課程
+              <div className="form-group search-gened-row">
+                <label className="search-gened-label">
+                  <input type="checkbox" checked={condForm.isGenEd} onChange={e => setCondForm({...condForm, isGenEd: e.target.checked})} />
+                  只看通識課程
                 </label>
               </div>
               <div className="form-group">
                 <label>課程描述 (Description)</label>
-                <input type="text" placeholder="[請輸入關鍵字]" value={condForm.description} onChange={e => setCondForm({...condForm, description: e.target.value})} />
+                <input type="text" placeholder="請輸入關鍵字..." value={condForm.description} onChange={e => setCondForm({...condForm, description: e.target.value})} />
               </div>
               <div className="search-form-actions">
                 <button type="submit" className="search-submit-btn" disabled={isSearching}>{isSearching ? '搜尋中...' : '開始搜尋'}</button>

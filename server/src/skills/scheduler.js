@@ -1360,6 +1360,28 @@ function sumScoreComponents(components) {
   return Object.values(components).reduce((total, value) => total + value, 0);
 }
 
+/**
+ * 換課備選的排序：課表上其他課固定，用與排課相同的單課分數（基礎分、偏好、s_tag、啟用中的 s_vec／s_cf）
+ * 由高到低排。只排序，不做可不可以修的判斷（那在 `replacementService.js`）。
+ */
+export function rankReplacementCandidates(candidates = [], {
+  schedule = [], constraints = {}, tagInterestContext = null, vectorInterestContext = null, cfInterestContext = null,
+} = {}) {
+  const scope = buildStudentScope(constraints);
+  const scoring = buildInterestScoring(
+    tagInterestContext,
+    tagInterestContext?.mode === 'active',
+    activeInterestContextsOf({ vectorInterestContext, cfInterestContext })
+  );
+  return candidates
+    .map(course => ({
+      course,
+      score: scoreCourse(course, schedule, constraints, {}, new Set(), scope, EASY_SCORE_MAX / 2, scoring),
+    }))
+    .sort((a, b) => b.score - a.score || Number(a.course.id) - Number(b.course.id))
+    .map(entry => entry.course);
+}
+
 function diagnosticCourse(course) {
   return {
     sectionId: course?.id ?? course?.sectionId ?? null,

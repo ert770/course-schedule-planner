@@ -394,7 +394,11 @@ Roadmap #7 起方案不是固定五種；Agent 應依 policy、課程差異及�
 - prompt 的「目前使用者偏好」列出全部已勾選的左側偏好與不能上課的時段；排課後的理解回講要說
   「沿用你已存的偏好」並點名，偏好裡也沒有的項目才說沒有替他決定（取代「沒提到就說沒替他決定」，
   那句與畫面上的已勾選偏好矛盾）。
-- 只改條件時維持目前課表。使用者按「套用偏好排課」、明確要求重排或同意 Agent 的重排提問後才執行。
+- 使用者講完排課條件就直接重排（2026-11-27 使用者決定），Agent 不再問「要重排嗎」。只有明說「先不要排」「只要存起來」時
+  暫存或保存而不重排（`declinesReplan()`）；單純查問偏好或查課不排。範圍不明時仍先問「這次／以後」，回答後直接重排。
+- 目前使用者偏好中的「目標學分」是**最高學分**（`describeCreditTarget()`：`scheduleOptions.maxCredits` 優先於
+  `targetCreditsMax`），另外列出最低學分。超修用 `scheduleOptions.allowCreditOverload`。
+- 換課候選規則抽到 `services/replacementService.js`，`find_replacement_courses` 與首頁課程格的「備選」共用。
 - 聊天重排的手動加選由 `planningContext.selectedCourses` 提供，伺服器在求解前合併為已選班次。
 
 第二批以 `scheduleOptions` 提交可用／偏好時段、每天門數上限、最低／最高學分、單門學分、

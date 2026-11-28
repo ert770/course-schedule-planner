@@ -515,11 +515,11 @@ test('XS8 回應帶方法說明且不含內部向量', async () => {
   assert.equal(result.method.representation, 'course-exploration-vectors-v1');
   assert.deepEqual(result.method.fields, ['name', 'description', 'topic']);
   assert.equal(result.method.selection, 'one-per-unit-cosine');
-  assert.equal(result.method.minSimilarity, 0.55);
+  assert.equal(result.method.minSimilarity, 0.52);
   const [item] = result.outside.items;
   assert.equal(Object.hasOwn(item, 'vector'), false);
   assert.equal(Object.hasOwn(item, 'sharedTerms'), false);
-  assert.ok(item.similarity >= 0.55 && item.similarity <= 1);
+  assert.ok(item.similarity >= 0.52 && item.similarity <= 1);
   assert.equal(item.semanticMatch.sourceCourseCode, 'IECS3059');
   assert.deepEqual(Object.keys(item.semanticMatch.parts), ['name', 'description', 'topic']);
   assert.deepEqual(item.semanticMatch.commonTags, [TOPIC_A]);
@@ -614,7 +614,7 @@ describe('XS10 三種相近程度與門檻（ADR-035）', () => {
   // 與起點 [1,0,0] 的 cosine 為 c 的向量。
   const at = c => [c, Math.sqrt(1 - c ** 2), 0];
 
-  test('XS10 分數是三欄平均，未達 0.55 不列；仍排除舊學期、已修與沒有時間的課', async () => {
+  test('XS10 分數是三欄平均，未達 0.52 不列；仍排除舊學期、已修與沒有時間的課', async () => {
     const courses = [
       section('IECS3059', '人工智慧導論', '資訊三合', AI),
       section('HIGH', '高分課', '通訊三甲', AI),

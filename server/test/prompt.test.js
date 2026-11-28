@@ -212,7 +212,8 @@ describe('P4 系所年級班別兩段式確認；排課偏好直接寫入（ADR-
     const prompt = buildSystemPrompt({ preferenceTags: ['#不排早八', '#涼課優先'] });
     assert.ok(prompt.includes('短答、保存或暫存'));
     assert.ok(prompt.includes('只確認不清楚的部分'));
-    assert.ok(prompt.includes('只改偏好時不要呼叫排課工具'));
+    assert.ok(prompt.includes('講完排課條件就直接重排'));
+    assert.ok(prompt.includes('不要問「要重排嗎」'));
     assert.ok(prompt.includes('沿用你已存的偏好'));
     assert.ok(prompt.includes('左側已勾選的偏好：不排早八、涼課優先'));
     assert.equal(prompt.includes('明說沒提到的項目'), false, '舊規則「沒提到就說沒替他決定」已移除');

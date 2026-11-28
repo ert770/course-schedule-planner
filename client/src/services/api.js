@@ -209,6 +209,8 @@ export const scheduleAPI = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  alternatives: (sectionId, currentIds) =>
+    request('/schedule/alternatives?' + new URLSearchParams({ sectionId, current: currentIds })),
   validate: (courses) =>
     request('/schedule/validate', {
       method: 'POST',

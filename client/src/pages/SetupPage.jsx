@@ -5,6 +5,8 @@ import { useSchedule } from '../contexts/useSchedule';
 import { profileAPI, historyFeedbackAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
+import CreditRangeInput from '../components/Profile/CreditRangeInput';
+import { creditRangeFromProfile, creditRangePayload, validateCreditRange } from '../utils/creditRange';
 import PreferenceJourneySteps, { PreferenceBackButton } from '../components/Layout/PreferenceJourneySteps';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { getUserIdentity } from '../utils/userIdentity';
@@ -17,7 +19,6 @@ const sections = ['基本資料', '課程興趣', '排課條件'];
 
 function scheduleOptionLines(options = {}) {
   const lines = [
-    [options.minCredits, value => `學分目標至少 ${value} 學分`],
     [options.maxCoursesPerDay, value => `每天最多 ${value} 門課`],
     [options.courseCredits, value => `可選課每門 ${value} 學分`],
     [options.preferredCourseCredits, value => `偏好每門 ${value} 學分`],
@@ -104,7 +105,8 @@ export default function SetupPage() {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [savedTimePreferences, setSavedTimePreferences] = useState([]);
-  const [savedCreditMax, setSavedCreditMax] = useState(null);
+  // 學分上下限：{ floor, value: { min, max, overload } }，讀到 profile 後才有值。
+  const [credits, setCredits] = useState(null);
   const [savedOptions, setSavedOptions] = useState([]);
 
   const [selectedTags, setSelectedTags] = useState(new Set());
@@ -155,7 +157,7 @@ export default function SetupPage() {
         setEnrolledPrograms((profile.enrolledPrograms || []).join('、'));
         setAvoidInstructors((profile.avoidInstructors || []).join('、'));
         setSavedTimePreferences(Array.isArray(profile.blockedPeriods) ? profile.blockedPeriods : []);
-        setSavedCreditMax(profile.scheduleOptions?.maxCredits ?? profile.targetCreditsMax ?? null);
+        setCredits(creditRangeFromProfile(profile));
         setSavedOptions(scheduleOptionLines(profile.scheduleOptions));
 
         if (Array.isArray(profile.selectedTags)) {
@@ -214,6 +216,12 @@ export default function SetupPage() {
   const persist = async (selections) => {
     const wasSetupDone = editing;
     setSaveError('');
+    const creditError = credits && validateCreditRange(credits.value, credits.floor);
+    if (creditError) {
+      setSaveError(creditError);
+      setSetupStep(2);
+      return;
+    }
     setGenerating(true);
     try {
       const prefData = {
@@ -226,6 +234,7 @@ export default function SetupPage() {
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
+        ...(credits ? creditRangePayload(credits.value) : {}),
         ...(!wasSetupDone ? { initialSetupStage: 'schedule' } : {}),
         // 長期興趣只由課程主題問答保存（ADR-032）；舊的文字興趣欄位已移除。
         ...(selections !== savedTopicSelections ? {
@@ -311,17 +320,16 @@ export default function SetupPage() {
                     ? [department, gradeLevel ? gradeLevel + ' 年級' : '', className].filter(Boolean).join(' · ') || '尚無基本資料'
                     : '正在讀取基本資料…'}</p>
 
-                  <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: '12px 0 0 0' }}>系所、年級與班級由登入資料帶入。{profileLoaded && !className && '目前沒有班別資料，課程主題選項可能無法顯示。'}</p>
+                  {profileLoaded && !className && <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: '12px 0 0 0' }}>目前沒有班別資料，課程主題選項可能無法顯示。</p>}
                 </div>
                 <div className="setup-section-box history-feedback-setup" id="history-feedback">
                   <div>
-                    <h3 className="setup-section-title">我修過的課</h3>
-                    <p>告訴系統你修過的選修、通識與系外課喜不喜歡，推薦會參考主題相近的課（必修不列入）。</p>
-                    {!personalizationGranted && <p className="history-feedback-hint">需要先在隱私設定同意「從互動持續改善個人化」。</p>}
+                    <h3 className="setup-section-title">歷史修課回饋</h3>
+                                        {!personalizationGranted && <p className="history-feedback-hint">需要先在隱私設定同意「從互動持續改善個人化」。</p>}
                     {historyMessage && <p className="history-feedback-hint">{historyMessage}</p>}
                   </div>
                   <button type="button" className="course-card-action" onClick={openHistoryFeedback} disabled={!personalizationGranted || historyLoading}>
-                    {historyLoading ? '載入中…' : '調整喜好'}
+                    {historyLoading ? '載入中…' : '填寫回饋'}
                   </button>
                 </div>
               </div>
@@ -362,10 +370,16 @@ export default function SetupPage() {
               <section className="setup-section-box" aria-labelledby="setup-scheduling-title">
                 <h2 id="setup-scheduling-title" className="setup-section-title">設定排課條件</h2>
                 <p className="setup-journey-summary">選擇你希望課表符合的時段、集中程度與其他安排。</p>
-                {editing && (savedTimePreferences.length > 0 || savedCreditMax !== null || savedOptions.length > 0) && (
+                {credits && (
                   <div className="setup-pref-group">
-                    <h3 className="setup-pref-category">已保存的時段與學分</h3>
-                    {savedCreditMax !== null && <p>學分上限 {savedCreditMax} 學分</p>}
+                    <h3 className="setup-pref-category">這學期想修的學分</h3>
+                    <CreditRangeInput idPrefix="setup-credit" value={credits.value} floor={credits.floor}
+                      onChange={value => setCredits(current => ({ ...current, value }))} />
+                  </div>
+                )}
+                {editing && (savedTimePreferences.length > 0 || savedOptions.length > 0) && (
+                  <div className="setup-pref-group">
+                    <h3 className="setup-pref-category">已保存的時段與其他條件</h3>
                     {savedOptions.map(line => <p key={line}>{line}</p>)}
                     {['週一', '週二', '週三', '週四', '週五', '週六', '週日'].map((day, index) => {
                       const periods = savedTimePreferences.filter(entry => entry.day === index + 1)

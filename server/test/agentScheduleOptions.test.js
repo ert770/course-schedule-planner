@@ -140,7 +140,8 @@ test('長期類別設定寫入 profile，和已有設定合併後由首頁排課
   const f = chatFixture('ADV-SAVED', { initial: normalizeProfile({ ...profile, scheduleOptions: undefined, preferencesJson }) });
   const result = await f.chat('以後只排通識');
   assert.equal(result.preferencesUpdated, true);
-  assert.equal(f.requests(), 0);
+  // 2026-11-27 使用者決定：講完條件就直接重排。
+  assert.equal(f.requests(), 1);
   assert.deepEqual(f.prefs().scheduleOptions, { maxCoursesPerDay: 2, includeCategories: ['通識'] });
   assert.deepEqual(ids(solve(courses, {}, f.prefs())), [803, 804]);
 });
