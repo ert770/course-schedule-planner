@@ -4,6 +4,9 @@ import { useSchedule } from '../contexts/useSchedule';
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { scheduleAPI, chatAPI, profileAPI, historyFeedbackAPI, controlledBrowserAPI } from '../services/api';
 import ScheduleGrid from '../components/Schedule/ScheduleGrid';
+import AgentExamples from '../components/Chat/AgentExamples';
+import CreditEditor from '../components/Profile/CreditEditor';
+import AlternativesDialog from '../components/Schedule/AlternativesDialog';
 import ExportDropdown from '../components/Schedule/ExportDropdown';
 import RemoveReasonDialog from '../components/Schedule/RemoveReasonDialog';
 import ScheduleConfirmationBar from '../components/Schedule/ScheduleConfirmationBar';
@@ -13,7 +16,6 @@ import CourseDetailModal from '../components/CourseCard/CourseDetailModal';
 import ChatMessageContent from '../components/Chat/ChatMessageContent';
 import ScheduleNotice from '../components/Schedule/ScheduleNotice';
 import PlanSwitcher from '../components/Schedule/PlanSwitcher';
-import PreferenceSourceBadge from '../components/Profile/PreferenceSourceBadge';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
 import { makeNotice, buildScheduleNotice, buildScheduleNoticeForPlan } from '../utils/scheduleNotice';
@@ -217,6 +219,7 @@ function Dashboard({ user, userIdentity }) {
   // roadmap #2：排課只是推薦，使用者是否覺得符合需求才是最終選擇。
   const [confirmation, setConfirmation] = useState(null);
   const [removalCandidate, setRemovalCandidate] = useState(null);
+  const [alternativesFor, setAlternativesFor] = useState(null);
   // 階段 5：還有沒回答過的歷史修課時，進排課主頁自動跳出一次。
   const [historyFeedback, setHistoryFeedback] = useState(null);
   const chatInputRef = useRef(null);
@@ -523,6 +526,11 @@ function Dashboard({ user, userIdentity }) {
     return saved;
   };
 
+  // 首頁改目標學分：先存進偏好，再用新偏好重排（2026-11-28 使用者指定要接到排課）。
+  const handleCreditSave = async (payload) => {
+    if (await persistDashboardPreferences(payload)) await handleRegenerate();
+  };
+
   const handleRegenerate = async () => {
     if (applyingPreferencesRef.current || chatSendingRef.current) return;
     applyingPreferencesRef.current = true;
@@ -531,6 +539,17 @@ function Dashboard({ user, userIdentity }) {
     } finally {
       applyingPreferencesRef.current = false;
     }
+  };
+
+  // 範例只填進輸入框，讓使用者修改後自己按送出（2026-11-28 使用者指定）。
+  const pickExample = (text) => {
+    setChatInput(text);
+    requestAnimationFrame(() => {
+      const input = chatInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(text.length, text.length);
+    });
   };
 
   const handleChatSend = async (overrideMsg) => {
@@ -761,10 +780,6 @@ function Dashboard({ user, userIdentity }) {
         <aside className="left-sidebar">
           <div className="sidebar-section">
             <h3 className="sidebar-section-title">我的排課偏好</h3>
-            {/* roadmap #31：目前這份課表的個人化來源——顯式、學習到但尚未套用、
-                還是資料不足。自己抓資料（不傳 personalization prop），跟隱私中心
-                各自獨立載入，不必把 PrivacyPage 的 state 提到這裡共用。 */}
-            <PreferenceSourceBadge variant="compact" />
             {prefsError && (
               <div className="error-text" role="alert" id="prefs-error">{prefsError}</div>
             )}
@@ -826,9 +841,10 @@ function Dashboard({ user, userIdentity }) {
               {!refreshingImportedSchedule && <span className="stat-badge course-badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                 📚 {schedule.length} 門課
               </span>}
-              {!refreshingImportedSchedule && <span className="stat-badge credit-badge" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-                🎓 {totalCredits} 學分
-              </span>}
+              {!refreshingImportedSchedule && (
+                <CreditEditor totalCredits={totalCredits} profile={savedProfile}
+                  disabled={preferenceControlsDisabled || savingPrefs} onSave={handleCreditSave} />
+              )}
               {!refreshingImportedSchedule && hasNonGraduationCredits && (
                 <span
                   className="stat-badge credit-badge"
@@ -856,7 +872,7 @@ function Dashboard({ user, userIdentity }) {
                 <Link className="action-btn secondary" to="/history-import-mock">
                   {localMyFcuImport ? '同步 MyFCU 修課紀錄' : localMyFcuPreview ? 'MyFCU 本機預覽' : '同步 MyFCU 修課紀錄（本機測試）'}
                 </Link>
-              ) : <button className="action-btn secondary" type="button" disabled title="MyFCU 同步尚未開放">同步 MyFCU 修課紀錄（尚未開放）</button>}
+              ) : null}
               {import.meta.env.DEV && localMyFcuError && <span role="status">本機同步設定查詢失敗：{localMyFcuError}</span>}
               {/* 固定不壓縮、不換行 */}
               {!refreshingImportedSchedule && <div style={{ flexShrink: 0, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>
@@ -913,15 +929,21 @@ function Dashboard({ user, userIdentity }) {
 
           <div className="schedule-wrapper" aria-busy={isScheduling || refreshingImportedSchedule}>
             {!refreshingImportedSchedule && <div id="schedule-grid-container">
-              <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} />
+              <ScheduleGrid courses={schedule} onCourseClick={handleOpenDetail} onAlternativesClick={setAlternativesFor} />
             </div>}
             {!refreshingImportedSchedule && unscheduledSelections.length > 0 && (
               <section aria-label="時間未定的已選課程">
                 <p>時間未定的已選課程</p>
                 {unscheduledSelections.map(course => (
-                  <button key={course.id ?? course.sectionId} type="button" className="action-btn secondary" onClick={() => handleOpenDetail(course)}>
-                    {course.name}
-                  </button>
+                  <span key={course.id ?? course.sectionId} className="unscheduled-course">
+                    <button type="button" className="action-btn secondary" onClick={() => handleOpenDetail(course)}>
+                      {course.name}
+                    </button>
+                    <button type="button" className="action-btn secondary" aria-label={`查看${course.name}的備選課程`}
+                      onClick={() => setAlternativesFor(course)}>
+                      備選
+                    </button>
+                  </span>
                 ))}
               </section>
             )}
@@ -942,9 +964,12 @@ function Dashboard({ user, userIdentity }) {
             {chatHistoryLoading && <p className="chat-history-status" role="status">正在載入對話…</p>}
             {restoredChat?.failed && <p className="chat-history-status" role="status">暫時無法載入先前的對話。</p>}
             {!chatHistoryLoading && !restoredChat?.messages.length && !chatHistory.length && (
-              <div className="chat-message bot">
-                <div className="message-bubble">你好！我是課表規劃助手，用自然語言告訴我你的需求吧！</div>
-              </div>
+              <>
+                <div className="chat-message bot">
+                  <div className="message-bubble">你好！我是課表規劃助手，用自然語言告訴我你的需求吧！</div>
+                </div>
+                <AgentExamples schedule={schedule} onPick={pickExample} />
+              </>
             )}
             {[...(restoredChat?.messages ?? []), ...chatHistory].map((msg, i) => (
               <div key={i} className={`chat-message ${msg.role}`}>
@@ -986,6 +1011,9 @@ function Dashboard({ user, userIdentity }) {
           </div>
 
           <div className="chat-input-area">
+            {(restoredChat?.messages.length > 0 || chatHistory.length > 0) && (
+              <AgentExamples schedule={schedule} onPick={pickExample} compact />
+            )}
             <div className="input-box">
               <input
                 ref={chatInputRef}
@@ -1037,6 +1065,10 @@ function Dashboard({ user, userIdentity }) {
         </div>
       )}
 
+      {alternativesFor && (
+        <AlternativesDialog course={alternativesFor} schedule={schedule} onSwap={applyCourseSwap}
+          onClose={() => setAlternativesFor(null)} />
+      )}
       <CourseDetailModal
         course={detailCourse}
         onClose={() => setDetailCourse(null)}

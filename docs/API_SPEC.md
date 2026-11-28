@@ -1465,6 +1465,19 @@ Constraint Schema（Roadmap #21）」與「共同必修（Co-requisite，Roadmap
 只回傳登入帳號的已存課表。可附 `?userId=學號` 核對前端身分，與 session 不符時回傳 `403`。
 成功回應帶 `Cache-Control: private, no-store`。
 
+### `GET /api/schedule/alternatives?sectionId=<id>&current=<id,id,...>`
+
+首頁課程格的「備選」（2026-11-28）。需要登入及服務處理同意。`sectionId` 是要換掉的班次，`current` 是目前課表
+全部班次（1～30 個）。伺服器以其他課的時間、已存偏好、避開清單、修課紀錄、資格與學分上限篩選，**排除必修與資格
+待確認**，依排課分數（含 s_tag、啟用中的 s_vec／s_cf）排序，同一門課只列一班，最多 8 門。
+
+回應 `{ "sectionId": 123, "alternatives": [{ "sectionId": 456, "name": "課名", "course": {完整班次物件} }] }`。
+`current` 沒有 `sectionId` 或參數格式錯誤回 `400`。前端以 `course` 呼叫換課（先驗證整份課表再套用）。
+
+學分設定（同日）：`POST /api/profile` 以 `targetCreditsMax` 與
+`scheduleOptions.{minCredits, maxCredits, allowCreditOverload}` 保存；前端限制最低不低於年級下限（12，大四 9）、
+最高 25（超修 30）。
+
 ### `GET /api/schedule/avoidances`、`PUT /api/schedule/avoidances/:sectionId`
 
 需要登入及服務處理同意。GET 讀取目前登入帳號的避開課程，PUT 以 `{ "avoid": true }` 加入，或以 `{ "avoid": false }` 解除。回傳 `{ "avoidances": [{ "sectionId": 123, "catalogCourseCode": "COURSE1", "courseName": "課名" }] }`。新增時由伺服器查班次取得課號及名稱，排課依已存設定排除，無課號時僅避開該班次。
@@ -1865,6 +1878,18 @@ Profile 另接受 `interestSelections`（設定頁「想接觸的課程主題」
 
 正規化不是型別轉換層：`{}` 會變成 `"[object Object]"`、`["資訊工程學系","電機工程學系"]` 會變成 `"資訊工程學系,電機工程學系"`，寫入後在資料庫與 API 回應中都像一般字串，但所有系所比對都會失敗。資料層另有一道防線，會丟棄型別錯誤的 `department` 而非寫入。
 
+**修改系所、年級、班級（2026-11-28）**：請求帶了 `department`、`gradeLevel`、`className` 任一個，且與已保存的值
+合併後**不同於**目前保存的值時，三者合併後依註冊的同一套規則檢查（`server/src/data/studentScopeValidation.js`）：
+系所必須在系所對照表內、年級 1～5、班級必須是該系所簡稱＋年級＋甲～丁的學士班（一年級只到丙）。不通過回 `400`：
+
+```json
+{ "error": "班級與系所或年級不符" }
+```
+
+其他訊息為「請選擇有效系所」「請選擇有效年級」「請選擇班級」。**送的值與已保存的完全相同時不檢查**，
+既有資料不符新規則的帳號（例如班級為「資訊四合」）保存其他偏好時不會被擋下。
+設定頁只有在使用者修改基本資料時才送這三個欄位；AI 助手經 `memoryService` 寫入，不經過這道檢查。
+
 ## Reviews
 
 ### `GET /api/reviews/easy?limit=10`
@@ -2054,7 +2079,7 @@ Query：
   "general": { "diversification": "domain", "items": [] },
   "method": {
     "representation": "course-exploration-vectors-v1", "fields": ["name", "description", "topic"],
-    "combine": "mean-of-available-fields", "selection": "one-per-unit-cosine", "k": 5, "minSimilarity": 0.55,
+    "combine": "mean-of-available-fields", "selection": "one-per-unit-cosine", "k": 5, "minSimilarity": 0.52,
     "embeddingModel": "text-embedding-3-large", "dimension": 512, "generatedAt": "…"
   },
   "poolSize": { "outsideCourses": 207, "outsideUnits": 35, "generalCourses": 79, "generalUnits": 3 }
@@ -2062,7 +2087,7 @@ Query：
 ```
 
 - **分數**（ADR-035）：課名、課程說明、課程主題三個向量各算 cosine，取**兩邊都有的欄位**的平均；
-  ≥ 0.55 才列出。本學期課程表沒有的已修課（例：離散數學）只有課名向量，只比課名。
+  ≥ 0.52 才列出（2026-11-27 由 0.55 下調）。本學期課程表沒有的已修課（例：離散數學）只有課名向量，只比課名。
   `outside`／`general` 各**最多** 5 門，可能少於 5 門或為空。
 - `semanticMatch.parts`：三種相近程度（無法比較時為 `null`）。`commonTags` 是兩門課都有的主題標籤
   （工具軟體、上課方式不列），只是附加說明。

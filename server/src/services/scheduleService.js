@@ -408,7 +408,7 @@ export async function resolveSessionAvoidances(rawAvoidances, loadCourses = () =
   return resolved;
 }
 
-async function prepareGenerationInputs(identity, input = {}, options = {}) {
+export async function prepareGenerationInputs(identity, input = {}, options = {}) {
   const { courseIds = [], filters = {}, constraints = {} } = input;
 
   const prefs = options.prefs ?? await getUserPreferences(identity);

@@ -38,114 +38,30 @@ const SELECTION_LABELS = {
   WATCHING: '你把它加入關注',
 };
 
-const CONFIDENCE_LABELS = {
-  high: { text: '證據充分', className: 'reason-confidence-high' },
-  medium: { text: '部分依據不足', className: 'reason-confidence-medium' },
-  low: { text: '依據不足，請自行確認', className: 'reason-confidence-low' },
-};
-
-const EASINESS_LABELS = {
-  reviews: null,
-  proxy: '涼度為依課程屬性推估，不是實際評價',
-  none: '沒有涼度依據',
-};
-
-// 興趣模型的加分（構想 5.1：標籤興趣、相近主題 s_vec、協同過濾 s_cf 分開列）。
-const INTEREST_COMPONENT_LABELS = {
-  tagInterest: '主題興趣',
-  vectorInterest: '相近主題',
-  cfInterest: '同學選課',
-};
-
-// 「PREFERENCE_MATCH」是選修課預設的選入原因；沒有命中任何偏好時不能寫成「它符合你的偏好」，
-// 否則下一行又說「沒有命中任何偏好」，自相矛盾（2026-10-15 Persona 實測）。
-function headlineFor(reason, interestBoosts) {
-  if (reason.selectedBecause !== 'PREFERENCE_MATCH' || reason.matchedPreferences?.length > 0) {
-    return SELECTION_LABELS[reason.selectedBecause] || '依排課結果選入';
-  }
-  return interestBoosts.length > 0 ? '它和你的興趣主題相近' : '同時段的候選中，它的綜合分數最高';
-}
-
-// 修改 CourseDetailModal.jsx 中的 ReasonSection
+// 「為什麼推薦這門課」只列這門課符合的興趣與偏好（2026-11-27 使用者決定：
+// 分數、評價筆數與「它勝過」對使用者沒有幫助，拿掉）。
 function ReasonSection({ reason }) {
-  // 【修復點】：加入更嚴謹的防呆機制，如果 reason 是空物件或沒有關鍵屬性，則不渲染推薦原因區塊
-  if (!reason || Object.keys(reason).length === 0 || (!reason.selectedBecause && !reason.scoreBreakdown)) {
-    return null; 
-  }
+  if (!reason || Object.keys(reason).length === 0 || !reason.selectedBecause) return null;
 
-  const confidence = CONFIDENCE_LABELS[reason.confidence] || CONFIDENCE_LABELS.medium;
-  const alternatives = reason.alternativesRejected;
-  
-  // 【修復點】：確保 scoreBreakdown 是一個陣列，即使它是 undefined 也不會造成 .filter 崩潰
-  const safeScoreBreakdown = Array.isArray(reason.scoreBreakdown) ? reason.scoreBreakdown : [];
-  
-  const interestBoosts = safeScoreBreakdown
-    .filter(item => INTEREST_COMPONENT_LABELS[item.component] && Math.round(item.value) >= 1)
-    .map(item => `${INTEREST_COMPONENT_LABELS[item.component]} +${Math.round(item.value)}`);
+  const matched = Array.isArray(reason.matchedPreferences) ? reason.matchedPreferences : [];
+  const unique = items => [...new Set(items.map(item => item.label).filter(Boolean))];
+  const interests = unique(matched.filter(item => item.type === 'interest'));
+  const preferences = unique(matched.filter(item => item.type !== 'interest'));
+  const showHeadline = reason.selectedBecause !== 'PREFERENCE_MATCH';
 
-  // 【修復點】：確保 matchedPreferences 是一個陣列
-  const safeMatchedPreferences = Array.isArray(reason.matchedPreferences) ? reason.matchedPreferences : [];
+  if (!showHeadline && interests.length === 0 && preferences.length === 0) return null;
 
   return (
     <div className="detail-reason">
       <div className="detail-desc-label">為什麼推薦這門課</div>
-
-      <p className="reason-headline">
-        {headlineFor(reason, interestBoosts)}
-        <span className={`reason-confidence ${confidence.className}`}>{confidence.text}</span>
-      </p>
-
-      {safeMatchedPreferences.length > 0 ? (
-        <p className="reason-line">
-          <strong>命中你的偏好：</strong>
-          {safeMatchedPreferences.map(item => item.label).join('、')}
-        </p>
-      ) : (
-        <p className="reason-line reason-muted">它沒有命中你設定的排課偏好。</p>
+      {showHeadline && (
+        <p className="reason-headline">{SELECTION_LABELS[reason.selectedBecause] || '依排課結果選入'}</p>
       )}
-
-      {interestBoosts.length > 0 && (
-        <p className="reason-line">
-          <strong>興趣加分：</strong>
-          {interestBoosts.join('、')}
-        </p>
+      {interests.length > 0 && (
+        <p className="reason-line"><strong>符合你的興趣：</strong>{interests.join('、')}</p>
       )}
-
-      {/* 評價證據 */}
-      <p className="reason-line">
-        <strong>評價證據：</strong>
-        {reason.reviewEvidence
-          ? `${reason.reviewEvidence.reviewCount} 則評價`
-          : '這門課沒有評價資料'}
-        {reason.easinessSource && EASINESS_LABELS[reason.easinessSource]
-          ? `（${EASINESS_LABELS[reason.easinessSource]}）`
-          : ''}
-      </p>
-
-      {/* 限制與代價 */}
-      {reason.constraintTradeoffs?.length > 0 && (
-        <p className="reason-line reason-tradeoff">
-          <strong>代價：</strong>
-          {reason.constraintTradeoffs.map(item => `不符合「${item.label}」偏好，但必修優先`).join('；')}
-        </p>
-      )}
-
-      {/* 競爭者資訊 */}
-      {alternatives?.status === 'no-competitors' && (
-        <p className="reason-line reason-muted">同一個時段沒有其他課與它競爭。</p>
-      )}
-      {alternatives?.status === 'had-competitors' && alternatives.candidates?.length > 0 && (
-        <div className="reason-line">
-          <strong>它勝過：</strong>
-          <ul className="reason-alternatives">
-            {alternatives.candidates.map((item, index) => (
-              <li key={item.sectionId ?? `${item.name}-${index}`}>
-                {item.name}（差 {item.scoreDelta} 分）
-                {item.notScheduledBecause ? `；${item.notScheduledBecause}` : ''}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {preferences.length > 0 && (
+        <p className="reason-line"><strong>符合你的偏好：</strong>{preferences.join('、')}</p>
       )}
     </div>
   );

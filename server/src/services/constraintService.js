@@ -74,7 +74,7 @@ export function buildScheduleConstraints(input = {}, prefs = {}, context = {}) {
   const requestedMin = scheduleOptions.minCredits == null
     ? prefs.targetCreditsMin
     : Math.max(scheduleOptions.minCredits, prefs.targetCreditsMin ?? 0);
-  const overload = pickFlag(input.allowCreditOverload, prefs.allowCreditOverload);
+  const overload = pickFlag(input.allowCreditOverload, scheduleOptions.allowCreditOverload ?? prefs.allowCreditOverload);
   return {
     ...(Object.keys(scheduleOptions).length ? { scheduleOptions } : {}),
     // #13：必修範圍必須依學生的系所與年級收斂，否則全校 2094 筆必修都會被

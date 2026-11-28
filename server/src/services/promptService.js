@@ -15,6 +15,7 @@
 import { resolveInterestSelections } from '../data/interestSelections.js';
 import { readInterestPreferences } from '../data/interestPreferences.js';
 import { ALL_TAGS, TAG_TO_FLAG } from '../data/preferenceTags.js';
+import { readScheduleOptions } from '../data/scheduleOptions.js';
 import { SCHEDULE_CATEGORIES } from '../data/scheduleOptions.js';
 import { SCHEDULE_ACTIONS } from './scheduleActionService.js';
 
@@ -51,6 +52,14 @@ const PREFERENCE_FLAG_LIST = {
 const WEEKDAY_LABELS = ['', '一', '二', '三', '四', '五', '六', '日'];
 
 // 已存的排課偏好（左側勾選）＋不能上課的時段，給模型看完整的已存設定。
+// 2026-11-28 使用者決定：目標學分一律是「最高學分」；最低學分另外列出。
+export function describeCreditTarget(prefs = {}) {
+  const options = readScheduleOptions(prefs);
+  const max = options.maxCredits ?? prefs.targetCreditsMax ?? 25;
+  const floor = prefs.targetCreditsMin || 12;
+  return { max, min: Math.max(floor, options.minCredits ?? 0) };
+}
+
 export function describeSavedPreferences(prefs = {}) {
   const tags = prefs.selectedTags ?? prefs.preferenceTags;
   const checked = ALL_TAGS
@@ -236,6 +245,7 @@ const SCHEDULE_OPTIONS_SCHEMA = {
     maxCredits: { type: ['integer', 'null'], description: '總學分上限。' },
     maxCoursesPerDay: { type: ['integer', 'null'], description: '每天最多幾門。' },
     noEveningClasses: { type: ['boolean', 'null'], description: '不排晚課。' },
+    allowCreditOverload: { type: ['boolean', 'null'], description: '使用者已申請超修，上限可到 30。' },
     allowedPeriods: { ...SCHEDULER_PARAMETERS.blockedPeriods, description: '能上課的節次。所有上課時段都須在這些節次內。空陣列解除。' },
     preferredPeriods: { ...SCHEDULER_PARAMETERS.blockedPeriods, description: '希望安排的時段。超出時段仍可排。' },
     courseCredits: { type: ['integer', 'null'], description: '每門可選課要幾學分。' },
@@ -508,7 +518,7 @@ export function getAgentTools() {
         '整理使用者想學的主題。明說要長期保存才寫入，範圍不明由伺服器追問。'
         + '使用者說「我對 X 有興趣」「以後想多排 X」時放進 addTerms；說「不想再排 X」「X 不要了」時放進 removeTerms，'
         + '伺服器會拿掉勾選並記一筆「沒興趣」讓相關課降分（只想拿掉勾選、不是討厭時把 recordNotInterested 設為 false）。'
-        + '使用者只說「這次想排 X」而未要求重排時，用 addTerms 提交待套用主題。'
+        + '使用者說「這次想排 X」時，用 addTerms 提交本次主題，伺服器會直接用它重排。'
         + '回傳 needsChoice 時代表有詞對不到唯一主題、什麼都沒寫入：把候選念給使用者選，再用 addTagIds／removeTagIds 呼叫一次。'
         + 'tooCommon 列出的主題（例如 Python、人工智慧）太常見、不能長期保存，請改成每次排課帶進 interests。',
       parameters: {
@@ -798,6 +808,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
   // 因此有規劃狀態時，把舊的那一次降級成「較早的一次聊天推薦」。
   const planningBlock = buildPlanningStateBlock(context.planningContext);
   const savedPreferences = describeSavedPreferences(userPrefs);
+  const creditTarget = describeCreditTarget(userPrefs);
   const latestIsCurrent = context.latestExposureIsCurrent !== false;
 
   const latest = context.latestExposure;
@@ -859,7 +870,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 
 已存偏好與這次條件（ADR-036）：
 - 下方「目前使用者偏好」是伺服器已存的設定，排課時伺服器會自動套用，不用你重送。
-- 查問目前偏好時，以本回合的「目前使用者偏好」或本回合成功更新的工具結果為準。舊對話與現有課表只反映當時的狀態。課表有週一的課，不能作為「星期一排空」未勾選的證據。只確認或更新偏好時不要呼叫排課工具。
+- 查問目前偏好時，以本回合的「目前使用者偏好」或本回合成功更新的工具結果為準。舊對話與現有課表只反映當時的狀態。課表有週一的課，不能作為「星期一排空」未勾選的證據。只是查問偏好時不要呼叫排課工具。
 - 使用者會直接給條件，例如「週三下午要打工」「週三下午有空比較好」「18 學分」。從語意區分不能上課、希望留空、學分目標和上限。
 - 只確認不清楚的部分。使用者說「18 學分」時，若上下文無法區分目標或上限，先問「想排到 18 學分，還是最多 18？」。
 - 可明確結構化的左側偏好、封鎖時段、學分上限與修課路徑用 update_preferences 提交。只放這次要改的欄位。
@@ -867,8 +878,8 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 - 上課範圍、教師、指定班次、學分目標或課程類別填入 scheduleOptions。用 update_preferences 提交可保存或本次的條件，讓伺服器處理適用範圍。
   「通識兩門」填通識的門數限額。「想上王小明老師的課」可列為教師偏好。「王小明老師的課」若上下文無法判斷要查課或排課，只問用途。
   使用者指定課名、課號或教師而符合多個班次時，列出候選並請他選；不得猜班次 ID。
-- 伺服器會處理期間未明的偏好追問、接續短答、保存或暫存。只改偏好時不要呼叫排課工具；
-  使用者明確要一份課表、要重排，或同意你剛提出的重排時，才進行排課。
+- 伺服器會處理期間未明的偏好追問、接續短答、保存或暫存。使用者講完排課條件就直接重排（2026-11-27 使用者決定），
+  **不要問「要重排嗎」**；只有使用者說「先不要排」「只要存起來」時不排。只是查問偏好或查課時不排。
 - 對可保存的偏好，若同時要更新條件和重排，交給 update_preferences 處理。至多執行一次排課。
 
 直接操作目前課表：
@@ -990,7 +1001,7 @@ export function buildSystemPrompt(userPrefs = {}, context = {}) {
 目前使用者偏好（伺服器已存，排課時自動套用；不含可直接識別身分的欄位）：
 - 左側已勾選的偏好：${savedPreferences.checked}
 - 不能上課的時段：${savedPreferences.blocked}
-- 目標學分：${userPrefs.targetCreditsMin || 12} ~ ${userPrefs.targetCreditsMax || 25}
+- 目標學分：${creditTarget.max} 學分（以最高學分為目標；最低 ${creditTarget.min}）
 - 不排早八：${userPrefs.noMorningClasses ? '是' : '否'}
 - 不排晚間：${userPrefs.noEveningClasses ? '是' : '否'}
 - 偏好集中排課：${userPrefs.preferCompact ? '是' : '否'}

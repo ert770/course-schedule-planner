@@ -89,7 +89,7 @@ export default function HistoryFeedbackModal({ data, mode = 'initial', onClose, 
         <div className="history-feedback-header">
           <div>
             <h3 id="history-feedback-title">你修過的這些課，覺得如何？</h3>
-            <p>你的回答會用來推薦主題相近的選修與通識，必修不受影響。之後可以到「個人資料設定」的「我修過的課」修改。</p>
+            <p>你的回答會用來推薦主題相近的選修與通識，必修不受影響。之後可以到「個人資料設定」的「歷史修課回饋」修改。</p>
           </div>
           <button type="button" className="history-feedback-close" aria-label="關閉" onClick={onClose} disabled={busy}>
             <X size={18} />

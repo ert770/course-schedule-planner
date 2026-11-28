@@ -16,11 +16,8 @@ import { buildSystemPrompt, getAgentTools, describeInterpretation, describeSaved
 import { getUserPreferences, updateUserPreferences } from './memoryService.js';
 import { getChatHistory, saveChatExchange } from './privacyService.js';
 import { searchCoursesForAgent, searchCoursesForSchedule } from '../skills/courseQuery.js';
-import {
-  timeConflict, getCourseKey, getTimeBlocks, hardConstraintReason,
-} from '../skills/scheduler.js';
+import { describeExclusions, findReplacementCandidates, rankByEligibility } from './replacementService.js';
 import { buildScheduleConstraints } from './constraintService.js';
-import { getPassedCourseCodes } from '../data/courseHistory.js';
 import { describeTopicInterests, updateTopicInterests } from './topicInterestService.js';
 import { loadCandidateVectorScores } from './externalInterestReservationService.js';
 import { loadCfInterestContext } from './scheduleService.js';
@@ -52,7 +49,7 @@ import {
 } from './explanationFaithfulness.js';
 import { sha256Hex } from '../utils/hash.js';
 import {
-  SCOPE_PROMPT, TEMPORARY_REPLY, SAVED_REPLY, preferenceScope, isScopeAnswer, requestsReplan,
+  SCOPE_PROMPT, TEMPORARY_REPLY, SAVED_REPLY, preferenceScope, isScopeAnswer, declinesReplan,
   parseSimplePreference, creditGoalQuestion, cleanPreferenceArgs, mergeBlockedPeriodChanges,
   deferPreferenceScope, resolvePreferenceScope, stageTemporaryPreference,
   readTemporaryPreference, consumeTemporaryPreference,
@@ -536,91 +533,10 @@ export function dropNoopPreferenceChanges(changes = {}, prefs = {}) {
   return next;
 }
 
-// 只回前 10 筆給模型，可修的要排在前面；否則前 10 筆可能大多是不能修的課，
-// 模型就會說「查不到可以修的」。同級維持原順序。
-const ELIGIBILITY_RANK = { eligible: 0, unknown: 1 };
-export function rankByEligibility(courses = []) {
-  return courses
-    .map((course, index) => ({ course, index }))
-    .sort((a, b) => (
-      (ELIGIBILITY_RANK[a.course?.eligibility] ?? 2) - (ELIGIBILITY_RANK[b.course?.eligibility] ?? 2)
-      || a.index - b.index
-    ))
-    .map(entry => entry.course);
-}
+export { rankByEligibility };
 
+// 只回前 10 筆給模型。可修的排前面（`rankByEligibility`，與換課備選共用）。
 const MODEL_COURSE_LIMIT = 10;
-
-// 換課候選被排除的原因（給模型解釋「為什麼查不到」用的中文標籤）。
-const REPLACEMENT_EXCLUSION_LABELS = Object.freeze({
-  inSchedule: '已在課表上',
-  sameCourse: '與課表上的課是同一門課',
-  removedThisSession: '這次已移除過',
-  passed: '已經修過',
-  ineligible: '資格不符',
-  noTime: '沒有上課時間',
-  timeConflict: '與課表上其他課衝堂',
-  preference: '不符合已存的排課偏好（早八、星期一排空、午休、不能上課的時段或避開教師）',
-});
-
-function replacementExclusionReason(course, state) {
-  const id = Number(course.sectionId ?? course.id);
-  if (state.scheduleIds.has(id)) return 'inSchedule';
-  if (state.removedIds.has(id)) return 'removedThisSession';
-  if (course.eligibility === 'ineligible') return 'ineligible';
-  if (getTimeBlocks(course).length === 0) return 'noTime';
-  if (course.catalogCourseCode && state.passed.has(course.catalogCourseCode)) return 'passed';
-  if (state.usedKeys.has(getCourseKey(course))) return 'sameCourse';
-  if (state.others.some(other => timeConflict(other, course))) return 'timeConflict';
-  if (hardConstraintReason(course, state.constraints)) return 'preference';
-  return null;
-}
-
-/**
- * 換課候選：課表上其他課的時段固定，找「不衝堂、可修、沒修過、符合已存偏好」的班次。
- * 只用伺服器端的事實（規劃狀態、課程資料、已存偏好），不依賴模型記得時間。
- */
-async function findReplacementCandidates({ replaceSectionId, filters = {} }, ctx, { lookupCourses, searchScheduleCourses }) {
-  const current = ctx.planningContext?.currentCourses ?? [];
-  const replaceId = Number(replaceSectionId);
-  if (!Number.isInteger(replaceId) || !current.some(course => Number(course.sectionId) === replaceId)) {
-    return {
-      error: `sectionId ${replaceSectionId} 不在使用者目前的課表裡，無法替換。請用「目前規劃狀態」列出的 sectionId。`,
-      errorCode: 'REPLACE_TARGET_NOT_IN_SCHEDULE',
-    };
-  }
-  const scheduleIds = current.map(course => Number(course.sectionId));
-  const byId = await lookupCourses(scheduleIds);
-  const others = scheduleIds.filter(id => id !== replaceId).map(id => byId.get(id)).filter(Boolean);
-  const state = {
-    scheduleIds: new Set(scheduleIds),
-    removedIds: new Set((ctx.planningContext?.removedCourses ?? []).map(course => Number(course.sectionId))),
-    passed: new Set(getPassedCourseCodes(ctx.prefs?.courseHistory ?? [])),
-    // 被換掉的那門本身可以換成同課另一班；其他課的同課班次不算「換一門課」。
-    usedKeys: new Set(others.map(getCourseKey)),
-    others,
-    constraints: buildScheduleConstraints({}, ctx.prefs ?? {}),
-  };
-
-  const pool = await searchScheduleCourses(normalizeCourseQueryArgs(filters), ctx.studentScope);
-  const excluded = {};
-  const candidates = [];
-  for (const course of pool) {
-    const reason = replacementExclusionReason(course, state);
-    if (reason) {
-      excluded[reason] = (excluded[reason] ?? 0) + 1;
-      continue;
-    }
-    candidates.push(course);
-  }
-  return { candidates: rankByEligibility(candidates), excluded, poolSize: pool.length };
-}
-
-function describeExclusions(excluded) {
-  return Object.fromEntries(
-    Object.entries(excluded).map(([reason, count]) => [REPLACEMENT_EXCLUSION_LABELS[reason] ?? reason, count])
-  );
-}
 
 function preferenceSummary(prefs) {
   return [
@@ -746,7 +662,7 @@ export async function executeAgentTool(name, args = {}, ctx = {}, deps = {}) {
       case 'find_replacement_courses': {
         const { replaceSectionId, ...filters } = args;
         const found = await findReplacementCandidates(
-          { replaceSectionId, filters }, ctx, { lookupCourses, searchScheduleCourses }
+          { replaceSectionId, filters: normalizeCourseQueryArgs(filters) }, ctx, { lookupCourses, searchScheduleCourses }
         );
         if (found.error) return found;
         const courses = found.candidates.slice(0, MODEL_COURSE_LIMIT).map(compactCourse);
@@ -1167,7 +1083,8 @@ export async function handleChat(identity, message, planningContext = null, opti
   const creditGoal = !isQuestion && !scopedAction && creditGoalQuestion(identity, text);
   const simplePreference = !isQuestion && parseSimplePreference(text);
   const scope = preferenceScope(text);
-  const replan = requestsReplan(text);
+  // 講完條件就直接重排（2026-11-27 使用者決定），除非明說先不要排。
+  const replan = !declinesReplan(text);
   const actionOptions = { ...options, message, planningContext };
   if (creditGoal?.reply) {
     await saveExchange(identity, message, creditGoal.reply);
@@ -1296,9 +1213,6 @@ export async function handleChat(identity, message, planningContext = null, opti
   // 每次都丟掉最近一則助理回覆——那是 Gemini `chats.create` 的 history 形狀
   // 限制留下的痕跡，在這裡只會弄壞對話連續性，因此不保留。
   const history = earlierMessages ?? await loadHistory(identity, 20);
-  const lastReply = history.findLast(entry => entry.role === 'assistant')?.content ?? '';
-  const approvedReplan = /^(?:好|可以|要|對|是|好啊|可以啊|那就排)$/u.test(text)
-    && /(?:要我|要不要|是否|要不).{0,16}(?:重排|排課)/u.test(lastReply);
   const input = [
     ...history.map(m => ({
       role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -1415,8 +1329,8 @@ export async function handleChat(identity, message, planningContext = null, opti
           if (call.name === 'manage_schedule') {
             return await replyToScheduleAction(identity, message, args, options, ctx);
           }
-          if (call.name === 'run_csp_scheduler' && !replan && !approvedReplan) {
-            finalReply = '要我現在重新排課嗎？';
+          if (call.name === 'run_csp_scheduler' && !replan) {
+            finalReply = '好，先不重排。需要時告訴我「幫我重排」。';
             break;
           }
           if (call.name === 'run_csp_scheduler'

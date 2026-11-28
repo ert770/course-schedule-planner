@@ -136,15 +136,18 @@ function chatFixture(canonicalId, initial = {}) {
   };
 }
 
-test('短句先問範圍，「以後」只保存時段並保留既有時段', async () => {
+test('短句先問範圍，「以後」保存時段、保留既有時段並直接重排', async () => {
   const f = chatFixture('SCOPE-SAVED', { blockedPeriods: [{ day: 2, period: 3 }] });
   assert.match((await f.chat('週三下午要打工')).reply, /這次.*以後/);
   assert.equal(f.writes(), 0);
   assert.equal(f.requests.length, 0);
-  assert.equal((await f.chat('以後')).preferencesUpdated, true);
+  const saved = await f.chat('以後');
+  assert.equal(saved.preferencesUpdated, true);
   assert.deepEqual(f.prefs().blockedPeriods, [{ day: 2, period: 3 },
     ...[6, 7, 8, 9, 10].map(period => ({ day: 3, period }))]);
-  assert.equal(f.requests.length, 0);
+  // 2026-11-27 使用者決定：講完條件就直接重排，不再問「要重排嗎」。
+  assert.equal(saved.intent, 'run_csp_scheduler');
+  assert.equal(f.requests.length, 1);
   assert.equal(f.writes(), 1);
   assert.match((await f.chat('以後')).reply, /沒有待確認/);
 });
@@ -161,11 +164,18 @@ test('短句已要求重排，「這次」續接原條件並保留手動加選',
   assert.equal(readTemporaryPreference(f.account, f.prefs()), null);
 });
 
-test('明說這次但未要求重排，暫存到明確要求後才使用', async () => {
+test('明說這次就直接用單次條件重排，不必再說「幫我重排」', async () => {
   const f = chatFixture('SCOPE-NEXT');
-  assert.match((await f.chat('這次週三下午不排')).reply, /暫存/);
-  assert.equal(f.requests.length, 0);
+  assert.equal((await f.chat('這次週三下午不排')).intent, 'run_csp_scheduler');
+  assert.equal(f.requests.length, 1);
   assert.equal(f.writes(), 0);
+  assert.deepEqual(f.requests[0].constraints.blockedPeriods, [6, 7, 8, 9, 10].map(period => ({ day: 3, period })));
+});
+
+test('明說先不要排時，只暫存條件不重排', async () => {
+  const f = chatFixture('SCOPE-HOLD');
+  assert.match((await f.chat('這次週三下午不排，先不要排課')).reply, /暫存/);
+  assert.equal(f.requests.length, 0);
   assert.equal((await f.chat('幫我重排')).intent, 'run_csp_scheduler');
   assert.equal(f.requests.length, 1);
   assert.equal(readTemporaryPreference(f.account, f.prefs()), null);

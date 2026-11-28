@@ -5,6 +5,9 @@ import { useSchedule } from '../contexts/useSchedule';
 import { profileAPI, historyFeedbackAPI } from '../services/api';
 import HistoryFeedbackModal from '../components/Profile/HistoryFeedbackModal';
 import InterestQuestionnaire from '../components/Profile/InterestQuestionnaire';
+import StudentScopeEditor from '../components/Profile/StudentScopeEditor';
+import CreditRangeInput from '../components/Profile/CreditRangeInput';
+import { creditRangeFromProfile, creditRangePayload, validateCreditRange } from '../utils/creditRange';
 import PreferenceJourneySteps, { PreferenceBackButton } from '../components/Layout/PreferenceJourneySteps';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { getUserIdentity } from '../utils/userIdentity';
@@ -17,7 +20,6 @@ const sections = ['基本資料', '課程興趣', '排課條件'];
 
 function scheduleOptionLines(options = {}) {
   const lines = [
-    [options.minCredits, value => `學分目標至少 ${value} 學分`],
     [options.maxCoursesPerDay, value => `每天最多 ${value} 門課`],
     [options.courseCredits, value => `可選課每門 ${value} 學分`],
     [options.preferredCourseCredits, value => `偏好每門 ${value} 學分`],
@@ -99,12 +101,16 @@ export default function SetupPage() {
   const [college, setCollege] = useState('');
   const [enrolledPrograms, setEnrolledPrograms] = useState('');
   const [avoidInstructors, setAvoidInstructors] = useState('');
+  // 載入時的系所、年級、班級；只有使用者改過才送出，不把頁面預設值寫進資料庫。
+  const [loadedScope, setLoadedScope] = useState(null);
+  const [scopeEditing, setScopeEditing] = useState(false);
   
   // 前端會顯示的選項
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [savedTimePreferences, setSavedTimePreferences] = useState([]);
-  const [savedCreditMax, setSavedCreditMax] = useState(null);
+  // 學分上下限：{ floor, value: { min, max, overload } }，讀到 profile 後才有值。
+  const [credits, setCredits] = useState(null);
   const [savedOptions, setSavedOptions] = useState([]);
 
   const [selectedTags, setSelectedTags] = useState(new Set());
@@ -150,12 +156,17 @@ export default function SetupPage() {
         const savedGrade = profile.gradeLevel;
         if (savedGrade) setGradeLevel(String(savedGrade));
         if (profile.className) setClassName(profile.className);
+        setLoadedScope({
+          department: profile.department || '資訊工程學系',
+          gradeLevel: savedGrade ? String(savedGrade) : '1',
+          className: profile.className || '',
+        });
         setProgramType(profile.programType || '');
         setCollege(profile.college || '');
         setEnrolledPrograms((profile.enrolledPrograms || []).join('、'));
         setAvoidInstructors((profile.avoidInstructors || []).join('、'));
         setSavedTimePreferences(Array.isArray(profile.blockedPeriods) ? profile.blockedPeriods : []);
-        setSavedCreditMax(profile.scheduleOptions?.maxCredits ?? profile.targetCreditsMax ?? null);
+        setCredits(creditRangeFromProfile(profile));
         setSavedOptions(scheduleOptionLines(profile.scheduleOptions));
 
         if (Array.isArray(profile.selectedTags)) {
@@ -211,21 +222,32 @@ export default function SetupPage() {
     else navigate('/', { state: { preferencesSavedFor: userIdentity } });
   };
 
+  const scopeChanged = Boolean(loadedScope) && (
+    department !== loadedScope.department
+    || gradeLevel !== loadedScope.gradeLevel
+    || className !== loadedScope.className
+  );
+
   const persist = async (selections) => {
     const wasSetupDone = editing;
     setSaveError('');
+    const creditError = credits && validateCreditRange(credits.value, credits.floor);
+    if (creditError) {
+      setSaveError(creditError);
+      setSetupStep(2);
+      return;
+    }
     setGenerating(true);
     try {
       const prefData = {
         userId: userIdentity,
-        department,
-        gradeLevel: Number(gradeLevel),
-        className,
+        ...(scopeChanged ? { department, gradeLevel: Number(gradeLevel), className } : {}),
         programType: programType || null,
         college: college || null,
         enrolledPrograms: enrolledPrograms.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         avoidInstructors: avoidInstructors.split(/[、,，]/).map(value => value.trim()).filter(Boolean),
         selectedTags: [...selectedTags],
+        ...(credits ? creditRangePayload(credits.value) : {}),
         ...(!wasSetupDone ? { initialSetupStage: 'schedule' } : {}),
         // 長期興趣只由課程主題問答保存（ADR-032）；舊的文字興趣欄位已移除。
         ...(selections !== savedTopicSelections ? {
@@ -239,18 +261,26 @@ export default function SetupPage() {
 
       if (!wasSetupDone) markInitialSchedulePending();
       const warnings = result?.interestSelectionWarnings ?? [];
+      // 改了系所或班級後，首頁已存的課表仍是依舊資料排的，要提醒重新套用。
+      const scopeMessage = scopeChanged && wasSetupDone
+        ? '基本資料已更新。首頁的課表仍是依原本的系所與班級排的，請回首頁按「套用偏好排課」更新課表。'
+        : '';
       if (result?.interestSelectionsStatus === 'unverified') {
         setSaveNotice({
           wasSetupDone,
-          message: '其他設定都已保存。目前無法確認課程主題的標籤是否適用，這次只保存了你選的類別，之後可以再回來補選具體主題。',
+          message: [scopeMessage, '其他設定都已保存。目前無法確認課程主題的標籤是否適用，這次只保存了你選的類別，之後可以再回來補選具體主題。'].filter(Boolean).join(' '),
         });
         return;
       }
       if (warnings.length > 0) {
         setSaveNotice({
           wasSetupDone,
-          message: '其他設定都已保存。有部分主題標籤不在你目前的候選課程裡，已略過，沒有保存。',
+          message: [scopeMessage, '其他設定都已保存。有部分主題標籤不在你目前的候選課程裡，已略過，沒有保存。'].filter(Boolean).join(' '),
         });
+        return;
+      }
+      if (scopeMessage) {
+        setSaveNotice({ wasSetupDone, message: scopeMessage });
         return;
       }
       finishAfterSave(wasSetupDone);
@@ -311,17 +341,36 @@ export default function SetupPage() {
                     ? [department, gradeLevel ? gradeLevel + ' 年級' : '', className].filter(Boolean).join(' · ') || '尚無基本資料'
                     : '正在讀取基本資料…'}</p>
 
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '12px 0 0 0' }}>系所、年級與班級由登入資料帶入。{profileLoaded && !className && '目前沒有班別資料，課程主題選項可能無法顯示。'}</p>
+                  {profileLoaded && !className && <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '12px 0 0 0' }}>目前沒有班別資料，課程主題選項可能無法顯示。</p>}
+                  {profileLoaded && !profileError && !scopeEditing && (
+                    <button type="button" className="course-card-action" style={{ marginTop: '12px' }} onClick={() => setScopeEditing(true)}>
+                      修改基本資料
+                    </button>
+                  )}
+                  {scopeEditing && (
+                    <StudentScopeEditor
+                      initial={{ department, gradeLevel, className }}
+                      onCancel={() => setScopeEditing(false)}
+                      onApply={next => {
+                        setDepartment(next.department);
+                        setGradeLevel(next.gradeLevel);
+                        setClassName(next.className);
+                        setScopeEditing(false);
+                      }}
+                    />
+                  )}
+                  {scopeChanged && !scopeEditing && (
+                    <p role="status" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '8px 0 0 0' }}>基本資料已修改，保存偏好後才會生效。</p>
+                  )}
                 </div>
                 <div className="setup-section-box history-feedback-setup" id="history-feedback">
                   <div>
-                    <h3 className="setup-section-title">我修過的課</h3>
-                    <p>告訴系統你修過的選修、通識與系外課喜不喜歡，推薦會參考主題相近的課（必修不列入）。</p>
-                    {!personalizationGranted && <p className="history-feedback-hint">需要先在隱私設定同意「從互動持續改善個人化」。</p>}
+                    <h3 className="setup-section-title">歷史修課回饋</h3>
+                                        {!personalizationGranted && <p className="history-feedback-hint">需要先在隱私設定同意「從互動持續改善個人化」。</p>}
                     {historyMessage && <p className="history-feedback-hint">{historyMessage}</p>}
                   </div>
                   <button type="button" className="course-card-action" onClick={openHistoryFeedback} disabled={!personalizationGranted || historyLoading}>
-                    {historyLoading ? '載入中…' : '調整喜好'}
+                    {historyLoading ? '載入中…' : '填寫回饋'}
                   </button>
                 </div>
               </div>
@@ -362,10 +411,16 @@ export default function SetupPage() {
               <section className="setup-section-box" aria-labelledby="setup-scheduling-title">
                 <h2 id="setup-scheduling-title" className="setup-section-title">設定排課條件</h2>
                 <p className="setup-journey-summary">選擇你希望課表符合的時段、集中程度與其他安排。</p>
-                {editing && (savedTimePreferences.length > 0 || savedCreditMax !== null || savedOptions.length > 0) && (
+                {credits && (
                   <div className="setup-pref-group">
-                    <h3 className="setup-pref-category">已保存的時段與學分</h3>
-                    {savedCreditMax !== null && <p>學分上限 {savedCreditMax} 學分</p>}
+                    <h3 className="setup-pref-category">這學期想修的學分</h3>
+                    <CreditRangeInput idPrefix="setup-credit" value={credits.value} floor={credits.floor}
+                      onChange={value => setCredits(current => ({ ...current, value }))} />
+                  </div>
+                )}
+                {editing && (savedTimePreferences.length > 0 || savedOptions.length > 0) && (
+                  <div className="setup-pref-group">
+                    <h3 className="setup-pref-category">已保存的時段與其他條件</h3>
                     {savedOptions.map(line => <p key={line}>{line}</p>)}
                     {['週一', '週二', '週三', '週四', '週五', '週六', '週日'].map((day, index) => {
                       const periods = savedTimePreferences.filter(entry => entry.day === index + 1)
